@@ -7,6 +7,44 @@
 
 ---
 
+## Evidence review — 2026-10-17
+
+The accepted migration policy below is preserved. These qualifications describe the
+current code and open gaps, not newly approved policy. Historical references remain
+historical, as explained in the [ADR index](README.md#historical-references-and-current-scope).
+
+- **Historical sources are absent.** `docs/saas/TENANCY.md`, `docs/legacy/LEGACY-MAP.md`,
+  `docs/CONTEXT.md` and `docs/legacy/API-INVENTORY.md` are not in this checkout
+  (confirmed in the ADR index). The links in Related are historical citations only;
+  nothing here validates or invalidates the migration rule against the legacy source.
+
+- **Schema supports the new-tenant rule.** `Tenant.id` is `String @id @default(cuid())`,
+  so tenants created after cutover get a `cuid()` — matching ADR rule 2 ("Tenants
+  created after the cutover get a generated id"). `cuid()` values are alphanumeric
+  and never numeric, so a new tenant cannot collide with a legacy numeric id stored
+  as a string.
+
+- **Schema permits but does not enforce the migration rule.** `Tenant.id` is a plain
+  String, so a legacy owner id could be written verbatim as a string during migration
+  (ADR rule 1). But there is no migration code, importer, or seed path that sets a
+  legacy id — `seedTenant()` in `apps/api/prisma/seed.ts` creates the tenant via
+  `prisma.tenant.upsert` and lets `cuid()` generate the id. The ADR's Enforcement
+  claims "a migration test that runs the importer twice over a fixture and asserts
+  identical target ids"; no such test or importer exists in this checkout.
+
+- **Tenant scoping is in place.** `User.tenantId` is a non-nullable `String` FK to
+  `tenants.id`, and every domain model carries `tenantId` referencing `tenants.id` —
+  the isolation boundary the ADR's migration rule depends on.
+
+- **Owner relation matches the ADR's caveat.** `Tenant.ownerUserId` is `String? @unique`,
+  FK to `users.id`, with the documented foreign-key cycle. The ADR warns "`Tenant.id`
+  equals this id only for tenants migrated from the legacy database, and nothing may
+  rely on that" — the schema comment on `User.ownedTenant` repeats this caution.
+
+No code change is implied by this review. The migration rule (migrated tenants keep
+the legacy owner id) is not yet implemented in code; it awaits the migration/importer
+work the ADR's Enforcement section describes.
+
 ## Context
 
 The legacy system has no `tenants` table. The tenant _was_ the owner's row in

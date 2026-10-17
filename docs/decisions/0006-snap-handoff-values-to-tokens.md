@@ -7,7 +7,30 @@
   [`design/HANDOFF.md`](../design/HANDOFF.md) §3, §5,
   [`roadmap.md`](../roadmap.md) Phase 1, [`STATE.md`](../STATE.md) §3.1
 
-## Context
+## Evidence review — 2026-10-17
+
+The accepted snap-to-token policy below is preserved. These qualifications describe the
+current code and open gaps, not newly approved policy. Historical references remain
+historical, as explained in the [ADR index](README.md#historical-references-and-current-scope).
+
+- **Token files stay byte-identical.** `cmp design/handoff/tokens/tokens.css
+  apps/web/src/styles/tokens.css` exits 0 — the copy rule from ADR 0006's
+  Enforcement still holds, and no `--app-*` second namespace was introduced.
+
+- **Fractional utilities emit CSS.** `npm run build:web` passes; `px-2.25`,
+  `px-3.5`, `px-4.5`, `pt-1.5` and `font-heavy` all resolve (confirmed by the
+  baseline build). `Badge` renders `text-xs font-heavy` with `px-2.25 py-1` — the
+  tie-rounds-up rule (10.5px → 11px) and the fractional geometry are in place.
+
+- **`design/HANDOFF.md` is absent.** ADR 0006's Enforcement says the reconciled
+  table lives in `design/HANDOFF.md` §5. The file does not exist in this
+  checkout. The deltas are recorded here in the ADR's own table instead.
+
+- **No new amber token was added here.** The token file has no amber
+  surface/text pair; that gap was left as Q23 and later closed by ADR 0009.
+
+No code change is implied by this review. The snap-to-token rule and the copy
+rule are both honored in the current code.
 
 Phase 1's acceptance criterion is that primitives "reproduce the handoff geometry closely
 enough that a screen built from them needs no new CSS values". Reconciling the four

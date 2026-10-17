@@ -78,6 +78,42 @@ string exactly as it does to any other value) had not been settled.
   rows whose email is `''` (permitted once, globally, by the legacy constraint) import
   cleanly as `NULL`.
 
+## Evidence review — 2026-10-17
+
+The accepted per-tenant email uniqueness policy below is preserved. These qualifications describe
+the current code and open gaps, not newly approved policy. Historical references remain historical,
+as explained in the [ADR index](README.md#historical-references-and-current-scope).
+
+- **Database constraint implemented.** `Customer` carries `@@unique([tenantId, email])` with no
+  global unique on `email` — ADR rule 1 ✓. `email` is `String?` (nullable) — ADR rule 6 ✓. Postgres
+  treats NULLs as distinct, so a tenant may hold any number of customers with no email — ADR rule 3's
+  NULL behavior matches.
+
+- **Email normalisation not implemented.** ADR rule 2 requires email to be "stored trimmed and
+  lowercased" so uniqueness is case-insensitive. Neither `createCustomerSchema`
+  (`z.email().max(255).optional()`) nor `updateCustomerSchema`
+  (`z.email().max(255).nullable().optional()`) applies `.trim()` or `.toLowerCase()`. The customer
+  service writes `row.email` straight through without normalisation. `Ada@example.com` and
+  `ada@example.com` would be stored as distinct values and treated as distinct by the case-sensitive
+  `@@unique` constraint — a direct conflict with rule 2.
+
+- **Blank email handling differs.** ADR rule 3 says a blank or whitespace-only value is stored as
+  `NULL`. Currently `z.email()` rejects `''` and whitespace-only as invalid email formats at
+  validation, so they never reach the column as empty strings — they are rejected as validation
+  errors instead of being normalised to `NULL`. The outcome (no empty-string email stored) is
+  compatible, but the path is rejection-not-nulling.
+
+- **Historical sources absent.** `legacy/reference/legacy-schema.md`, `legacy/LEGACY-MAP.md`,
+  `saas/TENANCY.md` and `roadmap.md` are not in this checkout — historical citations only.
+
+- **Tenant scoping is in place.** The Prisma client extension applies `tenantId` from the verified
+  JWT; `createCustomer` uses `tenantId: ""` placeholder overwritten by `scopeCreateData`. No code
+  path lets a caller name another tenant's customer.
+
+No code change is implied by this review. The normalisation gap (trim + lowercase before storage) is
+a real divergence from ADR 0003 rule 2 and should be addressed before the per-tenant uniqueness
+invariant can be trusted case-insensitively.
+
 ## Enforcement
 
 - The `@@unique([tenantId, email])` constraint itself, added by Phase 2's migration. Until

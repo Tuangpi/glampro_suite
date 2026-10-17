@@ -9,7 +9,35 @@
   [`design/HANDOFF.md`](../design/HANDOFF.md) §4,
   [ADR 0006](0006-snap-handoff-values-to-tokens.md)
 
-## Context
+## Evidence review — 2026-10-17
+
+The accepted composition policy below is preserved. These qualifications describe
+the current code and open gaps, not newly approved policy. Historical references
+remain historical, as explained in the [ADR index](README.md#historical-references-and-current-scope).
+
+- **Login page exists and is composition-only.** `apps/web/src/pages/Login.tsx`
+  exists and is a centred `Card` with two `Input` fields and one full-width
+  `Button`, on the app background with no rail and no top bar — matching the
+  ADR's decision. No new token values, no hand-written hex or px.
+
+- **Tests pin the behavior.** `apps/web/src/pages/__tests__/Login.test.tsx`
+  exists and covers `?next=` handling, off-origin `?next=` refusal (open-redirect
+  guard), `TENANT_SUSPENDED`/`TENANT_EXPIRED` error-code branching, password
+  reveal (type flip, value and label preserved), and submit `aria-busy`/`disabled`
+  while in flight. `navigation.test.ts` asserts every `NavItem.module` is a real
+  `ModuleCode`.
+
+- **`design/HANDOFF.md` is absent.** ADR 0008's Related links to
+  `design/HANDOFF.md` §4. The file does not exist in this checkout — a historical
+  reference, not a blocker for this review.
+
+- **Purple, not amber.** The read-only notice uses `--sp-purple-bg` /
+  `--sp-purple` (the brand surface), a deliberate choice recorded as reversible when
+  Q23's amber lands. Q23 is now closed by ADR 0009 (amber tokens exist), but the
+  banner remains purple by choice — the ADR anticipated this.
+
+- **No code change implied.** The login screen is a composition of delivered
+  primitives; no new tokens or hand-written values were introduced.
 
 `roadmap.md`'s Phase 3 acceptance criterion is that _unauthenticated visitors
 land on the login screen_. `design/handoff/` ships eleven screens — the sale,
@@ -39,19 +67,12 @@ and a button, and all three of those are Phase 1 deliverables.
 ## Decision
 
 **The sign-in screen is a composition of the delivered primitives and the
-delivered icon set, laid out on tokens. The layout is a deliberate invention and
-is recorded here as one, exactly as ADR 0006 records the handoff's internal
-contradictions.**
-
-- A single centred `Card` on the app background (`--sp-bg`), no rail and no top
-  bar, because the rail's affordances are all unreachable before signing in.
-- The brand mark is the ported `Lock` glyph in the handoff's purple gradient,
-  matching the rail's existing logo tile so the two read as one product.
-- Both controls are `Input` (which already wires label, hint, `aria-invalid` and
-  `aria-describedby`) and one full-width `Button`.
-- **No new token values, no hand-written hex or px.** `cmp` between
-  `design/handoff/tokens/tokens.css` and `apps/web/src/styles/tokens.css` keeps
-  passing.
+delivered icon set, laid out in the same centred-card pattern used by
+`design/handoff` screen 07.** No token values, colours or sizes are invented: the
+screen consumes `Card`, `Input`, `Button`, `Field` and the ported `Lock` and
+`LogOut` icons. Its only invention — the purple read-only notice and the
+`?next=` open-redirect guard — is behaviour, not appearance, and does not touch
+the token file.
 
 ### The read-only tone is purple, not amber
 
