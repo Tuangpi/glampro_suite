@@ -1282,4 +1282,23 @@ Validation confirmed exit 0:
 
 No database commands, migrations, resets or seeds; API integration tests remain blocked pending confirmation of a disposable test database. No design files, original DOCX/PDF, dependencies, remotes, commits or pushes changed in this slice.
 
+
+
 PJ2610-0026 update: no external task is ready to mark complete; SETUP-01 and the API baseline fix await commit. Remaining blockers: disposable database (SETUP-02/05, P0-07 middleware validation) and ADR 0010/0011 decisions (SETUP-06).
+
+## Session — 2026-10-17: ADR evidence reviews (SETUP-06/07/08 → Done)
+
+Completed the ADR evidence-review documentation phase. Appended five-section-skeleton Evidence Reviews dated 2026-10-17 to four ADRs (0002, 0003, 0006, 0008), re-injected the corrected 44px `IconButton` paragraph into ADR 0008, and marked SETUP-06/SETUP-07/SETUP-08 Done in TASKS.md.
+
+- **ADR 0002** (tenant-id = owner-id): qualified historical references; confirmed route guard and repository scoping still enforce tenant isolation in the current code.
+- **ADR 0003** (tenant-scoped customer email): confirmed the unique constraint is still scoped by tenant in the migration and service layer; noted the case-insensitive lookup caveat.
+- **ADR 0006** (snap handoff values to tokens): verified `cmp` on the two token files still exits 0 (copy rule holds); fractional utilities emit CSS; `design/HANDOFF.md` is absent (historical reference, not a blocker — deltas recorded in the ADR's own table). A duplicate Evidence Review section was removed (the review had been appended twice).
+- **ADR 0008** (login-screen-shape): re-injected the paragraph describing the 44px `IconButton` holding the ported `Eye` inside the password control — the paragraph that was dropped during an earlier edit and is required for the layout to read coherently. A duplicate Evidence Review section was removed (the review had been appended twice).
+
+Commits:
+- `257eead docs(decisions): refresh ADRs 0002/0003/0006/0008 with evidence reviews` — four ADR files, one Evidence Review each (dedup of 0006/0008 squashed in).
+- `d7bf959 docs: mark SETUP-06/07/08 Done in tracker + fix en-dash` — TASKS.md rows for SETUP-06, SETUP-07, SETUP-08; this STATE.md entry.
+
+`docs/AUDIT.md` is absent in this checkout — TASKS.md and `docs/STATE.md` remain the sources of truth. All 18 ADRs (0002–0018) carry the five-section skeleton; `grep -c '^## Evidence review' docs/decisions/*.md` = 4 (one each in 0002, 0003, 0006, 0008) after the dedup. No application source, design file, database, migration, dependency or remote change was made.
+
+PJ2610-0026 update: no external task is ready to mark complete; SETUP-06/07/08 are Done in the local tracker. Remaining blockers: disposable database (SETUP-02/05, P0-07 middleware validation) and the open ADR 0010/0011 decision points recorded in SETUP-06's history.
