@@ -32,6 +32,7 @@ const {
   useUpdatePackage,
   useCreateGiftCard,
   useUpdateGiftCard,
+  useModules,
   useDepartments,
   getErrorMessage,
   getErrorCode,
@@ -51,6 +52,7 @@ const {
   useUpdatePackage: vi.fn(),
   useCreateGiftCard: vi.fn(),
   useUpdateGiftCard: vi.fn(),
+  useModules: vi.fn(),
   useDepartments: vi.fn(),
   getErrorMessage: vi.fn<() => string>(() => "Something went wrong."),
   getErrorCode: vi.fn<() => string | undefined>(() => undefined),
@@ -88,6 +90,10 @@ vi.mock("@/hooks/useGiftCards", () => ({
   useGiftCardList,
   useCreateGiftCard,
   useUpdateGiftCard,
+}));
+
+vi.mock("@/hooks/useSettings", () => ({
+  useModules,
 }));
 
 vi.mock("@/hooks/useDepartments", () => ({ useDepartments }));
@@ -187,6 +193,38 @@ beforeEach(() => {
   useUpdatePackage.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
   useCreateGiftCard.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
   useUpdateGiftCard.mockReturnValue({ mutateAsync: vi.fn(), isPending: false });
+  useModules.mockReturnValue({
+    data: [
+      {
+        code: "catalogue",
+        name: "Catalogue",
+        category: "Core",
+        isCore: true,
+        entitled: true,
+        expiresAt: null,
+      },
+      {
+        code: "packages",
+        name: "Packages",
+        category: "Add-on",
+        isCore: false,
+        entitled: true,
+        expiresAt: null,
+      },
+      {
+        code: "giftCards",
+        name: "Gift cards",
+        category: "Add-on",
+        isCore: false,
+        entitled: true,
+        expiresAt: null,
+      },
+    ],
+    isPending: false,
+    isError: false,
+    error: null,
+    isFetching: false,
+  });
   useDepartments.mockReturnValue({ data: [], isPending: false });
   getErrorMessage.mockReturnValue("Something went wrong.");
   getErrorCode.mockReturnValue(undefined);
@@ -294,6 +332,111 @@ describe("the tabs", () => {
     expect(screen.getByText(/add-on is not enabled/i)).toBeInTheDocument();
     // No retry button: reloading asks the same question and gets the same answer.
     expect(screen.queryByRole("button", { name: "Try again" })).not.toBeInTheDocument();
+  });
+
+  it("hides Add for an add-on tab the salon has not bought", async () => {
+    const user = userEvent.setup();
+    getErrorCode.mockReturnValue("MODULE_NOT_ENTITLED");
+    usePackageList.mockReturnValue(
+      queryResult({ isError: true, error: new Error('This feature needs the "packages" add-on.') }),
+    );
+    // The demo salon normally has packages; here it has not bought it.
+    useModules.mockReturnValue({
+      data: [
+        {
+          code: "catalogue",
+          name: "Catalogue",
+          category: "Core",
+          isCore: true,
+          entitled: true,
+          expiresAt: null,
+        },
+        {
+          code: "packages",
+          name: "Packages",
+          category: "Add-on",
+          isCore: false,
+          entitled: false,
+          expiresAt: null,
+        },
+        {
+          code: "giftCards",
+          name: "Gift cards",
+          category: "Add-on",
+          isCore: false,
+          entitled: false,
+          expiresAt: null,
+        },
+      ],
+      isPending: false,
+      isError: false,
+      error: null,
+      isFetching: false,
+    });
+
+    render(<Products />);
+    await user.click(screen.getByRole("tab", { name: "Packages" }));
+
+    expect(screen.getByText(/add-on is not enabled/i)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add package" })).not.toBeInTheDocument();
+  });
+
+  it("shows Add for an add-on tab the salon has bought", async () => {
+    const user = userEvent.setup();
+    usePackageList.mockReturnValue(
+      listOf([
+        {
+          id: "pk1",
+          name: "Ten-session bundle",
+          status: "ACTIVE",
+          sessionCount: 10,
+          memberPrice: "250.00",
+          nonmemberPrice: "300.00",
+          description: null,
+          serviceCount: 2,
+          createdAt: "2021-03-04T00:00:00.000Z",
+          updatedAt: "2021-03-04T00:00:00.000Z",
+        },
+      ]),
+    );
+    useModules.mockReturnValue({
+      data: [
+        {
+          code: "catalogue",
+          name: "Catalogue",
+          category: "Core",
+          isCore: true,
+          entitled: true,
+          expiresAt: null,
+        },
+        {
+          code: "packages",
+          name: "Packages",
+          category: "Add-on",
+          isCore: false,
+          entitled: true,
+          expiresAt: null,
+        },
+        {
+          code: "giftCards",
+          name: "Gift cards",
+          category: "Add-on",
+          isCore: false,
+          entitled: true,
+          expiresAt: null,
+        },
+      ],
+      isPending: false,
+      isError: false,
+      error: null,
+      isFetching: false,
+    });
+
+    render(<Products />);
+    await user.click(screen.getByRole("tab", { name: "Packages" }));
+
+    expect(screen.queryByText(/add-on is not enabled/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add package" })).toBeInTheDocument();
   });
 
   it("lists a bundle's sessions and what it covers", async () => {

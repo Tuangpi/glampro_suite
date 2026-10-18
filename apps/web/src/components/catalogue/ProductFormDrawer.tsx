@@ -11,8 +11,8 @@
  * rule — the local checks below only catch what is worth not round-tripping.
  *
  * **No cost field**, deliberately: the handoff draws a Cost column but the model has
- * no such column and the legacy database never held one (`docs/design/HANDOFF.md`
- * §6 item 5). A box here would be a form field with nowhere to save.
+ * no such column and the legacy database never held one (`PROJECT.md#design-6`
+ * checklist). A box here would be a form field with nowhere to save.
  */
 import { useState } from "react";
 

@@ -1,6 +1,6 @@
 /**
  * The handoff icon set — one component per SVG in design/handoff/icons/.
- * Geometry is copied verbatim; see docs/design/HANDOFF.md §4 for the port rules.
+ * Geometry is copied verbatim; see PROJECT.md#design-4 for the port rules.
  */
 export { AlertTriangle } from "./AlertTriangle";
 export { ArrowRight } from "./ArrowRight";

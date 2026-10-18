@@ -155,7 +155,12 @@ model User {
   disabledAt   DateTime?
   lastLoginAt  DateTime?
   /// Bumped on logout and password change to invalidate outstanding tokens.
-  tokenVersion Int        @default(0)
+  tokenVersion                  Int        @default(0)
+  /// Email-based two-factor authentication. `twoFactorCode` holds the SHA-256
+  /// hash of the current one-time code; `twoFactorCodeExpiresAt` is its deadline.
+  twoFactorEnabled              Boolean    @default(false)
+  twoFactorCode                 String?
+  twoFactorCodeExpiresAt        DateTime?
   /// `users.start_date` / `end_date` in the legacy schema.
   startDate DateTime?
   endDate   DateTime?
@@ -186,7 +191,7 @@ model User {
   sales        Sale[] @relation("SaleStaff")
   /// Sales this user voided. An audit trail rather than a work list: the relation exists
   /// so the receipt can print a name, and it is the one `Sale`↔`User` link that does not
-  /// cascade ([ADR 0016](../../docs/decisions/0016-a-void-is-a-recorded-whole-sale-reversal.md)).
+  /// cascade ([ADR 0016](../../../PROJECT.md#adr-0016)).
   voidedSales  Sale[] @relation("SaleVoidedBy")
   saleLines    SaleLine[]
   performances EmployeePerformance[]
@@ -857,7 +862,7 @@ model Sale {
   voidedAt DateTime?
   /// Why, in the words of whoever voided it. Free text and required at the API boundary,
   /// nullable here because a sale that was never voided has no reason and a back-fill
-  /// would be inventing one ([ADR 0016](../../docs/decisions/0016-a-void-is-a-recorded-whole-sale-reversal.md)).
+  /// would be inventing one ([ADR 0016](../../../PROJECT.md#adr-0016)).
   voidReason String?
   /// Who answered for it — the verified JWT's user, never anything the request named.
   voidedById String?
@@ -974,7 +979,7 @@ model SaleLine {
   /// cheap and a report can add up what the salon gave away — the two things legacy's
   /// unrecorded discount could not answer. `0.00` for a line nobody discounted, so the
   /// column is never null and `SUM` over it works
-  /// ([ADR 0017](../../docs/decisions/0017-a-discount-is-a-recorded-line-percentage.md)).
+  /// ([ADR 0017](../../../PROJECT.md#adr-0017)).
   discountPercent Decimal @default(0) @db.Decimal(5, 2)
   /// What that rate took off the **whole line**, stored for the same reason `lineTotal`
   /// is: a later reconsideration of the rate must not rewrite a historical figure. The

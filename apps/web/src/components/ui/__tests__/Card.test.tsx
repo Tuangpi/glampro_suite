@@ -55,7 +55,7 @@ describe("Card", () => {
   // Geometry is pinned by class name because jsdom has no Tailwind layout, so
   // these assertions cannot measure a pixel — they only stop a later edit from
   // quietly reverting the reconciliation. The rendered values are measured in
-  // the browser and recorded in docs/design/HANDOFF.md §5.
+  // the browser and recorded in PROJECT.md#design-5.
   it("divides the header from the body the way the handoff's .card-head does", () => {
     render(<Card title="Today's sales">Total</Card>);
 

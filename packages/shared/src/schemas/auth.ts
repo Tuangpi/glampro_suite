@@ -93,3 +93,25 @@ export const authSessionSchema = z.object({
 });
 
 export type AuthSession = z.infer<typeof authSessionSchema>;
+
+/** Six-digit numeric one-time code sent by email. */
+export const TWO_FACTOR_CODE_LENGTH = 6;
+
+export const twoFactorVerifySchema = z.object({
+  email: emailSchema,
+  code: z.string().length(TWO_FACTOR_CODE_LENGTH),
+});
+
+export type TwoFactorVerifyInput = z.infer<typeof twoFactorVerifySchema>;
+
+export const twoFactorConfirmSchema = z.object({
+  code: z.string().length(TWO_FACTOR_CODE_LENGTH),
+});
+
+export type TwoFactorConfirmInput = z.infer<typeof twoFactorConfirmSchema>;
+
+export const forceSignOutSchema = z.object({
+  userId: z.string().min(1),
+});
+
+export type ForceSignOutInput = z.infer<typeof forceSignOutSchema>;

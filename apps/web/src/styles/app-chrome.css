@@ -7,7 +7,7 @@
 */
 
 :root {
-  /* Frame geometry — named in docs/design/HANDOFF.md §2 (rail / topbar). */
+  /* Frame geometry — named in PROJECT.md#design-2 (rail / topbar). */
   --sp-rail-w: 84px; /* navy icon rail */
   --sp-topbar-h: 76px; /* white top bar */
 
@@ -21,8 +21,7 @@
      Width is the one deliberate deviation: 54px fits the handoff's own longest
      label ("Customers", 46.4px measured), but this app's longest rail label is
      "Appointments", which measures 63.2px at 8.5px — so the item is 70px, the
-     same ~3.8px of side padding the handoff leaves. See docs/design/HANDOFF.md
-     §4. */
+     same ~3.8px of side padding the handoff leaves. See PROJECT.md#design-2. */
   --app-rail-item-w: 70px;
   --app-rail-item-h: 50px;
   --app-rail-item-radius: 14px;

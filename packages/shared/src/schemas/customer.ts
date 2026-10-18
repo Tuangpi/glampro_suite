@@ -10,7 +10,7 @@
  * `Total spend` are aggregates over `Sale` / `SaleLine`, which the POS phase
  * (Phase 5) owns, and `Tier` reads a `Membership` row that the schema does not
  * have at all. All three are therefore **absent** from `CustomerSummary` rather
- * than faked — `docs/design/HANDOFF.md` §6 item 5 says the screen changes where
+ * than faked — `PROJECT.md#design-6` says the screen changes where
  * it disagrees with the real data model, and a placeholder zero would be a lie
  * the salon would read as "this customer has never spent anything".
  */

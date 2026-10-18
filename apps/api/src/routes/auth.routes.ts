@@ -1,18 +1,35 @@
 import { Router, type Request } from "express";
 import {
   changePasswordSchema,
+  forceSignOutSchema,
   loginSchema,
   refreshSchema,
+  twoFactorConfirmSchema,
+  twoFactorVerifySchema,
   type ChangePasswordInput,
+  type ForceSignOutInput,
   type LoginInput,
   type RefreshInput,
+  type TwoFactorConfirmInput,
+  type TwoFactorVerifyInput,
 } from "@glampro_suite/shared";
 
-import { auth, requireWritableTenant } from "../middleware/auth.js";
+import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { validate, validated } from "../middleware/validate.js";
 import { authLimiter } from "../middleware/rateLimit.js";
 import { unauthorized } from "../lib/http-error.js";
-import { changePassword, loadProfile, login, logout, refresh } from "../services/auth.service.js";
+import {
+  changePassword,
+  confirmTwoFactor,
+  disableTwoFactor,
+  enableTwoFactor,
+  forceSignOut,
+  loadProfile,
+  login,
+  logout,
+  refresh,
+  verifyTwoFactorForLogin,
+} from "../services/auth.service.js";
 import type { SessionMeta } from "../services/auth.service.js";
 
 /**
@@ -73,7 +90,7 @@ authRouter.post("/refresh", authLimiter, validate(refreshSchema), async (req, re
  * access token has already expired must still be able to end its session. It revokes
  * that row and nothing else — no other session for the user is touched, and
  * `tokenVersion` is left alone
- * (`docs/decisions/0007-logout-revokes-the-refresh-token-not-the-user.md`).
+ * (`PROJECT.md#adr-0007`).
  */
 authRouter.post("/logout", validate(refreshSchema), async (req, res, next) => {
   try {
@@ -106,6 +123,113 @@ authRouter.post(
         data: { success: true },
         message: "Password changed. Please sign in again.",
       });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Platform forced sign-out. Bumps the user's `tokenVersion` and revokes all
+ * their refresh tokens in one atomic write. SUPER_ADMIN only — this is the
+ * platform escape hatch for a compromised account (`PROJECT.md#adr-0007`).
+ */
+authRouter.post(
+  "/force-sign-out",
+  auth,
+  requireRole("SUPER_ADMIN"),
+  authLimiter,
+  validate(forceSignOutSchema),
+  async (req, res, next) => {
+    try {
+      const input = validated<ForceSignOutInput>(req, "body");
+      await forceSignOut(input);
+      res.status(200).json({ data: { success: true } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Starts email-based two-factor enrollment for the authenticated user. Sends a
+ * six-digit code by email; the caller must confirm it with
+ * `POST /api/auth/two-factor/confirm` to finish enabling.
+ */
+authRouter.post(
+  "/two-factor/enable",
+  auth,
+  authLimiter,
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw unauthorized();
+      }
+      await enableTwoFactor(req.user.id);
+      res.status(200).json({ data: { sent: true } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Confirms email-based two-factor enrollment for the authenticated user.
+ * Verifies the six-digit code and enables 2FA.
+ */
+authRouter.post(
+  "/two-factor/confirm",
+  auth,
+  authLimiter,
+  validate(twoFactorConfirmSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw unauthorized();
+      }
+      const input = validated<TwoFactorConfirmInput>(req, "body");
+      await confirmTwoFactor(req.user.id, input);
+      res.status(200).json({ data: { success: true } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Disables two-factor authentication for the authenticated user.
+ */
+authRouter.post(
+  "/two-factor/disable",
+  auth,
+  authLimiter,
+  async (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw unauthorized();
+      }
+      await disableTwoFactor(req.user.id);
+      res.status(200).json({ data: { success: true } });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Verifies a two-factor code for login and issues a full access/refresh session.
+ * Used after `POST /api/auth/login` returns `requiresTwoFactor` (empty tokens,
+ * `expiresIn: 0`). Deliberately unauthenticated: there is no session yet.
+ */
+authRouter.post(
+  "/two-factor/verify-login",
+  authLimiter,
+  validate(twoFactorVerifySchema),
+  async (req, res, next) => {
+    try {
+      const input = validated<TwoFactorVerifyInput>(req, "body");
+      const session = await verifyTwoFactorForLogin(input, sessionMeta(req));
+      res.status(200).json({ data: session });
     } catch (error) {
       next(error);
     }

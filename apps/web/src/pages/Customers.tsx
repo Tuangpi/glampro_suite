@@ -4,7 +4,7 @@
  * **Three columns from the handoff are deliberately absent.** The handoff's table
  * reads Customer / Phone / Last visit / Total spend / Tier; `lastVisit` and
  * `totalSpend` are aggregates over sales the POS phase has not built, and `tier`
- * reads a membership table the schema does not have. `docs/design/HANDOFF.md` §6
+ * reads a membership table the schema does not have. `PROJECT.md#design-6`
  * item 5 says a screen is a proposal and the screen changes where it disagrees
  * with the real model — a placeholder zero would read to a salon as "this customer
  * has never spent anything", which is a different and wrong statement. Those

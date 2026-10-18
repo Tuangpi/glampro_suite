@@ -181,7 +181,7 @@ describe("giftCardSummarySchema", () => {
 
   it("has no status field at all, because the model has no column behind it", () => {
     // Screen 08 draws a Status cell for this tab; the field must not exist, or the
-    // screen would render an invented state (`docs/design/HANDOFF.md` §6).
+    // screen would render an invented state (`PROJECT.md#design-6`).
     assert.equal("status" in giftCardSummarySchema.parse({ ...row, status: "ACTIVE" }), false);
   });
 });

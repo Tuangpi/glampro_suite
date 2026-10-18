@@ -151,7 +151,7 @@ export async function getStaff(id: string): Promise<StaffDetail> {
  *
  * `users.email` is **globally** unique — a person has one login however many salons
  * they work at, which is why it is not per-tenant the way a customer's email is
- * ([ADR 0003](../../decisions/0003-tenant-scoped-customer-email.md)) — while every
+ * ([ADR 0003](../../../../PROJECT.md#adr-0003)) — while every
  * read in this file is tenant-scoped. So the pre-check catches the salon's own
  * duplicate, and the `P2002` fallback catches the collision with a *different*
  * salon's user, which a scoped read cannot see. Both produce the same 409 with the
@@ -258,7 +258,7 @@ export async function createStaff(input: CreateStaffInput): Promise<StaffDetail>
  * A role change or a disable needs no token bookkeeping: `auth` re-reads the row on
  * every request, so the person's next call already sees the new role, and a disabled
  * account is refused outright (`middleware/auth.ts`). Bumping `tokenVersion` is for
- * ending sessions on purpose ([ADR 0007](../../decisions/0007-logout-revokes-the-refresh-token-not-the-user.md)),
+ * ending sessions on purpose ([ADR 0007](../../../../PROJECT.md#adr-0007)),
  * not for this.
  */
 export async function updateStaff(id: string, input: UpdateStaffInput): Promise<StaffDetail> {

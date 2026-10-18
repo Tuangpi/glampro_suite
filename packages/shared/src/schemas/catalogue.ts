@@ -5,7 +5,7 @@
  * **Services live here, not on a screen of their own.** There is no `/services`
  * route and no Services entry on the rail: services are a tab inside this
  * catalogue and a step in the sale and appointment flows
- * ([ADR 0005](../../decisions/0005-rail-has-no-services-destination.md)). So the
+ * ([ADR 0005](../../../../PROJECT.md#adr-0005)). So the
  * two share one file and one module code — to a salon and to the entitlement
  * check they are the same feature.
  *

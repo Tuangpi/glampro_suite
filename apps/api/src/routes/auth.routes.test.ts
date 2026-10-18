@@ -373,13 +373,14 @@ describe("web session endpoints", { skip: databaseUrl ? false : "DATABASE_URL is
       assert.equal(replay.status, 401);
       assert.equal((await envelope(replay)).code, "SESSION_INVALIDATED");
 
-      // A replay is treated as theft rather than noise, so the whole family is
-      // revoked: the pair the replay replaced is dead as well, and the user has to
-      // sign in again. Losing the session beats leaving a copy usable.
-      const afterFamilyRevocation = await post("/api/auth/refresh", {
+      // A replay is refused, but per ADR 0007 it is not treated as theft of the
+      // whole family: a dead token presented by one client must not sign the
+      // legitimate holder of the rotated pair out of their other devices.
+      // Family revocation happens only through password change or forced sign-out.
+      const rotatedStillValid = await post("/api/auth/refresh", {
         refreshToken: rotated.refreshToken,
       });
-      assert.equal(afterFamilyRevocation.status, 401);
+      assert.equal(rotatedStillValid.status, 200);
     });
   });
 

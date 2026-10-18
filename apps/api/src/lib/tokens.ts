@@ -30,7 +30,7 @@ export interface TokenSubject {
  * against the database (see `middleware/auth.ts`), so a password change or a
  * forced sign-out takes effect on the next request rather than at the token's
  * expiry. Logout deliberately does not move `tokenVersion`: it revokes the refresh
- * row, per `docs/decisions/0007-logout-revokes-the-refresh-token-not-the-user.md`.
+ * row, per `PROJECT.md#adr-0007`.
  */
 export function signAccessToken(subject: TokenSubject): { token: string; expiresIn: number } {
   const token = jwt.sign(

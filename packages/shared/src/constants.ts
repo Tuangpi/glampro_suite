@@ -158,7 +158,7 @@ export const MAX_SALE_PAYMENTS = 10;
  * workbench rather than a report: newest first, with a ceiling and no cursor. A hold
  * that has fallen off this page is a cart nobody came back for, and what happens to
  * those is Phase 9's question rather than the till's
- * ([ADR 0015](../../decisions/0015-a-held-sale-is-a-tenant-visible-draft.md)).
+ * ([ADR 0015](../../../PROJECT.md#adr-0015)).
  */
 export const MAX_SALE_LIST = 50;
 
@@ -168,7 +168,7 @@ export const MAX_SALE_LIST = 50;
  * Legacy wrote `random_int(100000, 999999)` into `sales.sale_id` — a
  * human-readable reference with no uniqueness constraint, so two sales could
  * share one. The rebuild assigns a per-tenant sequence instead
- * ([ADR 0011](../../decisions/0011-receipt-number-is-a-per-tenant-sequence.md));
+ * ([ADR 0011](../../../PROJECT.md#adr-0011));
  * this is the ceiling that keeps a sequence number inside an `Int` column.
  */
 export const MAX_RECEIPT_NUMBER = 999_999_999;
@@ -176,6 +176,9 @@ export const MAX_RECEIPT_NUMBER = 999_999_999;
 /** Access tokens are short-lived; refresh tokens are rotated on every use. */
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
+
+/** Email one-time code expires after ten minutes. */
+export const TWO_FACTOR_CODE_TTL_SECONDS = 10 * 60;
 
 export const PASSWORD_MIN_LENGTH = 8;
 

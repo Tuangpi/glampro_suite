@@ -29,7 +29,7 @@ import {
  * filter set, so the two tabs behave alike without pretending to be one table.
  *
  * There is no Services entry on the rail and no screen of its own
- * ([ADR 0005](../../../docs/decisions/0005-rail-has-no-services-destination.md));
+ * ([ADR 0005](../../../../PROJECT.md#adr-0005));
  * this mount exists so the tab, the sale flow and the appointment flow all reach the
  * same rule.
  */

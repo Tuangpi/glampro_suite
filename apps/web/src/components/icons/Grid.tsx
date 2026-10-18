@@ -5,7 +5,7 @@ import type { SVGProps } from "react";
  * `design/handoff/icons/grid.svg`.
  *
  * Decorative by default: colour comes from the inherited text colour and
- * size from the font size (`text-*` utilities), per docs/design/HANDOFF.md §4.
+ * size from the font size (`text-*` utilities), per PROJECT.md#design-4.
  */
 export function Grid(props: SVGProps<SVGSVGElement>) {
   return (

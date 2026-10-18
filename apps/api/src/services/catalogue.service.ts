@@ -51,7 +51,7 @@ const FALLBACK_LOW_STOCK_THRESHOLD = 5;
  * There is no `cost` and no `supplierId`, because the schema has neither: screen
  * 08 draws a **Cost** column and an **Inventory value** tile from a number the
  * legacy database never held either, and inventing one would make the tile a
- * fabrication (see `docs/design/HANDOFF.md` §6). They return when there is a cost
+ * fabrication (see `PROJECT.md#design-6`). They return when there is a cost
  * to show.
  */
 const PRODUCT_SELECT = {

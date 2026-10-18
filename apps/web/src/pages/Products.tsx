@@ -4,8 +4,8 @@
  * **One catalogue, four tabs.** Products, Services, Packages and Gift cards are the
  * tabs handoff screen 08 draws, and all four are here. The last two were held back
  * until the phase that needed them, because an empty tab reads to a salon as "this
- * salon has none" — a different and wrong statement (`docs/design/HANDOFF.md` §6
- * item 5). They are **add-on modules**, so a salon that has not bought one gets a
+ * salon has none" — a different and wrong statement (`PROJECT.md#design-6`
+ * checklist). They are **add-on modules**, so a salon that has not bought one gets a
  * 403 `MODULE_NOT_ENTITLED` from the API and the tab says so, rather than showing a
  * list that is empty for a reason the screen cannot see. There is no Services entry
  * on the rail for the same reason the tab exists (ADR 0005).
@@ -56,6 +56,7 @@ import Table, { type TableColumn } from "@/components/ui/Table";
 import Tabs, { type TabItem } from "@/components/ui/Tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGiftCardList } from "@/hooks/useGiftCards";
+import { useModules } from "@/hooks/useSettings";
 import { usePackageList } from "@/hooks/usePackages";
 import { useProductCount, useProductList } from "@/hooks/useProducts";
 import { useServiceCount, useServiceList } from "@/hooks/useServices";
@@ -116,6 +117,7 @@ const NOUNS: Record<
 export default function Products() {
   const { formatDate, formatPrice } = useSalonFormatting();
   const { isReadOnly } = useAuth();
+  const modules = useModules();
 
   const [tab, setTab] = useState<CatalogueTab>("products");
   const [searchInput, setSearchInput] = useState("");
@@ -474,6 +476,22 @@ export default function Products() {
     },
   ];
 
+  /** Hide the Add action for an add-on tab this salon has not bought. While the
+   * module list is still loading the button stays (we cannot tell yet); once it
+   * has loaded, an unentitled add-on's tab still opens — its EmptyState names the
+   * add-on — but there is nothing to add until the salon buys it. Read-only
+   * (suspended salon) keeps disabling the button rather than removing it. */
+  const entitled = new Set(
+    (modules.data ?? []).filter((module) => module.entitled).map((module) => module.code),
+  );
+  const TAB_MODULE: Record<CatalogueTab, string> = {
+    products: "catalogue",
+    services: "catalogue",
+    packages: "packages",
+    "gift-cards": "giftCards",
+  };
+  const moduleEntitled = modules.isPending || entitled.has(TAB_MODULE[tab]);
+
   return (
     <div className="flex flex-col gap-4">
       <header className="flex flex-wrap items-center justify-between gap-3">
@@ -503,9 +521,11 @@ export default function Products() {
             />
           </div>
 
-          <Button onClick={openCreate} disabled={isReadOnly}>
-            {NOUNS[tab].addLabel}
-          </Button>
+          {moduleEntitled && (
+            <Button onClick={openCreate} disabled={isReadOnly}>
+              {NOUNS[tab].addLabel}
+            </Button>
+          )}
         </div>
       </header>
 

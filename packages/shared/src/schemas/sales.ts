@@ -211,7 +211,7 @@ export const paymentStatusSchema = z.enum(PAYMENT_STATUSES);
  * `Decimal(5,2)`: a rate of `12.345` would be rounded by the database *after* the money
  * had been computed from it, and the stored rate would no longer explain the stored
  * amount. Two decimals is what the column can hold, so it is what the contract accepts
- * ([ADR 0017](../../docs/decisions/0017-a-discount-is-a-recorded-line-percentage.md)).
+ * ([ADR 0017](../../../../PROJECT.md#adr-0017)).
  */
 export const discountPercentSchema = z.coerce
   .number()

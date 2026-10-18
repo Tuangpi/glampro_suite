@@ -4,7 +4,7 @@
  * **There is no Status control, because the model has no status column.** The tab's
  * other two tables draw one; `GiftCard` has none, so this form does not offer a
  * state the API cannot store — the same rule that keeps screen 09's Shifts and
- * Rating columns out (`docs/design/HANDOFF.md` §6).
+ * Rating columns out (`PROJECT.md#design-6`).
  *
  * The expiry date is the one field with a value the form must be able to *remove*:
  * a card that never expires is a real product, so an empty date box means `null` on

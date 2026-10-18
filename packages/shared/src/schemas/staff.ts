@@ -66,7 +66,7 @@ export type StaffDetail = z.infer<typeof staffDetailSchema>;
  * `email` is globally unique because `users.email` carries `@unique` in the
  * schema. That is a **user** constraint, not a tenant one: a person has one
  * login however many salons they work at, which is why it is not per-tenant like
- * the customer email ([ADR 0003](../../decisions/0003-tenant-scoped-customer-email.md)).
+ * the customer email ([ADR 0003](../../../../PROJECT.md#adr-0003)).
  *
  * `globalRole` defaults to `STAFF`, the least privileged role, so a client that
  * forgets the field cannot accidentally mint an owner.
@@ -94,7 +94,7 @@ export type CreateStaffInput = z.infer<typeof createStaffSchema>;
  *
  * **`password` is absent by design.** Changing a password goes through
  * `POST /api/auth/change-password`, which bumps `tokenVersion` and ends every
- * session ([ADR 0007](../../decisions/0007-logout-revokes-the-refresh-token-not-the-user.md)).
+ * session ([ADR 0007](../../../../PROJECT.md#adr-0007)).
  * A password field on a general profile-update endpoint would let a manager
  * change someone's password without ending their sessions — a back door around
  * the one flow that does it correctly.

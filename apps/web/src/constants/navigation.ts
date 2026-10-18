@@ -35,7 +35,7 @@ export interface NavItem {
  * The Salon Pro app rail (see handoff screens 05–11).
  *
  * Icons come from the handoff set ported into `@/components/icons`
- * (see docs/design/HANDOFF.md §4).
+ * (see PROJECT.md#design-4).
  *
  * Staff is an unrestricted peer of Customers and Products because the handoff's
  * own rail draws it that way — screens 05–11 all render a Staff entry between
@@ -47,8 +47,8 @@ export interface NavItem {
  * services are reached from the Products tab row and from the sale and
  * appointment flows. The count and the absence are both asserted in
  * navigation.test.ts, so do not add a ninth entry without a decision. See ADR
- * 0005 (docs/decisions/0005-rail-has-no-services-destination.md) and
- * docs/design/HANDOFF.md §5.
+ * 0005 (PROJECT.md#adr-0005) and
+ * PROJECT.md#design-5.
  */
 export const navItems: NavItem[] = [
   { label: "Dashboard", path: "/", icon: Grid, module: "dashboard" },

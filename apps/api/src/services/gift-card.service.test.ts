@@ -10,7 +10,7 @@
  * - **There is no `status` field at all.** Screen 08's table draws a Status column
  *   for its other tabs and `GiftCard` has no column behind it, so the field is
  *   asserted absent rather than rendered as an invented state — the rule
- *   `docs/design/HANDOFF.md` §6 sets, and the same one the Shifts and Rating columns
+ *   `PROJECT.md#design-6` sets, and the same one the Shifts and Rating columns
  *   follow.
  *
  * Skipped with a clear message when `DATABASE_URL` is absent.

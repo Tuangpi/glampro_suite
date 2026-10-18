@@ -19,7 +19,7 @@ const TENANT_REALMS = new Set(["web", "pos", "mobile"]);
  * change or a forced sign-out, and role changes all apply immediately instead of
  * waiting for the token to expire. Logging out of one client is not one of those
  * events — it revokes that client's refresh token and leaves `tokenVersion` where
- * it is (`docs/decisions/0007-logout-revokes-the-refresh-token-not-the-user.md`).
+ * it is (`PROJECT.md#adr-0007`).
  *
  * On success the rest of the request is entered through `runAsTenant`, which is
  * what makes the Prisma extension scope every tenant-scoped query that follows.

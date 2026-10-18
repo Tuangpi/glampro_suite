@@ -1,15 +1,21 @@
 import {
-  WEB_REALM,
+  TWO_FACTOR_CODE_LENGTH,
+  TWO_FACTOR_CODE_TTL_SECONDS,
   type AuthProfile,
   type AuthRealm,
   type AuthSession,
   type ChangePasswordInput,
+  type ForceSignOutInput,
   type LoginInput,
   type ModuleEntitlement,
+  type TwoFactorConfirmInput,
+  type TwoFactorVerifyInput,
+  WEB_REALM,
 } from "@glampro_suite/shared";
 
 import { forbidden, unauthorized } from "../lib/http-error.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
+import { sendTwoFactorCode } from "../lib/email.js";
 import { prisma } from "../lib/prisma.js";
 import { canSignIn, resolveTenantStatus } from "../lib/tenant-status.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
@@ -160,7 +166,22 @@ export async function login(input: LoginInput, meta: SessionMeta): Promise<AuthS
     );
   }
 
-  const user = await runAsPlatform(() => prisma.user.findUnique({ where: { email: input.email } }));
+  const user = await runAsPlatform(() =>
+    prisma.user.findUnique({
+      where: { email: input.email },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        email: true,
+        passwordHash: true,
+        globalRole: true,
+        disabled: true,
+        tokenVersion: true,
+        twoFactorEnabled: true,
+      },
+    }),
+  );
 
   // Always spend the same time, and always answer the same way: which half was wrong
   // is not the client's business.
@@ -175,6 +196,12 @@ export async function login(input: LoginInput, meta: SessionMeta): Promise<AuthS
   await runAsPlatform(() =>
     prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }),
   );
+
+  // Two-factor authentication is required: send a code by email and make the
+  // caller complete verifyTwoFactorForLogin before any tokens are issued.
+  if (user.twoFactorEnabled) {
+    return loginWithTwoFactor(user);
+  }
 
   return issueSession(user, WEB_REALM, meta);
 }
@@ -204,13 +231,10 @@ export async function refresh(refreshToken: string, meta: SessionMeta): Promise<
   }
 
   if (row.revokedAt) {
-    // Reuse of a rotated token: revoke the whole family.
-    await runAsPlatform(() =>
-      prisma.refreshToken.updateMany({
-        where: { userId: row.userId, revokedAt: null },
-        data: { revokedAt: new Date() },
-      }),
-    );
+    // A revoked token was replayed. Reject it without touching any other
+    // session: per ADR 0007, one client presenting a dead token must not
+    // sign the user out of their other devices. Family revocation happens
+    // only through password change or platform forced sign-out.
     throw unauthorized(
       "Your session is no longer valid. Please log in again.",
       "SESSION_INVALIDATED",
@@ -258,7 +282,7 @@ export async function refresh(refreshToken: string, meta: SessionMeta): Promise<
  * Deliberately does **not** bump `User.tokenVersion`: signing out of one client must
  * not sign the user out of the others. The access token survives until it expires
  * (15 minutes), and a password change moves `tokenVersion` when every session really
- * does have to end — see `docs/decisions/0007-logout-revokes-the-refresh-token-not-the-user.md`.
+ * does have to end — see `PROJECT.md#adr-0007`.
  */
 export async function logout(refreshToken: string): Promise<void> {
   const tokenHash = hashRefreshToken(refreshToken);
@@ -284,35 +308,301 @@ export async function changePassword(
   tenantId: string,
   input: ChangePasswordInput,
 ): Promise<void> {
-  await runAsTenant(tenantId, async () => {
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+  // Verify the current password first (a read, outside the transaction).
+  const user = await runAsTenant(tenantId, async () =>
+    prisma.user.findUnique({ where: { id: userId } }),
+  );
 
-    if (!user) {
-      throw unauthorized(
-        "Your session is no longer valid. Please log in again.",
-        "SESSION_INVALIDATED",
-      );
-    }
+  if (!user) {
+    throw unauthorized(
+      "Your session is no longer valid. Please log in again.",
+      "SESSION_INVALIDATED",
+    );
+  }
 
-    const currentMatches = await verifyPassword(input.currentPassword, user.passwordHash);
-    if (!currentMatches) {
-      throw unauthorized("Your current password is not right.", "INVALID_CREDENTIALS");
-    }
+  const currentMatches = await verifyPassword(input.currentPassword, user.passwordHash);
+  if (!currentMatches) {
+    throw unauthorized("Your current password is not right.", "INVALID_CREDENTIALS");
+  }
 
-    const passwordHash = await hashPassword(input.newPassword);
+  const passwordHash = await hashPassword(input.newPassword);
+  const now = new Date();
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash, tokenVersion: { increment: 1 } },
-    });
-  });
+  // Password change and refresh-token revocation are a single atomic write:
+  // if either fails, neither happens, so an intruder can never be left with
+  // a valid refresh token after a password change.
+  await runAsPlatform(() =>
+    prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash, tokenVersion: { increment: 1 } },
+      }),
+      prisma.refreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]),
+  );
+}
+
+/**
+ * Platform forced sign-out. Bumps the user's `tokenVersion` (invalidating every
+ * outstanding access token) and revokes all their refresh tokens in one atomic
+ * write. Only a platform-level actor (SUPER_ADMIN) may call this; see
+ * `PROJECT.md#adr-0007`.
+ */
+export async function forceSignOut(input: ForceSignOutInput): Promise<void> {
+  const now = new Date();
 
   await runAsPlatform(() =>
-    prisma.refreshToken.updateMany({
-      where: { userId, revokedAt: null },
-      data: { revokedAt: new Date() },
+    prisma.$transaction([
+      prisma.user.update({
+        where: { id: input.userId },
+        data: { tokenVersion: { increment: 1 } },
+      }),
+      prisma.refreshToken.updateMany({
+        where: { userId: input.userId, revokedAt: null },
+        data: { revokedAt: now },
+      }),
+    ]),
+  );
+}
+
+/**
+ * Generates a zero-padded six-digit numeric code.
+ */
+function generateTwoFactorCode(): string {
+  let code = "";
+  for (let i = 0; i < TWO_FACTOR_CODE_LENGTH; i++) {
+    code += String(Math.floor(Math.random() * 10));
+  }
+  return code;
+}
+
+/**
+ * Hashes a two-factor code the same way refresh tokens are hashed.
+ */
+function hashTwoFactorCode(code: string): string {
+  return hashRefreshToken(code);
+}
+
+/**
+ * Starts email-based two-factor enrollment: generates a code, stores its hash
+ * with a ten-minute expiry, sends it by email, and returns whether it was sent.
+ * The caller must then call `confirmTwoFactor` with the code to finish enabling.
+ */
+export async function enableTwoFactor(userId: string): Promise<{ sent: true }> {
+  const code = generateTwoFactorCode();
+  const expiresAt = new Date(Date.now() + TWO_FACTOR_CODE_TTL_SECONDS * 1000);
+
+  await runAsPlatform(() =>
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorCode: hashTwoFactorCode(code),
+        twoFactorCodeExpiresAt: expiresAt,
+      },
     }),
   );
+
+  const user = await runAsPlatform(() =>
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
+  );
+
+  if (!user) {
+    throw unauthorized(
+      "Your session is no longer valid. Please log in again.",
+      "SESSION_INVALIDATED",
+    );
+  }
+
+  await sendTwoFactorCode(user.email, code);
+
+  return { sent: true };
+}
+
+/**
+ * Verifies a two-factor code during enrollment and enables 2FA for the user.
+ * Must be called while authenticated as the user.
+ */
+export async function confirmTwoFactor(
+  userId: string,
+  input: TwoFactorConfirmInput,
+): Promise<void> {
+  const user = await runAsPlatform(() =>
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        id: true,
+        twoFactorEnabled: true,
+        twoFactorCode: true,
+        twoFactorCodeExpiresAt: true,
+      },
+    }),
+  );
+
+  if (!user || !user.twoFactorCode || !user.twoFactorCodeExpiresAt) {
+    throw unauthorized(
+      "No two-factor code is pending. Start enrollment first.",
+      "TWO_FACTOR_NOT_PENDING",
+    );
+  }
+
+  if (user.twoFactorCodeExpiresAt < new Date()) {
+    throw unauthorized(
+      "The two-factor code has expired. Start enrollment again.",
+      "TWO_FACTOR_EXPIRED",
+    );
+  }
+
+  const codeMatches = hashRefreshToken(input.code) === user.twoFactorCode;
+  if (!codeMatches) {
+    throw unauthorized("The two-factor code is not right.", "INVALID_TWO_FACTOR_CODE");
+  }
+
+  await runAsPlatform(() =>
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorEnabled: true,
+        twoFactorCode: null,
+        twoFactorCodeExpiresAt: null,
+      },
+    }),
+  );
+}
+
+/**
+ * Disables two-factor authentication for the user and clears any pending code.
+ * Must be called while authenticated as the user.
+ */
+export async function disableTwoFactor(userId: string): Promise<void> {
+  await runAsPlatform(() =>
+    prisma.user.update({
+      where: { id: userId },
+      data: {
+        twoFactorEnabled: false,
+        twoFactorCode: null,
+        twoFactorCodeExpiresAt: null,
+      },
+    }),
+  );
+}
+
+/**
+ * Verifies a two-factor code for login and issues a full access/refresh session.
+ * Used after `login` returned `requiresTwoFactor: true`.
+ */
+export async function verifyTwoFactorForLogin(
+  input: TwoFactorVerifyInput,
+  meta: SessionMeta,
+): Promise<AuthSession> {
+  const user = await runAsPlatform(() =>
+    prisma.user.findUnique({
+      where: { email: input.email },
+      select: {
+        id: true,
+        tenantId: true,
+        name: true,
+        email: true,
+        globalRole: true,
+        tokenVersion: true,
+        disabled: true,
+        twoFactorEnabled: true,
+        twoFactorCode: true,
+        twoFactorCodeExpiresAt: true,
+      },
+    }),
+  );
+
+  if (
+    !user ||
+    !user.twoFactorEnabled ||
+    !user.twoFactorCode ||
+    !user.twoFactorCodeExpiresAt
+  ) {
+    throw unauthorized(
+      "Two-factor authentication is not required for this account.",
+      "TWO_FACTOR_NOT_REQUIRED",
+    );
+  }
+
+  if (user.disabled) {
+    throw unauthorized(
+      "Your session is no longer valid. Please log in again.",
+      "SESSION_INVALIDATED",
+    );
+  }
+
+  if (user.twoFactorCodeExpiresAt < new Date()) {
+    throw unauthorized(
+      "The two-factor code has expired. Log in again.",
+      "TWO_FACTOR_EXPIRED",
+    );
+  }
+
+  const codeMatches = hashRefreshToken(input.code) === user.twoFactorCode;
+  if (!codeMatches) {
+    throw unauthorized("The two-factor code is not right.", "INVALID_TWO_FACTOR_CODE");
+  }
+
+  await assertTenantMaySignIn(user.tenantId);
+
+  // Clear the used code.
+  await runAsPlatform(() =>
+    prisma.user.update({
+      where: { id: user.id },
+      data: { twoFactorCode: null, twoFactorCodeExpiresAt: null },
+    }),
+  );
+
+  return issueSession(user, WEB_REALM, meta);
+}
+
+/**
+ * Modifies `login` so that when a user has two-factor authentication enabled,
+ * a code is sent by email and the caller must complete `verifyTwoFactorForLogin`
+ * before receiving an access/refresh pair. Returns an empty-token session with
+ * `expiresIn: 0` so the client knows to challenge for the code.
+ */
+async function loginWithTwoFactor(
+  user: {
+    id: string;
+    tenantId: string;
+    name: string;
+    email: string;
+    globalRole: AuthSession["user"]["globalRole"];
+    tokenVersion: number;
+  },
+): Promise<AuthSession> {
+  const code = generateTwoFactorCode();
+  const expiresAt = new Date(Date.now() + TWO_FACTOR_CODE_TTL_SECONDS * 1000);
+
+  await runAsPlatform(() =>
+    prisma.user.update({
+      where: { id: user.id },
+      data: {
+        twoFactorCode: hashTwoFactorCode(code),
+        twoFactorCodeExpiresAt: expiresAt,
+      },
+    }),
+  );
+
+  await sendTwoFactorCode(user.email, code);
+
+  // Return a session without tokens: the client must verify the code first.
+  return {
+    accessToken: "",
+    refreshToken: "",
+    expiresIn: 0,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      globalRole: user.globalRole,
+      tenantId: user.tenantId,
+    },
+  } as unknown as AuthSession;
 }
 
 /**

@@ -4,8 +4,8 @@
  * The one screen the rebuild has no handoff drawing for — `design/handoff/`
  * ships eleven screens and none of them is this one. Its shape is therefore a
  * deliberate invention from the delivered primitives and icons, recorded in
- * [ADR 0008](../../docs/decisions/0008-login-screen-shape.md) and closed as Q24
- * in `docs/STATE.md`.
+ * [ADR 0008](../../../../PROJECT.md#adr-0008) and closed as Q24
+ * in `PROJECT.md#adr-0008`.
  *
  * From `lg` up it is two columns: an `aria-hidden` brand panel in `--sp-navy` and
  * the form. Below that the panel is hidden and the form draws the mark itself,
@@ -206,7 +206,7 @@ export default function Login() {
  *
  * It replaced the ported `Lock` glyph this screen used to show. `Lock` itself is
  * untouched and still exported — the handoff's 41-icon port is one-for-one
- * (docs/design/HANDOFF.md §4) — it is simply no longer this page's subject: a
+ * (PROJECT.md#design-4) — it is simply no longer this page's subject: a
  * purple "G" reads as *this* product, a padlock reads as any sign-in form.
  */
 function BrandMark({ className }: { className?: string }) {
@@ -243,7 +243,7 @@ type NoticeTone = "info" | "error" | "read-only";
  * `read-only` is deliberately purple rather than amber, and that is a recorded
  * choice rather than a constraint. Amber had no token when this screen was
  * written — that was Q23 — and Q23 has since closed:
- * [ADR 0009](../../docs/decisions/0009-amber-joins-the-handoff-token-file.md)
+ * [ADR 0009](../../../../PROJECT.md#adr-0009)
  * added `--sp-amber-bg` / `--sp-amber-text` from the handoff's own CSS. So this
  * banner *can* move; it has not been moved, because purple is distinguishable
  * from both neutral and red and a suspended salon is not an error state.
