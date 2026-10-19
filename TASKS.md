@@ -221,7 +221,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0015 — P1-06 PDPA consent + marketing opt-in
 
-- Status: IN PROGRESS
+- Status: DONE
 - Expected result: PDPA consent + marketing opt-in on customer record
 - Completion check / dependencies: Verify persisted consent/marketing choices, authorized updates and enforcement by messaging consumers; confirm retention/audit requirements.
 - Audit (October 19, 2026): Customer model/shared contracts/editor have no consent
@@ -244,20 +244,40 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   web 399/399, shared 95/95; root build/typecheck/lint pass. Migration deploy and
   live disposable DB-to-schema diff pass. Root formatting retains four unrelated
   API failures; changed-file formatting and diff checks pass.
-- Remaining: migration `20261019120000_customer_consent` is not applied to the
-  existing salon database. Apply via the normal reviewed migration workflow, then
-  user UAT for notice publication, grant, withdrawal and history. Keep IN PROGRESS
-  until local rollout/UAT is complete. No browser/visual verification was performed.
+- Completion (October 19, 2026): user accepted UAT and requested migration.
+  Applied `20261019120000_customer_consent` to local `glampro_suite` at
+  `localhost:5432` after a verified custom-format backup. All 16 migrations are
+  applied; live DB-to-schema diff empty, both checks exit 0. Existing row counts
+  unchanged across 36 tables; all 10 customers default false/revision zero; no
+  notices/events created. No reset/reseed. Agent browser/visual checks not performed.
+- Next: TK2610-0016 / P1-05 Customer profile page. External TK2610-0015 may be marked Done.
 
 ### TK2610-0016 — P1-05 Customer profile page
 
-- Status: Not assessed
+- Status: IN PROGRESS
 - Expected result: Customer profile page: visit history, package & credit balances, notes, photos
 - Completion check / dependencies: Verify profile visits, package/credit balances, notes and photos with tenant permissions and privacy controls.
 - Carried-forward finding (ADR 0003): verify every customer email writer trims and
   lowercases, blank/whitespace becomes NULL, and tenant-scoped uniqueness holds.
   Review case-fold collisions before existing-data migration; do not silently merge customers.
-- Next: audit current implementation against the full expected result and check.
+- Plan: add a routed profile with paginated appointment/purchase history, active
+  holdings, existing editable notes/consent, and authenticated private photos.
+  Normalize future email writes without rewriting or merging existing customers.
+  Verify permissions, isolation, validation and UI; test migrations only on a disposable DB.
+- Implemented: `/customers/:id`, linked from customer names; paginated past visits,
+  completed/void purchases, active package/credit balances, existing notes/editor and
+  consent controls. Private JPEG/PNG upload/list/read/delete with consent-gated uploads,
+  5 MB limit, no-store image responses and tenant/writable checks. Original metadata retained.
+- Verified: API 351/351 (0 skipped) on a new isolated PostgreSQL cluster, web 404/404,
+  shared 96/96; production build, typecheck and lint pass. All 17 migrations deploy
+  on disposable DB; live disposable schema diff empty. Four unchanged API formatting
+  failures remain. Customer email normalization and tenant uniqueness regressions pass.
+- Local rollout (October 19): user-authorized development reset and demo seed
+  succeeded on `glampro_suite` at `localhost:5432`; all 17 migrations applied,
+  live schema diff empty; 6 staff, 10 customers, 13 appointments, 10 sales.
+  Photo/notice/consent tables empty; configure notice and data consent for uploads.
+- Remaining: browser/visual UAT has not been performed. Keep IN PROGRESS; do not
+  mark TK2610-0016 complete externally or start TK2610-0017 yet.
 
 ### TK2610-0017 — P1-07 POS upgrades
 

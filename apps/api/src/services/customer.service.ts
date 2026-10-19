@@ -25,7 +25,7 @@ import {
   type UpdateCustomerInput,
 } from "@glampro_suite/shared";
 
-import { notFound } from "../lib/http-error.js";
+import { conflict, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 // The branch check is shared with the catalogue and staff services rather than
@@ -246,6 +246,8 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
 
 export async function createCustomer(input: CreateCustomerInput): Promise<CustomerDetail> {
   const { departmentIds, dateOfBirth, ...fields } = input;
+  if (fields.email !== undefined) fields.email = fields.email?.trim().toLowerCase() || null;
+  await assertEmailAvailable(fields.email);
   await assertDepartmentsExist(departmentIds);
 
   const created = await prisma.customer.create({
@@ -275,6 +277,8 @@ export async function updateCustomer(
   input: UpdateCustomerInput,
 ): Promise<CustomerDetail> {
   const { departmentIds, dateOfBirth, ...fields } = input;
+  if (fields.email !== undefined) fields.email = fields.email?.trim().toLowerCase() || null;
+  await assertEmailAvailable(fields.email, id);
   await assertDepartmentsExist(departmentIds);
 
   const existing = await prisma.customer.findFirst({ where: { id }, select: { id: true } });
@@ -293,4 +297,19 @@ export async function updateCustomer(
   }
 
   return getCustomer(id);
+}
+
+async function assertEmailAvailable(email: string | null | undefined, exceptId?: string) {
+  if (!email) return;
+  const existing = await prisma.customer.findFirst({
+    where: {
+      email: { equals: email, mode: "insensitive" },
+      ...(exceptId ? { id: { not: exceptId } } : {}),
+    },
+    select: { id: true },
+  });
+  if (existing)
+    throw conflict("That email belongs to another customer.", "CUSTOMER_EMAIL_EXISTS", [
+      { path: "body.email", message: "That email belongs to another customer." },
+    ]);
 }

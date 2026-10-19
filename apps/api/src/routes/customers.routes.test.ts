@@ -267,6 +267,144 @@ describe(
       assert.equal(response.status, 401, "the route is mounted behind auth");
     });
 
+    it("protects every profile history and photo endpoint", async () => {
+      for (const path of ["visits", "purchases", "photos", "photos/missing"]) {
+        assert.equal((await request("GET", `/api/customers/${IDS.customer}/${path}`)).status, 401);
+        assert.equal(
+          (await request("GET", `/api/customers/${IDS.foreignCustomer}/${path}`, token)).status,
+          404,
+        );
+      }
+    });
+
+    it("serves private photos only to the owning salon and allows deletion", async () => {
+      const png = Buffer.from(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=",
+        "base64",
+      );
+      const upload = async (content: Uint8Array, customerId = IDS.customer) => {
+        const body = new FormData();
+        body.append(
+          "photo",
+          new Blob([new Uint8Array(content)], { type: "image/png" }),
+          "photo.png",
+        );
+        body.append("caption", "Treatment record");
+        return fetch(`${baseUrl}/api/customers/${customerId}/photos`, {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+          body,
+        });
+      };
+      assert.equal((await upload(png)).status, 403, "upload requires recorded data consent");
+      await runAsPlatform(() =>
+        prisma.customer.update({ where: { id: IDS.customer }, data: { pdpaConsent: true } }),
+      );
+      assert.equal((await upload(Buffer.from("<svg></svg>"))).status, 400);
+      assert.equal((await upload(png, IDS.foreignCustomer)).status, 404);
+      const created = await upload(png);
+      assert.equal(created.status, 201);
+      const photo = await dataOf<{ id: string }>(created);
+      const path = `/api/customers/${IDS.customer}/photos/${photo.id}`;
+      const listed = await dataOf<{ data: { id: string; content?: unknown }[] }>(
+        await request("GET", `/api/customers/${IDS.customer}/photos`, token),
+      );
+      assert.equal(listed.data.length, 1);
+      assert.equal("content" in listed.data[0]!, false);
+      const image = await request("GET", path, token);
+      assert.equal(image.status, 200);
+      assert.equal(image.headers.get("content-type"), "image/png");
+      assert.equal(image.headers.get("cache-control"), "private, no-store");
+      assert.deepEqual(Buffer.from(await image.arrayBuffer()), png);
+      assert.equal(
+        (await request("GET", `/api/customers/${IDS.otherCustomer}/photos/${photo.id}`, token))
+          .status,
+        404,
+      );
+      await runAsPlatform(() =>
+        prisma.customer.update({ where: { id: IDS.customer }, data: { pdpaConsent: false } }),
+      );
+      assert.equal((await upload(png)).status, 403);
+      await runAsPlatform(() =>
+        prisma.tenant.update({ where: { id: TENANTS.a }, data: { status: "SUSPENDED" } }),
+      );
+      try {
+        assert.equal((await upload(png)).status, 403);
+        assert.equal(
+          (
+            await fetch(`${baseUrl}${path}`, {
+              method: "DELETE",
+              headers: { authorization: `Bearer ${token}` },
+            })
+          ).status,
+          403,
+        );
+        assert.equal((await request("GET", path, token)).status, 200);
+      } finally {
+        await runAsPlatform(() =>
+          prisma.tenant.update({ where: { id: TENANTS.a }, data: { status: "ACTIVE" } }),
+        );
+      }
+      assert.equal(
+        (
+          await fetch(`${baseUrl}${path}`, {
+            method: "DELETE",
+            headers: { authorization: `Bearer ${token}` },
+          })
+        ).status,
+        204,
+      );
+      assert.equal((await request("GET", path, token)).status, 404);
+    });
+
+    it("pages past appointments and purchases without leaking held carts or future bookings", async () => {
+      await runAsPlatform(async () => {
+        for (const year of [2020, 2021, 2099])
+          await prisma.appointment.create({
+            data: {
+              tenantId: TENANTS.a,
+              customerId: IDS.customer,
+              startsAt: new Date(`${year}-01-01`),
+              endsAt: new Date(`${year}-01-02`),
+            },
+          });
+        for (const status of ["COMPLETED", "VOID", "HELD"] as const)
+          await prisma.sale.create({
+            data: {
+              tenantId: TENANTS.a,
+              customerId: IDS.customer,
+              status,
+              soldAt: new Date("2020-01-01"),
+              totalQuantity: 1,
+              totalAmount: "42.50",
+              paidAmount: "42.50",
+            },
+          });
+      });
+      const visits = await dataOf<{
+        data: { startsAt: string }[];
+        total: number;
+        pageCount: number;
+      }>(await request("GET", `/api/customers/${IDS.customer}/visits?pageSize=1`, token));
+      assert.equal(visits.total, 2);
+      assert.equal(visits.pageCount, 2);
+      assert.match(visits.data[0]!.startsAt, /^2021/);
+      const second = await dataOf<{ data: { startsAt: string }[] }>(
+        await request("GET", `/api/customers/${IDS.customer}/visits?pageSize=1&page=2`, token),
+      );
+      assert.match(second.data[0]!.startsAt, /^2020/);
+      const purchases = await dataOf<{ data: { status: string; total: string }[]; total: number }>(
+        await request("GET", `/api/customers/${IDS.customer}/purchases`, token),
+      );
+      assert.equal(purchases.total, 2);
+      assert.deepEqual(purchases.data.map((r) => r.status).sort(), ["COMPLETED", "VOID"]);
+      assert.ok(purchases.data.every((r) => r.total === "42.50"));
+      assert.equal(
+        (await request("GET", `/api/customers/${IDS.customer}/visits?page=0`, token)).status,
+        422,
+      );
+    });
+
     it("returns the live package and credit, and leaves the spent and expired out", async () => {
       const response = await request("GET", `/api/customers/${IDS.customer}/holdings`, token);
       assert.equal(response.status, 200);

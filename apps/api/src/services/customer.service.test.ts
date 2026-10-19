@@ -236,6 +236,35 @@ describe(
       assert.match(created.createdAt, /^\d{4}-\d{2}-\d{2}T/);
     });
 
+    it("normalizes future email writes, refuses case duplicates and keeps tenant uniqueness", async () => {
+      const created = await runAsTenant(TENANT_A, () =>
+        createCustomer({ name: "Email", email: "  Mixed@Email.test  " }),
+      );
+      assert.equal(created.email, "mixed@email.test");
+      await assert.rejects(
+        runAsTenant(TENANT_A, () =>
+          createCustomer({ name: "Duplicate", email: "MIXED@email.test" }),
+        ),
+        /belongs to another customer/,
+      );
+      const other = await runAsTenant(TENANT_B, () =>
+        createCustomer({ name: "Other salon", email: "Mixed@Email.test" }),
+      );
+      assert.equal(other.email, created.email);
+      const changed = await runAsTenant(TENANT_A, () =>
+        updateCustomer(created.id, { email: " New@Email.test " }),
+      );
+      assert.equal(changed.email, "new@email.test");
+      const cleared = await runAsTenant(TENANT_A, () =>
+        updateCustomer(created.id, { email: "   " }),
+      );
+      assert.equal(cleared.email, null);
+      assert.equal(
+        (await runAsTenant(TENANT_A, () => createCustomer({ name: "Blank", email: " " }))).email,
+        null,
+      );
+    });
+
     it("never returns credential material", async () => {
       const page = await runAsTenant(TENANT_A, () => listCustomers(NO_FILTERS));
 

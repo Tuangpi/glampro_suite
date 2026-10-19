@@ -87,10 +87,17 @@ export type CustomerDetail = z.infer<typeof customerDetailSchema>;
  * accepted one would be an invitation to trust the request
  * (`AGENTS.md` rule 1, `docs/saas/TENANCY.md`).
  */
+export const customerEmailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .transform((value) => (value === "" ? null : value))
+  .pipe(z.email().max(255).nullable());
+
 export const createCustomerSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200),
   code: z.string().trim().max(64).optional(),
-  email: z.email().max(255).optional(),
+  email: customerEmailSchema.optional(),
   phone: z.string().trim().max(64).optional(),
   gender: genderSchema.optional(),
   /** `YYYY-MM-DD`. Legacy `dob` was a free-text string; the importer normalises it. */
@@ -117,7 +124,7 @@ export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
 export const updateCustomerSchema = z.object({
   name: z.string().trim().min(1, "Name is required").max(200).optional(),
   code: z.string().trim().max(64).nullable().optional(),
-  email: z.email().max(255).nullable().optional(),
+  email: customerEmailSchema.nullable().optional(),
   phone: z.string().trim().max(64).nullable().optional(),
   gender: genderSchema.nullable().optional(),
   dateOfBirth: z.iso.date().nullable().optional(),
@@ -165,3 +172,31 @@ export const customerHoldingsSchema = z.object({
 });
 
 export type CustomerHoldings = z.infer<typeof customerHoldingsSchema>;
+
+export const customerVisitSchema = z.object({
+  id: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  status: z.string(),
+  service: z.string().nullable(),
+  staff: z.string().nullable(),
+});
+export type CustomerVisit = z.infer<typeof customerVisitSchema>;
+export const customerPurchaseSchema = z.object({
+  id: z.string(),
+  soldAt: z.string(),
+  status: z.string(),
+  receiptNumber: z.number().nullable(),
+  total: z.string(),
+});
+export type CustomerPurchase = z.infer<typeof customerPurchaseSchema>;
+export const customerPhotoSchema = z.object({
+  id: z.string(),
+  caption: z.string(),
+  createdAt: z.string(),
+  createdById: z.string(),
+});
+export type CustomerPhoto = z.infer<typeof customerPhotoSchema>;
+export const customerPhotoCaptionSchema = z.object({
+  caption: z.string().trim().max(500).default(""),
+});

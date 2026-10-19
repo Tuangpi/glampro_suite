@@ -11,6 +11,7 @@ const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Sale = lazy(() => import("@/pages/Sale"));
 const Appointments = lazy(() => import("@/pages/Appointments"));
 const Customers = lazy(() => import("@/pages/Customers"));
+const CustomerProfile = lazy(() => import("@/pages/CustomerProfile"));
 const Products = lazy(() => import("@/pages/Products"));
 const Staff = lazy(() => import("@/pages/Staff"));
 const Reports = lazy(() => import("@/pages/Reports"));
@@ -40,6 +41,7 @@ const routes: RouteObject[] = [
       { path: "sale", element: lazyRoute(<Sale />) },
       { path: "appointments", element: lazyRoute(<Appointments />) },
       { path: "customers", element: lazyRoute(<Customers />) },
+      { path: "customers/:id", element: lazyRoute(<CustomerProfile />) },
       { path: "products", element: lazyRoute(<Products />) },
       { path: "staff", element: lazyRoute(<Staff />) },
       { path: "reports", element: lazyRoute(<Reports />) },

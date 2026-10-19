@@ -86,6 +86,16 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 - Manual payment-method recording is not provider integration; voiding a sale is
   not returning money. Provider onboarding, trademark clearance, grant submission
   and readiness sign-offs need external evidence.
+- Customer profile (TK2610-0016, October 19): past appointments and completed/void
+  sales are separate paginated histories; held carts and future bookings are excluded.
+  Balances reuse active, unexpired package/credit holdings. Notes use the existing
+  customer comment/editor. Photos are private database bytes, not public uploads;
+  authenticated tenant members can read, writable members can delete, and new uploads
+  require current data consent. Withdrawal blocks uploads without erasing retained
+  photos; no automatic purge is introduced. JPEG/PNG only, 5 MB maximum per photo;
+  original metadata is retained and disclosed. Database backups now include photos.
+  Future email writes trim/lowercase and blank becomes NULL; no existing-data email
+  rewrite or merge occurs. Review existing case-fold collisions before migration.
 - Stock-threshold overrides, legacy receipt numbering, discounted loyalty points,
   security recovery and booking concurrency remain decisions/findings to resolve;
   see `PROGRESS.md` and the relevant tasks.
@@ -118,8 +128,12 @@ do not require accessing PostgreSQL.
 - Preserve existing work, stable IDs, shared contracts, tenant isolation and original
   source/design assets. No rewrite, Docker or GitHub Actions work.
 - Use reviewed SQL migrations; never hand-edit generated Prisma clients or compiled
-  output. No reset, reseed, production account removal, commit, push or deployment
-  without explicit authorization. Never expose secrets.
+  output. User authorization (October 19, 2026): this is a development environment;
+  the local `glampro_suite` database may be reset and reseeded whenever needed.
+  Verify the target before destructive commands; retain a backup when practical.
+  This standing permission does not cover production or other databases. Production
+  account removal, commit, push and deployment still require explicit authorization.
+  Never expose secrets.
 - Resolve payment/provider, tax/receipt, security/recovery and loyalty decisions
   before implementing dependent behavior. Do not silently choose between accepted
   policy and conflicting code. Record proposed/accepted/superseded/rejected decisions

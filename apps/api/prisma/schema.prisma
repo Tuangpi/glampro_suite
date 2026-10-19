@@ -352,6 +352,7 @@ model Tenant {
   operatingHours      TenantOperatingHours?
   privacyNotices      PrivacyNotice[]
   consentEvents       CustomerConsentEvent[]
+  photos              CustomerPhoto[]
 
   @@index([status])
   @@map("tenants")
@@ -745,6 +746,7 @@ model Customer {
   outstandingPayments CustomerOutstandingPayment[]
   redemptions         CustomerRedemption[]
   consentEvents       CustomerConsentEvent[]
+  photos              CustomerPhoto[]
 
   /// Per-tenant email uniqueness. A customer with no email is unconstrained, which
   /// Postgres treats as satisfying a unique index for every such row.
@@ -752,6 +754,22 @@ model Customer {
   @@index([tenantId])
   @@index([name])
   @@map("customers")
+}
+
+/// Private raster photos. Content is never exposed through public static uploads.
+model CustomerPhoto {
+  id String @id @default(cuid())
+  tenantId String
+  customerId String
+  caption String
+  mimeType String
+  content Bytes
+  createdAt DateTime @default(now())
+  createdById String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  @@index([tenantId, customerId, createdAt])
+  @@map("customer_photos")
 }
 
 /// Immutable wording; latest row is the current notice.

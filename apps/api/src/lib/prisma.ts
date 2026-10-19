@@ -34,6 +34,7 @@ export const TENANT_SCOPED_MODELS = [
   "Department",
   "StaffDepartment",
   "Customer",
+  "CustomerPhoto",
   "PrivacyNotice",
   "CustomerConsentEvent",
   "CustomerDepartment",

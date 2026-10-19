@@ -1,4 +1,15 @@
 import { Router } from "express";
+import multer from "multer";
+import { customerPhotoCaptionSchema, type PaginationQuery } from "@glampro_suite/shared";
+import { badRequest } from "../lib/http-error.js";
+import {
+  addCustomerPhoto,
+  deleteCustomerPhoto,
+  getCustomerPhoto,
+  listCustomerPhotos,
+  listCustomerPurchases,
+  listCustomerVisits,
+} from "../services/customer-profile.service.js";
 import {
   recordCustomerConsentSchema,
   paginationQuerySchema,
@@ -39,6 +50,97 @@ import {
  * that exists passes it.
  */
 export const customersRouter = Router();
+
+for (const [path, list] of [
+  ["visits", listCustomerVisits],
+  ["purchases", listCustomerPurchases],
+  ["photos", listCustomerPhotos],
+] as const) {
+  customersRouter.get(
+    `/:id/${path}`,
+    auth,
+    requireModule("customers"),
+    validate(idParamSchema, "params"),
+    validate(paginationQuerySchema, "query"),
+    async (req, res, next) => {
+      try {
+        const { id } = validated<{ id: string }>(req, "params");
+        res.json({ data: await list(id, validated<PaginationQuery>(req, "query")) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+}
+
+const uploadPhoto = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1, fieldSize: 2000 },
+}).single("photo");
+
+customersRouter.post(
+  "/:id/photos",
+  auth,
+  requireModule("customers"),
+  requireWritableTenant(),
+  validate(idParamSchema, "params"),
+  (req, res, next) =>
+    uploadPhoto(req, res, (error: unknown) => {
+      if (error)
+        return next(
+          badRequest("Choose one JPEG or PNG photo up to 5 MB and a caption up to 500 characters."),
+        );
+      next();
+    }),
+  validate(customerPhotoCaptionSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      if (!req.file) throw badRequest("Choose a photo to upload.");
+      const { id } = validated<{ id: string }>(req, "params");
+      const { caption } = validated<{ caption: string }>(req, "body");
+      res
+        .status(201)
+        .json({ data: await addCustomerPhoto(id, req.file.buffer, caption, req.user.id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+customersRouter.get(
+  "/:id/photos/:photoId",
+  auth,
+  requireModule("customers"),
+  async (req, res, next) => {
+    try {
+      const photo = await getCustomerPhoto(String(req.params.id), String(req.params.photoId));
+      res.set({
+        "Content-Type": photo.mimeType,
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": "inline",
+      });
+      res.send(Buffer.from(photo.content));
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+customersRouter.delete(
+  "/:id/photos/:photoId",
+  auth,
+  requireModule("customers"),
+  requireWritableTenant(),
+  async (req, res, next) => {
+    try {
+      await deleteCustomerPhoto(String(req.params.id), String(req.params.photoId));
+      res.status(204).end();
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 customersRouter.get(
   "/:id/consent",

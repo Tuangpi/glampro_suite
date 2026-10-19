@@ -77,7 +77,12 @@ export default function Customers() {
         <div className="flex items-center gap-2.5">
           <CustomerAvatar name={row.name} />
           <div className="min-w-0">
-            <p className="truncate font-bold text-ink">{row.name}</p>
+            <a
+              href={`/customers/${encodeURIComponent(row.id)}`}
+              className="truncate font-bold text-ink underline"
+            >
+              {row.name}
+            </a>
             <p className="truncate text-xs text-ink-muted">
               {row.code
                 ? `Code ${row.code}`

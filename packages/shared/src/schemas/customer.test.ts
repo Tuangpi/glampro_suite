@@ -65,6 +65,17 @@ describe("createCustomerSchema", () => {
 });
 
 describe("updateCustomerSchema", () => {
+  it("normalizes emails and distinguishes absent, blank and null", () => {
+    assert.equal(
+      createCustomerSchema.parse({ name: "A", email: "  A@B.test  " }).email,
+      "a@b.test",
+    );
+    assert.equal(createCustomerSchema.parse({ name: "A", email: "  " }).email, null);
+    assert.equal(updateCustomerSchema.parse({ email: "  A@B.test " }).email, "a@b.test");
+    assert.equal(updateCustomerSchema.parse({ email: " " }).email, null);
+    assert.equal(updateCustomerSchema.parse({ email: null }).email, null);
+    assert.equal("email" in updateCustomerSchema.parse({}), false);
+  });
   it("distinguishes absent from explicit null, so a partial submit clears nothing", () => {
     const absent = updateCustomerSchema.parse({ name: "A" });
     assert.equal("phone" in absent, false);

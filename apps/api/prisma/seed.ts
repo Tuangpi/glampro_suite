@@ -526,8 +526,9 @@ async function seedGiftCards(tenantId: string): Promise<void> {
  */
 async function seedCustomers(tenantId: string): Promise<void> {
   for (const customer of DEMO_CUSTOMERS) {
+    const email = customer.email.trim().toLowerCase();
     await prisma.customer.upsert({
-      where: { tenantId_email: { tenantId, email: customer.email } },
+      where: { tenantId_email: { tenantId, email } },
       update: {
         name: customer.name,
         phone: customer.phone,
@@ -537,7 +538,7 @@ async function seedCustomers(tenantId: string): Promise<void> {
       create: {
         tenantId,
         name: customer.name,
-        email: customer.email,
+        email,
         phone: customer.phone,
         gender: customer.gender,
         code: customer.code,

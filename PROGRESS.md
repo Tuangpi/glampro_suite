@@ -2,7 +2,7 @@
 
 ## Current State
 
-- Current task: TK2610-0015 / P1-06 is **IN PROGRESS**, implementation and automated checks complete; existing salon database migration and user UAT remain. Tenant notice configuration, separate choices and audited grants/withdrawals are implemented. API 347/347, web 399/399, shared 95/95; build/typecheck/lint pass. No automatic evidence purge or legal wording supplied. Resume TK2610-0015 for reviewed migration/local UAT before the next task. Most recent completed task: TK2610-0013; P0 phase signed off.
+- Current task: TK2610-0016 / P1-05 customer profile is **IN PROGRESS**; browser/visual UAT remains. User-authorized local development reset and demo seed completed October 19: `glampro_suite` at `localhost:5432`, all 17 migrations applied including photos, schema diff empty; 6 staff, 10 customers, 13 appointments, 10 sales. Consent notices/events/photos empty; configure a notice and record data consent before uploading photos. Development reset/reseed standing permission is saved in PROJECT. Prior automated checks: API 351/351, web 404/404, shared 96/96; build/typecheck/lint pass. Four unchanged API formatting failures remain. Do not start TK2610-0017 yet.
 - Milestone verification (October 19): root production build, typecheck and workspace lint exit 0; web 392/392, shared 92/92 and pure demo-dataset 13/13 tests pass. Root formatting still fails on four unchanged API files. No database-backed API rerun or browser walkthrough; earlier API 339/339 is historical evidence. See the milestone handoff below for the readiness checklist and accepted demo limits.
 - Most recent work: TK2610-0012 / P0-06 reports (commit `18c973f`) audited against its completion check and signed off after UAT. The Z-report draws the salon-local day, counts voids by `voidedAt`, splits collected from redeemed and carries the snapshotted GST. The overview returns sales-by-day, top items, service and staff totals with commission, tender subtotals and a liability snapshot that excludes expired/exhausted holdings. ADR 0010 conflict closed: `?threshold=` filters only while row badges use the stored tenant threshold, with a new row-flag test. Verified: API 339/339, web 392/392 across 43 files, API typecheck/ESLint/scoped Prettier and web typecheck pass. That ADR 0010 edit and a Prettier re-wrap of `report.service.ts` are uncommitted.
 - Earlier: TK2610-0011 / P0-04 local payment methods and redemption. The four local rails are **recorded tenders** (`PAYNOW_SGQR`, `NETS`, `GRABPAY`, `ATOME`); `PACKAGE` and `PREPAID_CREDIT` are redemption tenders that carry a `holdingId`, draw the holding inside the sale transaction and are restored on void; `GET /api/customers/:id/holdings` feeds the payment sheet. Migration `20261019034125_local_payment_methods_and_redemption_holding` applied locally. ADR 0019 records both decisions (manual recording; credit is fungible). Committed as `c2274bc`.
@@ -70,6 +70,80 @@ milestone review and disclosed limits. No external task system was changed.
 This approval does not sign off Phase 2 or final launch readiness.
 
 ## Recent handoffs
+
+### October 19, 2026 — Authorized development database reset and demo seed
+
+- User confirmed local `glampro_suite` and standing permission to reset/reseed this
+  development database whenever needed. Saved the bounded permission in PROJECT;
+  production and other databases are not covered. Existing application work preserved.
+- Verified local database/port, created custom-format backup and checked its archive
+  listing: `backups/glampro_suite_pre_reset_2026-10-19T06-43-38.597Z.dump`.
+  Archive listing was checked, not a restore rehearsal. Backup remains gitignored.
+- Initial reset was blocked by Prisma's AI safety gate before data changes. User
+  freshly confirmed the exact reset; rerun with that consent succeeded. Ran shared
+  build/client generation, `npm run db:reset`, development `npm run db:seed`, and
+  migration status. All exited 0; all 17 migrations applied; live schema diff empty.
+- Fresh demo: 1 tenant, 6 users, 10 customers, 13 appointments, 10 sales; seed reports
+  3 branches, 42 shifts, 12 services, 12 products, 2 packages, 1 value package and
+  2 gift cards. Zero privacy notices, consent events and photos. No implicit consent;
+  configure tenant notice and grant customer data consent to exercise photo uploads.
+- Reset deliberately replaced prior development data and invalidated prior sessions;
+  sign in again. No production access, commit or deployment. No full test-suite rerun
+  or browser walkthrough in this operational follow-up. Prior implementation test
+  results remain historical. TK2610-0016 rollout complete; browser/visual UAT remains.
+
+### October 19, 2026 — TK2610-0016 customer profile implementation (IN PROGRESS)
+
+- Added `/customers/:id`, linked from customer names, with contact/branch details,
+  existing editable notes and consent, active holdings, paginated past appointments
+  and completed/void purchase history. Future bookings/held carts excluded; statuses
+  stay visible. Currency uses major-unit `formatPrice`, not cent-based `formatMoney`.
+- Added tenant-scoped CustomerPhoto and additive migration
+  `20261019130000_customer_photos`. Bytes live in PostgreSQL, not public `/uploads`.
+  Authenticated tenant photo list/read; writable tenant upload/delete; upload requires
+  current data consent, checked/locked in the insert transaction. Reads are no-store.
+  JPEG/PNG signature checks, 5 MB cap, caption limit, explicit deletion confirmation.
+  Original metadata remains; no transcoding, automatic purge or legal-compliance claim.
+- Normalized shared request contracts, customer service and demo seed email writes:
+  trim/lowercase, blank to NULL, tenant uniqueness and case-insensitive duplicate
+  precheck. No existing-email rewrite/merge; existing collision audit still required
+  before any future normalization migration. No importer/admin customer writer exists.
+- Verified: API **351/351**, zero skipped, on a newly initialized local-only disposable
+  PostgreSQL 18 cluster at port 55439; web **404/404** across 46 files; shared **96/96**.
+  Root production build, typecheck and workspace lint pass. All 17 migrations deploy
+  from empty disposable DB; Prisma datasource-to-schema diff empty. Root format check
+  still reports four unchanged API files (auth routes, catalogue route tests, auth
+  service, settings service). No clean aggregate verify claim.
+- New tests cover tenant/unauthenticated photo/history denial, consent withdrawal,
+  suspended photo writes, private byte retrieval, malformed format refusal, deletion,
+  history pagination/filtering, money scaling, profile editor/read-only UI, upload
+  error handling and email normalization/tenant uniqueness. Existing tests retained.
+- Remaining: normal local migration rollout and browser/visual walkthrough (customer
+  name → profile; notes edit/reload; history pages; balances; grant data consent;
+  upload/view/delete a photo; withdraw consent and verify upload refusal). No salon
+  DB migration/reset/seed, outbound messages, commit, deployment or external update.
+  TK2610-0016 is not ready to mark Done externally. Resume it before TK2610-0017.
+
+### October 19, 2026 — TK2610-0015 local migration and UAT closeout (DONE)
+
+- User explicitly accepted UAT and requested migration. Working tree clean at
+  start; reviewed the only pending migration, `20261019120000_customer_consent`.
+- Confirmed target is local PostgreSQL `localhost:5432`, database `glampro_suite`.
+  Custom-format pre-migration backup created and `pg_restore --list` verified:
+  `backups/glampro_suite_pre_consent_2026-10-19T06-01-54-775Z.dump` (gitignored).
+  Initial version-specific pg_dump attempt failed; migration was stopped until
+  system pg_dump successfully produced the verified archive. No restore test run.
+- `npm run db:migrate` applied only the reviewed additive consent migration,
+  exit 0. `npm run db:migrate:status`: all 16 applied, exit 0. Live datasource-to-
+  schema Prisma diff: no difference, exit 0. No reset, seed or data rewrite.
+- Read-only before/after checks: existing row counts unchanged across 36 tables;
+  10 customers, all consent false/revision zero; zero notices and consent events.
+  No invented notice wording or implicit opt-in. No messages sent.
+- No application edits or service restart; full suites were not rerun against the
+  existing database. Prior disposable-DB API 347/347, web 399/399, shared 95/95
+  remain implementation evidence; this closeout verifies migration, not browser UI.
+- TK2610-0015 ready to mark Done externally; user manages external tracker.
+  Next ready task: TK2610-0016 / P1-05 Customer profile page; not started here.
 
 ### October 19, 2026 — TK2610-0015 implementation (IN PROGRESS; local rollout/UAT remaining)
 
