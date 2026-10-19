@@ -29,7 +29,14 @@ interface ErrorEnvelope {
 }
 
 interface OverviewBody {
-  totals: { revenue: string; paid: string; tax: string; sales: number; items: number };
+  totals: {
+    revenue: string;
+    paid: string;
+    tax: string;
+    discounts: string;
+    sales: number;
+    items: number;
+  };
   salesByDay: {
     date: string;
     sales: number;
@@ -45,7 +52,36 @@ interface OverviewBody {
     position: string | null;
     creditedLines: number;
     revenue: string;
+    commission: string;
   }[];
+  serviceSales: { serviceId: string; name: string; quantity: number; revenue: string }[];
+  tenders: { method: string; amount: string; redemption: boolean }[];
+  liability: {
+    packageSessions: { holdings: number; sessionsRemaining: number };
+    prepaidCredit: { holdings: number; balance: string };
+    giftCards: { holdings: number; balance: string };
+    outstanding: { customers: number; balance: string };
+    totalMoney: string;
+  };
+}
+
+interface ZReportBody {
+  date: string;
+  timeZone: string;
+  totals: {
+    grossSales: string;
+    discounts: string;
+    netSales: string;
+    tax: string;
+    paid: string;
+    collected: string;
+    redeemed: string;
+    sales: number;
+    items: number;
+  };
+  tenders: { method: string; amount: string; redemption: boolean }[];
+  voids: { count: number; amount: string };
+  outstandingCreated: string;
 }
 
 async function purge(): Promise<void> {
@@ -131,7 +167,7 @@ async function seed(): Promise<void> {
         taxAmount: "2.06",
         taxRate: "9.00",
         paymentStatus: "PAID",
-        soldAt: new Date("2026-10-02T18:00:00.000Z"),
+        soldAt: new Date("2026-10-02T10:00:00.000Z"),
       },
     });
     const voided = await prisma.sale.create({
@@ -144,6 +180,7 @@ async function seed(): Promise<void> {
         paidAmount: "999.00",
         paymentStatus: "PAID",
         soldAt: new Date("2026-10-02T19:00:00.000Z"),
+        voidedAt: new Date("2026-10-02T11:00:00.000Z"),
       },
     });
     const other = await prisma.sale.create({
@@ -168,8 +205,9 @@ async function seed(): Promise<void> {
           itemId: "cut",
           itemName: "Signature cut",
           quantity: 2,
-          unitPrice: "30.00",
-          lineTotal: "60.00",
+          unitPrice: "27.50",
+          lineTotal: "55.00",
+          discountAmount: "5.00",
           staffId: stylist.id,
         },
         {
@@ -179,8 +217,8 @@ async function seed(): Promise<void> {
           itemId: "oil",
           itemName: "Hair oil",
           quantity: 1,
-          unitPrice: "20.00",
-          lineTotal: "20.00",
+          unitPrice: "25.00",
+          lineTotal: "25.00",
         },
         {
           tenantId: TENANT_A,
@@ -225,7 +263,7 @@ async function seed(): Promise<void> {
           saleId: first.id,
           itemType: "SERVICE",
           itemId: "cut",
-          amount: "60.00",
+          amount: "55.00",
         },
         {
           tenantId: TENANT_A,
@@ -242,6 +280,121 @@ async function seed(): Promise<void> {
           itemType: "SERVICE",
           itemId: "foreign",
           amount: "700.00",
+        },
+      ],
+    });
+
+    const customer = await prisma.customer.create({
+      data: { tenantId: TENANT_A, name: "Cleo Customer" },
+    });
+    const secondCustomer = await prisma.customer.create({
+      data: { tenantId: TENANT_A, name: "Ravi Regular" },
+    });
+    const packageRow = await prisma.package.create({
+      data: {
+        tenantId: TENANT_A,
+        name: "Glow bundle",
+        sessionCount: 5,
+        memberPrice: "100.00",
+        nonmemberPrice: "120.00",
+      },
+    });
+    const valuePackage = await prisma.valuePackage.create({
+      data: {
+        tenantId: TENANT_A,
+        name: "Prepaid 50",
+        price: "45.00",
+        credit: "50.00",
+      },
+    });
+    const giftCard = await prisma.giftCard.create({
+      data: { tenantId: TENANT_A, name: "Gift card", value: "15.00" },
+    });
+
+    await prisma.customerPackageHolding.createMany({
+      data: [
+        {
+          tenantId: TENANT_A,
+          customerId: customer.id,
+          packageId: packageRow.id,
+          quantity: 5,
+          quantityRemaining: 4,
+        },
+        {
+          tenantId: TENANT_A,
+          customerId: customer.id,
+          packageId: packageRow.id,
+          quantity: 10,
+          quantityRemaining: 9,
+          expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+        },
+        {
+          tenantId: TENANT_A,
+          customerId: customer.id,
+          packageId: packageRow.id,
+          quantity: 5,
+          quantityRemaining: 0,
+        },
+      ],
+    });
+    await prisma.customerValuePackageHolding.createMany({
+      data: [
+        {
+          tenantId: TENANT_A,
+          customerId: customer.id,
+          valuePackageId: valuePackage.id,
+          amount: "50.00",
+          amountRemaining: "40.00",
+        },
+        {
+          tenantId: TENANT_A,
+          customerId: customer.id,
+          valuePackageId: valuePackage.id,
+          amount: "50.00",
+          amountRemaining: "20.00",
+          expiresAt: new Date("2020-01-01T00:00:00.000Z"),
+        },
+      ],
+    });
+    await prisma.customerGiftCardHolding.create({
+      data: {
+        tenantId: TENANT_A,
+        customerId: customer.id,
+        giftCardId: giftCard.id,
+        value: "15.00",
+        valueRemaining: "15.00",
+      },
+    });
+
+    await prisma.salePayment.createMany({
+      data: [
+        { tenantId: TENANT_A, saleId: first.id, method: "CARD", amount: "70.00" },
+        { tenantId: TENANT_A, saleId: second.id, method: "CASH", amount: "25.00" },
+      ],
+    });
+    await prisma.customerOutstanding.createMany({
+      data: [
+        { tenantId: TENANT_A, customerId: customer.id, saleId: first.id, unpaidAmount: "10.00" },
+        { tenantId: TENANT_A, customerId: secondCustomer.id, unpaidAmount: "5.00" },
+      ],
+    });
+    await prisma.employeeCommission.createMany({
+      data: [
+        { tenantId: TENANT_A, userId: stylist.id, saleId: first.id, rate: "5.00", amount: "3.00" },
+        { tenantId: TENANT_A, userId: stylist.id, saleId: second.id, rate: "5.00", amount: "1.25" },
+        {
+          tenantId: TENANT_A,
+          userId: stylist.id,
+          rate: "2.00",
+          amount: "2.00",
+          createdAt: new Date("2026-10-02T09:00:00.000Z"),
+        },
+        {
+          tenantId: TENANT_A,
+          userId: stylist.id,
+          rate: "50.00",
+          amount: "99.00",
+          createdAt: new Date("2026-09-02T09:00:00.000Z"),
         },
       ],
     });
@@ -295,9 +448,10 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
     await purge();
   });
 
-  it("mounts both reads behind auth", async () => {
+  it("mounts every read behind auth", async () => {
     assert.equal((await request("/api/reports/dashboard")).status, 401);
     assert.equal((await request("/api/reports/overview")).status, 401);
+    assert.equal((await request("/api/reports/z-report")).status, 401);
   });
 
   it("keeps the dashboard core while the overview needs the reports add-on", async () => {
@@ -306,9 +460,11 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
       "/api/reports/overview?from=2026-10-01T00:00:00.000Z&to=2026-10-03T23:59:59.999Z&timeZone=UTC",
       token,
     );
+    const close = await request("/api/reports/z-report?date=2026-10-02&timeZone=UTC", token);
 
     assert.equal(dashboard.status, 200);
     assert.equal(overview.status, 403);
+    assert.equal(close.status, 403);
     assert.equal(((await overview.json()) as ErrorEnvelope).code, "MODULE_NOT_ENTITLED");
   });
 
@@ -336,6 +492,7 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
       revenue: "105.00",
       paid: "95.00",
       tax: "8.67",
+      discounts: "5.00",
       sales: 2,
       items: 4,
     });
@@ -349,14 +506,14 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
         itemId: "cut",
         itemName: "Signature cut",
         quantity: 3,
-        revenue: "85.00",
+        revenue: "80.00",
       },
       {
         itemType: "PRODUCT",
         itemId: "oil",
         itemName: "Hair oil",
         quantity: 1,
-        revenue: "20.00",
+        revenue: "25.00",
       },
     ]);
     assert.deepEqual(body.staffPerformance, [
@@ -365,8 +522,62 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
         name: "Stella Stylist",
         position: "Senior stylist",
         creditedLines: 2,
-        revenue: "85.00",
+        revenue: "80.00",
+        commission: "6.25",
       },
     ]);
+    assert.deepEqual(body.serviceSales, [
+      { serviceId: "cut", name: "Signature cut", quantity: 3, revenue: "80.00" },
+    ]);
+    assert.deepEqual(body.tenders, [
+      { method: "CASH", amount: "25.00", redemption: false },
+      { method: "CARD", amount: "70.00", redemption: false },
+    ]);
+    assert.deepEqual(body.liability, {
+      packageSessions: { holdings: 1, sessionsRemaining: 4 },
+      prepaidCredit: { holdings: 1, balance: "40.00" },
+      giftCards: { holdings: 1, balance: "15.00" },
+      outstanding: { customers: 2, balance: "15.00" },
+      totalMoney: "70.00",
+    });
+  });
+
+  it("draws the daily close in the salon's zone and separates collected from redeemed", async () => {
+    const response = await request(
+      "/api/reports/z-report?date=2026-10-02&timeZone=Asia%2FSingapore",
+      token,
+    );
+    const body = await dataOf<ZReportBody>(response);
+
+    assert.equal(response.status, 200);
+    assert.equal(body.date, "2026-10-02");
+    // 2026-10-02 00:00 SGT is 2026-10-01T16:00Z; the local day ends 24h later.
+    assert.equal(body.totals.grossSales, "110.00");
+    assert.equal(body.totals.discounts, "5.00");
+    assert.equal(body.totals.netSales, "105.00");
+    assert.equal(body.totals.tax, "8.67");
+    assert.equal(body.totals.paid, "95.00");
+    assert.equal(body.totals.collected, "95.00");
+    assert.equal(body.totals.redeemed, "0.00");
+    assert.equal(body.totals.sales, 2);
+    assert.equal(body.totals.items, 4);
+    assert.deepEqual(body.tenders, [
+      { method: "CASH", amount: "25.00", redemption: false },
+      { method: "CARD", amount: "70.00", redemption: false },
+    ]);
+    assert.deepEqual(body.voids, { count: 1, amount: "999.00" });
+    assert.equal(body.outstandingCreated, "10.00");
+  });
+
+  it("rejects a date the calendar does not have and an unknown zone", async () => {
+    const badDate = await request("/api/reports/z-report?date=2026-02-30&timeZone=UTC", token);
+    const badZone = await request(
+      "/api/reports/z-report?date=2026-10-02&timeZone=Mars%2FOlympus",
+      token,
+    );
+
+    assert.equal(badDate.status, 422);
+    assert.equal(badZone.status, 422);
+    assert.equal(((await badZone.json()) as ErrorEnvelope).code, "VALIDATION_FAILED");
   });
 });

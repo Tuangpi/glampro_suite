@@ -278,6 +278,7 @@ const receipt = {
   discountAmount: "0.00",
   taxAmount: "6.61",
   taxRate: "9.00",
+  gstRegistrationNumber: "GST-123",
   outstandingAmount: "0.00",
   pointsEarned: 5,
   lines: [],

@@ -12,6 +12,28 @@
  */
 import { z } from "zod";
 
+import { PAYMENT_METHODS } from "../constants.js";
+
+/**
+ * An IANA zone the browser sent. Validated once here so every report query —
+ * the range overview and the daily Z-report — refuses a bad zone with the same
+ * field-addressed `422` instead of letting `Intl` throw a `500` inside a service.
+ */
+const reportTimeZoneSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (timeZone) => {
+      try {
+        new Intl.DateTimeFormat("en-CA", { timeZone }).format(new Date());
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    { message: "The report timezone is not recognised." },
+  );
+
 /**
  * `GET /api/reports/dashboard?from=&to=`
  *
@@ -65,25 +87,78 @@ export const reportRangeQuerySchema = z
     from: z.iso.datetime({ offset: true }),
     to: z.iso.datetime({ offset: true }),
     /** Browser IANA zone used only to label each sale with the salon's local day. */
-    timeZone: z.string().min(1),
+    timeZone: reportTimeZoneSchema,
   })
   .refine((range) => new Date(range.from) <= new Date(range.to), {
     message: "The start of the report range must be before its end.",
     path: ["to"],
-  })
-  .refine(
-    (range) => {
-      try {
-        new Intl.DateTimeFormat("en-CA", { timeZone: range.timeZone }).format(new Date());
-        return true;
-      } catch {
-        return false;
-      }
-    },
-    { message: "The report timezone is not recognised.", path: ["timeZone"] },
-  );
+  });
 
 export type ReportRangeQuery = z.infer<typeof reportRangeQuerySchema>;
+
+/**
+ * `GET /api/reports/z-report?date=&timeZone=` — the daily close.
+ *
+ * The date is a **salon-local calendar date**, not a UTC instant: a close at
+ * 23:59 in Singapore belongs to that day even though most of it is the previous
+ * UTC date. The route turns the date into the day's half-open instant window
+ * with the same `Intl` rule the range report uses.
+ */
+export const zReportQuerySchema = z.object({
+  date: z.iso.date(),
+  timeZone: reportTimeZoneSchema,
+});
+
+export type ZReportQuery = z.infer<typeof zReportQuerySchema>;
+
+/** A tender subtotal. Redemptions are credit spent, not money collected. */
+export const reportTenderSchema = z.object({
+  method: z.enum(PAYMENT_METHODS),
+  amount: z.string(),
+  /** `PACKAGE` / `PREPAID_CREDIT` — the customer paid with a holding. */
+  redemption: z.boolean(),
+});
+
+export type ReportTender = z.infer<typeof reportTenderSchema>;
+
+/** Services sold in the range, ready for the "sales by service" table. */
+export const reportServiceSalesSchema = z.object({
+  serviceId: z.string(),
+  name: z.string(),
+  quantity: z.number().int().min(0),
+  revenue: z.string(),
+});
+
+export type ReportServiceSales = z.infer<typeof reportServiceSalesSchema>;
+
+/**
+ * What customers can still spend. Package sessions are counted, not valued:
+ * the catalogue stores member and non-member prices, so assigning a per-session
+ * dollar value here would pick one of two real prices on the salon's behalf.
+ * The three monetary liabilities are sums of what is still outstanding.
+ */
+export const reportLiabilitySchema = z.object({
+  packageSessions: z.object({
+    holdings: z.number().int().min(0),
+    sessionsRemaining: z.number().int().min(0),
+  }),
+  prepaidCredit: z.object({
+    holdings: z.number().int().min(0),
+    balance: z.string(),
+  }),
+  giftCards: z.object({
+    holdings: z.number().int().min(0),
+    balance: z.string(),
+  }),
+  outstanding: z.object({
+    customers: z.number().int().min(0),
+    balance: z.string(),
+  }),
+  /** Prepaid credit + gift cards + unpaid balances. Sessions are not money. */
+  totalMoney: z.string(),
+});
+
+export type ReportLiability = z.infer<typeof reportLiabilitySchema>;
 
 export const reportSalesByDaySchema = z.object({
   /** `YYYY-MM-DD` in the browser timezone supplied with the range. */
@@ -114,6 +189,8 @@ export const reportStaffSchema = z.object({
   position: z.string().nullable(),
   creditedLines: z.number().int().min(0),
   revenue: z.string(),
+  /** Commission rows booked in the range; `"0.00"` when none are recorded. */
+  commission: z.string(),
 });
 
 export type ReportStaff = z.infer<typeof reportStaffSchema>;
@@ -126,13 +203,54 @@ export const reportOverviewSchema = z.object({
     paid: z.string(),
     /** GST included in the range's revenue, as money (TK2610-0009 / P0-01). */
     tax: z.string(),
+    /** Discounts given on the range's completed lines. */
+    discounts: z.string(),
     sales: z.number().int().min(0),
     items: z.number().int().min(0),
   }),
   salesByDay: z.array(reportSalesByDaySchema),
   topItems: z.array(reportItemSchema),
   staffPerformance: z.array(reportStaffSchema),
+  /** Service-only sales, split out because staff credit is per line. */
+  serviceSales: z.array(reportServiceSalesSchema),
+  /** Every tender used by a completed sale in the range. */
+  tenders: z.array(reportTenderSchema),
+  /** What customers can still spend, as of the request. */
+  liability: reportLiabilitySchema,
   asOf: z.string(),
 });
 
 export type ReportOverview = z.infer<typeof reportOverviewSchema>;
+
+/**
+ * The daily close. Gross sales less discounts is net sales, which is what the
+ * till took; `collected` is money tenders and `redeemed` is credit spent.
+ */
+export const zReportSchema = z.object({
+  date: z.iso.date(),
+  timeZone: z.string(),
+  /** Half-open instant window: `[from, to)`. */
+  from: z.string(),
+  to: z.string(),
+  totals: z.object({
+    grossSales: z.string(),
+    discounts: z.string(),
+    netSales: z.string(),
+    tax: z.string(),
+    paid: z.string(),
+    collected: z.string(),
+    redeemed: z.string(),
+    sales: z.number().int().min(0),
+    items: z.number().int().min(0),
+  }),
+  tenders: z.array(reportTenderSchema),
+  voids: z.object({
+    count: z.number().int().min(0),
+    amount: z.string(),
+  }),
+  /** Unpaid balances created by the day's sales. */
+  outstandingCreated: z.string(),
+  asOf: z.string(),
+});
+
+export type ZReport = z.infer<typeof zReportSchema>;

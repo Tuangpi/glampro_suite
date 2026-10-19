@@ -130,6 +130,7 @@ export const queryKeys = {
 
   reports: {
     overview: () => ["reports", "overview"] as const,
+    zReport: () => ["reports", "z-report"] as const,
   },
 
   settings: {

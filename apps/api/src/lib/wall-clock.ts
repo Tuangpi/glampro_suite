@@ -71,6 +71,72 @@ export function wallClockAt(
   return { dayOfWeek: weekday < 0 ? 0 : weekday, minutes: hour * 60 + minute };
 }
 
+/**
+ * The instant window covering a salon-local calendar date, as `[from, to)`.
+ *
+ * A Z-report is a statement about one day at the salon, so `"2026-10-02"` must
+ * mean midnight to midnight **there**, not in UTC. The conversion is done by
+ * reading the zone's own offset at the candidate instant and correcting once,
+ * which is what gets a DST transition right: a spring-forward day is 23 hours
+ * and a fall-back day is 25, and neither is a fixed offset added to UTC.
+ *
+ * `to` is the **next** local midnight, exclusive. Callers use `gte`/`lt`, so a
+ * sale at exactly the boundary belongs to one day rather than both.
+ */
+export function salonDayBounds(date: string, timeZone: string): { from: Date; to: Date } {
+  const [year = 0, month = 1, day = 1] = date.split("-").map(Number);
+
+  function startOfUtcDate(utcYear: number, utcMonth: number, utcDay: number): Date {
+    const utcMidnight = Date.UTC(utcYear, utcMonth - 1, utcDay);
+    const candidate = new Date(utcMidnight - zoneOffsetMs(new Date(utcMidnight), timeZone));
+    // Re-read the offset at the candidate. The first read used the offset at UTC
+    // midnight, which can be the other side of a DST transition from local midnight.
+    return new Date(utcMidnight - zoneOffsetMs(candidate, timeZone));
+  }
+
+  return {
+    from: startOfUtcDate(year, month, day),
+    to: startOfUtcDate(year, month, day + 1),
+  };
+}
+
+/**
+ * How far `timeZone` is ahead of UTC at `instant`, in milliseconds.
+ *
+ * `formatToParts` renders the instant's wall clock in the zone; reading those
+ * fields back as if they were UTC and subtracting the instant yields the offset.
+ * `Date.UTC` already normalises an out-of-range day (the 32nd becomes the next
+ * month), so the caller can ask for "the day after" without month arithmetic.
+ */
+function zoneOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(instant);
+
+  const part = (type: Intl.DateTimeFormatPartTypes): number =>
+    Number(parts.find((candidate) => candidate.type === type)?.value ?? 0);
+
+  const asUtc = Date.UTC(
+    part("year"),
+    part("month") - 1,
+    part("day"),
+    part("hour") % 24,
+    part("minute"),
+    part("second"),
+  );
+
+  // Drop sub-second precision: the formatted fields have none, and comparing a
+  // truncated wall clock to an instant with milliseconds would add phantom offset.
+  return asUtc - Math.floor(instant.getTime() / 1000) * 1000;
+}
+
 /** `"09:00"` → `540`. The rota editor's inputs and the shift chip both read these. */
 export function formatMinuteOfDay(minutes: number): string {
   const hours = Math.floor(minutes / 60);

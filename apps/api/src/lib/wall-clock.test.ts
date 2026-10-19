@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { formatMinuteOfDay, formatShiftTime, wallClockAt } from "./wall-clock.js";
+import { formatMinuteOfDay, formatShiftTime, salonDayBounds, wallClockAt } from "./wall-clock.js";
 
 /**
  * The bridge between a shift (minutes past local midnight) and a booking (a UTC
@@ -55,6 +55,43 @@ describe("wallClockAt", () => {
 
     assert.equal(minutes, 0);
     assert.equal(dayOfWeek, 4); // Thursday, 2026-01-15.
+  });
+});
+
+describe("salonDayBounds", () => {
+  it("draws the day in the salon's zone, not UTC", () => {
+    const { from, to } = salonDayBounds("2026-10-02", "Asia/Singapore");
+
+    // 00:00 SGT is 16:00 UTC the previous day; the next local midnight is 24h later.
+    assert.equal(from.toISOString(), "2026-10-01T16:00:00.000Z");
+    assert.equal(to.toISOString(), "2026-10-02T16:00:00.000Z");
+  });
+
+  it("returns a 23-hour day across spring forward", () => {
+    const { from, to } = salonDayBounds("2026-03-08", "America/New_York");
+
+    assert.equal(from.toISOString(), "2026-03-08T05:00:00.000Z");
+    assert.equal(to.toISOString(), "2026-03-09T04:00:00.000Z");
+    assert.equal(to.getTime() - from.getTime(), 23 * 60 * 60 * 1000);
+  });
+
+  it("returns a 25-hour day across fall back", () => {
+    const { from, to } = salonDayBounds("2026-11-01", "America/New_York");
+
+    assert.equal(from.toISOString(), "2026-11-01T04:00:00.000Z");
+    assert.equal(to.toISOString(), "2026-11-02T05:00:00.000Z");
+    assert.equal(to.getTime() - from.getTime(), 25 * 60 * 60 * 1000);
+  });
+
+  it("normalises month and year boundaries", () => {
+    assert.deepEqual(salonDayBounds("2026-01-31", "UTC"), {
+      from: new Date("2026-01-31T00:00:00.000Z"),
+      to: new Date("2026-02-01T00:00:00.000Z"),
+    });
+    assert.deepEqual(salonDayBounds("2026-12-31", "UTC"), {
+      from: new Date("2026-12-31T00:00:00.000Z"),
+      to: new Date("2027-01-01T00:00:00.000Z"),
+    });
   });
 });
 
