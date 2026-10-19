@@ -33,6 +33,7 @@ import {
   listSales,
   previewVoucher,
   refundSale,
+  resumeSale,
   searchSaleItems,
   voidSale,
 } from "../services/sale.service.js";
@@ -125,6 +126,21 @@ salesRouter.post(
  * static route first is what makes the intent obvious to the next reader rather than
  * leaving it to depend on segment names.
  */
+salesRouter.get(
+  "/:id/resume",
+  auth,
+  requireModule("sales"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res.status(200).json({ data: await resumeSale(id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 salesRouter.get(
   "/:id",
   auth,

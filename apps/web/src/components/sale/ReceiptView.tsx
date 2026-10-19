@@ -34,7 +34,7 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
 export interface ReceiptViewProps {
   sale: SaleDetail;
-  /** Clears the receipt and returns the till to an empty cart. */
+  /** Returns to the till; historical browsing preserves the existing cart. */
   onNewSale: () => void;
   returnLabel?: string;
   /**

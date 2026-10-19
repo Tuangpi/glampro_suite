@@ -3,7 +3,8 @@
  *
  * The legacy client persisted its whole Redux sale reducer. The rebuild keeps a
  * much smaller draft: catalogue display data, quantities, performer choices and
- * the selected customer. Tenders and idempotency keys are deliberately absent,
+ * the selected customer. Tenders are deliberately absent; hold retry keys persist
+ * with the submitted cart fingerprint so an unchanged retry survives reloads,
  * and the API still re-prices every line when the sale is posted.
  */
 import { z } from "zod";
@@ -39,6 +40,7 @@ const saleDraftSchema = z.object({
   lines: z.array(cartLineSchema).max(MAX_SALE_LINES),
   customer: customerSummarySchema.nullable(),
   heldSaleId: z.string().min(1).nullable().optional(),
+  holdAttempt: z.object({ fingerprint: z.string(), key: z.string().min(8).max(128) }).optional(),
 });
 
 export interface SaleDraft {
@@ -46,6 +48,7 @@ export interface SaleDraft {
   lines: CartLine[];
   customer: CustomerSummary | null;
   heldSaleId?: string | null;
+  holdAttempt?: { fingerprint: string; key: string };
 }
 
 const EMPTY_DRAFT: SaleDraft = { version: 1, lines: [], customer: null };
@@ -78,7 +81,12 @@ export function readSaleDraft(identity: string | null): SaleDraft {
 
 function writeSaleDraft(identity: string, draft: SaleDraft): void {
   const key = storageKey(identity);
-  if (draft.lines.length === 0 && draft.customer === null && !draft.heldSaleId) {
+  if (
+    draft.lines.length === 0 &&
+    draft.customer === null &&
+    !draft.heldSaleId &&
+    !draft.holdAttempt
+  ) {
     localStorage.removeItem(key);
     return;
   }
@@ -106,4 +114,14 @@ export function clearSaleDraft(identity: string | null): void {
 export function setSaleDraftHeldSale(identity: string | null, heldSaleId: string | null): void {
   if (!identity) return;
   writeSaleDraft(identity, { ...readSaleDraft(identity), heldSaleId });
+}
+
+/** Persist before posting: a response can be lost after the server creates the hold. */
+export function holdAttemptKey(identity: string | null, fingerprint: string): string {
+  if (!identity) throw new Error("Sign in before holding a cart.");
+  const draft = readSaleDraft(identity);
+  if (draft.holdAttempt?.fingerprint === fingerprint) return draft.holdAttempt.key;
+  const key = crypto.randomUUID();
+  writeSaleDraft(identity, { ...draft, holdAttempt: { fingerprint, key } });
+  return key;
 }

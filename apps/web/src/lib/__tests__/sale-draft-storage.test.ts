@@ -5,6 +5,7 @@ import type { CustomerSummary } from "@glampro_suite/shared";
 import type { CartLine } from "@/hooks/useSale";
 import {
   clearSaleDraft,
+  holdAttemptKey,
   readSaleDraft,
   saleDraftIdentity,
   setSaleDraftCustomer,
@@ -38,6 +39,19 @@ const CUSTOMER: CustomerSummary = {
 };
 
 describe("sale draft storage", () => {
+  it("keeps hold retry keys durable and scoped to the submitted cart and identity", () => {
+    const identity = saleDraftIdentity("retry-tenant", "retry-user");
+    setSaleDraftLines(identity, [LINE]);
+    const key = holdAttemptKey(identity, "cart-one");
+    expect(holdAttemptKey(identity, "cart-one")).toBe(key);
+    setSaleDraftCustomer(identity, CUSTOMER);
+    expect(readSaleDraft(identity).holdAttempt?.key).toBe(key);
+    expect(holdAttemptKey(identity, "cart-two")).not.toBe(key);
+    expect(holdAttemptKey(saleDraftIdentity("other", "retry-user"), "cart-one")).not.toBe(key);
+    clearSaleDraft(identity);
+    expect(holdAttemptKey(identity, "cart-one")).not.toBe(key);
+    expect(() => holdAttemptKey(null, "cart-one")).toThrow("Sign in");
+  });
   it("preserves a resumed hold across edits and isolates it by identity", () => {
     const identity = saleDraftIdentity("hold-tenant", "hold-user");
     setSaleDraftHeldSale(identity, "sale-9");

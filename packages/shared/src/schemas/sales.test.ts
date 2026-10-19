@@ -270,6 +270,12 @@ describe("completeSaleSchema", () => {
 });
 
 describe("saleListQuerySchema", () => {
+  it("coerces page numbers and refuses invalid or excessive offsets", () => {
+    assert.equal(saleListQuerySchema.parse({ page: "2" }).page, 2);
+    for (const page of ["0", "-1", "1.5", "abc", "1000001"]) {
+      assert.equal(saleListQuerySchema.safeParse({ page }).success, false, page);
+    }
+  });
   it("defaults to the parked carts, so asking for nothing is not asking for everything", () => {
     const parsed = saleListQuerySchema.parse({});
 

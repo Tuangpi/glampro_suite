@@ -34,11 +34,13 @@ import {
   saleDetailSchema,
   saleItemSearchResultSchema,
   saleListSchema,
+  resumeSaleSchema,
   voucherPreviewSchema,
   type CompleteSaleInput,
   type CreateSaleInput,
   type ModuleCode,
   type RefundSaleInput,
+  type ResumeSale,
   type SaleDetail,
   type SaleItem,
   type SaleItemKind,
@@ -1987,11 +1989,61 @@ export async function createSale(input: CreateSaleInput): Promise<SaleDetail> {
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+/** Resolve held items by exact kind/id, never by a limited catalogue search. No writes. */
+export async function resumeSale(saleId: string): Promise<ResumeSale> {
+  const sale = await getSale(saleId);
+  if (sale.status !== "HELD") {
+    throw conflict("This sale is no longer held. Refresh the held list.", "SALE_NOT_HELD");
+  }
+  const { entitled } = await moduleEntitlements();
+  const items: ResumeSale["items"] = [];
+  for (const kind of SALE_ITEM_KINDS) {
+    const lines = sale.lines
+      .filter((line) => line.itemType === kind)
+      .map((line) => ({
+        itemType: kind,
+        itemId: line.itemId,
+        quantity: line.quantity,
+      }));
+    if (!lines.length) continue;
+    if (!entitled.has(KIND_MODULE[kind])) {
+      throw forbidden(
+        "This held cart contains a module your salon cannot sell.",
+        "MODULE_NOT_ENTITLED",
+      );
+    }
+    const regular = await loadKind(kind, lines, false);
+    const member = await loadKind(kind, lines, true);
+    for (const line of lines) {
+      const row = regular.get(line.itemId);
+      const memberRow = member.get(line.itemId);
+      if (!row || !memberRow) {
+        throw conflict(
+          "A held item no longer exists. The cart was not picked up.",
+          "HELD_ITEM_UNAVAILABLE",
+        );
+      }
+      items.push({
+        kind,
+        id: row.itemId,
+        name: row.itemName,
+        price: money(row.unitPrice),
+        memberPrice:
+          kind === "VALUE_PACKAGE" || kind === "GIFT_CARD" ? null : money(memberRow.unitPrice),
+      });
+    }
+  }
+  // Another till may have completed/discarded it while catalogue rows were read.
+  if ((await getSale(saleId)).status !== "HELD") {
+    throw conflict("This sale is no longer held. Refresh the held list.", "SALE_NOT_HELD");
+  }
+  return resumeSaleSchema.parse({ sale, items });
+}
+
 /**
- * `GET /api/sales` — the till's sale list, which today is the parked carts.
+ * `GET /api/sales` — the paginated held-cart and receipt list.
  *
- * Newest first, capped and unpaged: this is the workbench a cashier scans for the cart
- * they parked, not a history screen (`MAX_SALE_LIST` holds the reasoning). `lineCount`
+ * Newest first with stable id ties and one extra row to detect another page. `lineCount`
  * is the relation's own count rather than a second read, so the number the list draws
  * and the number of rows a resumed cart draws come from one query.
  *

@@ -28,7 +28,7 @@
  *    (Phase 5d) and the cart is empty by then, so leaving a grid on screen beside
  *    it would only invite a second sale onto the same receipt.
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MAX_SALE_LINES,
@@ -53,6 +53,7 @@ import SaleHistoryPanel from "@/components/sale/SaleHistoryPanel";
 import VoidSaleDialog from "@/components/sale/VoidSaleDialog";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import Modal from "@/components/ui/Modal";
 import Tabs from "@/components/ui/Tabs";
 import { showToast } from "@/components/ui/toast-store";
 import { SALE_KIND_LABELS, VOID_SALE_ROLES } from "@/constants/sale";
@@ -61,7 +62,6 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useServiceList } from "@/hooks/useServices";
 import { useStaffList } from "@/hooks/useStaff";
 import {
-  cartLinesFrom,
   lineUnitPrice,
   toSaleLineInputs,
   useCompleteSale,
@@ -126,6 +126,15 @@ export default function Sale() {
   }
   /** The hold whose pickup or discard is in flight, so that row's buttons wait. */
   const [busyHoldId, setBusyHoldId] = useState<string | null>(null);
+  const holdAction = useRef(false);
+  const [replacementHoldId, setReplacementHoldId] = useState<string | null>(null);
+  const pickupVersion = useRef(0);
+  useEffect(
+    () => () => {
+      pickupVersion.current += 1;
+    },
+    [draftIdentity],
+  );
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidError, setVoidError] = useState<string | null>(null);
   const [refundOpen, setRefundOpen] = useState(false);
@@ -156,6 +165,7 @@ export default function Sale() {
   const heldCarts = useHeldSales(heldPage);
   const voidSale = useVoidSale();
   const refundSale = useRefundSale();
+  const cartLocked = isReadOnly || holdSale.isPending || busyHoldId !== null;
 
   /**
    * Whether this user may void a receipt (ADR 0016).
@@ -214,6 +224,7 @@ export default function Sale() {
   const needsCustomer = cart.lines.some((line) => GRANTING_KINDS.has(line.itemType));
 
   function handleAdd(item: SaleItem) {
+    if (holdSale.isPending || holdAction.current) return;
     // A suspended salon may look but not write (TENANCY.md §6). The API would
     // refuse the sale at the end of the cart, but filling one first would be a
     // till that lets a cashier take someone's money and then fails.
@@ -231,6 +242,7 @@ export default function Sale() {
   }
 
   function openCheckout() {
+    if (cartLocked || holdAction.current) return;
     setCheckoutError(null);
     setCheckoutOpen(true);
   }
@@ -284,6 +296,7 @@ export default function Sale() {
    * refuses a hold that carries one — so the checkout dialog never opens on this path.
    */
   async function holdCart() {
+    if (holdAction.current || holdSale.isPending) return;
     if (heldSaleId) {
       showToast("info", "This cart is already held. Take payment or leave it held.");
       return;
@@ -310,23 +323,40 @@ export default function Sale() {
 
   /** Picks a parked cart up: its lines and its customer, back in the till. */
   async function pickUpHold(id: string) {
+    if (cartLocked || holdAction.current || checkoutOpen) return;
+    if (cart.lines.length || customer || heldSaleId) {
+      setReplacementHoldId(id);
+      return;
+    }
+    await loadHold(id);
+  }
+
+  async function loadHold(id: string) {
+    if (cartLocked || holdAction.current || checkoutOpen) return;
+    holdAction.current = true;
+    const version = ++pickupVersion.current;
+    setReplacementHoldId(null);
     setBusyHoldId(id);
     try {
-      const { sale, customer: heldCustomer } = await resumeHold.mutateAsync(id);
-      cart.setLines(cartLinesFrom(sale));
+      const { sale, customer: heldCustomer, lines } = await resumeHold.mutateAsync(id);
+      if (version !== pickupVersion.current) return;
+      cart.setLines(lines);
       setCustomer(heldCustomer);
       setHeldSaleId(sale.id);
       setCheckoutError(null);
-      showToast("info", "Cart picked up. Take payment to ring it up.");
+      showToast("info", "Cart picked up at current catalogue prices. Payment checks prices again.");
     } catch (error) {
       showToast("error", getErrorMessage(error));
     } finally {
+      holdAction.current = false;
       setBusyHoldId(null);
     }
   }
 
   /** Abandons a parked cart. The API refuses anything that was already rung up. */
   async function discardHeldCart(id: string) {
+    if (cartLocked || holdAction.current || checkoutOpen) return;
+    holdAction.current = true;
     setBusyHoldId(id);
     try {
       await discardHold.mutateAsync(id);
@@ -340,6 +370,7 @@ export default function Sale() {
     } catch (error) {
       showToast("error", getErrorMessage(error));
     } finally {
+      holdAction.current = false;
       setBusyHoldId(null);
     }
   }
@@ -437,7 +468,9 @@ export default function Sale() {
         <h2 className="text-xl">Sale</h2>
         <p className="mt-1 text-sm text-ink-muted">
           {receipt
-            ? historicalReceipt ? "Stored sale receipt. Your current cart is unchanged." : "Sale complete. Review your receipt below."
+            ? historicalReceipt
+              ? "Stored sale receipt. Your current cart is unchanged."
+              : "Sale complete. Review your receipt below."
             : "Add services and products to the cart, then take payment."}
         </p>
       </header>
@@ -447,14 +480,18 @@ export default function Sale() {
         <>
           <ReceiptView
             sale={receipt}
-            onNewSale={historicalReceipt ? () => {
-              setReceipt(null);
-              setHistoricalReceipt(false);
-              setVoidOpen(false);
-              setRefundOpen(false);
-            } : startNewSale}
+            onNewSale={
+              historicalReceipt
+                ? () => {
+                    setReceipt(null);
+                    setHistoricalReceipt(false);
+                    setVoidOpen(false);
+                    setRefundOpen(false);
+                  }
+                : startNewSale
+            }
             returnLabel={historicalReceipt ? "Back to cart" : "New sale"}
-            customerEmail={historicalReceipt ? null : customer?.email ?? null}
+            customerEmail={historicalReceipt ? null : (customer?.email ?? null)}
             canVoid={canVoid && !isReadOnly}
             onVoid={() => {
               setVoidError(null);
@@ -496,16 +533,20 @@ export default function Sale() {
       ) : (
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex flex-col gap-4">
-            <SaleHistoryPanel onOpen={(sale) => {
-              setHistoricalReceipt(true);
-              setReceipt(sale);
-            }} />
+            <SaleHistoryPanel
+              disabled={holdSale.isPending || busyHoldId !== null}
+              onOpen={(sale) => {
+                if (holdAction.current || holdSale.isPending) return;
+                setHistoricalReceipt(true);
+                setReceipt(sale);
+              }}
+            />
             <Card
               title="Customer"
               description="A walk-in sale needs nobody. A package, a card or prepaid credit does."
             >
               <div className="px-2 py-1">
-                <CustomerPicker customer={customer} onSelect={setCustomer} disabled={isReadOnly} />
+                <CustomerPicker customer={customer} onSelect={setCustomer} disabled={cartLocked} />
               </div>
             </Card>
 
@@ -556,12 +597,13 @@ export default function Sale() {
             {heldSaleId ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-purple/40 bg-surface-2 px-4 py-2.5">
                 <p className="text-xs text-ink-body">
-                  Ringing up the <span className="font-bold text-ink">held cart</span> you picked
-                  up. Taking payment completes it; the lines are re-priced from the catalogue.
+                  Ringing up the <span className="font-bold text-ink">held cart</span> you picked up
+                  at current catalogue prices. Taking payment completes it and checks prices again.
                 </p>
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={cartLocked}
                   onClick={() => {
                     // Nothing was written: the hold is still parked, and this only
                     // clears the till.
@@ -580,7 +622,7 @@ export default function Sale() {
               isMember={isMember}
               staffForService={staffForService}
               needsCustomer={needsCustomer}
-              disabled={isReadOnly}
+              disabled={cartLocked}
               onQuantity={cart.setQuantity}
               onStaff={cart.setStaff}
               onDiscount={cart.setDiscount}
@@ -597,7 +639,7 @@ export default function Sale() {
               isError={heldCarts.isError}
               activeId={heldSaleId}
               busyId={busyHoldId}
-              disabled={isReadOnly}
+              disabled={cartLocked || checkoutOpen}
               onPickUp={(id) => void pickUpHold(id)}
               onDiscard={(id) => void discardHeldCart(id)}
               onRetry={() => void heldCarts.refetch()}
@@ -610,6 +652,27 @@ export default function Sale() {
         </div>
       )}
 
+      {replacementHoldId ? (
+        <Modal
+          open
+          title="Replace the open cart?"
+          description="Local cart edits will be discarded. Any existing server hold stays unchanged. Hold the current cart first if you need to keep it."
+          onClose={() => setReplacementHoldId(null)}
+          size="sm"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" onClick={() => setReplacementHoldId(null)}>
+                Keep current cart
+              </Button>
+              <Button variant="danger" onClick={() => void loadHold(replacementHoldId)}>
+                Replace and pick up
+              </Button>
+            </div>
+          }
+        >
+          <p>The held cart will use current catalogue prices. Payment checks prices again.</p>
+        </Modal>
+      ) : null}
       {checkoutOpen ? (
         <PaymentDialog
           key={JSON.stringify([cart.lines, customer?.id, isMember])}

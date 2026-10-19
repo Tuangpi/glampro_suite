@@ -2,8 +2,8 @@
 
 ## Current State
 
-- Current task: TK2610-0017 / P1-07 POS upgrades is **IN PROGRESS**. ADR 0020 voucher/refund and L2 + E1 + R1 + A1 + P1 policy slice implemented; user accepted UAT on October 19, 2026. Additive migration applied locally (19 migrations). Original sales/awards preserved. Remaining POS scope: tips/barcode, historical browsing and hold integrity/completeness review. Acceptance does not establish completion or deferral of those items. Do not start TK2610-0018.
-- Latest checks (October 19): API 361/361, web 411/411, shared 100/100; root typecheck, lint and production build passed. Prisma validation passed, live schema diff empty (exit 0), migration status up to date, git diff check clean. User subsequently accepted UAT; no agent browser walkthrough, commit or deployment. Logs: `/tmp/pos-policy-*.log`.
+- Current task: TK2610-0017 / P1-07 POS upgrades is **IN PROGRESS**. User accepted policy features and historical browsing/held-list pagination. Hold-create retry keys now persist across unchanged retries/reloads, with in-flight edit guards. Current-catalogue pickup and safe local replacement are implemented and automated checks pass. Backend reversal/retention integrity and tips/barcode remain. Do not start TK2610-0018.
+- Latest checks (October 19): API 367/367 (database enabled, none skipped), web 424/424, shared 101/101; root typecheck, lint and production build passed. No migration/schema changes. Baseline `37e2e55` preserved; subsequent changes are uncommitted. No agent browser walkthrough or deployment. Logs: `/tmp/pos-resume-*.log`.
 - Most recently completed: TK2610-0016 customer profile. On October 19 the user explicitly confirmed testing and acceptance, and requested POS upgrades. Prior rollout and automated checks remain historical evidence; no agent browser walkthrough. Ready to mark Done externally. Existing uncommitted implementation changes preserved.
 - Milestone verification (October 19): root production build, typecheck and workspace lint exit 0; web 392/392, shared 92/92 and pure demo-dataset 13/13 tests pass. Root formatting still fails on four unchanged API files. No database-backed API rerun or browser walkthrough; earlier API 339/339 is historical evidence. See the milestone handoff below for the readiness checklist and accepted demo limits.
 - Most recent work: TK2610-0012 / P0-06 reports (commit `18c973f`) audited against its completion check and signed off after UAT. The Z-report draws the salon-local day, counts voids by `voidedAt`, splits collected from redeemed and carries the snapshotted GST. The overview returns sales-by-day, top items, service and staff totals with commission, tender subtotals and a liability snapshot that excludes expired/exhausted holdings. ADR 0010 conflict closed: `?threshold=` filters only while row badges use the stored tenant threshold, with a new row-flag test. Verified: API 339/339, web 392/392 across 43 files, API typecheck/ESLint/scoped Prettier and web typecheck pass. That ADR 0010 edit and a Prettier re-wrap of `report.service.ts` are uncommitted.
@@ -18,6 +18,33 @@
 - Earlier records report P0-07, P0-08, P0-03 and P1-09 Done. This consolidation does not independently revalidate their product behavior.
 
 ## Unresolved decisions and carried-forward findings
+
+### October 19 — TK2610-0017 current-catalogue pickup and safe replacement
+
+- Added read-only `GET /api/sales/:id/resume` with a shared response contract. Exact kind/id readers reuse catalogue active/expiry checks and entitlement guards, return both current prices, and reject missing/non-held/foreign sales. Historical receipt/hold prices are not rewritten. No migration or stock/financial writes.
+- Pickup preserves line order, quantities, staff and discount rates; member/customer changes now use current regular/member prices. Customer read and complete cart conversion succeed before replacing the draft.
+- Existing draft/customer/resumed hold requires replacement confirmation. Cancel/failure keeps the draft. A synchronous in-flight guard blocks overlapping pickup/discard and cart/customer/payment actions; history opening is guarded during hold actions. Unmount/identity cleanup prevents late pickup from replacing a newer cart.
+- Verified API 367/367 (database enabled, none skipped), web 424/424, shared 101/101; root typecheck/lint/production build pass. Coverage includes changed/member pricing, 10%/100% discounts, missing/inactive/unentitled items, non-held/foreign sales, exact lookup beyond limited search, no pickup ledger/counter/stock effects, confirmation/cancel/failure and late-response behavior.
+- Initial tests exposed the old S$80 historical-price expectation versus correct S$70 member pricing, a wrong inactive-status fixture and an incorrect customer-button selector; corrected and reran without weakening behavior checks.
+- Limits: pickup is not ownership, stock reservation, or a price guarantee. Concurrent changes after the read are still possible; completion remains authoritative. Reload restores the browser quote rather than continuously re-fetching it. No browser UAT, deployment, commit, reset or reseed. Existing uncommitted work preserved.
+- Task remains IN PROGRESS. Next: backend reversal/receipt-retention integrity, then barcode/tips (tip policy still needs approval). Do not start TK2610-0018.
+
+### October 19 — TK2610-0017 durable hold retry keys
+
+- Confirmed API already stores tenant-scoped unique idempotency keys for HELD writes and returns the winner on duplicate requests. The browser previously omitted the key. `useHoldSale` now persists a UUID plus submitted-input fingerprint in the existing tenant/user draft before posting; unchanged retries reuse it after reload. Successful writes clear the attempt; a changed submitted cart gets a new key.
+- In-flight holds disable customer/cart edits and other hold pickup/discard actions; catalogue add handlers ignore edits while pending. This prevents successful hold completion from clearing edits made during the request.
+- Tests cover retry after lost response/reload, key rotation after success, fingerprint/identity isolation, pending edit/payment locks and database-backed concurrent/sequential replay with one hold, no receipt-counter change, no tenders and no performance/points/outstanding rows.
+- Checks: focused UI/storage 44/44 and sales routes 48/48; full API 364/364, web 420/420, shared 101/101; typecheck/lint/build pass. An initial web run overlapped rebuilding shared output and failed imports; rerun after the build passed. No assertions weakened. No new browser walkthrough, schema migration, commit or deployment.
+- Limits: this protects unchanged retries, not a changed cart after an uncertain response. Check the held list before submitting an edited cart as a new attempt. Key records are removed when a hold is discarded, so indefinite replay after discard is not guaranteed. Remaining resume repricing and backend reversal/receipt-retention concurrency are not declared verified or resolved.
+- Next: current-catalogue resume pricing and safe pickup review within TK2610-0017; barcode/tip work follows. Manual fault-injection acceptance of this retry fix remains unperformed.
+
+### October 19 — TK2610-0017 historical browsing and held-list pagination
+
+- Sales listing now accepts optional `page`, returns `page`/`hasMore`, preserves default HELD and existing `limit`, and uses stable soldAt/id ordering. Previous/Next controls make older holds reachable. Offset pages are live views: concurrent writes can shift rows, not a frozen export.
+- On-demand completed/voided history opens the stored receipt using existing email/print/refund/void UI. Back to cart preserves cart lines, customer and resumed-hold ID; history never pre-fills email from the unrelated active customer. Manager and writable-tenant gates remain on reversals; server guards remain authoritative.
+- New tests cover pagination beyond the last page, equal-timestamp paging, foreign-tenant exclusion, cashier historical reads, invalid page input, status/page switching, receipt-open failure, reversal visibility and resumed-cart preservation through subsequent completion. API 363/363, web 417/417, shared 101/101; typecheck/lint/build, scoped formatting and git diff check passed after fixing new fixture typing/data requirements.
+- User confirmed manual acceptance on October 19, 2026. This is user-reported acceptance, not an agent browser walkthrough. No schema migration, commit or deployment by the agent.
+- Next: continue hold retry/repricing/integrity review, then barcode/tips; tip policy needs a concrete proposal before implementation. Keep TK2610-0017 IN PROGRESS.
 
 ### October 19 — TK2610-0017 approved policy implementation
 

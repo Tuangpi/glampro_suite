@@ -75,7 +75,7 @@ const { default: Sale } = await import("@/pages/Sale");
 const { cartLinesFrom, lineUnitPrice } = await import("@/hooks/useSale");
 
 const SERVICE = {
-  kind: "SERVICE",
+  kind: "SERVICE" as const,
   id: "s1",
   name: "Root colour",
   price: "80.00",
@@ -682,7 +682,8 @@ function withHeldCart(rows: SaleSummary[] = [HELD_ROW]) {
   get.mockImplementation((url: string) => {
     if (url === "/customers/c1/holdings") return Promise.resolve({ items: [] });
     if (url === "/customers/c1") return Promise.resolve(CUSTOMER);
-    if (url === "/sales/sale-9") return Promise.resolve(heldCart());
+    if (url === "/sales/sale-9/resume")
+      return Promise.resolve({ sale: heldCart(), items: [SERVICE] });
     if (url === "/sales") return Promise.resolve({ items: rows });
     return Promise.resolve(undefined);
   });
@@ -694,6 +695,117 @@ function heldPanel(): HTMLElement {
 }
 
 describe("holding a cart", () => {
+  it("uses current regular/member prices and preserves held choices and order", () => {
+    const sale = heldCart();
+    sale.lines = [
+      { ...sale.lines[0]!, quantity: 3, staffId: "stylist", discountPercent: "10.00" },
+      { ...sale.lines[0]!, discountPercent: "100.00" },
+    ];
+    const lines = cartLinesFrom(sale, [
+      { ...SERVICE, price: "100.00", memberPrice: "90.00", name: "Renamed" },
+    ]);
+    expect(lines[0]).toMatchObject({
+      name: "Renamed",
+      quantity: 3,
+      staffId: "stylist",
+      discountPercent: 10,
+    });
+    expect(lineUnitPrice(lines[0]!, false)).toBe("90.00");
+    expect(lineUnitPrice(lines[0]!, true)).toBe("81.00");
+    expect(lineUnitPrice(lines[1]!, true)).toBe("0.00");
+    expect(() => cartLinesFrom(sale, [])).toThrow(/unavailable/);
+    expect(() => cartLinesFrom({ ...sale, status: "COMPLETED" }, [SERVICE])).toThrow(
+      /no longer held/,
+    );
+  });
+
+  it("keeps the open draft when replacement is cancelled or pickup fails", async () => {
+    withHeldCart();
+    const read = get.getMockImplementation()!;
+    get.mockImplementation((url: string) =>
+      url.endsWith("/resume") ? Promise.reject(new Error("Unavailable")) : read(url),
+    );
+    const user = userEvent.setup();
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(await screen.findByRole("button", { name: "Pick up" }));
+    await user.click(screen.getByRole("button", { name: "Keep current cart" }));
+    expect(get).not.toHaveBeenCalledWith("/sales/sale-9/resume");
+    await user.click(screen.getByRole("button", { name: "Pick up" }));
+    await user.click(screen.getByRole("button", { name: "Replace and pick up" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pick up" })).toBeEnabled());
+    expect(within(cartPanel()).getByText("Root colour")).toBeInTheDocument();
+    expect(screen.queryByText(/Ringing up the/)).not.toBeInTheDocument();
+  });
+
+  it("blocks conflicting actions during pickup and ignores a response after unmount", async () => {
+    withHeldCart([HELD_ROW, { ...HELD_ROW, id: "sale-10" }]);
+    const read = get.getMockImplementation()!;
+    let finish!: (value: unknown) => void;
+    get.mockImplementation((url: string) =>
+      url.endsWith("/resume")
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : read(url),
+    );
+    const user = userEvent.setup();
+    const view = renderSale();
+    await user.click((await screen.findAllByRole("button", { name: "Pick up" }))[0]!);
+    for (const button of screen.getAllByRole("button", { name: "Pick up" }))
+      expect(button).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Browse sale history" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument();
+    view.unmount();
+    finish({ sale: heldCart(), items: [SERVICE] });
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/customers/c1"));
+    renderSale();
+    expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("replaces an open draft only after confirmation and keeps both current prices", async () => {
+    withHeldCart();
+    const read = get.getMockImplementation()!;
+    get.mockImplementation((url: string) =>
+      url.endsWith("/resume")
+        ? Promise.resolve({
+            sale: heldCart(),
+            items: [{ ...SERVICE, price: "100.00", memberPrice: "90.00" }],
+          })
+        : read(url),
+    );
+    const user = userEvent.setup();
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(await screen.findByRole("button", { name: "Pick up" }));
+    expect(get).not.toHaveBeenCalledWith("/sales/sale-9/resume");
+    await user.click(screen.getByRole("button", { name: "Replace and pick up" }));
+    await screen.findByText(/Ringing up the/);
+    expect(within(cartPanel()).getAllByText("S$90.00")).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: /Mrs Loi.*clear the customer/ }));
+    expect(within(cartPanel()).getAllByText("S$100.00")).toHaveLength(2);
+    expect(post).not.toHaveBeenCalled();
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("navigates to older held carts and back", async () => {
+    get.mockImplementation(async (_url: string, params?: { page?: number }) => ({
+      items: [{ ...HELD_ROW, customerName: params?.page === 2 ? "Older hold" : "Newer hold" }],
+      page: params?.page ?? 1,
+      hasMore: params?.page !== 2,
+    }));
+    const user = userEvent.setup();
+    renderSale();
+    await screen.findByText("Newer hold");
+    await user.click(within(heldPanel()).getByRole("button", { name: "Next" }));
+    await screen.findByText("Older hold");
+    expect(within(heldPanel()).getByRole("button", { name: "Next" })).toBeDisabled();
+    await user.click(within(heldPanel()).getByRole("button", { name: "Previous" }));
+    await screen.findByText("Newer hold");
+  });
   it("parks it instead of ringing it up, and the cart goes with it", async () => {
     const user = userEvent.setup();
     renderSale();
@@ -704,8 +816,9 @@ describe("holding a cart", () => {
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith("/sales", {
         lines: [{ itemType: "SERVICE", itemId: "s1", quantity: 1 }],
-        // No tender and no key: a held sale takes no payment (ADR 0015).
+        // No tender: the key protects an unchanged retry after a lost response.
         hold: true,
+        idempotencyKey: expect.any(String),
       });
     });
 
@@ -740,6 +853,49 @@ describe("holding a cart", () => {
 });
 
 describe("picking a parked cart up", () => {
+  it("reuses an uncertain hold attempt after reload and rotates the key after success", async () => {
+    post.mockRejectedValueOnce(new Error("Response lost")).mockResolvedValue(heldCart());
+    const user = userEvent.setup();
+    const first = renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Hold" }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    const firstKey = post.mock.calls[0]![1].idempotencyKey;
+    first.unmount();
+    renderSale();
+    await user.click(await screen.findByRole("button", { name: "Hold" }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    expect(post.mock.calls[1]![1].idempotencyKey).toBe(firstKey);
+    await waitFor(() =>
+      expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Hold" }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(3));
+    expect(post.mock.calls[2]![1].idempotencyKey).not.toBe(firstKey);
+  });
+
+  it("locks cart edits and payment while the hold request is pending", async () => {
+    let finish!: (sale: SaleDetail) => void;
+    post.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const user = userEvent.setup();
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Hold" }));
+    expect(screen.getByRole("button", { name: "Take payment" })).toBeDisabled();
+    expect(within(cartPanel()).getByRole("button", { name: "Clear" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    expect(screen.getByText("1 line · 1 item")).toBeInTheDocument();
+    finish(heldCart());
+    await waitFor(() =>
+      expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument(),
+    );
+  });
   it("applies a held line discount only once, including fully discounted lines", () => {
     for (const [unitPrice, discountAmount, discountPercent] of [
       ["72.00", "24.00", "10.00"],
@@ -753,7 +909,7 @@ describe("picking a parked cart up", () => {
         discountAmount,
         discountPercent,
       }));
-      const [line] = cartLinesFrom(sale);
+      const [line] = cartLinesFrom(sale, [SERVICE]);
       expect(line!.price).toBe("80.00");
       expect(lineUnitPrice(line!, false)).toBe(unitPrice);
     }
@@ -785,11 +941,9 @@ describe("picking a parked cart up", () => {
 
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
 
-    // The lines come back at the price they were parked with: a stored line carries one
-    // figure rather than the catalogue's member/non-member pair, and the server re-prices
-    // everything at completion.
+    // Pickup uses current catalogue prices; completion checks them again.
     expect(await screen.findByText("1 line · 1 item")).toBeInTheDocument();
-    expect(within(cartPanel()).getAllByText("S$80.00")).toHaveLength(2);
+    expect(within(cartPanel()).getAllByText("S$70.00")).toHaveLength(2);
     expect(screen.getByText(/Ringing up the/)).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Take payment" }));
@@ -801,7 +955,7 @@ describe("picking a parked cart up", () => {
       expect(post).toHaveBeenCalledWith("/sales/sale-9/complete", {
         customerId: "c1",
         lines: [{ itemType: "SERVICE", itemId: "s1", quantity: 1 }],
-        payments: [{ method: "CASH", amount: 80 }],
+        payments: [{ method: "CASH", amount: 70 }],
       });
     });
 
@@ -824,6 +978,114 @@ describe("picking a parked cart up", () => {
     // Nothing was written either way: the cart is still on the list.
     expect(post).not.toHaveBeenCalled();
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+describe("historical sale browsing", () => {
+  function historyData() {
+    get.mockImplementation(async (url: string, params?: { status?: string; page?: number }) => {
+      if (url === "/sales/history-1") return receipt({ id: "history-1" });
+      if (url === "/sales/sale-9/resume") return { sale: heldCart(), items: [SERVICE] };
+      if (url === "/customers/c1") return CUSTOMER;
+      if (url === "/sales" && params?.status === "HELD") {
+        return { items: [HELD_ROW], page: 1, hasMore: false };
+      }
+      if (url === "/sales")
+        return {
+          items: [
+            {
+              ...HELD_ROW,
+              id: "history-1",
+              receiptNumber: 1042,
+              status: params?.status,
+              customerName: params?.page === 2 ? "Older sale" : "Historical customer",
+            },
+          ],
+          page: params?.page ?? 1,
+          hasMore: params?.page !== 2,
+        };
+      return { items: [] };
+    });
+  }
+
+  it("loads history only on request and resets pagination when status changes", async () => {
+    historyData();
+    const user = userEvent.setup();
+    renderSale();
+    await screen.findByRole("button", { name: "Pick up" });
+    expect(get).not.toHaveBeenCalledWith(
+      "/sales",
+      expect.objectContaining({ status: "COMPLETED" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Browse sale history" }));
+    await screen.findByText(/Historical customer/);
+    const panel = screen.getByRole("heading", { name: "Sale history" }).closest("section")!;
+    await user.click(within(panel).getByRole("button", { name: "Next" }));
+    await screen.findByText(/Older sale/);
+    expect(within(panel).getByRole("button", { name: "Next" })).toBeDisabled();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Sale status" }), "VOID");
+    await waitFor(() => expect(get).toHaveBeenCalledWith("/sales", { status: "VOID", page: 1 }));
+  });
+
+  it("preserves a resumed hold, its customer and lines when returning from a receipt", async () => {
+    historyData();
+    const user = userEvent.setup();
+    renderSale();
+    await user.click(await screen.findByRole("button", { name: "Pick up" }));
+    await screen.findByText(/Ringing up the/);
+    await user.click(screen.getByRole("button", { name: "Browse sale history" }));
+    await user.click(await screen.findByRole("button", { name: "Open receipt #1042" }));
+    await screen.findByRole("button", { name: "Back to cart" });
+    expect(screen.getByRole("button", { name: "Void sale" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refund sale" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to cart" }));
+    expect(screen.getByText(/Ringing up the/)).toBeInTheDocument();
+    expect(screen.getByText("1 line · 1 item")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/sales/sale-9/complete",
+        expect.objectContaining({
+          customerId: "c1",
+          lines: [{ itemType: "SERVICE", itemId: "s1", quantity: 1 }],
+        }),
+      ),
+    );
+  });
+
+  it.each(["cashier", "read-only"])(
+    "allows %s history reads without reversal actions",
+    async (access) => {
+      historyData();
+      if (access === "cashier") role.value = "STAFF";
+      else isReadOnly.value = true;
+      const user = userEvent.setup();
+      renderSale();
+      await user.click(screen.getByRole("button", { name: "Browse sale history" }));
+      await user.click(await screen.findByRole("button", { name: "Open receipt #1042" }));
+      await screen.findByRole("button", { name: "Back to cart" });
+      expect(screen.queryByRole("button", { name: "Void sale" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Refund sale" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps the cart when a historical receipt cannot be opened", async () => {
+    historyData();
+    const original = get.getMockImplementation()!;
+    get.mockImplementation((url: string, params?: unknown) =>
+      url === "/sales/history-1" ? Promise.reject(new Error("Unavailable")) : original(url, params),
+    );
+    const user = userEvent.setup();
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Browse sale history" }));
+    await user.click(await screen.findByRole("button", { name: "Open receipt #1042" }));
+    await screen.findByRole("alert");
+    expect(screen.getByText("1 line · 1 item")).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
   });
 });
 
