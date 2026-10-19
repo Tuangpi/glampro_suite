@@ -3,6 +3,10 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/components/settings/PrivacyNoticeCard", () => ({
+  default: () => <div>Privacy notice settings</div>,
+}));
+
 const {
   useModules,
   useSalonProfile,

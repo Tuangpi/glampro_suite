@@ -2,8 +2,10 @@
 
 ## Current State
 
-- Current task: none active. TK2610-0011 / P0-04 local payment methods and package/prepaid-credit redemption is **DONE** — implementation, automated verification, and the user's UAT on October 19, 2026.
-- Most recent work: the four local rails are **recorded tenders** (`PAYNOW_SGQR`, `NETS`, `GRABPAY`, `ATOME`); `PACKAGE` and `PREPAID_CREDIT` are redemption tenders that carry a `holdingId`, draw the holding inside the sale transaction and are restored on void; `GET /api/customers/:id/holdings` feeds the payment sheet. Migration `20261019034125_local_payment_methods_and_redemption_holding` applied locally. ADR 0019 records both decisions (manual recording; credit is fungible). Verified: API 333/333, web 391/391, API typecheck + ESLint + Prettier clean, web typecheck and production build pass; user UAT passed. Changes uncommitted.
+- Current task: TK2610-0015 / P1-06 is **IN PROGRESS**, implementation and automated checks complete; existing salon database migration and user UAT remain. Tenant notice configuration, separate choices and audited grants/withdrawals are implemented. API 347/347, web 399/399, shared 95/95; build/typecheck/lint pass. No automatic evidence purge or legal wording supplied. Resume TK2610-0015 for reviewed migration/local UAT before the next task. Most recent completed task: TK2610-0013; P0 phase signed off.
+- Milestone verification (October 19): root production build, typecheck and workspace lint exit 0; web 392/392, shared 92/92 and pure demo-dataset 13/13 tests pass. Root formatting still fails on four unchanged API files. No database-backed API rerun or browser walkthrough; earlier API 339/339 is historical evidence. See the milestone handoff below for the readiness checklist and accepted demo limits.
+- Most recent work: TK2610-0012 / P0-06 reports (commit `18c973f`) audited against its completion check and signed off after UAT. The Z-report draws the salon-local day, counts voids by `voidedAt`, splits collected from redeemed and carries the snapshotted GST. The overview returns sales-by-day, top items, service and staff totals with commission, tender subtotals and a liability snapshot that excludes expired/exhausted holdings. ADR 0010 conflict closed: `?threshold=` filters only while row badges use the stored tenant threshold, with a new row-flag test. Verified: API 339/339, web 392/392 across 43 files, API typecheck/ESLint/scoped Prettier and web typecheck pass. That ADR 0010 edit and a Prettier re-wrap of `report.service.ts` are uncommitted.
+- Earlier: TK2610-0011 / P0-04 local payment methods and redemption. The four local rails are **recorded tenders** (`PAYNOW_SGQR`, `NETS`, `GRABPAY`, `ATOME`); `PACKAGE` and `PREPAID_CREDIT` are redemption tenders that carry a `holdingId`, draw the holding inside the sale transaction and are restored on void; `GET /api/customers/:id/holdings` feeds the payment sheet. Migration `20261019034125_local_payment_methods_and_redemption_holding` applied locally. ADR 0019 records both decisions (manual recording; credit is fungible). Committed as `c2274bc`.
 - Earlier: TK2610-0010 / P0-02 receipts **DONE** — user UAT on October 19, 2026 accepted an email-only scope (WhatsApp deferred to TK2610-0021). `Sale.gstRegistrationNumber` snapshotted at completion; `POST /api/sales/:id/receipt/email` renders the stored receipt; the till has an "Email receipt" dialog.
 - Earlier: SETUP-05 database verification and repair. Schema drift found (live DB missing `tenants.time_zone`/`locale` and `tenant_operating_hours` despite `_prisma_migrations` rows; P0-09's 2FA columns existed only in `schema.prisma`). Repaired additively via `npm run db:migrate`: applied pending `20261015210000_tenant_localisation`, `20261016151623_tenant_operating_hours`, and newly generated `20261018141510_user_two_factor_auth` (purely additive, reviewed). No reset/reseed. Backup: `backups/glampro_suite_2026-10-18.dump` (pg_dump); `backups/` gitignored; `.env` never committed.
 - Environment facts: PostgreSQL at `localhost:5432`, db `glampro_suite`, shadow `glampro_shadow` also on 5432. Commented-out `SHADOW_DATABASE_URL` in `apps/api/.env` points at stale port 5433 (nothing listens) — use 5432 for shadow commands.
@@ -34,7 +36,7 @@ Architecture decisions (ADR 0002–0019), and Design integration (Design 1–7).
 | Related task          | Finding / decision needed                                                                                                                                                                                                                                                                                                                                                                                                    |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | P0-09; ADR 0007       | Replay behavior resolved: replay rejects without family revocation per ADR 0007, test aligned October 18; password change atomic; forced sign-out exists. Owner recovery/account-removal scope still open.                                                                                                                                                                                                                   |
-| P0-06; ADR 0010       | ADR requires stored tenant threshold for row low-stock flags even with a filter override; code uses the resolved override for both. Choose semantics and test row flags, not only result counts.                                                                                                                                                                                                                             |
+| P0-06; ADR 0010       | **Resolved October 19, 2026:** `?threshold=` now filters only; each row's `lowStock` badge uses the stored tenant threshold, and `catalogue.service.test.ts` asserts the badge on a row that the override pulled into the list. Reintroducing one threshold for both would reopen this finding.                                                                                                                              |
 | P0-02; ADR 0011       | Legacy unnumbered completed receipts have no established backfill guarantee. Held sales also have null numbers; a completed receipt's “number pending” copy must not promise an unsupported future allocation.                                                                                                                                                                                                               |
 | P1-07; ADR 0017       | ADR says discounts reduce loyalty points; code/test award catalogue points × quantity. Resolve policy first. Performance totals are not cash collected or commission. Receipt disclosure can omit a positive rate rounded to zero money.                                                                                                                                                                                     |
 | P1-07; ADR 0015       | Held-sale review found incomplete listing, stale/current-price mismatch, double-discount preview, lost hold identity after reload, cart replacement and duplicate drafts on uncertain-response retries without idempotency keys.                                                                                                                                                                                             |
@@ -58,13 +60,171 @@ already recorded complete and can be marked done externally if not already marke
 - TK2610-0014 / P1-09 — performer-picker cleanup.
 
 TK2610-0008 / P0-05 was signed off Done by the user on October 19, 2026 (UAT
-accepted) and is already marked done externally. TK2610-0009 / P0-01 and
-TK2610-0010 / P0-02 passed the user's UAT check on October 19, 2026; mark them done
-externally if not already. TK2610-0010 was accepted on an **email-only** scope —
-WhatsApp e-receipt moves to TK2610-0021. No phase or readiness milestone is signed off;
-child completion alone does not sign off Phase 1 (TK2610-0001).
+accepted) and is already marked done externally. TK2610-0009 / P0-01,
+TK2610-0010 / P0-02, TK2610-0011 / P0-04 and TK2610-0012 / P0-06 passed the user's
+UAT check on October 19, 2026; mark them done externally if not already. TK2610-0010
+was accepted on an **email-only** scope — WhatsApp e-receipt moves to TK2610-0021.
+TK2610-0013 and Phase 1 (TK2610-0001) are ready to mark Done externally: on
+October 19, 2026 the user explicitly confirmed P0 is done and ready, following the
+milestone review and disclosed limits. No external task system was changed.
+This approval does not sign off Phase 2 or final launch readiness.
 
 ## Recent handoffs
+
+### October 19, 2026 — TK2610-0015 implementation (IN PROGRESS; local rollout/UAT remaining)
+
+- User accepted tenant-configured wording/version with grants disabled until
+  configured. Managers publish immutable versions in Settings; no supplied default
+  legal text or automatic opt-in. Ordinary customer creation/edit does not change
+  consent; save a new customer, reopen Edit, and use the separate consent controls.
+- Added shared consent contracts/tests, PrivacyNotice and CustomerConsentEvent
+  models, default-false customer fields and additive migration
+  `20261019120000_customer_consent`. Both new models are tenant-scoped.
+- Customer editor shows current wording, separate data/optional marketing choices,
+  presentation acknowledgement, paginated history and reload/error states. Grants
+  require the current notice; withdrawals remain possible without it. Data-consent
+  withdrawal also clears marketing. No signature/self-service proof is implied:
+  this is staff-recorded consent with server time and staff id.
+- Consent changes and audit events commit atomically; expected revisions prevent
+  lost withdrawals/concurrent overwrite. Published wording cannot be edited or
+  reused; old wording remains linked in audit history. Staff ids survive deletion.
+  Evidence follows customer/tenant deletion; no automatic retention purge exists.
+- Added `requireMarketingConsent` for future dispatch consumers and tested refusal
+  before opt-in/after withdrawal. No promotional sender currently exists, so no
+  real marketing-delivery enforcement is claimed. Receipts and staff 2FA unchanged.
+- Verification: disposable PostgreSQL 18 cluster under
+  `/tmp/glampro-consent-pg.yHoeDa`, loopback port 55439, new `consent_test` and
+  `consent_shadow` databases only. All migrations deploy; DB-to-schema diff empty.
+  API 347/347 with 0 skipped, web 399/399 across 45 files, shared 95/95 pass.
+  Root build, typecheck and lint exit 0. Tests cover HTTP roles/auth/read-only,
+  tenant isolation, strict validation, notice versioning, stale grants, withdrawals,
+  actor/time/history, concurrency, default choices and UI permission/error states.
+- Root format check still fails on the same four unrelated API files recorded in
+  the milestone review; no clean aggregate verify claim. Scoped formatting and
+  `git diff --check` pass. Initial test failures (strict notice serialization and
+  missing test-fixture module category) fixed and full suites rerun successfully.
+- Existing salon database untouched: no reset, seed or migration applied there.
+  No outgoing mail, deployment, commit, external status change or browser visual
+  check. Existing low-stock/report changes preserved.
+- Remaining: apply the reviewed migration through the normal local workflow,
+  restart API, then UAT: before configuration grants disabled; publish approved
+  separate texts/version as manager; create/edit customer; grant data only then
+  marketing; reload; withdraw data and verify both false plus audit history; verify
+  staff cannot publish notices. Keep task IN PROGRESS until rollout/UAT is accepted.
+- Disposable cluster stopped after verification; its temporary files remain for
+  inspection. No existing PostgreSQL instance was stopped or modified.
+- Next after completion: TK2610-0016 / P1-05 customer profile page. Do not start it yet.
+
+### October 19, 2026 — TK2610-0015 / P1-06 consent audit (BLOCKED)
+
+- Inspected Customer Prisma model, shared create/update/response contracts,
+  customer service/routes and tests, editor and screen tests, tenant context,
+  email transport and callers, and the source DOCX requirement.
+- No customer consent fields/history exist. Customer writes currently allow
+  authenticated tenant members when writable; consent permissions need an explicit
+  choice rather than a silent role-policy change. No marketing sender exists;
+  current senders are transactional receipt email and staff 2FA.
+- DOCX supplies the feature name, not approved privacy-notice text, evidence
+  retention or withdrawal policy. Asked the user to choose a technical baseline
+  versus providing approved policy before implementation.
+- Proposed, not approved: separate data and marketing choices; no automatic opt-in;
+  server timestamp, actor and notice version for grants/withdrawals; current-consent
+  checks for future marketing consumers; transactional receipts kept separate.
+  No automatic deletion or claim of legal compliance is inferred.
+- No application edits, database commands, messages sent, or external task changes.
+  Application tests were not rerun for this policy-only audit. Existing low-stock
+  and report changes remain untouched. Resume this task after the policy decision;
+  do not advance to another tracked task.
+
+### October 19, 2026 — TK2610-0013 / P0 readiness review (DONE)
+
+- Reviewed TASKS: TK2610-0004–0012 cover all nine P0 requirements and are recorded
+  Done. The user previously accepted live Packages/Gift cards and the GST,
+  receipt, payment and reports slices. Those earlier acceptances alone did not
+  approve this milestone; October 20 is the original target, not automatic approval.
+  The user subsequently explicitly confirmed "yes it's done and ready. please
+  continue" on October 19, closing this milestone and the P0 phase gate with the
+  disclosed limits retained. Specific walkthrough scenarios were not reported.
+- Fresh checks: root `npm run build`, `npm run typecheck` and `npm run lint` exit 0; web 43 files /
+  392 tests, shared 92 tests, and pure `prisma/seed-data.test.ts` 13 tests pass.
+  The dataset checks cover references, clash windows, totals, tender arithmetic
+  and stock, not live demo freshness or a repeat-run database seed.
+- Root `format:check` reports the same four unchanged files:
+  `apps/api/src/routes/auth.routes.ts`, `apps/api/src/routes/catalogue.routes.test.ts`,
+  `apps/api/src/services/auth.service.ts`, `apps/api/src/services/settings.service.ts`.
+  No clean aggregate `verify` claim. No unrelated formatting or application edits.
+- Handoff checks: Prettier on TASKS/PROGRESS and `git diff --check` pass.
+- No database reset, seed, migration, existing-data change, external task update,
+  commit or deployment. Database-backed API tests were not rerun because this
+  session has not established a disposable test database. The prior 339/339
+  result is retained as historical evidence, not a fresh regression result.
+- Seed inspection confirms demo grants for packages, giftCards and reports, but
+  seed code does not establish today's live data. No live browser or email
+  delivery verification was performed in this review.
+
+#### Sales-demo walkthrough / explicit approval checklist
+
+Use the intended demo tenant and synthetic customer data. Do not reset/reseed an
+existing database merely to make the dashboard look fresh.
+
+1. Log in with the intended demo role; confirm the correct salon, friendly copy,
+   S$ amounts, DD/MM/YYYY dates, saved salon timezone and business hours.
+2. Show populated Products/Services/Packages/Gift cards and available Reports.
+   With an unentitled test tenant, confirm add-on Add controls are hidden and API
+   refusal is friendly. Do not change a live tenant's entitlements for the demo.
+3. Ring a service/product sale with a customer and performer; show the accepted
+   GST setting and tax line. Record a local tender and a package/credit redemption
+   using a suitable existing holding; verify the remaining balance and receipt.
+4. Show receipt numbering and the email-receipt flow. Verify delivery only with
+   an approved recipient and configured transport; UI success is not proof of
+   inbox delivery. WhatsApp receipts are deferred to TK2610-0021.
+5. Reconcile that sale with the salon-day Z-report and staff/service totals; show
+   collected versus redeemed amounts and the liability snapshot. If demonstrating
+   void, explain that ledger reversal is not a provider refund.
+6. Review desktop/mobile presentation and any observed defects. Confirm the demo
+   dataset is useful on the presentation date; relative seed dates do not refresh
+   themselves. Record any waiver rather than treating untested steps as passed.
+
+Demo limits: local rails are recorded tenders, not PSP processing/settlement;
+package liability is sessions, not a monetary valuation; commission is reporting,
+not the P1-08 rules engine; reports have no export/scheduled delivery yet. Known
+P1 booking, held-sale and reversal findings remain in the unresolved section and
+are not cleared by this milestone review.
+
+- Result: user readiness approval recorded; TK2610-0013 and TK2610-0001 are DONE.
+  Verification limitations and known P1 findings remain unchanged; sign-off does
+  not turn unperformed checks into passing results or approve final launch.
+- Next: TK2610-0015 / P1-06 PDPA consent and marketing opt-in (P1-09 is already
+  Done). Not started in this milestone closeout, per the one-task handoff rule.
+
+### October 19, 2026 — TK2610-0012 / P0-06 reports (DONE)
+
+- Found `18c973f feat(reports): add Z-report, liability, and commission reporting` already
+  committed, while the tracker still said "Not assessed". Audited it against the completion
+  check instead of rebuilding it.
+- Z-report: `salonDayBounds` gives the salon-local `[from, to)` day; voids come from
+  `voidedAt` inside that day, so a sale rung up yesterday and voided today appears today;
+  `collected` and `redeemed` are split by `isRedemptionPaymentMethod`; tax is the
+  snapshotted `Sale.taxAmount`. Test fixtures assert the void (999.00) and outstanding
+  (10.00) figures.
+- Overview: staff rows fold `EmployeePerformance` plus `EmployeeCommission` (sale-linked
+  or created in range for period commissions); services, items, days and tenders are
+  folded from completed sales only; liability excludes expired and exhausted holdings
+  and reports package sessions as a count.
+- ADR 0010 closed in `apps/api/src/services/catalogue.service.ts`: `listProducts` keeps
+  `filterThreshold` for `?lowStock=true` and uses `badgeThreshold` (the stored tenant
+  threshold unless there is no override) for `toProduct`. `catalogue.service.test.ts`
+  now asserts both rows of the override-widened page — `Aloha Shampoo` stays
+  `lowStock: false` at 10 units where the salon threshold is 5.
+- Checks run: API 339/339, web 392/392 across 43 files, API typecheck/ESLint/scoped
+  Prettier, web typecheck — all exit 0. Reports screen tests 5/5 and reports endpoint
+  tests 6/6.
+- Two over-long lines in the committed `report.service.ts` also failed Prettier; they
+  were re-wrapped (whitespace only). `format:check` still fails on the four files this
+  task never touched, as recorded under TK2610-0011.
+- Not committed: the ADR 0010 fix and its test, plus the `report.service.ts` re-wrap. Suggested commits: `fix: keep low-stock badges on the salon threshold when filtering (TK2610-0012)` and `style: format report service`.
+- UAT (October 19, 2026): user reported UAT complete on `/reports`; no defects were reported and the exact scenarios exercised were not recorded. The task is now DONE locally; mark it done in the external system if not already.
+- Next: TK2610-0013 — MILESTONE: P0 UAT and sales-demo readiness sign-off.
 
 ### October 19, 2026 — TK2610-0011 / P0-04 local payment methods + redemption (DONE, implementation)
 
@@ -94,8 +254,7 @@ child completion alone does not sign off Phase 1 (TK2610-0001).
   manual UAT covered the flow.
 - User UAT (October 19, 2026): reported complete. The exact scenarios the user exercised were not
   recorded here; no defects were reported back.
-- Changes uncommitted; suggested message
-  `feat: record local payment methods and redeem packages and credit (TK2610-0011)`.
+- Committed as `c2274bc` with the suggested message.
 - Next: TK2610-0012 / P0-06 reports.
 
 ### October 19, 2026 — TK2610-0011 / P0-04 UAT sign-off (DONE)

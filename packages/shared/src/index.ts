@@ -16,3 +16,4 @@ export * from "./schemas/shift.js";
 export * from "./schemas/appointment.js";
 export * from "./schemas/report.js";
 export * from "./schemas/settings.js";
+export * from "./schemas/consent.js";

@@ -71,6 +71,18 @@ not establish full roadmap compliance. Consult the decision sections and task fi
   (SETUP-05). Never reset/reseed or rewrite applied migrations to rename a database.
 - No Docker, GitHub Actions or rewrite work in current scope.
 - Preserve source design material, originals, secrets and unrelated working changes.
+- Customer consent (TK2610-0015, October 19, 2026): tenant managers publish their
+  approved personal-data and optional marketing wording with immutable versions.
+  Capture is disabled until configured; existing customers default to no consent.
+  Customer-editing staff may record choices in writable tenants. Consent writes
+  are separate from ordinary customer edits, with optimistic revisions and atomic
+  audit events carrying server time, actor id and exact notice reference. Marketing
+  requires both choices; withdrawing data consent also withdraws marketing. This
+  is a product rule, not a legal-compliance determination. Receipts/2FA remain
+  transactional; future promotional consumers must check current consent at dispatch.
+  No automatic evidence purge is configured. Events follow customer/tenant deletion;
+  published notices remain tenant-owned. A broader retention/export policy remains
+  operator-owned and must be settled before introducing automated retention jobs.
 - Manual payment-method recording is not provider integration; voiding a sale is
   not returning money. Provider onboarding, trademark clearance, grant submission
   and readiness sign-offs need external evidence.

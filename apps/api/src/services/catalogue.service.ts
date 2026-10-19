@@ -204,14 +204,20 @@ export async function listProducts(
   query: CatalogueListQuery,
 ): Promise<PaginatedResponse<ProductSummary>> {
   const { page, pageSize, skip, take } = parsePagination(query);
-  const threshold = await resolveLowStockThreshold(query.threshold);
+  const filterThreshold = await resolveLowStockThreshold(query.threshold);
+  // ADR 0010: `?threshold=` narrows the **filter** — the rail badge asks for a count
+  // at another threshold — while each row's `lowStock` badge stays on the salon's
+  // stored threshold. Otherwise opening a filtered list would relabel stock for the
+  // page it happens to show. Only the override path pays for the second read.
+  const badgeThreshold =
+    query.threshold === undefined ? filterThreshold : await resolveLowStockThreshold();
 
   const where = {
     ...catalogueWhere(query),
     // The stat tile and the rail badge are counts over the **whole** catalogue,
     // which a single page cannot compute — so `?lowStock=true` is a server-side
     // filter, not a sort the browser applies to the rows it happens to hold.
-    ...(query.lowStock ? { quantity: { lte: threshold } } : {}),
+    ...(query.lowStock ? { quantity: { lte: filterThreshold } } : {}),
   };
 
   const [rows, total] = await Promise.all([
@@ -227,7 +233,7 @@ export async function listProducts(
   ]);
 
   return paginated(
-    rows.map((row) => toProduct(row, threshold)),
+    rows.map((row) => toProduct(row, badgeThreshold)),
     total,
     { page, pageSize },
   );

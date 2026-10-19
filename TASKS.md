@@ -87,9 +87,13 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0001 — Phase 1 – P0 Launch blockers
 
-- Status: Not assessed
+- Status: DONE
 - Expected result: complete all P0 product tasks.
 - Completion check / dependencies: all P0 child checks met, evidence reviewed and explicit phase sign-off recorded. Child completion alone does not sign off a phase.
+- Sign-off (October 19, 2026): all nine P0 children are recorded Done and the user
+  explicitly confirmed P0 readiness: "yes it's done and ready. please continue".
+  P0 phase/readiness approval is recorded through TK2610-0013, with its disclosed
+  scope and verification limits retained. This is not final launch approval.
 
 ### TK2610-0004 — P0-07 Remove developer copy & system-status panel
 
@@ -163,21 +167,44 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   - **API.** `GET /api/customers/:id/holdings` returns only spendable package sessions and credit in one list (expired and exhausted rows omitted). `redeemPayments()` spends a redemption inside the sale transaction: it re-reads the holding, recomputes package coverage (cart order, one session per eligible service unit) or checks the credit balance, decrements with a `>=` guard, and writes one `CustomerRedemption` row naming the holding. `reverseForVoid()` puts sessions/credit back and stamps `revertedAt`. Codes: `HOLDING_NOT_FOUND` (404), `HOLDING_EXPIRED` / `HOLDING_INSUFFICIENT` (409), `HOLDING_NOT_COVERED` / `HOLDING_REQUIRES_CUSTOMER` / `REDEMPTION_EXCEEDS_TOTAL` (400).
   - **Web.** Payment sheet lists all eleven tenders; choosing a redemption tender shows the customer's holdings, computes the amount by the same rule as the server and posts it read-only with the `holdingId`. Receipt badges/labels and the email receipt name all eleven.
 - Known limitations: no provider settlement/reconciliation, no partial refund of a redemption, no gift-card tender, and no UI beyond the payment sheet (customer credit history, package-use screen). A package consumes one session per service unit, so a bundle whose "one use" means a set of services needs that semantic in the package model (P2-03). Voiding a sale that _spent_ credit refunds the holding, which is a policy choice recorded in ADR 0019.
-- Verification: migration applied to local `glampro_suite` and `prisma migrate status` up to date (live DB↔schema diff empty); API typecheck, ESLint and Prettier clean; web typecheck and production build pass; API 333/333 (6 new sale-service tests, new `customers.routes.test.ts` with 5) and web 391/391 across 43 files pass. User UAT reported complete on October 19, 2026 with no defects. Changes uncommitted.
-- Next: user UAT against the real till (PayNow/NETS/GrabPay/Atome recording, a package redemption and a credit redemption, then a void). TK2610-0012 / P0-06 reports is the next task.
+- Verification: migration applied to local `glampro_suite` and `prisma migrate status` up to date (live DB↔schema diff empty); API typecheck, ESLint and Prettier clean; web typecheck and production build pass; API 333/333 (6 new sale-service tests, new `customers.routes.test.ts` with 5) and web 391/391 across 43 files pass. User UAT reported complete on October 19, 2026 with no defects. Committed as `c2274bc`.
+- Next: TK2610-0013 / P0 UAT milestone (TK2610-0012 reports is DONE).
 
 ### TK2610-0012 — P0-06 Reports: Z-report, sales by staff/service, package liability
 
-- Status: Not assessed
+- Status: DONE (October 19, 2026 — implementation, automated verification, and **user UAT**).
 - Expected result: Reports: daily Z-report, sales by staff/service, package liability
 - Completion check / dependencies: Verify daily Z-report, staff/service totals and package liability against sale/reversal/tax data. Include commission needs from the launch-blocker narrative. Resolve low-stock flag semantics when touching reports (ADR 0010).
-- Next: audit current implementation against the full expected result and check.
+- Done (October 19, 2026):
+  - **Daily Z-report.** `GET /api/reports/z-report?date=&timeZone=` draws the salon-local half-open day via `salonDayBounds`; totals are gross, discounts, net, tax, paid, collected, redeemed, sales and items. Tenders separate money from redemption, voids are counted by `voidedAt` inside the day (a sale rung up yesterday and voided today appears today), and `outstandingCreated` is the unpaid amount created that day.
+  - **Sales by staff and service.** `reportOverview` returns staff rows with credited lines, revenue and commission (sale-linked plus period commissions created in range), service totals, top items, sales-by-day bucketed in the salon zone, tender subtotals and GST totals.
+  - **Liability.** A current snapshot of package sessions, prepaid credit, gift-card balances and customer outstanding. Expired and exhausted holdings are excluded; package sessions are counted rather than valued because the catalogue holds member and non-member prices.
+  - **ADR 0010 resolved.** `?threshold=` now narrows only the low-stock **filter**; each row's `lowStock` badge uses the salon's stored tenant threshold, so opening a filtered list cannot relabel stock. `catalogue.service.test.ts` asserts both rows of the widened result (10 units is not low where the salon's threshold is 5).
+- Known limitations: no export, scheduled delivery or charts yet (the full reporting phase is still ahead); commission is reporting-only, since the rules engine stays in P1-08 / TK2610-0019; the Z-report reconciles tenders, not a physical cash drawer.
+- Verification: implementation committed as `18c973f`; the ADR 0010 fix, its test and two Prettier re-wraps in `report.service.ts` are uncommitted. API 339/339 and web 392/392 across 43 files pass; API typecheck, ESLint and scoped Prettier clean; web typecheck passes; reports endpoint tests 6/6.
+- UAT (October 19, 2026): user confirmed complete on `/reports` with no defects reported. The exact scenarios exercised were not recorded.
+- Next: TK2610-0013 — MILESTONE: P0 UAT and sales-demo readiness sign-off.
 
 ### TK2610-0013 — MILESTONE – P0 UAT & sales-demo readiness sign-off (20 Oct)
 
-- Status: Not assessed
+- Status: DONE
 - Expected result: review P0 launch blockers; demo data and sales-demo readiness.
 - Completion check / dependencies: required child tasks complete and explicit readiness sign-off recorded. Do not infer approval from dates or test counts.
+- Review started October 19, 2026: all nine P0 child tasks (TK2610-0004–0012)
+  are recorded Done. Existing child UAT is evidence, not milestone approval.
+- Fresh verification: root production build, typecheck and workspace lint exit 0; web 392/392,
+  shared 92/92 and pure demo-dataset 13/13 tests pass. Root formatting fails on
+  four unchanged API files. API integration 339/339 remains historical evidence;
+  no database-backed suite, live demo refresh or browser walkthrough was run here.
+- Accepted scope to disclose: local payment rails are manually recorded, not PSP
+  settlement; receipts are email-only (WhatsApp deferred); package liability is a
+  session count; commission rules remain P1-08. Do not present these as integrations
+  or capabilities that have not been delivered.
+- Sign-off (October 19, 2026): user explicitly confirmed "yes it's done and ready.
+  please continue" after reviewing the readiness summary and disclosed limits.
+  This closes the milestone and P0 phase gate; individual walkthrough scenarios
+  were not reported and are not retroactively claimed as tested by the agent.
+- Next: TK2610-0015 / P1-06 PDPA consent and marketing opt-in; P1-09 is already Done.
 
 ### TK2610-0002 — Phase 2 – P1 Competitive parity
 
@@ -194,10 +221,33 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0015 — P1-06 PDPA consent + marketing opt-in
 
-- Status: Not assessed
+- Status: IN PROGRESS
 - Expected result: PDPA consent + marketing opt-in on customer record
 - Completion check / dependencies: Verify persisted consent/marketing choices, authorized updates and enforcement by messaging consumers; confirm retention/audit requirements.
-- Next: audit current implementation against the full expected result and check.
+- Audit (October 19, 2026): Customer model/shared contracts/editor have no consent
+  fields or consent history. Existing customer writes allow authenticated members
+  of writable tenants; preserve or explicitly decide consent-edit permissions.
+  Existing mail flows are receipts and staff login codes, not marketing campaigns.
+  The source DOCX names this feature but supplies no approved notice or retention policy.
+- Decision (October 19, 2026): user accepted tenant-configured notice text/version,
+  with consent capture disabled until configured. Baseline: separate data/marketing choices,
+  no automatic opt-in, grants/withdrawals with server time, actor and notice version;
+  future marketing consumers check current consent, transactional receipts remain
+  separate. No automatic purge or legal-compliance claim without approved policy.
+- Implemented: immutable tenant notice versions, manager publication in Settings,
+  separate customer consent editor/history, default-false choices, atomic audit
+  events and revision conflicts. No notice means no new grants; withdrawals remain
+  possible. Staff customer-edit permission is preserved; suspended writes refused.
+  Current-consent guard is available for future marketing consumers; no marketing
+  sender exists yet. Receipts/2FA remain transactional and unchanged.
+- Verification: API 347/347 (0 skipped) on a new disposable PostgreSQL cluster,
+  web 399/399, shared 95/95; root build/typecheck/lint pass. Migration deploy and
+  live disposable DB-to-schema diff pass. Root formatting retains four unrelated
+  API failures; changed-file formatting and diff checks pass.
+- Remaining: migration `20261019120000_customer_consent` is not applied to the
+  existing salon database. Apply via the normal reviewed migration workflow, then
+  user UAT for notice publication, grant, withdrawal and history. Keep IN PROGRESS
+  until local rollout/UAT is complete. No browser/visual verification was performed.
 
 ### TK2610-0016 — P1-05 Customer profile page
 

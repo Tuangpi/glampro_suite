@@ -1,5 +1,10 @@
 import { Router } from "express";
 import {
+  configurePrivacyNoticeSchema,
+  type ConfigurePrivacyNoticeInput,
+} from "@glampro_suite/shared";
+import { configurePrivacyNotice, getPrivacyNotice } from "../services/consent.service.js";
+import {
   updateSalonOperatingHoursSchema,
   updateSalonProfileSchema,
   type UpdateSalonOperatingHoursInput,
@@ -31,6 +36,34 @@ import {
  * for entitlement reasons — the rail entry's `module` field says the same.
  */
 export const settingsRouter = Router();
+
+settingsRouter.get("/privacy-notice", auth, async (_req, res, next) => {
+  try {
+    res.json({ data: await getPrivacyNotice() });
+  } catch (error) {
+    next(error);
+  }
+});
+settingsRouter.post(
+  "/privacy-notice",
+  auth,
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(configurePrivacyNoticeSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      res.status(201).json({
+        data: await configurePrivacyNotice(
+          validated<ConfigurePrivacyNoticeInput>(req, "body"),
+          req.user.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 settingsRouter.get("/profile", auth, async (_req, res, next) => {
   try {

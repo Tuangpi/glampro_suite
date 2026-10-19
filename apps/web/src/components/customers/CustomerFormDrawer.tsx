@@ -10,6 +10,7 @@
  * The contract lives in `packages/shared`; nothing here re-declares a rule.
  */
 import { useState } from "react";
+import CustomerConsentPanel from "@/components/customers/CustomerConsentPanel";
 
 import type { CustomerDetail, GenderValue } from "@glampro_suite/shared";
 
@@ -281,6 +282,14 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
           error={fieldError("comment")}
           maxLength={2000}
         />
+        {customer ? (
+          <CustomerConsentPanel customerId={customer.id} />
+        ) : (
+          <p className="text-sm text-ink-muted">
+            Save the customer first, then edit their record to capture privacy and marketing
+            choices. No consent is assumed.
+          </p>
+        )}
       </form>
     </Drawer>
   );

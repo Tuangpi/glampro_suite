@@ -14,6 +14,10 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("@/components/customers/CustomerConsentPanel", () => ({
+  default: () => <div>Customer consent panel</div>,
+}));
+
 const {
   useCustomerList,
   useCreateCustomer,

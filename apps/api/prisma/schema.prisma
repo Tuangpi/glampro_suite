@@ -350,6 +350,8 @@ model Tenant {
   employeeLeaves      EmployeeLeave[]
   staffShifts         StaffShift[]
   operatingHours      TenantOperatingHours?
+  privacyNotices      PrivacyNotice[]
+  consentEvents       CustomerConsentEvent[]
 
   @@index([status])
   @@map("tenants")
@@ -718,6 +720,10 @@ model Customer {
   cardNumber     String?
   address     String?
   comment     String?
+  /// No existing customer is opted in by this migration.
+  pdpaConsent Boolean @default(false)
+  marketingOptIn Boolean @default(false)
+  consentRevision Int @default(0)
   /// Customers can sign in to the mobile app, so the hash lives here and not only
   /// on `User`.
   passwordHash String?
@@ -738,6 +744,7 @@ model Customer {
   outstandings        CustomerOutstanding[]
   outstandingPayments CustomerOutstandingPayment[]
   redemptions         CustomerRedemption[]
+  consentEvents       CustomerConsentEvent[]
 
   /// Per-tenant email uniqueness. A customer with no email is unconstrained, which
   /// Postgres treats as satisfying a unique index for every such row.
@@ -745,6 +752,41 @@ model Customer {
   @@index([tenantId])
   @@index([name])
   @@map("customers")
+}
+
+/// Immutable wording; latest row is the current notice.
+model PrivacyNotice {
+  id String @id @default(cuid())
+  tenantId String
+  version String
+  dataConsentText String
+  marketingConsentText String
+  createdAt DateTime @default(now())
+  createdById String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  events CustomerConsentEvent[]
+  @@unique([tenantId, version])
+  @@index([tenantId, createdAt])
+  @@map("privacy_notices")
+}
+
+/// Append-only through the API. Actor id survives staff removal; no contact data copied.
+model CustomerConsentEvent {
+  id String @id @default(cuid())
+  tenantId String
+  customerId String
+  revision Int
+  pdpaConsent Boolean
+  marketingOptIn Boolean
+  recordedAt DateTime @default(now())
+  recordedById String
+  noticeId String?
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  notice PrivacyNotice? @relation(fields: [noticeId], references: [id], onDelete: Restrict)
+  @@unique([customerId, revision])
+  @@index([tenantId, customerId])
+  @@map("customer_consent_events")
 }
 
 /// Customer ↔ branch. Legacy `customer_department`, which had no `company_id`.

@@ -278,13 +278,19 @@ describe(
         assert.equal(b.total, 2);
       });
 
-      it("honours an explicit threshold instead of the tenant's", async () => {
+      it("filters on an explicit threshold but badges rows on the tenant's", async () => {
         const page = await runAsTenant(TENANT_A, () =>
           listProducts({ ...NO_FILTERS, lowStock: true, threshold: MID_STOCK }),
         );
 
         // "At or below" includes the boundary, so `Aloha Shampoo` at exactly 10 counts.
         assert.equal(page.total, 2);
+        const shampoo = page.data.find((row) => row.name === `Aloha Shampoo ${TENANT_A}`);
+        const serum = page.data.find((row) => row.name === `Charlie Serum ${TENANT_A}`);
+        // The override widened the filter to two rows, but each row is still judged
+        // against the salon's own threshold (5), so 10 units is not relabelled as low.
+        assert.equal(shampoo?.lowStock, false, "the filter override must not change the badge");
+        assert.equal(serum?.lowStock, true);
       });
 
       it("cannot read another tenant's product by id", async () => {

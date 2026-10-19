@@ -19,6 +19,7 @@
  *   page, and one question gets one answer (ADR 0010's shape).
  */
 import { useState } from "react";
+import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
 
 import { Link } from "react-router";
 
@@ -72,6 +73,7 @@ export default function Settings() {
       <ProfileCard canEdit={canEdit} />
       <ModulesCard modules={modules.data} isPending={modules.isPending} isError={modules.isError} />
       <OperatingHoursCard canEdit={canEdit} />
+      <PrivacyNoticeCard canEdit={canEdit} />
       <TeamCard
         rows={team.data?.data ?? []}
         total={team.data?.total ?? 0}

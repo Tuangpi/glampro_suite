@@ -1,5 +1,11 @@
 import { Router } from "express";
 import {
+  recordCustomerConsentSchema,
+  paginationQuerySchema,
+  type RecordCustomerConsentInput,
+} from "@glampro_suite/shared";
+import { getCustomerConsent, recordCustomerConsent } from "../services/consent.service.js";
+import {
   createCustomerSchema,
   customerListQuerySchema,
   idParamSchema,
@@ -33,6 +39,46 @@ import {
  * that exists passes it.
  */
 export const customersRouter = Router();
+
+customersRouter.get(
+  "/:id/consent",
+  auth,
+  requireModule("customers"),
+  validate(idParamSchema, "params"),
+  validate(paginationQuerySchema, "query"),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      const { page, pageSize } = validated<{ page: number; pageSize: number }>(req, "query");
+      res.json({ data: await getCustomerConsent(id, page, pageSize) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+customersRouter.post(
+  "/:id/consent",
+  auth,
+  requireModule("customers"),
+  requireWritableTenant(),
+  validate(idParamSchema, "params"),
+  validate(recordCustomerConsentSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({
+        data: await recordCustomerConsent(
+          id,
+          validated<RecordCustomerConsentInput>(req, "body"),
+          req.user.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 customersRouter.get(
   "/",

@@ -180,7 +180,8 @@ async function liabilitySnapshot(): Promise<ReportLiability> {
   for (const holding of prepaid) prepaidBalance = addMoney(prepaidBalance, holding.amountRemaining);
 
   let giftCardBalance = 0n;
-  for (const holding of giftCards) giftCardBalance = addMoney(giftCardBalance, holding.valueRemaining);
+  for (const holding of giftCards)
+    giftCardBalance = addMoney(giftCardBalance, holding.valueRemaining);
 
   let outstandingBalance = 0n;
   const owingCustomers = new Set<string>();
@@ -513,7 +514,8 @@ export async function zReport(query: ZReportQuery): Promise<ZReport> {
   for (const sale of voids) voidAmount = addMoney(voidAmount, sale.totalAmount);
 
   let outstandingCreated = 0n;
-  for (const row of outstanding) outstandingCreated = addMoney(outstandingCreated, row.unpaidAmount);
+  for (const row of outstanding)
+    outstandingCreated = addMoney(outstandingCreated, row.unpaidAmount);
 
   return zReportSchema.parse({
     date: query.date,
