@@ -2,16 +2,14 @@
 
 ## Current State
 
-- Current task: TK2610-0005 / P0-09 Security hardening — DONE
-- Most recent product work: TK2610-0008 / P0-05 remains Ready for UAT, as recorded before this consolidation. Its source/test changes are uncommitted; preserve them.
-- SETUP-05 — Reported database rename: NOT assessed. Database IS running (PostgreSQL 18 on localhost:5432, `glampro_suite` database present, `.env` has DATABASE_URL). However API integration tests fail at seed with `time_zone column does not exist` — a pre-existing schema/database mismatch, not caused by P0-09 changes. Database rename verification still needs environment/backup confirmation; no reset/reseed per PROJECT.md constraints.
-- P0-09 / TK2610-0005 security hardening implemented and marked DONE on manual code review:
-  - Token replay: replaying a revoked refresh token now rejects with SESSION_INVALIDATED without revoking the user's other sessions (aligns with ADR 0007: logout revokes one token, not all sessions)
-  - Password change: tokenVersion bump + refresh revocation wrapped in a single `prisma.$transaction` so both succeed or neither
-  - Platform forced sign-out: new `POST /api/auth/force-sign-out` (SUPER_ADMIN only) bumps tokenVersion and revokes all refresh tokens atomically
-  - Owner 2FA (email codes): `twoFactorEnabled`/`twoFactorCode`/`twoFactorCodeExpiresAt` added to User schema; `enableTwoFactor`, `confirmTwoFactor`, `disableTwoFactor`, `verifyTwoFactorForLogin` service functions; login gates on 2FA (sends code by email, returns empty tokens until verified); five new auth routes; dev/test email service logs codes to console
-  - Test accounts retained per user decision (no removal)
-- Verification: API typecheck passes, API lint passes, shared 87/87 tests pass. API integration tests blocked by pre-existing `time_zone` column mismatch (SETUP-05 concern).
+- Current task: TK2610-0009 / P0-01 GST — implementation and automated checks complete, IN PROGRESS pending user UAT/sign-off. Most recently completed: TK2610-0008 / P0-05 (signed off October 19, 2026).
+- Most recent work: GST for Singapore salons — 9% inclusive, backed out per line, snapshotted on sale/lines, salon toggle + registration number, receipts and reports. Additive migration `20261019015129_gst_settings_and_sale_tax` applied. Verification: shared 92/92, web 387/387, API 312/312; typecheck and lint clean.
+- Earlier: SETUP-05 database verification and repair. Schema drift found (live DB missing `tenants.time_zone`/`locale` and `tenant_operating_hours` despite `_prisma_migrations` rows; P0-09's 2FA columns existed only in `schema.prisma`). Repaired additively via `npm run db:migrate`: applied pending `20261015210000_tenant_localisation`, `20261016151623_tenant_operating_hours`, and newly generated `20261018141510_user_two_factor_auth` (purely additive, reviewed). No reset/reseed. Backup: `backups/glampro_suite_2026-10-18.dump` (pg_dump); `backups/` gitignored; `.env` never committed.
+- Environment facts: PostgreSQL at `localhost:5432`, db `glampro_suite`, shadow `glampro_shadow` also on 5432. Commented-out `SHADOW_DATABASE_URL` in `apps/api/.env` points at stale port 5433 (nothing listens) — use 5432 for shadow commands.
+- Verification: `prisma migrate status` → 12 migrations, up to date; `prisma migrate diff` live-DB↔schema and migrations↔schema both empty (exit 0); 0 rolled-back migrations; API tests 308/308 pass (exit 0), web/shared unchanged this session.
+- One stale test fixed: `apps/api/src/routes/auth.routes.test.ts` replay case still asserted pre-P0-09 family revocation; now asserts ADR 0007 behavior (replay → 401 `SESSION_INVALIDATED`, rotated pair stays valid). Test-only change; service behavior unchanged. This was the blocker hiding behind the DB seed failure.
+- P0-09 / TK2610-0005 remains DONE; its "integration tests blocked" caveat is now cleared.
+- TK2610-0008 / P0-05 — DONE: user completed UAT and marked it done in the external system on October 19, 2026. Its Products.tsx/test changes are committed in 80bd83b (verified via git log; the earlier "uncommitted" note was stale).
 - Earlier records report P0-07, P0-08, P0-03 and P1-09 Done. This consolidation does not independently revalidate their product behavior.
 
 ## Unresolved decisions and carried-forward findings
@@ -34,8 +32,7 @@ Architecture decisions (ADR 0002–0018), and Design integration (Design 1–7).
 
 | Related task          | Finding / decision needed                                                                                                                                                                                                                                                                                                                                                                                                    |
 | --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| SETUP-05              | Verify actual database name/environment, backups and connection configuration without revealing secrets or resetting data. Repository rename does not prove database rename.                                                                                                                                                                                                                                                 |
-| P0-09; ADR 0007       | Logged-out token replay may revoke other sessions; password update/revocation are separate writes; platform forced sign-out is absent. Decide replay behavior, owner 2FA/recovery and safe account-removal scope.                                                                                                                                                                                                            |
+| P0-09; ADR 0007       | Replay behavior resolved: replay rejects without family revocation per ADR 0007, test aligned October 18; password change atomic; forced sign-out exists. Owner recovery/account-removal scope still open.                                                                                                                                                                                                                   |
 | P0-06; ADR 0010       | ADR requires stored tenant threshold for row low-stock flags even with a filter override; code uses the resolved override for both. Choose semantics and test row flags, not only result counts.                                                                                                                                                                                                                             |
 | P0-02; ADR 0011       | Legacy unnumbered completed receipts have no established backfill guarantee. Held sales also have null numbers; a completed receipt's “number pending” copy must not promise an unsupported future allocation.                                                                                                                                                                                                               |
 | P1-07; ADR 0017       | ADR says discounts reduce loyalty points; code/test award catalogue points × quantity. Resolve policy first. Performance totals are not cash collected or commission. Receipt disclosure can omit a positive rate rounded to zero money.                                                                                                                                                                                     |
@@ -59,11 +56,58 @@ already recorded complete and can be marked done externally if not already marke
 - TK2610-0007 / P0-03 — business hours.
 - TK2610-0014 / P1-09 — performer-picker cleanup.
 
-TK2610-0008 / P0-05 remains Ready for UAT; seed inspection does not establish live
-demo grants/data. Do not newly declare it complete without confirming its full check.
-No phase or readiness milestone is signed off by this documentation task.
+TK2610-0008 / P0-05 was signed off Done by the user on October 19, 2026 (UAT
+accepted) and is already marked done externally. No phase or readiness milestone
+is signed off; child completion alone does not sign off Phase 1 (TK2610-0001).
 
 ## Recent handoffs
+
+### October 19, 2026 — TK2610-0009 / P0-01 GST (implementation complete, awaiting UAT)
+
+- Policy: Singapore GST 9%, inclusive of catalogue prices. Back-calculated per line
+  (`lineTotal × 9 / 109`, half-up 2dp); sale tax is the sum of rounded lines. Rate and
+  amount are stored on `Sale`/`SaleLine`. GST defaults off, so existing salons are
+  unaffected.
+- Shipped: shared constants/schemas, additive migration
+  `20261019015129_gst_settings_and_sale_tax`, settings service pair guard (`gstEnabled`
+  requires a number; a stored number survives a toggle-only PATCH), sale pricing and
+  receipt mapping, report tax aggregation, Settings toggle + registration number,
+  ReceiptView "Includes GST (9%)" row, Reports GST column and totals tile.
+- Verification: migration applied; `build:shared`, shared/API/web typecheck and lint
+  exit 0; shared 92/92, web 387/387, API 312/312 pass.
+- Next: user UAT (enable GST, ring a sale, check the report), then external sign-off.
+
+### October 19, 2026 — TK2610-0008 / P0-05 UAT sign-off (DONE)
+
+- User confirmed UAT acceptance and marked TK2610-0008 Done in the external system;
+  local tracker promoted Ready for UAT to DONE. External system/PDF updates stay
+  with the user.
+- Correction: the P0-05 `Products.tsx`/test changes previously recorded as
+  uncommitted are committed in `80bd83b` (checked with `git log -- Products.tsx`).
+- Tracker-only update; no code, tests or database touched this session.
+- Next: TK2610-0009 / P0-01 GST settings, tax line on sales & tax reports.
+
+### October 18, 2026 — SETUP-05 database environment (DONE)
+
+- Verified environment: PostgreSQL on `localhost:5432` (only 5432 listening; the
+  commented-out `SHADOW_DATABASE_URL` in `apps/api/.env` targets stale port 5433),
+  db `glampro_suite`, shadow `glampro_shadow`, `.env` never committed to git.
+- Two drift sources repaired, all additive via `npm run db:migrate`, no
+  reset/reseed: applied pending `20261015210000_tenant_localisation` and
+  `20261016151623_tenant_operating_hours` (live DB was missing `tenants.time_zone`
+  / `locale` and `tenant_operating_hours` despite `_prisma_migrations` rows), then
+  generated and applied `20261018141510_user_two_factor_auth` for P0-09's 2FA
+  columns that existed only in `schema.prisma`.
+- Backup before changes: `backups/glampro_suite_2026-10-18.dump` (pg_dump, ~125KB);
+  `backups/` added to `.gitignore`.
+- One pre-existing test failure surfaced once seed ran: the replay case in
+  `apps/api/src/routes/auth.routes.test.ts` still asserted pre-P0-09 family
+  revocation. Test updated to ADR 0007 behavior (replay 401 `SESSION_INVALIDATED`;
+  rotated pair stays valid). Test-only — `auth.service.ts` unchanged.
+- Checks: `prisma migrate status` → 12 migrations, up to date, 0 rolled back;
+  `prisma migrate diff` live-DB↔schema and migrations↔schema both "No difference
+  detected" (exit 0); API tests 308/308 pass (exit 0). Web/shared not rerun (not
+  touched this session). Uncommitted work preserved; no commit/push.
 
 ### October 17, 2026 — DOCS-01 three-document migration (DONE)
 

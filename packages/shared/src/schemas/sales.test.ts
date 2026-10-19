@@ -276,6 +276,8 @@ const receipt = {
   totalAmount: "80.00",
   paidAmount: "80.00",
   discountAmount: "0.00",
+  taxAmount: "6.61",
+  taxRate: "9.00",
   outstandingAmount: "0.00",
   pointsEarned: 5,
   lines: [],
@@ -296,6 +298,13 @@ describe("saleDetailSchema", () => {
 
     assert.equal(discounted.discountAmount, "33.34");
     assert.equal(saleDetailSchema.parse(receipt).discountAmount, "0.00");
+  });
+
+  it("carries the GST included in the total, backed out of inclusive prices", () => {
+    const taxed = saleDetailSchema.parse(receipt);
+
+    assert.equal(taxed.taxAmount, "6.61");
+    assert.equal(taxed.taxRate, "9.00");
   });
 
   it("carries why and by whom once it is voided, and still a receipt", () => {
@@ -393,6 +402,8 @@ describe("saleLineSchema", () => {
     lineTotal: "66.66",
     discountPercent: "33.33",
     discountAmount: "33.34",
+    taxAmount: "5.50",
+    taxRate: "9.00",
     staffId: null,
     staffName: null,
   };

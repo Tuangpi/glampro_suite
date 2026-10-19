@@ -68,12 +68,23 @@ export const salonProfileSchema = z.object({
   lowStockThreshold: z.number().int().min(0).max(10_000),
   timeZone: salonTimeZoneSchema,
   locale: salonLocaleSchema,
+  /** GST toggle (TK2610-0009 / P0-01): catalogue prices include GST when on. */
+  gstEnabled: z.boolean(),
+  /** GST registration number printed on receipts and reports; `null` when unset. */
+  gstRegistrationNumber: z.string().nullable(),
   owner: z.object({ id: z.string(), name: z.string(), email: z.string() }).nullable(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
 
 export type SalonProfile = z.infer<typeof salonProfileSchema>;
+
+export const gstRegistrationNumberSchema = z
+  .string()
+  .trim()
+  .min(1, "GST registration number is required when GST is enabled.")
+  .max(50)
+  .regex(/^[A-Za-z0-9][A-Za-z0-9 ./-]*$/, "Use letters, digits, spaces, dots, slashes or hyphens.");
 
 /**
  * `PATCH /api/settings/profile` — the salon's editable profile fields.
@@ -87,8 +98,28 @@ export const updateSalonProfileSchema = z
     lowStockThreshold: z.number().int().min(0).max(10_000),
     timeZone: salonTimeZoneSchema.optional(),
     locale: salonLocaleSchema.optional(),
+    /**
+     * GST toggle (TK2610-0009 / P0-01). Optional so older clients do not flip
+     * a salon's tax behaviour by omitting it; only a sent value changes it.
+     */
+    gstEnabled: z.boolean().optional(),
+    /**
+     * GST registration number. `null` clears it. The service refuses enabling
+     * GST without a number and refuses clearing it while GST stays enabled,
+     * so the stored pair can never be "enabled but unnumbered".
+     */
+    gstRegistrationNumber: gstRegistrationNumberSchema.nullable().optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    // Explicit `null` with the toggle on is always wrong. An **omitted** number
+    // is the service's call, because only it can see the stored one.
+    (input) => input.gstEnabled !== true || input.gstRegistrationNumber !== null,
+    {
+      message: "A GST registration number is required when GST is enabled.",
+      path: ["gstRegistrationNumber"],
+    },
+  );
 
 export type UpdateSalonProfileInput = z.infer<typeof updateSalonProfileSchema>;
 
@@ -116,17 +147,13 @@ export type ModuleSummary = z.infer<typeof moduleSummarySchema>;
 /** One day's open window. A `null` day means the salon is closed that day. */
 export const dayHoursSchema = z
   .object({
-    open: z
-      .string()
-      .regex(/^\d{2}:\d{2}$/, "Use HH:mm, such as 09:00"),
-    close: z
-      .string()
-      .regex(/^\d{2}:\d{2}$/, "Use HH:mm, such as 20:00"),
+    open: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:mm, such as 09:00"),
+    close: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:mm, such as 20:00"),
   })
-  .refine(
-    (data) => data.open < data.close,
-    { message: "Closing time must be after opening time", path: ["close"] },
-  );
+  .refine((data) => data.open < data.close, {
+    message: "Closing time must be after opening time",
+    path: ["close"],
+  });
 
 export type DayHours = z.infer<typeof dayHoursSchema>;
 
@@ -165,11 +192,6 @@ export const updateSalonOperatingHoursSchema = z
     saturday: dayHoursSchema.nullable().optional(),
   })
   .strict()
-  .refine(
-    (data) => Object.keys(data).length > 0,
-    { message: "At least one day must be provided" },
-  );
+  .refine((data) => Object.keys(data).length > 0, { message: "At least one day must be provided" });
 
-export type UpdateSalonOperatingHoursInput = z.infer<
-  typeof updateSalonOperatingHoursSchema
->;
+export type UpdateSalonOperatingHoursInput = z.infer<typeof updateSalonOperatingHoursSchema>;

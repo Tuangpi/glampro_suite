@@ -58,9 +58,9 @@ not a new test run. Assess code first; follow dependencies rather than date orde
 
 ### SETUP-05 — Reported database rename
 
-- Status: Not assessed
+- Status: Done
 - Expected result / completion check: Confirm environment, actual database name, backups/data preservation and secret-safe connection configuration.
-- Evidence / next: Not verified. Needs environment and backup information; no reset/reseed. Independent of repository rename.
+- Evidence / next: Verified October 18, 2026. Environment: PostgreSQL at `localhost:5432`, database `glampro_suite`, shadow `glampro_shadow` (both on 5432; the commented-out `SHADOW_DATABASE_URL` in `apps/api/.env` points at stale port 5433 where nothing listens — do not uncomment as-is). `.env` was never committed to git. Schema drift found and repaired additively via `npm run db:migrate`, no reset/reseed: applied pending `20261015210000_tenant_localisation` and `20261016151623_tenant_operating_hours`, then generated and applied `20261018141510_user_two_factor_auth` for P0-09's previously unmigrated 2FA columns. Backup taken before edits: `backups/glampro_suite_2026-10-18.dump` (pg_dump, ~125KB); `backups/` added to `.gitignore`. Checks: `prisma migrate status` → 12 migrations, database schema up to date; `prisma migrate diff` live-DB↔schema and migrations↔schema both "No difference detected" (exit 0); 0 rolled-back migrations; API tests 308/308 pass.
 
 ### SETUP-06 — Documentation audit
 
@@ -102,7 +102,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 - Status: DONE
 - Expected result: Token replay does not revoke other sessions, password change + refresh revocation is atomic, platform forced sign-out exists, email-code 2FA for owners, test accounts retained
-- Completion check / dependencies: Token replay rejects without family revocation (ADR 0007); password change wraps tokenVersion bump + refresh revocation in a single transaction; `POST /api/auth/force-sign-out` (SUPER_ADMIN only) bumps tokenVersion and revokes all refresh tokens atomically; email-code 2FA with enable/confirm/disable/verify-login endpoints; test accounts retained per user decision. Marked complete on manual code review per project rule; database integration tests blocked by pre-existing `time_zone` schema mismatch (SETUP-05 concern), not by P0-09 code.
+- Completion check / dependencies: Token replay rejects without family revocation (ADR 0007); password change wraps tokenVersion bump + refresh revocation in a single transaction; `POST /api/auth/force-sign-out` (SUPER_ADMIN only) bumps tokenVersion and revokes all refresh tokens atomically; email-code 2FA with enable/confirm/disable/verify-login endpoints; test accounts retained per user decision. Originally marked complete on manual code review with integration tests blocked by the `time_zone` schema mismatch; SETUP-05 fixed that mismatch October 18 and the API integration suite now runs: 308/308 pass, including the replay test aligned to ADR 0007 (`auth.routes.test.ts` updated — its family-revocation assertion was stale pre-P0-09 behavior).
 - Evidence: `apps/api/src/services/auth.service.ts` (replay fix, atomic changePassword, forceSignOut, enableTwoFactor, confirmTwoFactor, disableTwoFactor, verifyTwoFactorForLogin, login 2FA gate); `apps/api/src/routes/auth.routes.ts` (five new endpoints); `apps/api/prisma/schema.prisma` (twoFactorEnabled, twoFactorCode, twoFactorCodeExpiresAt on User); `packages/shared/src/schemas/auth.ts` (twoFactor schemas, TWO_FACTOR_CODE_LENGTH, forceSignOutSchema); `packages/shared/src/constants.ts` (TWO_FACTOR_CODE_TTL_SECONDS); `apps/api/src/lib/email.ts` (dev/test email service). API typecheck passes, API lint passes, shared 87/87 tests pass.
 
 ### TK2610-0006 — P0-08 Localisation: S$, DD/MM/YYYY, timezone/locale
@@ -121,17 +121,20 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0008 — P0-05 Enable Packages & Gift cards in demo
 
-- Status: Ready for UAT
+- Status: DONE
 - Expected result: Enable Packages & Gift cards in demo; hide 'Add' buttons when add-on is off
 - Completion check / dependencies: Verify Packages/Gift cards are enabled and populated in the demo; Add is hidden for disabled add-ons; API entitlement guards hold. Seed code alone does not prove live demo state.
 - Historical evidence: Audit against DOCX scope complete. API: package.service.ts and gift-card.service.ts implement full CRUD for the packages/gift-cards templates (Handoff screen 08 tabs 3 and 4), both tenant-scoped through the Prisma extension; packages.routes.ts / gift-cards.routes.ts mount requireModule("packages") / requireModule("giftCards") so an unentitled salon gets 403 MODULE_NOT_ENTITLED rather than an empty tab; packages.routes.test.ts, gift-cards.routes.test.ts, package.service.test.ts, gift-card.service.test.ts all pass (part of the 308/308 API baseline). Seed: demo salon granted packages and giftCards entitlements and DEMO_PACKAGES/DEMO_GIFT_CARDS rows are seeded (idempotent). Web: Products.tsx renders all four tabs with PackageFormDrawer/GiftCardFormDrawer, and the catalogue tab EmptyState names the add-on on refusal. Gap closed (P0-05 scope: "hiding Add for disabled modules"): the top Add button is now hidden for an add-on tab whose module is not entitled (gated via useModules() entitlement; read-only keeps disabling instead), with two new web tests pinning hide/show. Web 383/383 pass, typecheck/lint/build exit 0. No design folder, DOCX or PDF change; no new migration (schema already carries Package/GiftCard/TenantModule).
+- Sign-off: user completed UAT and marked TK2610-0008 Done in the external system on October 19, 2026; the live-demo verification required by the completion check is covered by that acceptance. The Products.tsx/test changes are committed in 80bd83b.
 
 ### TK2610-0009 — P0-01 GST settings, tax line on sales & tax reports
 
-- Status: Not assessed
+- Status: IN PROGRESS — implementation and automated checks complete; awaiting UAT/sign-off.
 - Expected result: Add GST settings, tax line on sales & tax reports
 - Completion check / dependencies: Verify GST settings/permissions, sale calculations and tax reports, including rounding and tenant isolation. Clarify tax policy first.
-- Next: audit current implementation against the full expected result and check.
+- Policy used: Singapore GST at 9%, **inclusive** of catalogue prices. Tax is backed out per line (`lineTotal × 9 / 109`, half-up 2dp) and the sale total is the sum of the rounded lines, so no cent is invented by re-deriving from the sale total. Rate and amount are snapshotted on `Sale`/`SaleLine`. Existing salons keep GST off (`gstEnabled` default `false`).
+- Evidence (October 19, 2026): migration `20261019015129_gst_settings_and_sale_tax` applied additively; shared/API/web typecheck and lint exit 0; shared 92/92, web 387/387, API 312/312 pass. New tests cover the settings pair guard (`settings.routes.test.ts`), per-line 9% back-calculation and the disabled case (`sales.routes.test.ts`), tax totals/per-day figures (`reports.routes.test.ts`), the GST settings controls (`Settings.test.tsx`), the receipt row (`Sale.test.tsx`) and the schema contracts (`shared/schemas/settings.test.ts`).
+- Next: user UAT of Settings → Charge GST, a sale receipt and the Reports GST figures; then record external sign-off (PDF/external system stay with the user).
 
 ### TK2610-0010 — P0-02 Receipts: thermal print + email/WhatsApp e-receipt
 

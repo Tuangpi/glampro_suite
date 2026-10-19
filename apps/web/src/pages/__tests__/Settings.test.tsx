@@ -59,6 +59,8 @@ beforeEach(() => {
       lowStockThreshold: 5,
       timeZone: "Asia/Singapore",
       locale: "en-SG",
+      gstEnabled: false,
+      gstRegistrationNumber: null,
       owner: { id: "owner-1", name: "Ava Owner", email: "ava@example.com" },
       createdAt: "2026-01-02T00:00:00.000Z",
       updatedAt: "2026-10-09T00:00:00.000Z",
@@ -180,6 +182,8 @@ describe("Settings", () => {
       lowStockThreshold: 8,
       timeZone: "Asia/Singapore",
       locale: "en-SG",
+      gstEnabled: false,
+      gstRegistrationNumber: null,
     });
   });
 
@@ -197,7 +201,52 @@ describe("Settings", () => {
       lowStockThreshold: 5,
       timeZone: "Europe/London",
       locale: "en-GB",
+      gstEnabled: false,
+      gstRegistrationNumber: null,
     });
+  });
+
+  it("lets a manager switch GST on and save the registration number", async () => {
+    auth.role = "MANAGER";
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(screen.getByLabelText("Charge GST (9% inclusive)"));
+    await user.type(screen.getByLabelText("GST registration number"), "M90312345X");
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(mutateAsync).toHaveBeenCalledWith({
+      name: "Ava Salon",
+      lowStockThreshold: 5,
+      timeZone: "Asia/Singapore",
+      locale: "en-SG",
+      gstEnabled: true,
+      gstRegistrationNumber: "M90312345X",
+    });
+  });
+
+  it("shows the server's error when GST is enabled without a registration number", async () => {
+    mutateAsync.mockRejectedValueOnce(new Error("Validation failed"));
+    getValidationDetails.mockReturnValueOnce({
+      "body.gstRegistrationNumber": "A GST registration number is required when GST is enabled.",
+    });
+    const user = userEvent.setup();
+    renderSettings();
+
+    await user.click(screen.getByLabelText("Charge GST (9% inclusive)"));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
+
+    expect(
+      screen.getByText("A GST registration number is required when GST is enabled."),
+    ).toBeInTheDocument();
+  });
+
+  it("disables the GST controls for a read-only salon", () => {
+    auth.readOnly = true;
+    renderSettings();
+
+    expect(screen.getByLabelText("Charge GST (9% inclusive)")).toBeDisabled();
+    expect(screen.getByLabelText("GST registration number")).toBeDisabled();
   });
 
   it("displays server validation errors without losing the draft preferences", async () => {

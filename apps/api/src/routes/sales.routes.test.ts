@@ -217,6 +217,8 @@ interface ReceiptBody {
   paidAmount: string;
   outstandingAmount: string;
   discountAmount: string;
+  taxAmount: string;
+  taxRate: string;
   pointsEarned: number;
   staffId: string | null;
   staffName: string | null;
@@ -231,6 +233,8 @@ interface ReceiptBody {
     lineTotal: string;
     discountPercent: string;
     discountAmount: string;
+    taxAmount: string;
+    taxRate: string;
     staffId: string | null;
   }[];
   payments: { method: string; amount: string; sessionId: string | null }[];
@@ -1359,6 +1363,84 @@ describe(
             (detail) => detail.path === "body.lines.0.discountPercent",
           ),
         );
+      });
+    });
+
+    /**
+     * TK2610-0009 / P0-01: Singapore GST at 9%, inclusive of the catalogue price.
+     *
+     * The customer pays `totalAmount` either way; the receipt explains how much of it
+     * is tax. The rate and the money are **stored on the sale and each line**, so a
+     * later rate change cannot rewrite what a past receipt said.
+     */
+    describe("GST on a receipt", () => {
+      async function setGst(enabled: boolean): Promise<void> {
+        await runAsPlatform(() =>
+          prisma.tenant.update({ where: { id: TENANT_A }, data: { gstEnabled: enabled } }),
+        );
+      }
+
+      it("backs the 9% component out of inclusive prices, one line at a time", async () => {
+        await setGst(true);
+        try {
+          const serviceId = await seededIdOf("SERVICE");
+          const response = await send(
+            "POST",
+            "/api/sales",
+            {
+              lines: [
+                { itemType: "SERVICE", itemId: serviceId, quantity: 3 },
+                { itemType: "SERVICE", itemId: serviceId, quantity: 1 },
+              ],
+              payments: [{ method: "CASH", amount: 200 }],
+            },
+            token,
+          );
+          assert.equal(response.status, 201);
+          const receipt = await dataOf<ReceiptBody>(response);
+
+          // 3 × 50.00 = 150.00 and 1 × 50.00 = 50.00. Inclusive, so the customer
+          // pays 200.00 and the tax is already inside it — never added on top.
+          assert.equal(receipt.totalAmount, "200.00");
+          assert.deepEqual(
+            receipt.lines.map((line) => line.taxAmount),
+            ["12.39", "4.13"],
+          );
+          assert.equal(receipt.lines[0]?.taxRate, "9.00");
+
+          // The sale totals the rounded lines (16.52), not 200.00 × 9/109 (16.51):
+          // two tills pricing the same cart must land on the same cent.
+          assert.equal(receipt.taxAmount, "16.52");
+          assert.equal(receipt.taxRate, "9.00");
+
+          // Re-read through the receipt endpoint, so what is asserted is persisted.
+          const reread = await dataOf<ReceiptBody>(
+            await request("GET", `/api/sales/${receipt.id}`, token),
+          );
+          assert.equal(reread.taxAmount, "16.52");
+          assert.equal(reread.lines[0]?.taxAmount, "12.39");
+        } finally {
+          await setGst(false);
+        }
+      });
+
+      it("stores zero tax, and still a rate, while the salon has GST switched off", async () => {
+        const receipt = await dataOf<ReceiptBody>(
+          await send(
+            "POST",
+            "/api/sales",
+            {
+              lines: [{ itemType: "SERVICE", itemId: await seededIdOf("SERVICE"), quantity: 1 }],
+              payments: [{ method: "CASH", amount: 50 }],
+            },
+            token,
+          ),
+        );
+
+        assert.equal(receipt.totalAmount, "50.00");
+        assert.equal(receipt.taxAmount, "0.00");
+        assert.equal(receipt.taxRate, "0.00");
+        assert.equal(receipt.lines[0]?.taxAmount, "0.00");
       });
     });
   },

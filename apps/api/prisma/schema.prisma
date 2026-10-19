@@ -277,6 +277,15 @@ model Tenant {
   /// transaction that writes the sale, which is also what makes two tills rung up at
   /// once take different numbers rather than the same one.
   receiptCounter Int @default(0)
+  /// GST for Singapore salons (TK2610-0009 / P0-01). Catalogue prices are
+  /// GST-inclusive; the till back-calculates the component per line.
+  /// Disabled by default so existing salons keep today's behaviour until
+  /// a manager opts in from Settings.
+  gstEnabled            Boolean @default(false)
+  /// The salon's GST registration number, printed on receipts and reports.
+  gstRegistrationNumber String?
+  /// Snapshot of the rate applied at sale time lives on the sale/line rows,
+  /// so a later rate change never rewrites history.
   /// Ownership is this relation. There is deliberately no `OWNER` role.
   ///
   /// Nullable because of a real foreign-key cycle: `users.tenantId` points at
@@ -836,6 +845,13 @@ model Sale {
   totalAmount   Decimal @db.Decimal(12, 2)
   paidAmount    Decimal @db.Decimal(12, 2)
 
+  /// GST included in the total, as money (TK2610-0009 / P0-01). Inclusive
+  /// prices, so this is the back-calculated component summed over the lines,
+  /// stored so a later rate change cannot rewrite history. `0` when disabled.
+  taxAmount Decimal @default(0) @db.Decimal(12, 2)
+  /// The GST rate applied, snapshotted at sale time. `0` when disabled.
+  taxRate   Decimal @default(0) @db.Decimal(5, 2)
+
   /// Legacy `payment_status` (`0=unpaid, 1=paid`).
   paymentStatus PaymentStatus @default(UNPAID)
 
@@ -986,6 +1002,13 @@ model SaleLine {
   /// rate rounds to the cent on the *unit* price, so this is `(listPrice - unitPrice) *
   /// quantity` and the line's own arithmetic stays exact.
   discountAmount Decimal @default(0) @db.Decimal(12, 2)
+
+  /// GST included in this line, as money (TK2610-0009 / P0-01). Inclusive
+  /// prices, so `lineTotal × rate / (100 + rate)`, rounded to the cent on
+  /// the line. `0` when the salon has GST disabled.
+  taxAmount Decimal @default(0) @db.Decimal(12, 2)
+  /// The GST rate applied to this line, snapshotted at sale time.
+  taxRate   Decimal @default(0) @db.Decimal(5, 2)
 
   /// Who this line is credited to. Null means uncredited — a product sale with no
   /// stylist on it, which is the common case.

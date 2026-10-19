@@ -17,10 +17,10 @@ const { default: Reports } = await import("@/pages/Reports");
 const OVERVIEW: ReportOverview = {
   from: "2026-10-01T00:00:00.000Z",
   to: "2026-10-03T23:59:59.999Z",
-  totals: { revenue: "105.00", paid: "95.00", sales: 2, items: 4 },
+  totals: { revenue: "105.00", paid: "95.00", tax: "8.67", sales: 2, items: 4 },
   salesByDay: [
-    { date: "2026-10-01", sales: 1, quantity: 3, revenue: "80.00", paid: "70.00" },
-    { date: "2026-10-02", sales: 1, quantity: 1, revenue: "25.00", paid: "25.00" },
+    { date: "2026-10-01", sales: 1, quantity: 3, revenue: "80.00", paid: "70.00", tax: "6.61" },
+    { date: "2026-10-02", sales: 1, quantity: 1, revenue: "25.00", paid: "25.00", tax: "2.06" },
   ],
   topItems: [
     {
@@ -108,7 +108,7 @@ describe("Reports", () => {
       result({
         data: {
           ...OVERVIEW,
-          totals: { revenue: "0.00", paid: "0.00", sales: 0, items: 0 },
+          totals: { revenue: "0.00", paid: "0.00", tax: "0.00", sales: 0, items: 0 },
           salesByDay: [],
           topItems: [],
           staffPerformance: [],

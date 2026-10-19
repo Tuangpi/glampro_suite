@@ -173,6 +173,28 @@ export const MAX_SALE_LIST = 50;
  */
 export const MAX_RECEIPT_NUMBER = 999_999_999;
 
+/**
+ * GST for Singapore salons (TK2610-0009 / P0-01).
+ *
+ * Prices as rung up **include** GST; the till back-calculates the GST
+ * component per line so receipts and tax reports can show it without
+ * changing what the customer pays. One rate keeps the till, the receipt
+ * and the report on the same arithmetic; a per-line override is a product
+ * decision this slice does not make.
+ */
+export const GST_RATE_PERCENT = 9;
+
+/** Decimal form of the rate, for `Decimal(5,2)` columns and money maths. */
+export const GST_RATE_DECIMAL_STRING = "9.00";
+
+/**
+ * Inclusive-price divisor parts: GST = total × rate / (100 + rate).
+ *
+ * Kept as strings so the service builds exact `Prisma.Decimal` values —
+ * a float `1.09` has already lost the cent the till just charged.
+ */
+export const GST_INCLUSIVE_DIVISOR_STRING = "109";
+
 /** Access tokens are short-lived; refresh tokens are rotated on every use. */
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;

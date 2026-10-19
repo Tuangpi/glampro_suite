@@ -153,6 +153,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
         totalQuantity: true,
         totalAmount: true,
         paidAmount: true,
+        taxAmount: true,
       },
       orderBy: { soldAt: "asc" },
     }),
@@ -177,23 +178,27 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
 
   const byDay = new Map<
     string,
-    { date: string; sales: number; quantity: number; revenue: bigint; paid: bigint }
+    { date: string; sales: number; quantity: number; revenue: bigint; paid: bigint; tax: bigint }
   >();
   let revenue = 0n;
   let paid = 0n;
+  let tax = 0n;
   let items = 0;
 
   for (const sale of sales) {
     const date = dateKey(sale.soldAt);
-    const row = byDay.get(date) ?? { date, sales: 0, quantity: 0, revenue: 0n, paid: 0n };
+    const row = byDay.get(date) ?? { date, sales: 0, quantity: 0, revenue: 0n, paid: 0n, tax: 0n };
     row.sales += 1;
     row.quantity += sale.totalQuantity;
     row.revenue = addMoney(row.revenue, sale.totalAmount);
     row.paid = addMoney(row.paid, sale.paidAmount);
+    // Stored GST summed, never recomputed: history is what the till charged.
+    row.tax = addMoney(row.tax, sale.taxAmount);
     byDay.set(date, row);
 
     revenue = addMoney(revenue, sale.totalAmount);
     paid = addMoney(paid, sale.paidAmount);
+    tax = addMoney(tax, sale.taxAmount);
     items += sale.totalQuantity;
   }
 
@@ -250,6 +255,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
     totals: {
       revenue: centsToMoney(revenue),
       paid: centsToMoney(paid),
+      tax: centsToMoney(tax),
       sales: sales.length,
       items,
     },
@@ -257,6 +263,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
       ...row,
       revenue: centsToMoney(row.revenue),
       paid: centsToMoney(row.paid),
+      tax: centsToMoney(row.tax),
     })),
     topItems: [...byItem.values()]
       .sort((a, b) =>

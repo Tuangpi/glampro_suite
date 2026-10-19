@@ -140,6 +140,14 @@ export default function ReceiptView({ sale, onNewSale, canVoid, onVoid }: Receip
               <dd className="font-bold text-success-text">−{formatPrice(sale.discountAmount)}</dd>
             </div>
           ) : null}
+          {/* Inclusive GST backed out of the total by the server — the receipt
+              shows the component without changing what was charged. */}
+          {priceToCents(sale.taxAmount) > 0 ? (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-sm text-ink-muted">Includes GST ({Number(sale.taxRate)}%)</dt>
+              <dd className="font-bold text-ink">{formatPrice(sale.taxAmount)}</dd>
+            </div>
+          ) : null}
           <div className="flex items-baseline justify-between gap-3">
             <dt className="text-sm text-ink-muted">Paid</dt>
             <dd className="font-bold text-ink">{formatPrice(sale.paidAmount)}</dd>

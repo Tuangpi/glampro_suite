@@ -29,8 +29,15 @@ interface ErrorEnvelope {
 }
 
 interface OverviewBody {
-  totals: { revenue: string; paid: string; sales: number; items: number };
-  salesByDay: { date: string; sales: number; quantity: number; revenue: string; paid: string }[];
+  totals: { revenue: string; paid: string; tax: string; sales: number; items: number };
+  salesByDay: {
+    date: string;
+    sales: number;
+    quantity: number;
+    revenue: string;
+    paid: string;
+    tax: string;
+  }[];
   topItems: { itemName: string; quantity: number; revenue: string }[];
   staffPerformance: {
     userId: string;
@@ -107,6 +114,8 @@ async function seed(): Promise<void> {
         totalQuantity: 3,
         totalAmount: "80.00",
         paidAmount: "70.00",
+        taxAmount: "6.61",
+        taxRate: "9.00",
         paymentStatus: "UNPAID",
         soldAt: new Date("2026-10-02T01:00:00.000Z"),
       },
@@ -119,6 +128,8 @@ async function seed(): Promise<void> {
         totalQuantity: 1,
         totalAmount: "25.00",
         paidAmount: "25.00",
+        taxAmount: "2.06",
+        taxRate: "9.00",
         paymentStatus: "PAID",
         soldAt: new Date("2026-10-02T18:00:00.000Z"),
       },
@@ -321,10 +332,16 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
     const body = await dataOf<OverviewBody>(response);
 
     assert.equal(response.status, 200);
-    assert.deepEqual(body.totals, { revenue: "105.00", paid: "95.00", sales: 2, items: 4 });
+    assert.deepEqual(body.totals, {
+      revenue: "105.00",
+      paid: "95.00",
+      tax: "8.67",
+      sales: 2,
+      items: 4,
+    });
     assert.deepEqual(body.salesByDay, [
-      { date: "2026-10-01", sales: 1, quantity: 3, revenue: "80.00", paid: "70.00" },
-      { date: "2026-10-02", sales: 1, quantity: 1, revenue: "25.00", paid: "25.00" },
+      { date: "2026-10-01", sales: 1, quantity: 3, revenue: "80.00", paid: "70.00", tax: "6.61" },
+      { date: "2026-10-02", sales: 1, quantity: 1, revenue: "25.00", paid: "25.00", tax: "2.06" },
     ]);
     assert.deepEqual(body.topItems, [
       {

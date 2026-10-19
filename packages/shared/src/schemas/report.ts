@@ -92,6 +92,8 @@ export const reportSalesByDaySchema = z.object({
   quantity: z.number().int().min(0),
   revenue: z.string(),
   paid: z.string(),
+  /** GST included in the day's revenue, as money (TK2610-0009 / P0-01). */
+  tax: z.string(),
 });
 
 export type ReportSalesByDay = z.infer<typeof reportSalesByDaySchema>;
@@ -122,6 +124,8 @@ export const reportOverviewSchema = z.object({
   totals: z.object({
     revenue: z.string(),
     paid: z.string(),
+    /** GST included in the range's revenue, as money (TK2610-0009 / P0-01). */
+    tax: z.string(),
     sales: z.number().int().min(0),
     items: z.number().int().min(0),
   }),

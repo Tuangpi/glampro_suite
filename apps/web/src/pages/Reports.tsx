@@ -80,6 +80,7 @@ export default function Reports() {
     { key: "sales", header: "Sales", align: "right", cell: (row) => row.sales },
     { key: "items", header: "Items", align: "right", cell: (row) => row.quantity },
     { key: "revenue", header: "Revenue", align: "right", cell: (row) => formatPrice(row.revenue) },
+    { key: "tax", header: "GST", align: "right", cell: (row) => formatPrice(row.tax) },
     { key: "paid", header: "Paid", align: "right", cell: (row) => formatPrice(row.paid) },
   ];
 
@@ -142,13 +143,20 @@ export default function Reports() {
         </div>
       </header>
 
-      <section aria-label="Report totals" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Report totals" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
         <StatTile
           icon={<BarChart />}
           value={undefined}
           display={data ? formatPrice(data.totals.revenue) : undefined}
           label="Revenue"
           tone="purple"
+        />
+        <StatTile
+          icon={<BarChart />}
+          value={undefined}
+          display={data ? formatPrice(data.totals.tax) : undefined}
+          label="GST included"
+          tone="neutral"
         />
         <StatTile
           icon={<Calendar />}

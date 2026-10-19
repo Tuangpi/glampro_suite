@@ -98,6 +98,8 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
   const [draftThreshold, setDraftThreshold] = useState<string | null>(null);
   const [draftTimeZone, setDraftTimeZone] = useState<string | null>(null);
   const [draftLocale, setDraftLocale] = useState<string | null>(null);
+  const [draftGstEnabled, setDraftGstEnabled] = useState<boolean | null>(null);
+  const [draftGstNumber, setDraftGstNumber] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -105,6 +107,8 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
   const threshold = draftThreshold ?? (data === undefined ? "" : String(data.lowStockThreshold));
   const timeZone = draftTimeZone ?? data?.timeZone ?? "";
   const locale = draftLocale ?? data?.locale ?? "";
+  const gstEnabled = draftGstEnabled ?? data?.gstEnabled ?? false;
+  const gstRegistrationNumber = draftGstNumber ?? data?.gstRegistrationNumber ?? "";
 
   const fieldError = (field: string): string | undefined =>
     fieldErrors[field] ?? fieldErrors[`body.${field}`];
@@ -120,6 +124,11 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
         lowStockThreshold: Number(threshold),
         timeZone: timeZone.trim(),
         locale: locale.trim(),
+        // Always sent: the toggle is a checkbox, so "untouched" and "off"
+        // are the same unchecked state and omitting it would never uncheck.
+        gstEnabled,
+        gstRegistrationNumber:
+          gstRegistrationNumber.trim().length > 0 ? gstRegistrationNumber.trim() : null,
       });
       showToast("success", "Salon profile saved.");
     } catch (error) {
@@ -197,6 +206,29 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
               maxLength={100}
               hint="Use a locale identifier, such as en-SG. This preference does not translate the app."
             />
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
+            <Checkbox
+              label="Charge GST (9% inclusive)"
+              checked={gstEnabled}
+              disabled={!canEdit || update.isPending}
+              onChange={(event) => setDraftGstEnabled(event.target.checked)}
+            />
+            <Input
+              label="GST registration number"
+              required={gstEnabled}
+              value={gstRegistrationNumber}
+              onChange={(event) => setDraftGstNumber(event.target.value)}
+              error={fieldError("gstRegistrationNumber")}
+              disabled={!canEdit || update.isPending}
+              maxLength={50}
+              hint="Printed on receipts and tax reports. Required while GST is enabled."
+            />
+            <p className="text-xs text-ink-muted">
+              Catalogue prices include 9% GST when enabled; the till shows the GST component on
+              receipts and reports without changing what the customer pays.
+            </p>
           </div>
 
           <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">

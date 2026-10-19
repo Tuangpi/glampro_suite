@@ -25,6 +25,9 @@
  * throws instead of reaching the browser outside its contract (AGENTS.md rule 6).
  */
 import {
+  GST_INCLUSIVE_DIVISOR_STRING,
+  GST_RATE_DECIMAL_STRING,
+  GST_RATE_PERCENT,
   MAX_RECEIPT_NUMBER,
   SALE_ITEM_KINDS,
   saleDetailSchema,
@@ -312,6 +315,23 @@ export async function searchSaleItems(query: SaleItemSearchQuery): Promise<SaleI
 /** A `Decimal(12,2)` on the wire is a string, so no cent is lost to a float. */
 function amount(value: Prisma.Decimal): string {
   return value.toFixed(2);
+}
+
+/**
+ * GST helpers (TK2610-0009 / P0-01).
+ *
+ * Catalogue prices are GST-inclusive, so the component is backed out of the
+ * line total: `lineTotal × rate / (100 + rate)`. Rounded to the cent on the
+ * **line**, half-up, matching the discount rounding above — the sale total is
+ * the sum of those rounded lines, never a recomputation from a rate.
+ */
+function gstRate(): Prisma.Decimal {
+  return new Prisma.Decimal(GST_RATE_DECIMAL_STRING);
+}
+
+function gstForLine(lineTotal: Prisma.Decimal, enabled: boolean): Prisma.Decimal {
+  if (!enabled) return new Prisma.Decimal(0);
+  return lineTotal.mul(GST_RATE_PERCENT).div(GST_INCLUSIVE_DIVISOR_STRING).toDecimalPlaces(2);
 }
 
 /**
@@ -616,6 +636,10 @@ interface PricedLine {
   discountPercent: Prisma.Decimal;
   /** The money that rate took off the whole line, for the receipt's `Discount` row. */
   discountAmount: Prisma.Decimal;
+  /** GST included in the line, backed out of the inclusive total (TK2610-0009). */
+  taxAmount: Prisma.Decimal;
+  /** The GST rate applied, snapshotted at sale time; `0` when disabled. */
+  taxRate: Prisma.Decimal;
   pointsEarned: number;
 }
 
@@ -634,7 +658,11 @@ interface PricedLine {
  *    what keeps `lineTotal = unitPrice × quantity` true by construction and means two
  *    tills pricing one cart get the same pennies with no allocation step.
  */
-async function priceCart(lines: SaleLineInput[], isMember: boolean): Promise<PricedLine[]> {
+async function priceCart(
+  lines: SaleLineInput[],
+  isMember: boolean,
+  gstEnabled: boolean,
+): Promise<PricedLine[]> {
   const { entitled } = await moduleEntitlements();
 
   const byKind = new Map<SaleItemKind, SaleLineInput[]>();
@@ -678,14 +706,21 @@ async function priceCart(lines: SaleLineInput[], isMember: boolean): Promise<Pri
     const discountPercent = new Prisma.Decimal(line.discountPercent ?? 0);
     const discountPerUnit = item.unitPrice.mul(discountPercent).div(100).toDecimalPlaces(2);
     const unitPrice = item.unitPrice.minus(discountPerUnit);
+    const lineTotal = unitPrice.mul(line.quantity);
+    // Inclusive GST is backed out of the discounted total, not added on top:
+    // the customer pays `lineTotal` either way. Rounded per line so the
+    // sale total is the sum of what each line recorded (TK2610-0009).
+    const rate = gstEnabled ? gstRate() : new Prisma.Decimal(0);
 
     return {
       input: line,
       item,
       unitPrice,
-      lineTotal: unitPrice.mul(line.quantity),
+      lineTotal,
       discountPercent,
       discountAmount: discountPerUnit.mul(line.quantity),
+      taxAmount: gstForLine(lineTotal, gstEnabled),
+      taxRate: rate,
       // Points are per unit, so a line of three earns three times one.
       pointsEarned: item.points * line.quantity,
     };
@@ -731,11 +766,23 @@ async function resolveCart(input: {
   // than as a foreign-key violation mid-transaction — or, worse, as a link that lands.
   await assertStaffExist(input);
 
+  // The salon's GST toggle (TK2610-0009): catalogue prices include GST when on,
+  // and the toggle is read here — once per write — so every line in the cart
+  // prices under the same flag.
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: requireTenantScope() },
+    select: { gstEnabled: true },
+  });
+
   // "Is a member" is the membership reference legacy kept as free text
   // (`customers.member_id`). There is no membership table to join, so the presence of
   // the reference is the whole rule — inventing a tier model is a product decision this
   // slice does not get to make.
-  const priced = await priceCart(input.lines, customer?.memberId != null);
+  const priced = await priceCart(
+    input.lines,
+    customer?.memberId != null,
+    tenant?.gstEnabled ?? false,
+  );
 
   return { priced, customerId: customer?.id ?? null };
 }
@@ -751,6 +798,10 @@ async function resolveCart(input: {
 function totalsOf(priced: PricedLine[], payments: SalePaymentInput[]) {
   const totalQuantity = priced.reduce((sum, line) => sum + line.input.quantity, 0);
   const totalAmount = priced.reduce((sum, line) => sum.plus(line.lineTotal), new Prisma.Decimal(0));
+  // The sale's GST is the sum of the rounded line components — never a rate
+  // applied to the total — so the receipt matches its lines to the cent.
+  const taxAmount = priced.reduce((sum, line) => sum.plus(line.taxAmount), new Prisma.Decimal(0));
+  const taxRate = priced.length > 0 ? priced[0]!.taxRate : new Prisma.Decimal(0);
   const paidAmount = payments.reduce(
     (sum, tender) => sum.plus(tender.amount),
     new Prisma.Decimal(0),
@@ -759,6 +810,8 @@ function totalsOf(priced: PricedLine[], payments: SalePaymentInput[]) {
   return {
     totalQuantity,
     totalAmount,
+    taxAmount,
+    taxRate,
     paidAmount,
     outstandingAmount: Prisma.Decimal.max(totalAmount.minus(paidAmount), 0),
     paymentStatus: (paidAmount.greaterThanOrEqualTo(totalAmount) ? "PAID" : "UNPAID") as
@@ -806,6 +859,8 @@ async function writeSale(
           status: "HELD",
           totalQuantity: totals.totalQuantity,
           totalAmount: totals.totalAmount,
+          taxAmount: totals.taxAmount,
+          taxRate: totals.taxRate,
           // `UNPAID` is accurate — a hold has taken no money — and it is not a debt: an
           // outstanding row is only ever written by `fillLedgers`, which a hold never
           // reaches, and every report reads `status = COMPLETED` (ADR 0015 §4).
@@ -847,6 +902,8 @@ async function writeSale(
         status: "COMPLETED",
         totalQuantity: totals.totalQuantity,
         totalAmount: totals.totalAmount,
+        taxAmount: totals.taxAmount,
+        taxRate: totals.taxRate,
         paidAmount: totals.paidAmount,
         paymentStatus: totals.paymentStatus,
         soldAt,
@@ -906,6 +963,10 @@ async function writeLines(
       lineTotal: line.lineTotal,
       discountPercent: line.discountPercent,
       discountAmount: line.discountAmount,
+      // Inclusive GST backed out of the line total at pricing time, with the
+      // rate snapshotted alongside — a later rate change never rewrites this.
+      taxAmount: line.taxAmount,
+      taxRate: line.taxRate,
       staffId: line.input.staffId ?? null,
       position: index,
     })),
@@ -1141,6 +1202,8 @@ const SALE_SELECT = {
   totalQuantity: true,
   totalAmount: true,
   paidAmount: true,
+  taxAmount: true,
+  taxRate: true,
   // The points the ledger recorded, not a recomputation: the ledger is the record, so
   // a correction row written later moves this figure without touching the sale.
   points: { select: { point: true } },
@@ -1155,6 +1218,8 @@ const SALE_SELECT = {
       lineTotal: true,
       discountPercent: true,
       discountAmount: true,
+      taxAmount: true,
+      taxRate: true,
       staffId: true,
       staff: { select: { name: true } },
     },
@@ -1191,6 +1256,10 @@ function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>
     discountAmount: amount(
       row.lines.reduce((sum, line) => sum.plus(line.discountAmount), new Prisma.Decimal(0)),
     ),
+    // Stored at write time, snapshotted against later rate changes: the receipt
+    // reprints what the till charged, and history never moves (TK2610-0009).
+    taxAmount: amount(row.taxAmount),
+    taxRate: amount(row.taxRate),
     // Never negative, for the same reason the write clamps it: overpayment is change.
     outstandingAmount: amount(Prisma.Decimal.max(row.totalAmount.minus(row.paidAmount), 0)),
     pointsEarned: row.points.reduce((sum, entry) => sum + entry.point, 0),
@@ -1204,6 +1273,8 @@ function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>
       lineTotal: amount(line.lineTotal),
       discountPercent: amount(line.discountPercent),
       discountAmount: amount(line.discountAmount),
+      taxAmount: amount(line.taxAmount),
+      taxRate: amount(line.taxRate),
       staffId: line.staffId,
       staffName: line.staff?.name ?? null,
     })),
@@ -1398,6 +1469,8 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
         status: "COMPLETED",
         totalQuantity: totals.totalQuantity,
         totalAmount: totals.totalAmount,
+        taxAmount: totals.taxAmount,
+        taxRate: totals.taxRate,
         paidAmount: totals.paidAmount,
         paymentStatus: totals.paymentStatus,
         soldAt,

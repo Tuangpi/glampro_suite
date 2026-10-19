@@ -30,6 +30,8 @@ interface ProfileBody {
   lowStockThreshold: number;
   timeZone: string;
   locale: string;
+  gstEnabled: boolean;
+  gstRegistrationNumber: string | null;
   owner: { id: string; name: string; email: string } | null;
 }
 
@@ -317,6 +319,65 @@ describe("settings endpoints", { skip: databaseUrl ? false : "DATABASE_URL is no
     );
     assert.equal(profile.timeZone, "Europe/London");
     assert.equal(profile.locale, "en-GB");
+  });
+
+  it("persists the GST pair and refuses an enabled salon without a registration number", async () => {
+    const enabled = await request("PATCH", "/api/settings/profile", ownerToken, {
+      name: "Renamed Salon",
+      lowStockThreshold: 9,
+      gstEnabled: true,
+      gstRegistrationNumber: "M90312345X",
+    });
+    assert.equal(enabled.status, 200);
+    const saved = await dataOf<ProfileBody>(enabled);
+    assert.equal(saved.gstEnabled, true);
+    assert.equal(saved.gstRegistrationNumber, "M90312345X");
+
+    // A toggle-only PATCH keeps working because the service sees the stored number.
+    const toggleOnly = await request("PATCH", "/api/settings/profile", ownerToken, {
+      name: "Renamed Salon",
+      lowStockThreshold: 9,
+      gstEnabled: true,
+    });
+    assert.equal(toggleOnly.status, 200);
+
+    // Clearing the number while GST stays enabled is refused: revenue would be
+    // taxed with nothing to print on the receipt.
+    const clearing = await request("PATCH", "/api/settings/profile", ownerToken, {
+      name: "Renamed Salon",
+      lowStockThreshold: 9,
+      gstRegistrationNumber: null,
+    });
+    assert.equal(clearing.status, 400);
+    assert.equal(((await clearing.json()) as ErrorEnvelope).code, "BAD_REQUEST");
+
+    // Turn GST off and clear the pair, then enabling has nothing to fall back on.
+    const cleared = await request("PATCH", "/api/settings/profile", ownerToken, {
+      name: "Renamed Salon",
+      lowStockThreshold: 9,
+      gstEnabled: false,
+      gstRegistrationNumber: null,
+    });
+    assert.equal(cleared.status, 200);
+    const unregistered = await dataOf<ProfileBody>(cleared);
+    assert.equal(unregistered.gstEnabled, false);
+    assert.equal(unregistered.gstRegistrationNumber, null);
+
+    const enabledAgain = await request("PATCH", "/api/settings/profile", ownerToken, {
+      name: "Renamed Salon",
+      lowStockThreshold: 9,
+      gstEnabled: true,
+    });
+    assert.equal(enabledAgain.status, 400);
+    assert.equal(((await enabledAgain.json()) as ErrorEnvelope).code, "BAD_REQUEST");
+  });
+
+  it("leaves GST off for a salon that never configured it", async () => {
+    const other = await runAsPlatform(() =>
+      prisma.tenant.findUniqueOrThrow({ where: { id: TENANT_B } }),
+    );
+    assert.equal(other.gstEnabled, false);
+    assert.equal(other.gstRegistrationNumber, null);
   });
 
   it("refuses profile writes by staff and suspended salons", async () => {

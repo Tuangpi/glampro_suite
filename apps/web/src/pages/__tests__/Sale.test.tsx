@@ -157,6 +157,8 @@ function receipt(overrides: Partial<SaleDetail> = {}): SaleDetail {
     totalAmount: "80.00",
     paidAmount: "80.00",
     discountAmount: "0.00",
+    taxAmount: "6.61",
+    taxRate: "9.00",
     outstandingAmount: "0.00",
     pointsEarned: 5,
     lines: [
@@ -170,6 +172,8 @@ function receipt(overrides: Partial<SaleDetail> = {}): SaleDetail {
         lineTotal: "80.00",
         discountPercent: "0.00",
         discountAmount: "0.00",
+        taxAmount: "6.61",
+        taxRate: "9.00",
         staffId: null,
         staffName: null,
       },
@@ -380,6 +384,25 @@ describe("taking payment", () => {
     expect(screen.getByRole("tab", { name: "Services" })).toBeInTheDocument();
     expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument();
     expect(within(cartPanel()).queryByText("1 line · 1 item")).not.toBeInTheDocument();
+  });
+
+  it("shows the GST included in the total, without changing what was paid", async () => {
+    const user = userEvent.setup();
+    renderSale();
+
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    );
+
+    await screen.findByText("Receipt #1042");
+
+    // Inclusive GST: the line is still S$80.00 and the tax is explained inside it.
+    expect(screen.getByText("Includes GST (9%)")).toBeInTheDocument();
+    expect(screen.getByText("S$6.61")).toBeInTheDocument();
+    // The line, the total and the tender all still read S$80.00.
+    expect(screen.getAllByText("S$80.00").length).toBeGreaterThan(0);
   });
 
   it("mints a fresh key per attempt, so a second attempt is a second sale", async () => {

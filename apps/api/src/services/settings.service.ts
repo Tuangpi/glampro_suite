@@ -23,7 +23,7 @@ import type {
   UpdateSalonProfileInput,
 } from "@glampro_suite/shared";
 
-import { notFound } from "../lib/http-error.js";
+import { notFound, badRequest } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 
@@ -59,6 +59,8 @@ export async function getSalonProfile(): Promise<SalonProfile> {
       lowStockThreshold: true,
       timeZone: true,
       locale: true,
+      gstEnabled: true,
+      gstRegistrationNumber: true,
       createdAt: true,
       updatedAt: true,
       owner: { select: { id: true, name: true, email: true } },
@@ -87,6 +89,30 @@ export async function getSalonProfile(): Promise<SalonProfile> {
  */
 export async function updateSalonProfile(input: UpdateSalonProfileInput): Promise<SalonProfile> {
   const tenantId = requireTenantId();
+
+  // GST pair guard (TK2610-0009 / P0-01): the stored pair can never be
+  // "enabled but unnumbered". The schema already refuses `gstEnabled: true`
+  // without a number in the same request; these checks cover the cases the
+  // schema cannot see — enabling against an empty stored number, or clearing
+  // the number while GST stays enabled.
+  const touchesGst = input.gstEnabled !== undefined || input.gstRegistrationNumber !== undefined;
+  if (touchesGst) {
+    const current = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { gstEnabled: true, gstRegistrationNumber: true },
+    });
+    if (!current) throw notFound("This salon's record could not be found.", "TENANT_NOT_FOUND");
+    const nextEnabled = input.gstEnabled ?? current.gstEnabled;
+    const nextNumber =
+      input.gstRegistrationNumber !== undefined
+        ? input.gstRegistrationNumber
+        : current.gstRegistrationNumber;
+    if (nextEnabled && (nextNumber === null || nextNumber.trim().length === 0)) {
+      throw badRequest("A GST registration number is required when GST is enabled.", [
+        { path: "body.gstRegistrationNumber", message: "Required when GST is enabled." },
+      ]);
+    }
+  }
 
   await prisma.tenant.update({ where: { id: tenantId }, data: { ...input } });
   return getSalonProfile();

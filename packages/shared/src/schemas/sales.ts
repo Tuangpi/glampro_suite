@@ -417,6 +417,16 @@ export const saleLineSchema = z.object({
   discountPercent: z.string(),
   /** What that rate took off the whole line, as money. The `Discount` row's parts. */
   discountAmount: z.string(),
+  /**
+   * GST included in this line, as money (TK2610-0009 / P0-01).
+   *
+   * Prices are GST-inclusive, so this is the back-calculated component —
+   * `lineTotal × rate / (100 + rate)` — rounded to the cent on the line.
+   * The receipt's `taxAmount` is the sum of these, not a recomputation.
+   */
+  taxAmount: z.string(),
+  /** The GST rate the till applied, as stored; `"0.00"` when GST is disabled. */
+  taxRate: z.string(),
   /** Who this line is credited to; `null` is uncredited, which is the product case. */
   staffId: z.string().nullable(),
   staffName: z.string().nullable(),
@@ -485,6 +495,16 @@ export const saleDetailSchema = z.object({
    * rather than a client adding up rates and money for itself (ADR 0017).
    */
   discountAmount: z.string(),
+  /**
+   * GST included in this sale, as money (TK2610-0009 / P0-01).
+   *
+   * Summed by the **server** from the lines it wrote, like `discountAmount`:
+   * rounding means the total is not reversible from a rate, and the money is
+   * what was charged. `"0.00"` when GST is disabled for the salon.
+   */
+  taxAmount: z.string(),
+  /** The GST rate applied to this sale, as stored; `"0.00"` when disabled. */
+  taxRate: z.string(),
   /** `totalAmount - paidAmount`, never negative. Non-zero means a `CustomerOutstanding`. */
   outstandingAmount: z.string(),
   /** The points this sale earned its customer; `0` for a walk-in. */
