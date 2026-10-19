@@ -428,17 +428,18 @@ export const completeSaleSchema = saleBodySchema.superRefine(refuseMixedDiscount
 export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
 
 /**
- * `GET /api/sales?status=&limit=` — the till's sale list.
+ * `GET /api/sales?status=&limit=&page=` — the till's sale list.
  *
- * `status` **defaults to `HELD`**, because the only list the till draws today is the
- * parked carts it can pick up; the default is stated here rather than left to the
+ * `status` **defaults to `HELD`** to preserve existing parked-cart callers.
+ * History explicitly requests COMPLETED or VOID. The default is stated here rather than left to the
  * route so the contract says what "no filter" means. An unknown value is **refused
  * rather than ignored**, the same rule `?kind=` follows on the item search: a typo
  * in a filter must not quietly widen a query to everything.
  *
  * The whole `SaleStatus` enum is accepted rather than a `?held=true` boolean, so the
  * voided-sales list Phase 5h adds is `?status=VOID` on this route instead of a
- * second one.
+ * second one. Pages use a stable soldAt/id ordering; concurrent writes may move rows
+ * between pages, so this is live browsing rather than a frozen export.
  */
 export const saleListQuerySchema = z.object({
   status: saleStatusSchema.default("HELD"),
@@ -872,3 +873,21 @@ export const refundSaleSchema = z.object({
 });
 
 export type RefundSaleInput = z.infer<typeof refundSaleSchema>;
+
+/** Read-only pickup quote. Historical receipt prices remain unchanged. */
+export const resumeSaleSchema = z.object({
+  sale: saleDetailSchema,
+  items: z
+    .array(
+      z.object({
+        kind: saleItemKindSchema,
+        id: z.string(),
+        name: z.string(),
+        price: z.string(),
+        memberPrice: z.string().nullable(),
+      }),
+    )
+    .max(MAX_SALE_LINES),
+});
+
+export type ResumeSale = z.infer<typeof resumeSaleSchema>;

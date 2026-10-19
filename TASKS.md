@@ -334,6 +334,37 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   ADR 0020 voucher/refund and loyalty/refund-accounting policy slice. No agent
   browser walkthrough. Remaining POS scope above is not completed or deferred
   by this acceptance; TK2610-0017 stays IN PROGRESS. No commit or deployment.
+- October 19 history/list continuation: on-demand completed/voided receipt browsing
+  and paginated held listings implemented. Back to cart preserves lines/customer/hold
+  identity. Reuses existing receipt actions with role/read-only reversal guards;
+  historical email does not use the active cart customer's address. Stable soldAt/id
+  order, page validation and hasMore remove the inaccessible-older-holds cap.
+- Verification: database-enabled API 363/363 (none skipped), web 417/417,
+  shared 101/101; root typecheck, lint and production build pass. Manual acceptance
+  remains; no agent browser walkthrough or migration. User committed baseline
+  37e2e55; follow-up verification changes are uncommitted, no deployment.
+- Next remaining scope: hold retry idempotency/current-catalogue resume pricing and
+  backend reversal/retention integrity, barcode and tips. Keep IN PROGRESS;
+  do not start TK2610-0018. Historical browsing is no longer unimplemented.
+- October 19: user accepted manual testing for historical browsing and held-list
+  pagination. Hold retry keys subsequently implemented in browser draft storage;
+  unchanged requests reuse the key across reload, successful requests clear it,
+  and in-flight hold requests block cart/customer edits. Existing API unique-key
+  behavior verified with concurrent/sequential hold replay and no ledger/counter effects.
+- Hold retry checks: API 364/364, web 420/420, shared 101/101; root typecheck,
+  lint/build pass. No manual fault-injection acceptance, schema change, commit or
+  deployment. Edited carts after uncertain responses use a new key; inspect held
+  list before resubmitting an edited cart. Remaining repricing/backend integrity,
+  barcode and tips keep the task IN PROGRESS.
+
+- October 19 current-catalogue pickup: read-only exact-ID resume response returns both
+  current prices; preserves order/quantity/staff/discounts and rejects unavailable,
+  unentitled or non-held items/sales. Existing draft replacement requires confirmation;
+  failed/cancelled pickup preserves it. In-flight conflicts and late pickup responses
+  are guarded. No ownership lock/reservation; completion revalidates prices and state.
+- Verification: database-enabled API 367/367 (none skipped), web 424/424, shared
+  101/101; root typecheck/lint/build pass. No migration, browser UAT, commit or deploy.
+  Backend reversal/receipt retention, barcode and tips remain. Keep IN PROGRESS.
 
 ### TK2610-0018 — P1-01 Calendar view: day/week, staff columns, drag-and-drop
 

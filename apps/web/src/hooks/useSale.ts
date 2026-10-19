@@ -34,6 +34,7 @@ import {
   type SaleItem,
   type SaleItemKind,
   type RefundSaleInput,
+  type ResumeSale,
   type SaleItemSearchResult,
   type SaleLineInput,
   type SaleList,
@@ -45,9 +46,10 @@ import {
 import { queryKeys } from "@/constants/queryKeys";
 import { useAuth } from "@/contexts/AuthContext";
 import { del, get, getPaginated, post } from "@/lib/api";
-import { discountedPrice, priceToCents } from "@/lib/money";
+import { discountedPrice } from "@/lib/money";
 import {
   clearSaleDraft,
+  holdAttemptKey,
   readSaleDraft,
   saleDraftIdentity,
   setSaleDraftLines,
@@ -255,34 +257,25 @@ export function toSaleLineInputs(lines: CartLine[]): SaleLineInput[] {
   }));
 }
 
-/**
- * A parked cart, back in the till.
- *
- * `price` is the pre-discount figure the hold was parked at and `memberPrice` is `null`, because a
- * stored line carries **one** price and not the catalogue's member/non-member pair.
- * Inventing the second here would be the browser naming a price, so a resumed line
- * draws the quote it was parked with and the server re-prices every line from the
- * catalogue when the sale is finally rung up (`completeSale`). The receipt is the
- * figure that counts, and it is not this one.
- */
-export function cartLinesFrom(sale: SaleDetail): CartLine[] {
-  return sale.lines.map((line) => ({
-    itemType: line.itemType,
-    itemId: line.itemId,
-    name: line.itemName,
-    quantity: line.quantity,
-    // Stored unitPrice is already discounted. Restore the original per-unit cents
-    // before the cart applies the preserved rate, otherwise pickup discounts twice.
-    price: (
-      (priceToCents(line.unitPrice) + priceToCents(line.discountAmount) / line.quantity) /
-      100
-    ).toFixed(2),
-    memberPrice: null,
-    ...(line.staffId ? { staffId: line.staffId } : {}),
-    // The rate comes back with the line: it is part of what the cashier set, and the
-    // completion re-prices the cart from the same catalogue the hold was priced from.
-    ...(Number(line.discountPercent) > 0 ? { discountPercent: Number(line.discountPercent) } : {}),
-  }));
+/** Current catalogue prices, with the held order and cashier choices preserved. */
+export function cartLinesFrom(sale: SaleDetail, items: ResumeSale["items"]): CartLine[] {
+  if (sale.status !== "HELD") throw new Error("This sale is no longer held.");
+  return sale.lines.map((line) => {
+    const item = items.find((item) => item.kind === line.itemType && item.id === line.itemId);
+    if (!item) throw new Error("A held item is unavailable. The cart was not picked up.");
+    return {
+      itemType: line.itemType,
+      itemId: line.itemId,
+      name: item.name,
+      quantity: line.quantity,
+      price: item.price,
+      memberPrice: item.memberPrice,
+      ...(line.staffId ? { staffId: line.staffId } : {}),
+      ...(Number(line.discountPercent) > 0
+        ? { discountPercent: Number(line.discountPercent) }
+        : {}),
+    };
+  });
 }
 
 export interface SaleItemFilters {
@@ -499,10 +492,8 @@ export function useOpenSaleReceipt() {
 /**
  * The cart a hold posts: the same lines and no money anywhere.
  *
- * `payments` and `idempotencyKey` are dropped from the type rather than merely left
- * empty, because the API refuses a hold that carries a tender — money changing hands is
- * what completion *is* — and a hook that could express one would be a hook that could
- * post a cart the server rejects.
+ * Tenders are forbidden. The hook supplies a durable per-attempt idempotency key,
+ * rather than trusting callers to generate a fresh key on each retry.
  */
 export type HoldSaleInput = Omit<CreateSaleInput, "hold" | "idempotencyKey" | "payments">;
 
@@ -518,7 +509,10 @@ export function useHoldSale() {
   const identity = tenant && user ? saleDraftIdentity(tenant.id, user.id) : null;
 
   return useMutation({
-    mutationFn: (input: HoldSaleInput) => post<SaleDetail>("/sales", { ...input, hold: true }),
+    mutationFn: (input: HoldSaleInput) => {
+      const idempotencyKey = holdAttemptKey(identity, JSON.stringify(input));
+      return post<SaleDetail>("/sales", { ...input, hold: true, idempotencyKey });
+    },
     onSuccess: () => {
       invalidateAfterSale(queryClient, identity, true);
     },
@@ -529,20 +523,20 @@ export function useHoldSale() {
  * Picks a parked cart up: the hold's lines and its customer, ready to be edited and
  * rung up.
  *
- * Two reads rather than one, and deliberately. The hold list answers with a **summary** —
- * no lines — so that fifty parked carts are not fifty carts' worth of rows in one
- * response, and the customer row comes with it because `isMember` is read off
- * `Customer.memberId`: a cart priced as a walk-in and then posted for a member would
- * show the cashier the wrong figures on the way to the same receipt.
+ * The read-only resume endpoint resolves exact current catalogue prices and rejects
+ * unavailable items/non-held sales. Load the customer before exposing any replacement
+ * cart, so a failed read leaves the existing draft untouched. Both prices stay on
+ * each line for subsequent customer changes. Completion remains authoritative.
  */
 export function useResumeHold() {
   return useMutation({
     mutationFn: async (saleId: string) => {
-      const sale = await get<SaleDetail>(`/sales/${saleId}`);
+      const { sale, items } = await get<ResumeSale>(`/sales/${saleId}/resume`);
+      const lines = cartLinesFrom(sale, items);
       const customer = sale.customerId
         ? await get<CustomerDetail>(`/customers/${sale.customerId}`)
         : null;
-      return { sale, customer };
+      return { sale, customer, lines };
     },
   });
 }

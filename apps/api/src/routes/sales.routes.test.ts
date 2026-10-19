@@ -486,6 +486,53 @@ describe(
       await purge();
     });
 
+    it("serves paginated completed and void history to cashiers without leaking other tenants", async () => {
+      const ids: string[] = [];
+      try {
+        await runAsPlatform(async () => {
+          for (const tenantId of TENANT_IDS) {
+            for (const status of ["COMPLETED", "VOID"] as const) {
+              for (let index = 0; index < 2; index++) {
+                const sale = await prisma.sale.create({
+                  data: {
+                    tenantId,
+                    status,
+                    totalQuantity: 0,
+                    totalAmount: 0,
+                    paidAmount: 0,
+                    soldAt: new Date("2099-01-01"),
+                  },
+                });
+                ids.push(sale.id);
+              }
+            }
+          }
+        });
+        for (const status of ["COMPLETED", "VOID"]) {
+          const first = await dataOf<{ items: SaleSummaryBody[]; page: number; hasMore: boolean }>(
+            await request("GET", `/api/sales?status=${status}&limit=1&page=1`, cashierToken),
+          );
+          const second = await dataOf<typeof first>(
+            await request("GET", `/api/sales?status=${status}&limit=1&page=2`, cashierToken),
+          );
+          assert.equal(first.items.length, 1);
+          assert.equal(second.items.length, 1);
+          assert.equal(first.hasMore, true);
+          assert.equal(first.items[0]?.status, status);
+          assert.equal(second.items[0]?.status, status);
+          assert.notEqual(first.items[0]?.id, second.items[0]?.id);
+          for (const row of [...first.items, ...second.items]) {
+            assert.ok(ids.slice(0, 4).includes(row.id));
+            assert.equal((await request("GET", `/api/sales/${row.id}`, cashierToken)).status, 200);
+          }
+        }
+        assert.equal((await request("GET", `/api/sales/${ids[4]}`, cashierToken)).status, 404);
+        assert.equal((await request("GET", "/api/sales?status=COMPLETED")).status, 401);
+      } finally {
+        await runAsPlatform(() => prisma.sale.deleteMany({ where: { id: { in: ids } } }));
+      }
+    });
+
     it("mounts the search behind auth", async () => {
       // A 401 rather than a 404 is what proves the mount exists at all.
       const response = await request("GET", "/api/sales/items");
@@ -882,6 +929,112 @@ describe(
         assert.ok(body.items.every((item) => item.status === "HELD"));
       });
 
+      it("creates only one hold for concurrent and sequential retries without ledger effects", async () => {
+        const input = {
+          ...(await completeBody(ownerId)),
+          payments: [],
+          hold: true,
+          idempotencyKey: "held-retry-integrity-test",
+        };
+        const before = await receiptCounter();
+        const results = await Promise.all([
+          send("POST", "/api/sales", input, token),
+          send("POST", "/api/sales", input, token),
+        ]);
+        const receipts: ReceiptBody[] = [];
+        for (const response of results) {
+          assert.equal(response.status, 201);
+          receipts.push(await dataOf<ReceiptBody>(response));
+        }
+        const id = receipts[0]!.id;
+        try {
+          assert.equal(receipts[1]?.id, id);
+          const replay = await dataOf<ReceiptBody>(await send("POST", "/api/sales", input, token));
+          assert.equal(replay.id, id);
+          assert.equal(replay.status, "HELD");
+          assert.equal(replay.receiptNumber, null);
+          assert.deepEqual(replay.payments, []);
+          assert.equal(await receiptCounter(), before);
+          assert.deepEqual(await ledgerRowsFor(id), [0, 0, 0]);
+          assert.equal(
+            await runAsPlatform(() =>
+              prisma.sale.count({
+                where: {
+                  tenantId: TENANT_A,
+                  idempotencyKey: input.idempotencyKey,
+                },
+              }),
+            ),
+            1,
+          );
+        } finally {
+          assert.equal((await send("DELETE", `/api/sales/${id}`, undefined, token)).status, 200);
+        }
+      });
+
+      it("paginates held carts without hiding older rows or crossing tenants", async () => {
+        const created = await dataOf<ReceiptBody>(
+          await send(
+            "POST",
+            "/api/sales",
+            {
+              ...(await completeBody(ownerId)),
+              payments: [],
+              hold: true,
+            },
+            token,
+          ),
+        );
+        assert.ok(parked);
+        const parkedId = parked.id;
+        const foreignId = await runAsPlatform(async () => {
+          const foreign = await prisma.sale.create({
+            data: {
+              tenantId: TENANT_B,
+              status: "HELD",
+              totalQuantity: 0,
+              totalAmount: 0,
+              paidAmount: 0,
+              soldAt: new Date("2099-01-01"),
+            },
+          });
+          const sameTime = new Date("2026-10-19T12:00:00Z");
+          await prisma.sale.updateMany({
+            where: { id: { in: [created.id, parkedId] } },
+            data: { soldAt: sameTime },
+          });
+          return foreign.id;
+        });
+        try {
+          const first = await dataOf<{ items: SaleSummaryBody[]; page: number; hasMore: boolean }>(
+            await request("GET", "/api/sales?limit=1&page=1", token),
+          );
+          const second = await dataOf<typeof first>(
+            await request("GET", "/api/sales?limit=1&page=2", token),
+          );
+          assert.equal(first.page, 1);
+          assert.equal(first.hasMore, true);
+          assert.equal(first.items.length, 1);
+          assert.equal(second.items.length, 1);
+          assert.notEqual(first.items[0]?.id, second.items[0]?.id);
+          assert.ok([first.items[0]?.id, second.items[0]?.id].includes(parkedId));
+          assert.ok([first.items[0]?.id, second.items[0]?.id].includes(created.id));
+          assert.equal(second.hasMore, false);
+          const beyond = await dataOf<typeof first>(
+            await request("GET", "/api/sales?limit=1&page=1000", token),
+          );
+          assert.deepEqual(beyond.items, []);
+          assert.equal(beyond.hasMore, false);
+          assert.equal((await request("GET", "/api/sales?page=0", token)).status, 422);
+        } finally {
+          assert.equal(
+            (await send("DELETE", `/api/sales/${created.id}`, undefined, token)).status,
+            200,
+          );
+          await runAsPlatform(() => prisma.sale.delete({ where: { id: foreignId } }));
+        }
+      });
+
       it("refuses a status it does not know rather than widening to every sale", async () => {
         const response = await request("GET", "/api/sales?status=DELETED", token);
 
@@ -934,6 +1087,52 @@ describe(
     }
 
     describe("completing a parked cart twice, and abandoning one", () => {
+      it("quotes exact current prices without changing the hold or ledgers", async () => {
+        const held = await freshHold(ownerId);
+        const itemId = await seededIdOf("SERVICE");
+        const original = await runAsPlatform(() =>
+          prisma.service.findUniqueOrThrow({ where: { id: itemId } }),
+        );
+        const beforeCounts = await ledgerRowsFor(held.id);
+        const counter = await receiptCounter();
+        try {
+          await runAsPlatform(() =>
+            prisma.service.update({
+              where: { id: itemId },
+              data: { nonmemberPrice: 123, memberPrice: 111 },
+            }),
+          );
+          const response = await request("GET", `/api/sales/${held.id}/resume`, cashierToken);
+          assert.equal(response.status, 200);
+          const quote = await dataOf<{
+            sale: ReceiptBody;
+            items: { id: string; price: string; memberPrice: string }[];
+          }>(response);
+          assert.equal(quote.sale.status, "HELD");
+          assert.equal(quote.items[0]!.id, itemId);
+          assert.equal(quote.items[0]!.price, "123.00");
+          assert.equal(quote.items[0]!.memberPrice, "111.00");
+          assert.equal(quote.sale.totalAmount, held.totalAmount);
+          assert.deepEqual(await ledgerRowsFor(held.id), beforeCounts);
+          assert.equal(await receiptCounter(), counter);
+          await runAsPlatform(() =>
+            prisma.service.update({ where: { id: itemId }, data: { status: "INACTIVE" } }),
+          );
+          assert.equal((await request("GET", `/api/sales/${held.id}/resume`, token)).status, 400);
+        } finally {
+          await runAsPlatform(() =>
+            prisma.service.update({
+              where: { id: itemId },
+              data: {
+                nonmemberPrice: original.nonmemberPrice,
+                memberPrice: original.memberPrice,
+                status: original.status,
+              },
+            }),
+          );
+        }
+      });
+
       it("answers a second completion with the receipt the first one wrote", async () => {
         const held = await freshHold(ownerId);
         const first = await send(
@@ -962,6 +1161,61 @@ describe(
           prisma.salePayment.count({ where: { tenantId: TENANT_A, saleId: a.id } }),
         );
         assert.equal(tenders, 1, "the second tap must not take the money twice");
+        assert.equal((await request("GET", `/api/sales/${held.id}/resume`, token)).status, 409);
+      });
+
+      it("resolves an item beyond search limits and refuses missing or foreign held items", async () => {
+        const productId = await stockProduct("ZZZ pickup exact item", 1);
+        const held = await dataOf<ReceiptBody>(
+          await send(
+            "POST",
+            "/api/sales",
+            {
+              hold: true,
+              lines: [{ itemType: "PRODUCT", itemId: productId, quantity: 1 }],
+            },
+            token,
+          ),
+        );
+        const search = await dataOf<{ items: { id: string }[] }>(
+          await request("GET", "/api/sales/items?kind=PRODUCT&limit=1", token),
+        );
+        assert.ok(!search.items.some((item) => item.id === productId));
+        assert.equal((await request("GET", `/api/sales/${held.id}/resume`, token)).status, 200);
+        assert.equal(await stockOf(productId), 1);
+        await runAsPlatform(() => prisma.product.delete({ where: { id: productId } }));
+        assert.equal((await request("GET", `/api/sales/${held.id}/resume`, token)).status, 409);
+        await runAsPlatform(() =>
+          prisma.sale.update({ where: { id: held.id }, data: { tenantId: TENANT_B } }),
+        );
+        try {
+          assert.equal((await request("GET", `/api/sales/${held.id}/resume`, token)).status, 404);
+        } finally {
+          await runAsPlatform(() =>
+            prisma.sale.update({ where: { id: held.id }, data: { tenantId: TENANT_A } }),
+          );
+        }
+      });
+
+      it("refuses a held package after its add-on is removed", async () => {
+        await setEntitlement("packages", true);
+        const packageRow = await runAsPlatform(() =>
+          prisma.package.findFirstOrThrow({ where: { tenantId: TENANT_A } }),
+        );
+        const held = await dataOf<ReceiptBody>(
+          await send(
+            "POST",
+            "/api/sales",
+            {
+              hold: true,
+              customerId: await seededCustomerId(),
+              lines: [{ itemType: "PACKAGE", itemId: packageRow.id, quantity: 1 }],
+            },
+            token,
+          ),
+        );
+        await setEntitlement("packages", false);
+        assert.equal((await request("GET", `/api/sales/${held.id}/resume`, token)).status, 403);
       });
 
       it("refuses to discard a sale that was rung up", async () => {

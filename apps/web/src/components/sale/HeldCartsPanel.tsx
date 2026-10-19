@@ -131,8 +131,12 @@ export default function HeldCartsPanel({
           })}
         </ul>
       )}
-      <SaleListPagination page={page} hasMore={hasMore}
-        disabled={isFetching || isError || busyId !== null} onPageChange={onPageChange} />
+      <SaleListPagination
+        page={page}
+        hasMore={hasMore}
+        disabled={isFetching || isError || busyId !== null}
+        onPageChange={onPageChange}
+      />
     </Card>
   );
 }

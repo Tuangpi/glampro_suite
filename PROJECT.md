@@ -414,6 +414,26 @@ service/tests and `apps/web/src/hooks/useAppointments.ts`.
 
 ### ADR 0015
 
+October 19 continuation: held lists now support Previous/Next pages through the
+sales API's optional `page` and returned `hasMore`. History separately browses
+COMPLETED/VOID and opens stored receipts without replacing the active draft.
+API/UI regression tests cover paging, tenant isolation and preserved resumed-hold
+identity. User accepted history/pagination on October 19. Durable browser hold keys
+now reuse an unchanged submitted attempt across reload, and in-flight edits are
+blocked. Concurrent API replay is tested; changed carts after uncertain responses
+are new attempts and require checking existing holds. Older limit-only/missing-key
+findings below are historical. Current-catalogue pickup is now implemented.
+Read-only `GET /api/sales/:id/resume` resolves exact current catalogue prices (both
+regular/member), validates item availability/entitlements and refuses non-held sales.
+Local pickup preserves cashier choices and requires confirmation before replacing a
+draft; failure/cancel leaves it intact. Conflicting hold actions/edits are blocked
+while pending and late unmounted pickup responses are ignored. No reservation or
+ownership lock is introduced. Prices/state may change after pickup; completion remains
+authoritative. Reload restores the saved browser quote, not a guaranteed live price.
+API/UI regressions pass; manual pickup UAT remains unperformed.
+Offset paging is a live view, not snapshot/export isolation. Manual fault-injection
+acceptance of durable hold retries remains unperformed.
+
 **Accepted October 14, 2026 — held sales are tenant-visible drafts, not revenue.**
 HELD Sale + ordered lines gets no number, tender, stock reservation, points,
 performance, outstanding or granted holdings. Reporting reads COMPLETED only.
