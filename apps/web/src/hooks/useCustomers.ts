@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateCustomerInput,
   CustomerDetail,
+  CustomerHoldings,
   CustomerSummary,
   UpdateCustomerInput,
 } from "@glampro_suite/shared";
@@ -41,6 +42,21 @@ export function useCustomer(id: string | null) {
     queryKey: queryKeys.customers.detail(id ?? ""),
     queryFn: () => get<CustomerDetail>(`/customers/${id}`),
     enabled: id !== null,
+  });
+}
+
+/**
+ * What a customer can still spend — packages and prepaid credit (TK2610-0011).
+ *
+ * Only fetched once a customer is attached: a walk-in has no credit and the endpoint
+ * needs an id. The payment sheet is the only caller, and it asks as it opens rather
+ * than on every cart change, because the answer only matters at the tender step.
+ */
+export function useCustomerHoldings(customerId: string | null) {
+  return useQuery({
+    queryKey: queryKeys.customers.holdings(customerId ?? ""),
+    queryFn: () => get<CustomerHoldings>(`/customers/${customerId}/holdings`),
+    enabled: customerId !== null,
   });
 }
 

@@ -482,6 +482,40 @@ query/overnight semantics need review. Five mocked/geometry files, 88 tests pass
 then; not proof of deployed reads, clashes, rollback or complete availability.
 Sources: calendar-geometry, CalendarView/WeekView/MonthView, Appointments and useAppointments.
 
+### ADR 0019
+
+**Accepted October 19, 2026 — local rails are recorded tenders, and credit redemption is a
+tender, not a discount.**
+`PAYNOW_SGQR` (PayNow and SGQR share one code, because a salon cannot tell them apart on its
+statement), `NETS`, `GRABPAY` and `ATOME` are **manually recorded**: no PSP integration, QR
+payload, webhook, settlement or reconciliation in this slice. `sessionId` stays optional
+API-only metadata for a future provider. `PACKAGE` and `PREPAID_CREDIT` are tender codes on
+`SalePayment`; the sale keeps its total, its points and the stylist's credit, and the receipt
+shows what paid for it.
+
+A redemption carries `holdingId`. `redeemPayments` re-reads the holding inside the sale
+transaction, recomputes what it covers, subtracts it with a count-guarded update
+(`quantityRemaining/amountRemaining >= draw`), and writes one `CustomerRedemption` row naming
+the holding (additive column + index, migration
+`20261019034125_local_payment_methods_and_redemption_holding`). The amount is verified, not
+trusted: a browser cannot invent a balance. Refusals are `404 HOLDING_NOT_FOUND` (foreign or
+unknown), `409 HOLDING_EXPIRED` / `HOLDING_INSUFFICIENT`, and `400 HOLDING_NOT_COVERED` /
+`HOLDING_REQUIRES_CUSTOMER` / `REDEMPTION_EXCEEDS_TOTAL`.
+
+A **package** covers SERVICE units whose service the package lists, in cart order, one session
+per unit, up to what is left; the tender amount must equal that coverage exactly. **Prepaid
+credit is fungible** (user decision, October 19): any line, any amount up to the balance, so the
+`ValuePackageService` links restrict nothing. Voiding restores both — increment the holding and
+stamp `CustomerRedemption.revertedAt` (the legacy `unuse_time`), never delete. `GET
+/api/customers/:id/holdings` merges the two ledgers into one list of spendable rows, each naming
+the tender that spends it.
+
+Not covered here: gift-card tender, provider settlement, partial refunds of a redemption, a
+redemption UI beyond the payment sheet, and "one use = a set of services" package semantics
+(that needs its own model in P2-03). Sources: shared `constants.ts` / `sales.ts` /
+`customer.ts`, `sale.service` (`redeemPayments`, `reverseForVoid`), `customer.service`
+(`getCustomerHoldings`), `PaymentDialog`, and the migration above.
+
 ## Design integration
 
 ### Design 1

@@ -16,6 +16,7 @@ import { unauthorized } from "../lib/http-error.js";
 import {
   createCustomer,
   getCustomer,
+  getCustomerHoldings,
   listCustomers,
   updateCustomer,
 } from "../services/customer.service.js";
@@ -42,6 +43,21 @@ customersRouter.get(
     try {
       const query = validated<CustomerListQuery>(req, "query");
       res.status(200).json({ data: await listCustomers(query) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+customersRouter.get(
+  "/:id/holdings",
+  auth,
+  requireModule("customers"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res.status(200).json({ data: await getCustomerHoldings(id) });
     } catch (error) {
       next(error);
     }

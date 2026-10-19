@@ -47,7 +47,7 @@ import {
 import { SaleLineItemType } from "../../generated/prisma/enums.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
-import { createSale, getSale, searchSaleItems } from "./sale.service.js";
+import { createSale, getSale, searchSaleItems, voidSale } from "./sale.service.js";
 
 const databaseUrl = process.env["DATABASE_URL"];
 
@@ -597,6 +597,16 @@ async function giftCardIdOf(tenantId: string, name: string): Promise<string> {
   return found.id;
 }
 
+/** The value package a redemption spends credit from (TK2610-0011). */
+async function valuePackageIdOf(tenantId: string, name: string): Promise<string> {
+  const rows = await runAsTenant(tenantId, () =>
+    prisma.valuePackage.findMany({ where: { name }, select: { id: true } }),
+  );
+  const found = rows[0];
+  if (!found) throw new Error(`no value package named "${name}"`);
+  return found.id;
+}
+
 /** The error's `code`, so a refusal asserts *which* refusal it was. */
 function hasCode(code: string) {
   return (error: unknown) =>
@@ -1080,6 +1090,311 @@ describe(
           }),
         ),
         /tenant scope/,
+      );
+    });
+
+    it("records a local rail as a tender, without acquiring anything", async () => {
+      const cutId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+
+      // TK2610-0011 / ADR 0019: PayNow is stored, not charged. The assertion that
+      // matters is that the row round-trips as the code the cashier picked, because
+      // that is what a later reconciliation report will group by.
+      const receipt = await runAsTenant(TENANT_A, () =>
+        createSale({
+          lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+          payments: [{ method: "PAYNOW_SGQR", amount: 50 }],
+        }),
+      );
+
+      assert.equal(receipt.payments.length, 1);
+      assert.equal(receipt.payments[0]?.method, "PAYNOW_SGQR");
+      assert.equal(receipt.payments[0]?.amount, "50.00");
+      assert.equal(receipt.paymentStatus, "PAID");
+    });
+
+    it("spends a package session as a tender, and gives it back on void", async () => {
+      await grant(TENANT_A, "packages");
+      const bundle = await packageIdOf(TENANT_A, nameOf(TENANT_A, "Aloha Bundle"));
+      const cutId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+      const customerId = await customerIdOf(TENANT_A, false);
+
+      const holding = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId,
+            packageId: bundle,
+            quantity: 2,
+            quantityRemaining: 2,
+          },
+          select: { id: true },
+        }),
+      );
+
+      // The seeded Cut is 50.00 for a non-member, and the package lists Cut, so one
+      // session pays the whole line.
+      const receipt = await runAsTenant(TENANT_A, () =>
+        createSale({
+          customerId,
+          lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+          payments: [{ method: "PACKAGE", amount: 50, holdingId: holding.id }],
+        }),
+      );
+
+      assert.equal(receipt.totalAmount, "50.00", "a redemption is a tender, not a discount");
+      assert.equal(receipt.paidAmount, "50.00");
+      assert.equal(receipt.paymentStatus, "PAID", "credit paid for the service; nothing is owed");
+      // 5 points on the seeded cut — earned on what the service was worth, not on what
+      // the customer handed over.
+      assert.equal(receipt.pointsEarned, 5);
+
+      const spent = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.findFirstOrThrow({
+          where: { id: holding.id },
+          select: { quantityRemaining: true },
+        }),
+      );
+      assert.equal(spent.quantityRemaining, 1);
+
+      const redemptions = await runAsTenant(TENANT_A, () =>
+        prisma.customerRedemption.findMany({
+          where: { saleId: receipt.id },
+          select: { itemType: true, itemId: true, quantity: true, amount: true, holdingId: true },
+        }),
+      );
+      assert.equal(redemptions.length, 1);
+      assert.equal(redemptions[0]?.itemType, "PACKAGE");
+      assert.equal(redemptions[0]?.itemId, bundle);
+      assert.equal(redemptions[0]?.quantity, 1);
+      assert.equal(redemptions[0]?.amount, null, "a session is not money");
+      assert.equal(redemptions[0]?.holdingId, holding.id);
+
+      // Voiding refunds the session, not just the money.
+      const actor = await staffIdOf(TENANT_A);
+      const voided = await runAsTenant(TENANT_A, () =>
+        voidSale(receipt.id, { reason: "wrong customer" }, actor),
+      );
+      assert.equal(voided.status, "VOID");
+
+      const restored = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.findFirstOrThrow({
+          where: { id: holding.id },
+          select: { quantityRemaining: true },
+        }),
+      );
+      assert.equal(restored.quantityRemaining, 2);
+
+      const reverted = await runAsTenant(TENANT_A, () =>
+        prisma.customerRedemption.findFirstOrThrow({
+          where: { saleId: receipt.id },
+          select: { revertedAt: true },
+        }),
+      );
+      assert.ok(reverted.revertedAt, "the redemption is stamped, not deleted");
+    });
+
+    it("refuses a package tender whose amount is not what the package covers", async () => {
+      await grant(TENANT_A, "packages");
+      const bundle = await packageIdOf(TENANT_A, nameOf(TENANT_A, "Aloha Bundle"));
+      const cutId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+      const customerId = await customerIdOf(TENANT_A, false);
+
+      const holding = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId,
+            packageId: bundle,
+            quantity: 1,
+            quantityRemaining: 1,
+          },
+          select: { id: true },
+        }),
+      );
+
+      // The browser said 40.00; the package covers the catalogue's 50.00. The server
+      // decides, so the session is not spent and no sale is written.
+      await assert.rejects(
+        runAsTenant(TENANT_A, () =>
+          createSale({
+            customerId,
+            lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+            payments: [{ method: "PACKAGE", amount: 40, holdingId: holding.id }],
+          }),
+        ),
+        hasCode("HOLDING_NOT_COVERED"),
+      );
+
+      const untouched = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.findFirstOrThrow({
+          where: { id: holding.id },
+          select: { quantityRemaining: true },
+        }),
+      );
+      assert.equal(untouched.quantityRemaining, 1, "a refused sale must not spend a session");
+    });
+
+    it("draws prepaid credit down, and refuses to overdraw it", async () => {
+      const prepaid = await valuePackageIdOf(TENANT_A, nameOf(TENANT_A, "Prepaid Credit"));
+      const cutId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+      const customerId = await customerIdOf(TENANT_A, false);
+
+      const holding = await runAsTenant(TENANT_A, () =>
+        prisma.customerValuePackageHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId,
+            valuePackageId: prepaid,
+            amount: "30.00",
+            amountRemaining: "30.00",
+          },
+          select: { id: true },
+        }),
+      );
+
+      // Credit is fungible: the value package lists Cut, but it may pay for anything.
+      const receipt = await runAsTenant(TENANT_A, () =>
+        createSale({
+          customerId,
+          lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+          payments: [
+            { method: "PREPAID_CREDIT", amount: 30, holdingId: holding.id },
+            { method: "NETS", amount: 20 },
+          ],
+        }),
+      );
+
+      assert.equal(receipt.paidAmount, "50.00");
+      assert.equal(receipt.paymentStatus, "PAID");
+
+      const drained = await runAsTenant(TENANT_A, () =>
+        prisma.customerValuePackageHolding.findFirstOrThrow({
+          where: { id: holding.id },
+          select: { amountRemaining: true },
+        }),
+      );
+      assert.equal(drained.amountRemaining.toFixed(2), "0.00");
+
+      const redemptions = await runAsTenant(TENANT_A, () =>
+        prisma.customerRedemption.findMany({
+          where: { saleId: receipt.id },
+          select: { itemType: true, itemId: true, amount: true, holdingId: true },
+        }),
+      );
+      assert.equal(redemptions.length, 1);
+      assert.equal(redemptions[0]?.itemType, "VALUE_PACKAGE");
+      assert.equal(redemptions[0]?.itemId, prepaid);
+      assert.equal(redemptions[0]?.amount?.toFixed(2), "30.00");
+      assert.equal(redemptions[0]?.holdingId, holding.id);
+
+      // Nothing is left, so a second sale cannot spend it again.
+      await assert.rejects(
+        runAsTenant(TENANT_A, () =>
+          createSale({
+            customerId,
+            lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+            payments: [{ method: "PREPAID_CREDIT", amount: 10, holdingId: holding.id }],
+          }),
+        ),
+        hasCode("HOLDING_INSUFFICIENT"),
+      );
+    });
+
+    it("refuses a holding that is not this customer's, or has expired", async () => {
+      await grant(TENANT_A, "packages");
+      const bundle = await packageIdOf(TENANT_A, nameOf(TENANT_A, "Aloha Bundle"));
+      const cutId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+      const member = await customerIdOf(TENANT_A, true);
+      const plain = await customerIdOf(TENANT_A, false);
+
+      // A real batch of sessions — held by the *other* customer.
+      const theirs = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId: member,
+            packageId: bundle,
+            quantity: 2,
+            quantityRemaining: 2,
+          },
+          select: { id: true },
+        }),
+      );
+
+      await assert.rejects(
+        runAsTenant(TENANT_A, () =>
+          createSale({
+            customerId: plain,
+            lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+            payments: [{ method: "PACKAGE", amount: 50, holdingId: theirs.id }],
+          }),
+        ),
+        // Not "forbidden": the scoped read simply does not find it, and the message
+        // must not confirm that the id exists under another customer.
+        hasCode("HOLDING_NOT_FOUND"),
+      );
+
+      const theirsAfter = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.findFirstOrThrow({
+          where: { id: theirs.id },
+          select: { quantityRemaining: true },
+        }),
+      );
+      assert.equal(theirsAfter.quantityRemaining, 2, "a refused sale must not spend it");
+
+      const lapsed = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId: plain,
+            packageId: bundle,
+            quantity: 1,
+            quantityRemaining: 1,
+            expiresAt: new Date("2020-01-01T00:00:00Z"),
+          },
+          select: { id: true },
+        }),
+      );
+
+      await assert.rejects(
+        runAsTenant(TENANT_A, () =>
+          createSale({
+            customerId: plain,
+            lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+            payments: [{ method: "PACKAGE", amount: 50, holdingId: lapsed.id }],
+          }),
+        ),
+        hasCode("HOLDING_EXPIRED"),
+      );
+    });
+
+    it("refuses a redemption on a walk-in cart, which has nobody to spend for", async () => {
+      await grant(TENANT_A, "packages");
+      const bundle = await packageIdOf(TENANT_A, nameOf(TENANT_A, "Aloha Bundle"));
+      const cutId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+      const customerId = await customerIdOf(TENANT_A, false);
+
+      const holding = await runAsTenant(TENANT_A, () =>
+        prisma.customerPackageHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId,
+            packageId: bundle,
+            quantity: 1,
+            quantityRemaining: 1,
+          },
+          select: { id: true },
+        }),
+      );
+
+      await assert.rejects(
+        runAsTenant(TENANT_A, () =>
+          createSale({
+            lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+            payments: [{ method: "PACKAGE", amount: 50, holdingId: holding.id }],
+          }),
+        ),
+        hasCode("HOLDING_REQUIRES_CUSTOMER"),
       );
     });
   },

@@ -72,7 +72,7 @@ import {
   useVoidSale,
 } from "@/hooks/useSale";
 import { getErrorMessage } from "@/lib/api";
-import { cartTotalCents } from "@/lib/money";
+import { cartTotalCents, priceToCents } from "@/lib/money";
 import { readSaleDraft, saleDraftIdentity, setSaleDraftCustomer } from "@/lib/sale-draft-storage";
 
 /**
@@ -521,6 +521,13 @@ export default function Sale() {
       {checkoutOpen ? (
         <PaymentDialog
           totalCents={totalCents}
+          lines={cart.lines.map((line) => ({
+            itemType: line.itemType,
+            itemId: line.itemId,
+            quantity: line.quantity,
+            unitPriceCents: priceToCents(lineUnitPrice(line, isMember)),
+          }))}
+          customerId={customer?.id ?? null}
           hasCustomer={customer !== null}
           needsCustomer={needsCustomer}
           isPending={createSale.isPending || completeSale.isPending}

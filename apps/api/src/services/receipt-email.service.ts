@@ -29,6 +29,14 @@ const PAYMENT_LABELS: Record<SalePaymentMethod, string> = {
   BANK_TRANSFER: "Bank transfer",
   CHEQUE: "Cheque",
   OTHER: "Other",
+  // Recorded rails (TK2610-0011): the customer recognises the name they paid with.
+  PAYNOW_SGQR: "PayNow / SGQR",
+  NETS: "NETS",
+  GRABPAY: "GrabPay",
+  ATOME: "Atome",
+  // Credit spent, not money received — the receipt says so in the tender's own words.
+  PACKAGE: "Package",
+  PREPAID_CREDIT: "Prepaid credit",
 };
 
 /** `S$1,234.50` in the salon's own separators, matching the till's `formatPrice`. */

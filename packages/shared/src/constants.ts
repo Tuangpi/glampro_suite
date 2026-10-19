@@ -121,10 +121,64 @@ export const MAX_SALE_ITEM_LIMIT = 50;
  * The enum predates this phase — it was declared for the platform `Payment`
  * model — and `SalePayment` reuses it rather than declaring a second list that
  * could drift from the first.
+ *
+ * **`PAYNOW_SGQR`, `NETS`, `GRABPAY` and `ATOME` are recorded, not acquired**
+ * (TK2610-0011, ADR 0019). The cashier reads which rail the customer used and the
+ * tender is stored exactly like a card one: no QR payload is generated, no
+ * provider is called and nothing is confirmed. One code covers PayNow and SGQR
+ * because the salon cannot tell them apart on its bank statement. A later
+ * integration adds a `sessionId`, not a new code.
+ *
+ * **`PACKAGE` and `PREPAID_CREDIT` are redemption tenders**: what the customer
+ * spends is credit they bought earlier, not money handed over now. They carry a
+ * `holdingId` on the request and draw the holding down in the same transaction
+ * that writes the sale (`REDEMPTION_PAYMENT_METHODS`).
  */
-export const PAYMENT_METHODS = ["CASH", "CARD", "BANK_TRANSFER", "CHEQUE", "OTHER"] as const;
+export const PAYMENT_METHODS = [
+  "CASH",
+  "CARD",
+  "BANK_TRANSFER",
+  "CHEQUE",
+  "OTHER",
+  "PAYNOW_SGQR",
+  "NETS",
+  "GRABPAY",
+  "ATOME",
+  "PACKAGE",
+  "PREPAID_CREDIT",
+] as const;
 
 export type PaymentMethodCode = (typeof PAYMENT_METHODS)[number];
+
+/**
+ * The local rails Singapore salons are asked for (TK2610-0011 / P0-04).
+ *
+ * Kept as a list of their own so the payment sheet can group them, and so a report
+ * can answer "how much came in by PayNow" without re-typing the codes. Recording
+ * one of these is not acquiring or settlement — see `PAYMENT_METHODS`.
+ */
+export const LOCAL_PAYMENT_METHODS = ["PAYNOW_SGQR", "NETS", "GRABPAY", "ATOME"] as const;
+
+export type LocalPaymentMethodCode = (typeof LOCAL_PAYMENT_METHODS)[number];
+
+/**
+ * The two tenders that spend credit a customer already holds.
+ *
+ * A redemption is a **tender**, not a discount: the sale still totals what it
+ * totals, the service is still worth what the catalogue says, and the receipt
+ * shows what paid for it. A discount would have cheapened the line, taking the
+ * points and the stylist's credit down with it.
+ */
+export const REDEMPTION_PAYMENT_METHODS = ["PACKAGE", "PREPAID_CREDIT"] as const;
+
+export type RedemptionPaymentMethodCode = (typeof REDEMPTION_PAYMENT_METHODS)[number];
+
+/** Whether this tender spends a holding rather than money. */
+export function isRedemptionPaymentMethod(
+  method: PaymentMethodCode,
+): method is RedemptionPaymentMethodCode {
+  return (REDEMPTION_PAYMENT_METHODS as readonly string[]).includes(method);
+}
 
 /**
  * Mirrors the `SaleStatus` database enum.

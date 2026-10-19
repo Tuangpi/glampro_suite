@@ -29,6 +29,7 @@ import {
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   SALE_STATUSES,
+  isRedemptionPaymentMethod,
 } from "../constants.js";
 import { emailSchema, moneySchema } from "./common.js";
 
@@ -262,13 +263,49 @@ export type SaleLineInput = z.infer<typeof saleLineInputSchema>;
  * `sessionId` is a gateway session for a card tender that settles later; it moves
  * off the sale row (where legacy kept one `sales.session_id`) onto the tender it
  * belongs to.
+ *
+ * `holdingId` names the package or value package a **redemption** tender spends
+ * (TK2610-0011). Two rules keep the pair honest, and both are checked here rather
+ * than left to the service: a redemption must name a holding and be worth
+ * something, and a money tender must not name one at all. The amount is still
+ * checked against the holding by the service — the contract can say the field is
+ * required, only the database can say how much is left on it.
  */
-export const salePaymentInputSchema = z.object({
-  method: paymentMethodSchema,
-  /** An **input**, so coerced by `moneySchema`; it comes back out as a string. */
-  amount: moneySchema,
-  sessionId: z.string().trim().max(255).optional(),
-});
+export const salePaymentInputSchema = z
+  .object({
+    method: paymentMethodSchema,
+    /** An **input**, so coerced by `moneySchema`; it comes back out as a string. */
+    amount: moneySchema,
+    sessionId: z.string().trim().max(255).optional(),
+    holdingId: z.string().min(1).max(64).optional(),
+  })
+  .superRefine((tender, ctx) => {
+    if (isRedemptionPaymentMethod(tender.method)) {
+      if (tender.holdingId === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          message: "A package or credit tender has to name the holding it spends.",
+          path: ["holdingId"],
+        });
+      }
+      if (tender.amount <= 0) {
+        ctx.addIssue({
+          code: "custom",
+          message: "A package or credit tender has to pay for something.",
+          path: ["amount"],
+        });
+      }
+      return;
+    }
+
+    if (tender.holdingId !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Only a package or credit tender spends a holding.",
+        path: ["holdingId"],
+      });
+    }
+  });
 
 export type SalePaymentInput = z.infer<typeof salePaymentInputSchema>;
 

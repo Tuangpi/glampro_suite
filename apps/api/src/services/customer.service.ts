@@ -15,9 +15,11 @@
 import type { PaginatedResponse } from "@glampro_suite/shared";
 import {
   customerDetailSchema,
+  customerHoldingsSchema,
   customerSummarySchema,
   type CreateCustomerInput,
   type CustomerDetail,
+  type CustomerHoldings,
   type CustomerListQuery,
   type CustomerSummary,
   type UpdateCustomerInput,
@@ -167,6 +169,79 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
   const row = await findRow(id);
   if (!row) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
   return toDetail(row);
+}
+
+/**
+ * What a customer can still spend — `GET /api/customers/:id/holdings`
+ * (TK2610-0011 / P0-04).
+ *
+ * One list over two ledgers, because the till draws one picker: a package counts
+ * sessions and a value package counts money, and the cashier should not have to know
+ * which table a customer's credit lives in.
+ *
+ * **Only what can be spent now is returned.** A holding with nothing left, or one
+ * whose `expiresAt` has passed, is left out rather than listed as unusable — the
+ * picker's job is to offer something that will work, and the service refuses an
+ * expired one anyway if it is posted directly. Expiring soonest comes first, so the
+ * credit the customer is about to lose is at the top. The full expiry policy (grace,
+ * refunds, reminders) belongs to P2-03, which owns value packages.
+ */
+export async function getCustomerHoldings(id: string): Promise<CustomerHoldings> {
+  const customer = await prisma.customer.findFirst({ where: { id }, select: { id: true } });
+  if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
+
+  const now = new Date();
+  const live = { gt: 0 };
+  const notExpired = { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] };
+
+  const [packages, credits] = await Promise.all([
+    prisma.customerPackageHolding.findMany({
+      where: { customerId: id, quantityRemaining: live, ...notExpired },
+      select: {
+        id: true,
+        quantityRemaining: true,
+        expiresAt: true,
+        package: { select: { name: true, services: { select: { serviceId: true } } } },
+      },
+      // `NULLS LAST` is Postgres' default for `asc`, which is what we want: dated
+      // credit first, open-ended credit after it.
+      orderBy: [{ expiresAt: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.customerValuePackageHolding.findMany({
+      where: { customerId: id, amountRemaining: live, ...notExpired },
+      select: {
+        id: true,
+        amountRemaining: true,
+        expiresAt: true,
+        valuePackage: { select: { name: true } },
+      },
+      orderBy: [{ expiresAt: "asc" }, { createdAt: "asc" }],
+    }),
+  ]);
+
+  return customerHoldingsSchema.parse({
+    holdings: [
+      ...packages.map((holding) => ({
+        id: holding.id,
+        kind: "PACKAGE",
+        name: holding.package.name,
+        serviceIds: holding.package.services.map((link) => link.serviceId),
+        quantityRemaining: holding.quantityRemaining,
+        amountRemaining: null,
+        expiresAt: holding.expiresAt ? holding.expiresAt.toISOString() : null,
+      })),
+      ...credits.map((holding) => ({
+        id: holding.id,
+        kind: "PREPAID_CREDIT",
+        name: holding.valuePackage.name,
+        // Credit is fungible: it pays for any line, so there is nothing to restrict.
+        serviceIds: [],
+        quantityRemaining: 0,
+        amountRemaining: holding.amountRemaining.toFixed(2),
+        expiresAt: holding.expiresAt ? holding.expiresAt.toISOString() : null,
+      })),
+    ],
+  });
 }
 
 export async function createCustomer(input: CreateCustomerInput): Promise<CustomerDetail> {

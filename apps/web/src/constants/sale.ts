@@ -36,19 +36,29 @@ export const PAYMENT_METHOD_LABELS: Record<SalePaymentMethod, string> = {
   BANK_TRANSFER: "Bank transfer",
   CHEQUE: "Cheque",
   OTHER: "Other",
+  // Local rails (TK2610-0011 / ADR 0019). Recorded by the cashier, not acquired: the
+  // dialog says so, so nobody expects a QR to appear.
+  PAYNOW_SGQR: "PayNow / SGQR",
+  NETS: "NETS",
+  GRABPAY: "GrabPay",
+  ATOME: "Atome",
+  // Credit the customer already holds, not money handed over now.
+  PACKAGE: "Package",
+  PREPAID_CREDIT: "Prepaid credit",
 };
 
-/** For the tender `<Select>`; the five tenders in the contract's own order. */
+/** For the tender `<Select>`; every tender in the contract's own order. */
 export const PAYMENT_METHOD_OPTIONS = PAYMENT_METHODS.map((method) => ({
   value: method,
   label: PAYMENT_METHOD_LABELS[method],
 }));
 
 /**
- * Tender-to-tone for the receipt. Cash and card are the common pair and read
- * purple; bank, cheque and other are the rare ones and read neutral. The colour
- * repeats what the label already says rather than carrying the meaning, which
- * is why every badge also renders its own text.
+ * Tender-to-tone for the receipt. The common pair reads purple, the rare recorded
+ * rails read neutral, and the two redemption tenders read `success` — the receipt
+ * should show at a glance that part of the bill was settled with credit rather than
+ * cash. The colour repeats what the label already says rather than carrying the
+ * meaning, which is why every badge also renders its own text.
  */
 export const PAYMENT_METHOD_BADGE: Record<SalePaymentMethod, BadgeVariant> = {
   CASH: "purple",
@@ -56,6 +66,12 @@ export const PAYMENT_METHOD_BADGE: Record<SalePaymentMethod, BadgeVariant> = {
   BANK_TRANSFER: "neutral",
   CHEQUE: "neutral",
   OTHER: "neutral",
+  PAYNOW_SGQR: "neutral",
+  NETS: "neutral",
+  GRABPAY: "neutral",
+  ATOME: "neutral",
+  PACKAGE: "success",
+  PREPAID_CREDIT: "success",
 };
 
 /**

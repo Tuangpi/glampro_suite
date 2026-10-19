@@ -138,23 +138,33 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0010 — P0-02 Receipts: thermal print + email/WhatsApp e-receipt
 
-- Status: IN PROGRESS — email e-receipt shipped October 19, 2026; WhatsApp not started.
+- Status: DONE (October 19, 2026 — UAT completed by the user on an **email-only** scope).
 - Expected result: Receipts: print (thermal) + email/WhatsApp e-receipt with GST no.
 - Completion check / dependencies: Verify thermal printing and email/WhatsApp delivery with GST number, receipt content and tenant isolation. Resolve provider and legacy-numbering behavior (ADR 0011). Depends on GST/payment data and messaging setup.
+- Scope decision (October 19, 2026): the user accepted **email-only** delivery for P0-02. WhatsApp is not part of this task; it returns with the messaging work in TK2610-0021 (P1-04), which still needs a provider, template and consent decision. Thermal printing stays the existing browser print dialog, which the UAT accepted.
 - Done (October 19, 2026):
   - **GST snapshot.** `Sale.gstRegistrationNumber` is written at completion from the salon's setting (only while GST is enabled), via additive migration `20261019120000_sale_gst_registration_number`. A reprint after the salon edits its number keeps the registration that applied at the till. Pre-snapshot sales with tax fall back to the salon's current number; zero-tax sales print none.
   - **Email e-receipt.** `POST /api/sales/:id/receipt/email` builds HTML + text from the stored `SaleDetail` (never a fresh pricing pass) and sends it with nodemailer. `200 {sent,to,messageId}`; 409 `SALE_NOT_COMPLETED` for a held cart; 503 `EMAIL_SEND_FAILED` / `EMAIL_NOT_CONFIGURED`; 422 on a malformed address; session + `sales` module + writable tenant + 30/15min limiter. SMTP config is `SMTP_*` + `MAIL_FROM`; development/test use nodemailer's JSON transport (no network), production refuses to send when SMTP is unset.
   - **Till UI.** "Email receipt" beside Print; dialog prefills the customer's saved address, validates with the shared schema, and keeps the destination on screen after sending. Printing remains the existing browser print dialog with `print:hidden` chrome.
-- Not done: **WhatsApp delivery**. No provider is chosen or onboarded (same decision carried by TK2610-0021), so there is no transport, template or consent record. Email is sent synchronously per request; no outbox/retry.
+- Known limitations: email is sent synchronously per request — no outbox or retry, so a provider failure is a resendable 503. No delivery webhook/receipt confirmation.
 - Verification: migration applied to local `glampro_suite` (`prisma migrate deploy`); API typecheck, scoped ESLint and Prettier clean; API 322/322 (5 new route, 5 new service tests) and web 387/387 pass. Production build not run. Changes uncommitted.
-- Next: decide the WhatsApp provider or accept email-only scope for P0-02, then UAT.
+- Sign-off: user completed UAT and accepted the email-only scope on October 19, 2026. External system/PDF updates stay with the user.
+- Next: TK2610-0011 / P0-04 local payment methods (not started here).
 
 ### TK2610-0011 — P0-04 Local payment methods
 
-- Status: Not assessed
+- Status: DONE (October 19, 2026 — implementation, automated verification, and **user UAT**).
 - Expected result: Local payment methods: PayNow/SGQR, NETS, GrabPay, Atome; pay by package/prepaid credit
 - Completion check / dependencies: Verify every named local method plus package/prepaid redemption and ledger effects. Decide manual recording versus provider integration and onboarding before claiming support.
-- Next: audit current implementation against the full expected result and check.
+- Scope decision (October 19, 2026, ADR 0019): the local rails are **manually recorded tenders** — no PSP, QR payload, webhook or settlement. PayNow and SGQR share one code (`PAYNOW_SGQR`). Package/credit redemption is modelled as a **tender**, not a discount, and prepaid credit is **fungible** (user's decision), so value-package service links restrict nothing.
+- Done (October 19, 2026):
+  - **Contract.** `PAYMENT_METHODS` gains the four rails plus `PACKAGE` and `PREPAID_CREDIT`, with `LOCAL_PAYMENT_METHODS`, `REDEMPTION_PAYMENT_METHODS` and `isRedemptionPaymentMethod()`. `salePaymentInputSchema` accepts `holdingId` and enforces the pairing both ways; `customerHoldingSchema` / `customerHoldingsSchema` describe the holdings read.
+  - **Database.** `PaymentMethod` enum extended and `CustomerRedemption.holdingId` added with an index, via additive migration `20261019034125_local_payment_methods_and_redemption_holding` (applied locally).
+  - **API.** `GET /api/customers/:id/holdings` returns only spendable package sessions and credit in one list (expired and exhausted rows omitted). `redeemPayments()` spends a redemption inside the sale transaction: it re-reads the holding, recomputes package coverage (cart order, one session per eligible service unit) or checks the credit balance, decrements with a `>=` guard, and writes one `CustomerRedemption` row naming the holding. `reverseForVoid()` puts sessions/credit back and stamps `revertedAt`. Codes: `HOLDING_NOT_FOUND` (404), `HOLDING_EXPIRED` / `HOLDING_INSUFFICIENT` (409), `HOLDING_NOT_COVERED` / `HOLDING_REQUIRES_CUSTOMER` / `REDEMPTION_EXCEEDS_TOTAL` (400).
+  - **Web.** Payment sheet lists all eleven tenders; choosing a redemption tender shows the customer's holdings, computes the amount by the same rule as the server and posts it read-only with the `holdingId`. Receipt badges/labels and the email receipt name all eleven.
+- Known limitations: no provider settlement/reconciliation, no partial refund of a redemption, no gift-card tender, and no UI beyond the payment sheet (customer credit history, package-use screen). A package consumes one session per service unit, so a bundle whose "one use" means a set of services needs that semantic in the package model (P2-03). Voiding a sale that _spent_ credit refunds the holding, which is a policy choice recorded in ADR 0019.
+- Verification: migration applied to local `glampro_suite` and `prisma migrate status` up to date (live DB↔schema diff empty); API typecheck, ESLint and Prettier clean; web typecheck and production build pass; API 333/333 (6 new sale-service tests, new `customers.routes.test.ts` with 5) and web 391/391 across 43 files pass. User UAT reported complete on October 19, 2026 with no defects. Changes uncommitted.
+- Next: user UAT against the real till (PayNow/NETS/GrabPay/Atome recording, a package redemption and a credit redemption, then a void). TK2610-0012 / P0-06 reports is the next task.
 
 ### TK2610-0012 — P0-06 Reports: Z-report, sales by staff/service, package liability
 

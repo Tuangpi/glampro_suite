@@ -2,9 +2,9 @@
 
 ## Current State
 
-- Current task: TK2610-0010 / P0-02 receipts, **IN PROGRESS** — email e-receipt and the GST-number snapshot shipped October 19, 2026. WhatsApp delivery is not started and needs a provider decision.
-- Most recent work: `Sale.gstRegistrationNumber` snapshotted at completion (migration `20261019120000_sale_gst_registration_number`, applied locally); `POST /api/sales/:id/receipt/email` renders the stored receipt and sends it via nodemailer (`SMTP_*` / `MAIL_FROM`); till has an "Email receipt" dialog beside Print. Verified: API 322/322, web 387/387, API typecheck/scoped lint/Prettier clean. Changes uncommitted.
-- Earlier: TK2610-0009 / P0-01 GST signed off DONE by user UAT (October 19, 2026): 9% inclusive, backed out per line, snapshotted on sale/lines, salon toggle + registration number, receipts and reports; migration `20261019015129_gst_settings_and_sale_tax` applied; shared 92/92, web 387/387, API 312/312.
+- Current task: none active. TK2610-0011 / P0-04 local payment methods and package/prepaid-credit redemption is **DONE** — implementation, automated verification, and the user's UAT on October 19, 2026.
+- Most recent work: the four local rails are **recorded tenders** (`PAYNOW_SGQR`, `NETS`, `GRABPAY`, `ATOME`); `PACKAGE` and `PREPAID_CREDIT` are redemption tenders that carry a `holdingId`, draw the holding inside the sale transaction and are restored on void; `GET /api/customers/:id/holdings` feeds the payment sheet. Migration `20261019034125_local_payment_methods_and_redemption_holding` applied locally. ADR 0019 records both decisions (manual recording; credit is fungible). Verified: API 333/333, web 391/391, API typecheck + ESLint + Prettier clean, web typecheck and production build pass; user UAT passed. Changes uncommitted.
+- Earlier: TK2610-0010 / P0-02 receipts **DONE** — user UAT on October 19, 2026 accepted an email-only scope (WhatsApp deferred to TK2610-0021). `Sale.gstRegistrationNumber` snapshotted at completion; `POST /api/sales/:id/receipt/email` renders the stored receipt; the till has an "Email receipt" dialog.
 - Earlier: SETUP-05 database verification and repair. Schema drift found (live DB missing `tenants.time_zone`/`locale` and `tenant_operating_hours` despite `_prisma_migrations` rows; P0-09's 2FA columns existed only in `schema.prisma`). Repaired additively via `npm run db:migrate`: applied pending `20261015210000_tenant_localisation`, `20261016151623_tenant_operating_hours`, and newly generated `20261018141510_user_two_factor_auth` (purely additive, reviewed). No reset/reseed. Backup: `backups/glampro_suite_2026-10-18.dump` (pg_dump); `backups/` gitignored; `.env` never committed.
 - Environment facts: PostgreSQL at `localhost:5432`, db `glampro_suite`, shadow `glampro_shadow` also on 5432. Commented-out `SHADOW_DATABASE_URL` in `apps/api/.env` points at stale port 5433 (nothing listens) — use 5432 for shadow commands.
 - Verification (SETUP-05, October 18): `prisma migrate status` → 12 migrations, up to date at that time (14 now, after GST and the sale GST-number snapshot); `prisma migrate diff` live-DB↔schema and migrations↔schema both empty (exit 0); 0 rolled-back migrations; API tests 308/308 passed then.
@@ -18,7 +18,7 @@
 These are historical code-review findings, not fresh runtime reproductions. Verify
 against current code when starting the related task. No policy is changed here.
 Full decision context and evidence qualifications now live in `PROJECT.md`,
-Architecture decisions (ADR 0002–0018), and Design integration (Design 1–7).
+Architecture decisions (ADR 0002–0019), and Design integration (Design 1–7).
 
 - ADR 0002: legacy-ID importer and repeat-run fixture verification are not implemented;
   do not infer migration readiness from schema support or seed-generated IDs.
@@ -41,7 +41,7 @@ Architecture decisions (ADR 0002–0018), and Design integration (Design 1–7).
 | P1-07; ADR 0016       | Void reverses ledger state but does not refund payment. Concurrent replay, missing-product stock restoration, cascading receipt deletion, voided outstanding balances and stale report/customer caches need review; prior tests did not prove every ledger case.                                                                                                                                                             |
 | P1-02; ADRs 0013/0014 | Decide duration snapshots versus catalogue refresh on every patch. Service-only and catalogue-driven resizing can bypass clash checks gated on startsAt/staffId. Department eligibility is rechecked, but server lookups do not enforce picker active-status filters; mismatches lack field detail. Till department narrowing is advisory. Review concurrent overlap enforcement; prior tests did not establish race safety. |
 | P1-01; ADR 0018       | Day/week/month views exist. Review salon-zone boundaries against newer P0-08 changes; old browser-local findings may be superseded. Week drag/drop, crossing-midnight display and first-page truncation remain scope to assess; read-only presentation is not proof of edit authorization.                                                                                                                                   |
-| P0-04 / P1-03 / P1-04 | Clarify payment integration versus manual recording, deposit/no-show policy, messaging provider, consent and provider onboarding before implementation.                                                                                                                                                                                                                                                                      |
+| P0-04 / P1-03 / P1-04 | P0-04's manual-recording decision is now recorded (ADR 0019): no provider onboarding is required for the four local rails, and the remaining provider question is settlement/reconciliation, not acceptance. Deposit/no-show policy, messaging provider and consent still need decisions before P1-03/P1-04.                                                                                                                 |
 
 Detailed rationale and evidence limits are preserved in `PROJECT.md`. Documentation
 audits marked Done did not resolve these product decisions or defects.
@@ -58,17 +58,60 @@ already recorded complete and can be marked done externally if not already marke
 - TK2610-0014 / P1-09 — performer-picker cleanup.
 
 TK2610-0008 / P0-05 was signed off Done by the user on October 19, 2026 (UAT
-accepted) and is already marked done externally. TK2610-0009 / P0-01 passed the
-user's UAT check on October 19, 2026; mark it done externally if not already. No
-phase or readiness milestone is signed off; child completion alone does not sign off
-Phase 1 (TK2610-0001).
+accepted) and is already marked done externally. TK2610-0009 / P0-01 and
+TK2610-0010 / P0-02 passed the user's UAT check on October 19, 2026; mark them done
+externally if not already. TK2610-0010 was accepted on an **email-only** scope —
+WhatsApp e-receipt moves to TK2610-0021. No phase or readiness milestone is signed off;
+child completion alone does not sign off Phase 1 (TK2610-0001).
 
 ## Recent handoffs
 
-### October 19, 2026 — TK2610-0010 / P0-02 email e-receipt (IN PROGRESS)
+### October 19, 2026 — TK2610-0011 / P0-04 local payment methods + redemption (DONE, implementation)
 
-- Shipped the email half of P0-02. WhatsApp has no provider yet, so the task is not
-  done and no WhatsApp code was invented.
+- Decision (ADR 0019): local rails are **manually recorded** tenders, not a PSP integration.
+  PayNow and SGQR share `PAYNOW_SGQR`; `NETS`, `GRABPAY` and `ATOME` have their own codes.
+  A redemption is a **tender** (`PACKAGE`, `PREPAID_CREDIT`), never a discount, so totals,
+  points and stylist credit stay what the catalogue says.
+- Credit is **fungible** (user's answer): prepaid credit pays for any line up to its balance.
+  A package covers only the services it lists, in cart order, one session per service unit.
+- **Server-side draw.** `redeemPayments()` runs inside the sale transaction: re-reads the
+  holding, recomputes coverage (`HOLDING_NOT_COVERED` when the amount disagrees), decreases
+  with a `>=` guard (`HOLDING_INSUFFICIENT` on a race), and writes one `CustomerRedemption`
+  naming the holding. `HOLDING_NOT_FOUND` (404), `HOLDING_EXPIRED` (409),
+  `HOLDING_REQUIRES_CUSTOMER` / `REDEMPTION_EXCEEDS_TOTAL` (400). `reverseForVoid()` restores
+  the sessions/credit and stamps `revertedAt` instead of deleting.
+- **Schema.** `PaymentMethod` gained six values; `CustomerRedemption.holdingId` + index added
+  by additive migration `20261019034125_local_payment_methods_and_redemption_holding`
+  (applied locally, no reset).
+- **API.** `GET /api/customers/:id/holdings` merges the two ledgers into one list of spendable
+  rows (expired/exhausted omitted), each naming the tender that spends it.
+- **Web.** Payment sheet offers all eleven tenders; a redemption row picks the holding and
+  shows the amount read-only, computed by the same rule as the server. Receipt badges and the
+  email receipt name every tender.
+- Verification: `prisma migrate status` up to date (DB↔schema diff empty); API typecheck/ESLint/Prettier
+  clean; web typecheck and production build pass; API 333/333 (6 new sale-service tests + 5 in the new
+  `customers.routes.test.ts`) and web 391/391 across 43 files pass. No browser/E2E automation; the user's
+  manual UAT covered the flow.
+- User UAT (October 19, 2026): reported complete. The exact scenarios the user exercised were not
+  recorded here; no defects were reported back.
+- Changes uncommitted; suggested message
+  `feat: record local payment methods and redeem packages and credit (TK2610-0011)`.
+- Next: TK2610-0012 / P0-06 reports.
+
+### October 19, 2026 — TK2610-0011 / P0-04 UAT sign-off (DONE)
+
+- User confirmed UAT complete on the till. Local payment methods and package/prepaid-credit redemption
+  are accepted on the **manually recorded** scope in ADR 0019: no PSP, QR payload, webhook or settlement.
+- Local tracker promoted to fully DONE. External task/PDF updates stay with the user.
+- Note for the next session: `npm run format:check` fails on four files this task never touched
+  (`auth.routes.ts`, `catalogue.routes.test.ts`, `auth.service.ts`, `settings.service.ts`) — pre-existing
+  Prettier drift, deliberately left alone.
+
+### October 19, 2026 — TK2610-0010 / P0-02 receipt UAT sign-off (DONE)
+
+- User completed UAT and accepted an **email-only** scope. WhatsApp e-receipt is not
+  implemented and moves to TK2610-0021 (P1-04), which still needs a provider, template
+  and consent decision. No WhatsApp code was invented.
 - **GST snapshot:** `Sale.gstRegistrationNumber` is written by `resolveCart` only while
   the salon's GST is enabled; additive migration
   `20261019120000_sale_gst_registration_number` applied to `glampro_suite`. Reprints keep
@@ -78,7 +121,8 @@ Phase 1 (TK2610-0001).
   (same source as the paper), escaping salon/line copy. `POST /:id/receipt/email` sits
   behind session auth, `requireModule("sales")`, `requireWritableTenant()` and a
   30/15min limiter; 409 for HELD carts, 503 on provider/configuration failure. Dev/test
-  use nodemailer's JSON transport; production 503s when SMTP is unset.
+  use nodemailer's JSON transport; production 503s when SMTP is unset. Sends are
+  synchronous — no outbox, retry or delivery confirmation.
 - **Web:** `useEmailSaleReceipt` mutation and `EmailReceiptDialog` (prefilled customer
   address, shared-schema validation, stays open with the destination after a send).
 - Verification: migration applied; API typecheck + ESLint + Prettier clean; API 322/322 and web
@@ -86,8 +130,7 @@ Phase 1 (TK2610-0001).
   production build was not run this session.
 - Changes uncommitted; suggested message
   `feat: snapshot GST number and email sale receipts (TK2610-0010)`.
-- Next: decide the WhatsApp provider (shared with TK2610-0021) or agree email-only scope,
-  then UAT.
+- Next: TK2610-0011 / P0-04 local payment methods.
 
 ### October 19, 2026 — TK2610-0009 / P0-01 GST UAT sign-off (DONE)
 

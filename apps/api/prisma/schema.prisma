@@ -57,12 +57,26 @@ enum SubscriptionStatus {
   CANCELLED
 }
 
+/// How a customer paid (TK2610-0011).
+///
+/// The first five predate the POS phase; the rest were added with local payment
+/// methods and redemption. `PAYNOW_SGQR`, `NETS`, `GRABPAY` and `ATOME` are
+/// **recorded manually** — the till stores which rail was used and no provider is
+/// called. `PACKAGE` and `PREPAID_CREDIT` are tenders that spend credit the
+/// customer already holds; the draw is written to `CustomerRedemption` in the same
+/// transaction as the sale.
 enum PaymentMethod {
   CASH
   CARD
   BANK_TRANSFER
   CHEQUE
   OTHER
+  PAYNOW_SGQR
+  NETS
+  GRABPAY
+  ATOME
+  PACKAGE
+  PREPAID_CREDIT
 }
 
 /// Active flag shared by the catalogue. The legacy tables each carried their own
@@ -1223,6 +1237,13 @@ model CustomerRedemption {
   revertedAt DateTime?
   /// Legacy `signature`, a longText the till wrote. Opaque, stored as-is.
   signature  String?
+  /// The holding this draw came from, so voiding the sale can put it back.
+  ///
+  /// A polymorphic reference rather than a foreign key: a session comes from
+  /// `CustomerPackageHolding` and money from `CustomerValuePackageHolding`, and one
+  /// nullable column cannot point at both. Nullable because a legacy redemption —
+  /// and one whose holding has since been deleted — has no row to name.
+  holdingId  String?
   createdAt  DateTime  @default(now())
 
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1231,6 +1252,7 @@ model CustomerRedemption {
 
   @@index([tenantId, customerId])
   @@index([tenantId, itemType, itemId])
+  @@index([tenantId, holdingId])
   @@map("customer_redemptions")
 }
 /// What a staff member sold, per sale, for the performance report.

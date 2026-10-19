@@ -25,11 +25,21 @@
  * - **A cart that grants credit needs a customer** before payment, because the
  *   server refuses that sale whole (`createSale`'s `GRANTING_KINDS` check) and
  *   the cashier should know before they start counting notes.
+ *
+ * Since TK2610-0011 the sheet also takes **local rails** — PayNow/SGQR, NETS,
+ * GrabPay, Atome — which are recorded, not acquired: the cashier reads which one the
+ * customer used and no QR is generated and no provider is called (ADR 0019). And it
+ * takes **credit the customer already holds**, drawn from `GET /customers/:id/holdings`:
+ * a package session or prepaid credit is a *tender*, so the amount it pays is computed
+ * here by the same rule the server applies (`redeemPayments`) and posted with the
+ * `holdingId` it spends. The amount field is therefore read-only on those rows: the
+ * till is stating what the holding covers, not asking the cashier to type it.
  */
 import { useState } from "react";
 
 import {
   MAX_SALE_PAYMENTS,
+  isRedemptionPaymentMethod,
   type SalePaymentInput,
   type SalePaymentMethod,
 } from "@glampro_suite/shared";
@@ -41,8 +51,10 @@ import IconButton from "@/components/ui/IconButton";
 import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import { PAYMENT_METHOD_OPTIONS } from "@/constants/sale";
+import { useCustomerHoldings } from "@/hooks/useCustomers";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { centsToPrice, priceToCents } from "@/lib/money";
+import { packageCoverage, type PaymentLine } from "@/lib/package-coverage";
 import { cn } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
@@ -51,11 +63,17 @@ interface TenderDraft {
   id: number;
   method: SalePaymentMethod;
   amount: string;
+  /** The package or credit a redemption tender spends; unused by the money tenders. */
+  holdingId?: string;
 }
 
 export interface PaymentDialogProps {
   /** The cart total in whole cents, derived the same way the cart panel draws it. */
   totalCents: number;
+  /** The cart, for pricing what a package covers. */
+  lines: readonly PaymentLine[];
+  /** The customer attached to the sale, whose credit this sheet may spend. */
+  customerId: string | null;
   /** Whether the sale has a customer — a balance can only be owed to somebody. */
   hasCustomer: boolean;
   /** The cart holds a package, value package or gift card, so it needs a customer. */
@@ -72,6 +90,8 @@ let nextTenderId = 1;
 
 export default function PaymentDialog({
   totalCents,
+  lines,
+  customerId,
   hasCustomer,
   needsCustomer,
   isPending,
@@ -88,11 +108,62 @@ export default function PaymentDialog({
     { id: nextTenderId++, method: "CASH", amount: centsToPrice(totalCents) },
   ]);
 
-  const paidCents = tenders.reduce((sum, tender) => sum + priceToCents(tender.amount), 0);
+  // What this customer can still spend. A walk-in has none, and the query stays idle
+  // rather than asking the API for a customer that is not there.
+  const holdings = useCustomerHoldings(customerId);
+  const available = holdings.data?.holdings ?? [];
+  const packages = available.filter((holding) => holding.kind === "PACKAGE");
+  const credits = available.filter((holding) => holding.kind === "PREPAID_CREDIT");
+
+  /**
+   * What one row is worth. A money tender is what the cashier typed; a redemption is
+   * derived from the holding it spends, so the sheet never asks for a number the
+   * server would have to correct.
+   */
+  function amountFor(tender: TenderDraft, alreadyPaid: number): number {
+    if (!isRedemptionPaymentMethod(tender.method)) return priceToCents(tender.amount);
+
+    const holding = available.find((row) => row.id === tender.holdingId);
+    if (!holding) return 0;
+
+    if (holding.kind === "PREPAID_CREDIT") {
+      // Credit pays the rest of the bill, up to what is left on it — never more than
+      // the sale, which the server refuses as overpayment.
+      return Math.min(priceToCents(holding.amountRemaining), Math.max(totalCents - alreadyPaid, 0));
+    }
+
+    return packageCoverage(holding, lines).cents;
+  }
+
+  // Rows in order, so a second credit tender only sees what the first left owing.
+  const tenderCents: number[] = [];
+  let paidCents = 0;
+  for (const tender of tenders) {
+    const cents = amountFor(tender, paidCents);
+    tenderCents.push(cents);
+    paidCents += cents;
+  }
   const remainingCents = totalCents - paidCents;
 
-  const hasBadAmount = tenders.some((tender) => !/^\d*\.?\d{0,2}$/.test(tender.amount.trim()));
+  const hasBadAmount = tenders.some(
+    (tender) =>
+      !isRedemptionPaymentMethod(tender.method) && !/^\d*\.?\d{0,2}$/.test(tender.amount.trim()),
+  );
   const blockedByCustomer = needsCustomer && !hasCustomer;
+  // Credit belongs to a person, so a walk-in cart cannot spend it — the server refuses
+  // the same thing with `HOLDING_REQUIRES_CUSTOMER`.
+  const redemptionWithoutCustomer =
+    !hasCustomer && tenders.some((tender) => isRedemptionPaymentMethod(tender.method));
+  const missingHolding = tenders.some(
+    (tender) => isRedemptionPaymentMethod(tender.method) && tender.holdingId === undefined,
+  );
+  const emptyRedemption = tenders.some(
+    (tender, index) => isRedemptionPaymentMethod(tender.method) && tenderCents[index] === 0,
+  );
+  // Change is a money tender's business. A package or credit that pays more than the
+  // sale is a mistake the server refuses, so the sheet says so before it posts.
+  const overRedeemed =
+    paidCents > totalCents && tenders.some((tender) => isRedemptionPaymentMethod(tender.method));
 
   /**
    * Why the sale cannot be posted yet, or `null` when it can. Rendered as the
@@ -101,16 +172,35 @@ export default function PaymentDialog({
    */
   const blocker = blockedByCustomer
     ? "Pick a customer first — this cart grants credit, which has to belong to somebody."
-    : hasBadAmount
-      ? "Enter an amount for every tender."
-      : remainingCents > 0 && !hasCustomer
-        ? `The tenders are ${formatPrice(centsToPrice(remainingCents))} short and there is no customer to carry the balance.`
-        : null;
+    : redemptionWithoutCustomer
+      ? "Attach a customer first — package and credit tenders spend somebody's credit."
+      : missingHolding
+        ? "Choose which package or credit is paying."
+        : emptyRedemption
+          ? "That package or credit covers nothing in this cart. Pick another tender."
+          : overRedeemed
+            ? "A package or credit cannot pay more than the sale totals. Remove a tender that covers a line twice."
+            : hasBadAmount
+              ? "Enter an amount for every tender."
+              : remainingCents > 0 && !hasCustomer
+                ? `The tenders are ${formatPrice(centsToPrice(remainingCents))} short and there is no customer to carry the balance.`
+                : null;
 
   function setTender(id: number, patch: Partial<TenderDraft>) {
     setTenders((current) =>
       current.map((tender) => (tender.id === id ? { ...tender, ...patch } : tender)),
     );
+  }
+
+  /**
+   * Switching a row's tender. A redemption lands on the first holding of that kind, so
+   * the row is immediately postable; switching back to money clears both, because a
+   * typed amount belongs to the tender it was typed for.
+   */
+  function chooseMethod(id: number, method: SalePaymentMethod) {
+    const first =
+      method === "PACKAGE" ? packages[0] : method === "PREPAID_CREDIT" ? credits[0] : undefined;
+    setTender(id, { method, amount: "", holdingId: first?.id });
   }
 
   function addTender() {
@@ -126,12 +216,19 @@ export default function PaymentDialog({
     setTender(id, { amount: centsToPrice(Math.max(remainingCents, 0)) });
   }
 
+  /** The holdings a redemption method may spend, as select options. */
+  function holdingOptions(method: SalePaymentMethod) {
+    return method === "PACKAGE" ? packages : method === "PREPAID_CREDIT" ? credits : [];
+  }
+
   function submit() {
     onConfirm(
-      tenders.map((tender) => ({
+      tenders.map((tender, index) => ({
         method: tender.method,
-        // Rounded through cents, so a typed "12.5" posts as 12.50.
-        amount: Number(centsToPrice(priceToCents(tender.amount))),
+        // Rounded through cents, so a typed "12.5" posts as 12.50. A redemption posts
+        // the amount this sheet derived, which is exactly what the server recomputes.
+        amount: Number(centsToPrice(tenderCents[index] ?? 0)),
+        ...(isRedemptionPaymentMethod(tender.method) ? { holdingId: tender.holdingId } : {}),
       })),
       idempotencyKey,
     );
@@ -180,63 +277,116 @@ export default function PaymentDialog({
         </div>
 
         <ul aria-label="Tenders" className="flex flex-col gap-3">
-          {tenders.map((tender, index) => (
-            <li
-              key={tender.id}
-              className="flex items-end gap-2 rounded-md border border-line-soft bg-surface p-3"
-            >
-              <Select
-                label={`Tender ${index + 1}`}
-                value={tender.method}
-                disabled={isPending}
-                onChange={(event) =>
-                  setTender(tender.id, { method: event.target.value as SalePaymentMethod })
-                }
-                options={PAYMENT_METHOD_OPTIONS}
-                className="w-40"
-              />
+          {tenders.map((tender, index) => {
+            const isRedemption = isRedemptionPaymentMethod(tender.method);
+            const options = holdingOptions(tender.method).map((holding) => ({
+              value: holding.id,
+              label:
+                holding.kind === "PACKAGE"
+                  ? `${holding.name} — ${holding.quantityRemaining} left`
+                  : `${holding.name} — ${formatPrice(holding.amountRemaining ?? "0.00")} left`,
+            }));
 
-              {/* A raw input rather than `Input`: the amount is one of four controls
-                  in a row whose label already names the tender, and the accessible
-                  name carries that number so a screen reader still hears which row
-                  this box belongs to. */}
-              <label className="flex flex-1 flex-col gap-1.5">
-                <span className="text-xs font-bold text-ink-body">Amount</span>
-                <input
-                  type="text"
-                  inputMode="decimal"
-                  value={tender.amount}
-                  disabled={isPending}
-                  aria-label={`Amount for tender ${index + 1}`}
-                  onChange={(event) => setTender(tender.id, { amount: event.target.value })}
-                  className={cn(CONTROL_CLASS, "h-control px-3 text-right")}
-                />
-              </label>
-
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={isPending || remainingCents <= 0}
-                onClick={() => fillRemaining(tender.id)}
+            return (
+              <li
+                key={tender.id}
+                className="flex flex-col gap-2 rounded-md border border-line-soft bg-surface p-3"
               >
-                Rest
-              </Button>
+                <div className="flex items-end gap-2">
+                  <Select
+                    label={`Tender ${index + 1}`}
+                    value={tender.method}
+                    disabled={isPending}
+                    onChange={(event) =>
+                      chooseMethod(tender.id, event.target.value as SalePaymentMethod)
+                    }
+                    options={PAYMENT_METHOD_OPTIONS}
+                    className="w-40 shrink-0"
+                  />
 
-              {tenders.length > 1 ? (
-                <IconButton
-                  label={`Remove tender ${index + 1}`}
-                  icon={<Trash />}
-                  variant="outline"
-                  disabled={isPending}
-                  onClick={() => removeTender(tender.id)}
-                />
-              ) : (
-                // Keeps the row's height and the last column steady, so adding a
-                // second tender does not shift the first one's controls.
-                <span aria-hidden className="h-control w-control shrink-0" />
-              )}
-            </li>
-          ))}
+                  {isRedemption ? (
+                    <>
+                      <Select
+                        label={`Paid with (tender ${index + 1})`}
+                        value={tender.holdingId ?? ""}
+                        disabled={isPending || options.length === 0}
+                        placeholder={options.length === 0 ? "None available" : "Select…"}
+                        options={options}
+                        onChange={(event) =>
+                          setTender(tender.id, { holdingId: event.target.value })
+                        }
+                        className="min-w-0 flex-1"
+                      />
+                      {/* Derived, never typed: the server recomputes what the holding
+                          covers and refuses anything else, so an editable box here
+                          would only offer a way to fail. */}
+                      <div className="flex w-28 shrink-0 flex-col gap-1.5">
+                        <span className="text-xs font-bold text-ink-body">Amount</span>
+                        <span
+                          className={cn(
+                            CONTROL_CLASS,
+                            "flex h-control items-center justify-end px-3 font-bold text-ink",
+                          )}
+                        >
+                          {formatPrice(centsToPrice(tenderCents[index] ?? 0))}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      {/* A raw input rather than `Input`: the amount is one of four controls
+                          in a row whose label already names the tender, and the accessible
+                          name carries that number so a screen reader still hears which row
+                          this box belongs to. */}
+                      <label className="flex flex-1 flex-col gap-1.5">
+                        <span className="text-xs font-bold text-ink-body">Amount</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={tender.amount}
+                          disabled={isPending}
+                          aria-label={`Amount for tender ${index + 1}`}
+                          onChange={(event) => setTender(tender.id, { amount: event.target.value })}
+                          className={cn(CONTROL_CLASS, "h-control px-3 text-right")}
+                        />
+                      </label>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        disabled={isPending || remainingCents <= 0}
+                        onClick={() => fillRemaining(tender.id)}
+                      >
+                        Rest
+                      </Button>
+                    </>
+                  )}
+
+                  {tenders.length > 1 ? (
+                    <IconButton
+                      label={`Remove tender ${index + 1}`}
+                      icon={<Trash />}
+                      variant="outline"
+                      disabled={isPending}
+                      onClick={() => removeTender(tender.id)}
+                    />
+                  ) : (
+                    // Keeps the row's height and the last column steady, so adding a
+                    // second tender does not shift the first one's controls.
+                    <span aria-hidden className="h-control w-control shrink-0" />
+                  )}
+                </div>
+
+                {isRedemption ? (
+                  <p className="text-xs text-ink-muted">
+                    {tender.method === "PACKAGE"
+                      ? "Sessions come off the package when the sale is taken; void it and they go back."
+                      : "Credit is taken off the balance when the sale is taken; void it and it goes back."}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
 
         {tenders.length < MAX_SALE_PAYMENTS ? (

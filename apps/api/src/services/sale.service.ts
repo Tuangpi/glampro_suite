@@ -30,6 +30,7 @@ import {
   GST_RATE_PERCENT,
   MAX_RECEIPT_NUMBER,
   SALE_ITEM_KINDS,
+  isRedemptionPaymentMethod,
   saleDetailSchema,
   saleItemSearchResultSchema,
   saleListSchema,
@@ -928,6 +929,17 @@ async function writeSale(
 
     await writeLines(tx, tenantId, sale.id, priced);
     await writePayments(tx, tenantId, sale.id, input.payments);
+    // After the tenders are written and before the ledgers are filled: the draw is
+    // part of the sale, and a failure anywhere here rolls the whole receipt back.
+    await redeemPayments(
+      tx,
+      tenantId,
+      sale.id,
+      customerId,
+      priced,
+      input.payments,
+      totals.totalAmount,
+    );
 
     await fillLedgers(
       tx,
@@ -1002,6 +1014,259 @@ async function writePayments(
       amount: tender.amount,
       sessionId: tender.sessionId ?? null,
     })),
+  });
+}
+
+/**
+ * Spends the credit a redemption tender names — TK2610-0011 / P0-04.
+ *
+ * **A redemption is a tender, not a discount.** The sale keeps its full total, the
+ * lines keep the prices the catalogue charged, points are earned on what the service
+ * was worth, and the receipt says what paid for it (`SalePayment.method`). Making it
+ * a discount would have cheapened the line and taken the stylist's commission and the
+ * customer's points down with it.
+ *
+ * What is spent is decided **here, from the ledgers**, not by the browser. The till
+ * sends a `holdingId` and an amount; this recomputes what that holding actually
+ * covers and refuses the sale if the two disagree. A browser cannot invent a package
+ * balance, and the same rule makes the amount a hand-edited request posts either
+ * exact or refused, never approximately right.
+ *
+ * A **session** covers one eligible service unit, in cart order, up to the sessions
+ * the package has left. "Eligible" means a `SERVICE` line whose service the package
+ * lists — the same links the salon drew when it built the package. A package that
+ * bundles several services still spends one session per unit, so a package whose
+ * "one use" is meant to be a *set* of services needs that semantic in its own model
+ * (P2-03), not a guess here.
+ *
+ * Credit is **fungible**: it pays for any line, in any amount up to what is left.
+ *
+ * Every draw is count-guarded (`quantityRemaining/amountRemaining >= the draw`) so two
+ * tills spending the last session at the same instant cannot both succeed — the losing
+ * update matches no rows and its sale rolls back with it.
+ */
+async function redeemPayments(
+  tx: SaleTransaction,
+  tenantId: string,
+  saleId: string,
+  customerId: string | null,
+  priced: PricedLine[],
+  payments: SalePaymentInput[],
+  totalAmount: Prisma.Decimal,
+): Promise<void> {
+  const redemptions = payments.filter((tender) => isRedemptionPaymentMethod(tender.method));
+  if (redemptions.length === 0) return;
+
+  // Credit belongs to a person, so a walk-in cart cannot spend any. The contract
+  // already forces the customer on a cart that *grants* credit; this is the other end
+  // of the same rule.
+  if (customerId === null) {
+    throw badRequest(
+      "A package or credit tender needs a customer, because the credit belongs to somebody.",
+      undefined,
+      "HOLDING_REQUIRES_CUSTOMER",
+    );
+  }
+
+  const redemptionTotal = redemptions.reduce(
+    (sum, tender) => sum.plus(tender.amount),
+    new Prisma.Decimal(0),
+  );
+  if (redemptionTotal.greaterThan(totalAmount)) {
+    throw badRequest(
+      "Package and credit tenders cannot pay more than the sale totals.",
+      undefined,
+      "REDEMPTION_EXCEEDS_TOTAL",
+    );
+  }
+
+  const usedAt = new Date();
+  for (const tender of redemptions) {
+    // `salePaymentInputSchema` requires a holding on a redemption tender, and the
+    // service only ever sees a parsed body, so the field is present here.
+    const holdingId = tender.holdingId as string;
+    if (tender.method === "PACKAGE") {
+      await redeemPackage(tx, tenantId, saleId, customerId, priced, tender, holdingId, usedAt);
+    } else {
+      await redeemCredit(tx, tenantId, saleId, customerId, tender, holdingId, usedAt);
+    }
+  }
+}
+
+/** Refuses a holding whose expiry has passed. Null never expires. */
+function assertHoldingLive(expiresAt: Date | null, name: string, at: Date): void {
+  if (expiresAt !== null && expiresAt.getTime() <= at.getTime()) {
+    throw conflict(
+      `${name} expired on ${expiresAt.toISOString().slice(0, 10)}, so it cannot pay for this sale.`,
+      "HOLDING_EXPIRED",
+    );
+  }
+}
+
+/** One package tender: draws the sessions its covered units need. */
+async function redeemPackage(
+  tx: SaleTransaction,
+  tenantId: string,
+  saleId: string,
+  customerId: string,
+  priced: PricedLine[],
+  tender: SalePaymentInput,
+  holdingId: string,
+  usedAt: Date,
+): Promise<void> {
+  const holding = await tx.customerPackageHolding.findFirst({
+    where: { id: holdingId, customerId },
+    select: {
+      id: true,
+      packageId: true,
+      quantityRemaining: true,
+      expiresAt: true,
+      package: { select: { name: true, services: { select: { serviceId: true } } } },
+    },
+  });
+  // Another salon's holding is not "forbidden": the tenant scope means it simply is
+  // not there, and the message says so without confirming that an id exists.
+  if (!holding) {
+    throw notFound(
+      "That package is not this customer's, or it no longer exists.",
+      "HOLDING_NOT_FOUND",
+    );
+  }
+
+  const name = holding.package.name;
+  assertHoldingLive(holding.expiresAt, name, usedAt);
+  if (holding.quantityRemaining === 0) {
+    throw conflict(`${name} has no sessions left.`, "HOLDING_INSUFFICIENT");
+  }
+
+  const eligible = new Set(holding.package.services.map((link) => link.serviceId));
+  let sessions = 0;
+  let covered = new Prisma.Decimal(0);
+
+  // Cart order, one unit at a time, until the sessions run out. A line the package
+  // does not list is skipped rather than refused: a cart with a shampoo and a haircut
+  // is exactly what a haircut package is for.
+  for (const line of priced) {
+    if (line.item.itemType !== "SERVICE" || !eligible.has(line.item.itemId)) continue;
+    for (let unit = 0; unit < line.input.quantity && sessions < holding.quantityRemaining; unit++) {
+      covered = covered.plus(line.unitPrice);
+      sessions += 1;
+    }
+    if (sessions >= holding.quantityRemaining) break;
+  }
+
+  if (sessions === 0) {
+    throw badRequest(
+      `${name} does not cover anything in this cart.`,
+      undefined,
+      "HOLDING_NOT_COVERED",
+    );
+  }
+
+  // The amount is checked rather than taken on trust: it is the client's statement of
+  // what it thinks the package covers, and the price of a service can change between
+  // the search and the post.
+  if (!covered.equals(tender.amount)) {
+    throw badRequest(
+      `${name} covers ${covered.toFixed(2)} of this cart, not ${new Prisma.Decimal(
+        tender.amount,
+      ).toFixed(2)}. Take the payment again and the till will re-price it.`,
+      undefined,
+      "HOLDING_NOT_COVERED",
+    );
+  }
+
+  const drawn = await tx.customerPackageHolding.updateMany({
+    where: { id: holding.id, quantityRemaining: { gte: sessions } },
+    data: { quantityRemaining: { decrement: sessions } },
+  });
+  if (drawn.count === 0) {
+    throw conflict(
+      `${name} has just been spent at another till. Nothing has been charged.`,
+      "HOLDING_INSUFFICIENT",
+    );
+  }
+
+  // `amount` stays null: a session is not money. What the package paid is on the
+  // tender row, and this row is the ledger entry that says how many sessions went.
+  await tx.customerRedemption.create({
+    data: {
+      tenantId,
+      customerId,
+      saleId,
+      itemType: "PACKAGE",
+      itemId: holding.packageId,
+      quantity: sessions,
+      usedAt,
+      holdingId: holding.id,
+    },
+  });
+}
+
+/** One credit tender: draws money off a value-package holding. */
+async function redeemCredit(
+  tx: SaleTransaction,
+  tenantId: string,
+  saleId: string,
+  customerId: string,
+  tender: SalePaymentInput,
+  holdingId: string,
+  usedAt: Date,
+): Promise<void> {
+  const holding = await tx.customerValuePackageHolding.findFirst({
+    where: { id: holdingId, customerId },
+    select: {
+      id: true,
+      valuePackageId: true,
+      amountRemaining: true,
+      expiresAt: true,
+      valuePackage: { select: { name: true } },
+    },
+  });
+  if (!holding) {
+    throw notFound(
+      "That credit is not this customer's, or it no longer exists.",
+      "HOLDING_NOT_FOUND",
+    );
+  }
+
+  const name = holding.valuePackage.name;
+  assertHoldingLive(holding.expiresAt, name, usedAt);
+
+  const amount = new Prisma.Decimal(tender.amount);
+  if (holding.amountRemaining.lessThan(amount)) {
+    throw badRequest(
+      `${name} has only ${holding.amountRemaining.toFixed(2)} left, so it cannot pay ${amount.toFixed(
+        2,
+      )}.`,
+      undefined,
+      "HOLDING_INSUFFICIENT",
+    );
+  }
+
+  const drawn = await tx.customerValuePackageHolding.updateMany({
+    where: { id: holding.id, amountRemaining: { gte: amount } },
+    data: { amountRemaining: { decrement: amount } },
+  });
+  if (drawn.count === 0) {
+    throw conflict(
+      `${name} has just been spent at another till. Nothing has been charged.`,
+      "HOLDING_INSUFFICIENT",
+    );
+  }
+
+  await tx.customerRedemption.create({
+    data: {
+      tenantId,
+      customerId,
+      saleId,
+      itemType: "VALUE_PACKAGE",
+      itemId: holding.valuePackageId,
+      quantity: 1,
+      amount,
+      usedAt,
+      holdingId: holding.id,
+    },
   });
 }
 
@@ -1521,6 +1786,15 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
     await tx.saleLine.deleteMany({ where: { saleId: held.id } });
     await writeLines(tx, tenantId, held.id, priced);
     await writePayments(tx, tenantId, held.id, input.payments);
+    await redeemPayments(
+      tx,
+      tenantId,
+      held.id,
+      customerId,
+      priced,
+      input.payments,
+      totals.totalAmount,
+    );
 
     await fillLedgers(
       tx,
@@ -1650,6 +1924,10 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
  *   meantime is the salon's business and not a reason to refuse.
  * - **Points** get an offsetting negative row on the same sale. Never an edit, never a
  *   delete — `CustomerPoint`'s own schema comment makes this the rule for a correction.
+ * - **Credit the sale spent** goes back on the holding and its `CustomerRedemption` row
+ *   is stamped `revertedAt` rather than deleted — the legacy `unuse_time` this column
+ *   already documents. A voided sale therefore refunds the package session, not just
+ *   the money.
  * - **Holdings, the outstanding, performance and commission** are deleted. Nothing has
  *   been spent (see `assertVoidable`) and a voided sale earned nobody anything; what the
  *   lines recorded survives on `SaleLine`, which stays.
@@ -1671,6 +1949,36 @@ async function reverseForVoid(
   if (sale.customerId !== null && pointsEarned !== 0) {
     await tx.customerPoint.create({
       data: { tenantId, customerId: sale.customerId, saleId: sale.id, point: -pointsEarned },
+    });
+  }
+
+  // What the sale spent, put back. The row is marked rather than deleted so the
+  // redemption stays in the customer's history beside the point rows it earns.
+  const redemptions = await tx.customerRedemption.findMany({
+    where: { saleId: sale.id, revertedAt: null },
+    select: { id: true, holdingId: true, itemType: true, quantity: true, amount: true },
+  });
+
+  for (const redemption of redemptions) {
+    if (redemption.holdingId !== null) {
+      if (redemption.itemType === "PACKAGE") {
+        await tx.customerPackageHolding.updateMany({
+          where: { id: redemption.holdingId },
+          data: { quantityRemaining: { increment: redemption.quantity } },
+        });
+      } else if (redemption.itemType === "VALUE_PACKAGE" && redemption.amount !== null) {
+        await tx.customerValuePackageHolding.updateMany({
+          where: { id: redemption.holdingId },
+          data: { amountRemaining: { increment: redemption.amount } },
+        });
+      }
+      // A gift card is not spendable yet (TK2610-0011 covers packages and credit);
+      // when it is, its restore belongs here with the other two.
+    }
+
+    await tx.customerRedemption.update({
+      where: { id: redemption.id },
+      data: { revertedAt: new Date() },
     });
   }
 

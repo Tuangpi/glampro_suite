@@ -66,6 +66,11 @@ export const queryKeys = {
   customers: {
     list: () => ["customers", "list"] as const,
     detail: (id: string) => ["customers", "detail", id] as const,
+    /**
+     * What a customer can still spend (TK2610-0011). Under the customer's own id, so
+     * taking a payment invalidates the one list it moved rather than every customer's.
+     */
+    holdings: (id: string) => ["customers", "detail", id, "holdings"] as const,
   },
 
   /**

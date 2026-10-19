@@ -16,6 +16,7 @@
  */
 import { z } from "zod";
 
+import { REDEMPTION_PAYMENT_METHODS } from "../constants.js";
 import { paginationQuerySchema } from "./common.js";
 
 /** Legacy `gender` was a string on customers and an integer on users (Q5). */
@@ -130,3 +131,37 @@ export const updateCustomerSchema = z.object({
 });
 
 export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
+
+/**
+ * One thing a customer can still spend — `GET /api/customers/:id/holdings`.
+ *
+ * Two ledgers answer one question. `CustomerPackageHolding` counts sessions and
+ * `CustomerValuePackageHolding` counts money, so they are merged into one list here:
+ * the till draws one picker, and the cashier does not have to know which table a
+ * customer's credit lives in.
+ *
+ * `kind` is the tender that spends the row (`PACKAGE` or `PREPAID_CREDIT`), so the
+ * client groups the list without re-deriving it from the two nullable figures.
+ * `amountRemaining` is money, so it is a string like every other `Decimal` on the
+ * wire; `quantityRemaining` is a count and stays a number.
+ *
+ * `serviceIds` says which services a **package** may be spent on, and is empty for
+ * credit — prepaid credit is fungible and pays for anything in the cart.
+ */
+export const customerHoldingSchema = z.object({
+  id: z.string(),
+  kind: z.enum(REDEMPTION_PAYMENT_METHODS),
+  name: z.string(),
+  serviceIds: z.array(z.string()),
+  quantityRemaining: z.number().int().min(0),
+  amountRemaining: z.string().nullable(),
+  expiresAt: z.string().nullable(),
+});
+
+export type CustomerHolding = z.infer<typeof customerHoldingSchema>;
+
+export const customerHoldingsSchema = z.object({
+  holdings: z.array(customerHoldingSchema),
+});
+
+export type CustomerHoldings = z.infer<typeof customerHoldingsSchema>;
