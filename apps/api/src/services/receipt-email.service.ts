@@ -107,7 +107,7 @@ function lineRowsHtml(sale: SaleDetail, salon: ReceiptSalon): string {
       return `<tr>
         <td style="padding:6px 0;vertical-align:top">${line.quantity} × ${escapeHtml(line.itemName)}${discount}</td>
         <td style="padding:6px 0;text-align:right;vertical-align:top">${escapeHtml(
-          money(line.lineTotal, salon.locale),
+          money(line.netLineTotal, salon.locale),
         )}</td>
       </tr>`;
     })
@@ -137,6 +137,12 @@ function totalRowsHtml(sale: SaleDetail, salon: ReceiptSalon): string {
   return [
     Number(sale.discountAmount) > 0
       ? totalRow("Discounts", `−${money(sale.discountAmount, salon.locale)}`)
+      : "",
+    Number(sale.voucherDiscountAmount) > 0
+      ? totalRow(
+          `Voucher ${sale.voucherCode ?? ""}`,
+          `−${money(sale.voucherDiscountAmount, salon.locale)}`,
+        )
       : "",
     Number(sale.taxAmount) > 0
       ? totalRow(`Includes GST (${Number(sale.taxRate)}%)`, money(sale.taxAmount, salon.locale))
@@ -181,6 +187,7 @@ function receiptHtml(
     ${sale.pointsEarned > 0 ? `<p style="color:#374151">Points earned: ${sale.pointsEarned}</p>` : ""}
     ${sale.note ? `<p style="color:#374151">Note: ${escapeHtml(sale.note)}</p>` : ""}
     ${isVoid && sale.voidReason ? `<p style="color:#374151">Void reason: ${escapeHtml(sale.voidReason)}</p>` : ""}
+    ${sale.refundedAt !== null ? `<p><strong>REFUND RECORDED: ${escapeHtml(money(sale.refundAmount ?? "0.00", salon.locale))}</strong><br>${escapeHtml(dateTime(sale.refundedAt, salon.locale, salon.timeZone))}<br>${escapeHtml(sale.refundReason ?? "")}</p>${sale.refundPayouts.map((payout) => `<p>${escapeHtml(PAYMENT_LABELS[payout.method])} returned: ${escapeHtml(money(payout.amount, salon.locale))}</p>`).join("")}` : ""}
     <p style="color:#6b7280;margin-top:24px">Thank you.</p>
   </div>`;
 }
@@ -202,7 +209,7 @@ export function buildReceiptEmail(sale: SaleDetail, salon: ReceiptSalon): Receip
       Number(line.discountAmount) > 0
         ? ` (less ${Number(line.discountPercent)}%: −${money(line.discountAmount, salon.locale)})`
         : "";
-    return `${line.quantity} × ${line.itemName} — ${money(line.lineTotal, salon.locale)}${discount}`;
+    return `${line.quantity} × ${line.itemName} — ${money(line.netLineTotal, salon.locale)}${discount}`;
   });
 
   const text = [
@@ -220,6 +227,9 @@ export function buildReceiptEmail(sale: SaleDetail, salon: ReceiptSalon): Receip
     Number(sale.discountAmount) > 0
       ? `Discounts: −${money(sale.discountAmount, salon.locale)}`
       : null,
+    Number(sale.voucherDiscountAmount) > 0
+      ? `Voucher ${sale.voucherCode ?? ""}: −${money(sale.voucherDiscountAmount, salon.locale)}`
+      : null,
     Number(sale.taxAmount) > 0
       ? `Includes GST (${Number(sale.taxRate)}%): ${money(sale.taxAmount, salon.locale)}`
       : null,
@@ -234,8 +244,15 @@ export function buildReceiptEmail(sale: SaleDetail, salon: ReceiptSalon): Receip
     sale.pointsEarned > 0 ? `Points earned: ${sale.pointsEarned}` : null,
     sale.note ? `Note: ${sale.note}` : null,
     isVoid && sale.voidReason ? `Void reason: ${sale.voidReason}` : null,
+    sale.refundedAt !== null
+      ? `REFUND RECORDED: ${money(sale.refundAmount ?? "0.00", salon.locale)} on ${dateTime(sale.refundedAt, salon.locale, salon.timeZone)} — ${sale.refundReason ?? ""}`
+      : null,
     "",
     "Thank you.",
+    ...sale.refundPayouts.map(
+      (payout) =>
+        `${PAYMENT_LABELS[payout.method]} returned: ${money(payout.amount, salon.locale)}`,
+    ),
   ]
     .filter((line): line is string => line !== null)
     .join("\n");

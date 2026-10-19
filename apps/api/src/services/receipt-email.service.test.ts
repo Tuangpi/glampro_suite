@@ -51,6 +51,14 @@ function sale(overrides: Partial<SaleDetail> = {}): SaleDetail {
     taxAmount: "4.13",
     taxRate: "9.00",
     gstRegistrationNumber: "GST-200012345",
+    voucherCode: null,
+    voucherDiscountAmount: "0.00",
+    refundedAt: null,
+    refundAmount: null,
+    refundReason: null,
+    refundedByName: null,
+    refundRestocked: null,
+    refundPayouts: [],
     outstandingAmount: "0.00",
     pointsEarned: 5,
     lines: [
@@ -64,6 +72,8 @@ function sale(overrides: Partial<SaleDetail> = {}): SaleDetail {
         lineTotal: "50.00",
         discountPercent: "0.00",
         discountAmount: "0.00",
+        voucherDiscountAmount: "0.00",
+        netLineTotal: "50.00",
         taxAmount: "4.13",
         taxRate: "9.00",
         staffId: null,
@@ -83,6 +93,26 @@ const SALON = {
 };
 
 describe("the emailed receipt", () => {
+  it("shows voucher-adjusted lines and the recorded refund on both receipt formats", () => {
+    const email = buildReceiptEmail(
+      sale({
+        totalAmount: "45.00",
+        voucherCode: "SAVE10",
+        voucherDiscountAmount: "5.00",
+        lines: [{ ...sale().lines[0]!, voucherDiscountAmount: "5.00", netLineTotal: "45.00" }],
+        refundedAt: "2026-10-19T12:00:00Z",
+        refundAmount: "45.00",
+        refundReason: "Returned <goods>",
+      }),
+      SALON,
+    );
+    assert.match(email.text, /Aloha Cut — S\$45\.00/);
+    assert.match(email.text, /Voucher SAVE10: −S\$5\.00/);
+    assert.match(email.text, /REFUND RECORDED: S\$45\.00/);
+    assert.match(email.html, /Voucher SAVE10/);
+    assert.match(email.html, /REFUND RECORDED: S\$45\.00/);
+    assert.match(email.html, /Returned &lt;goods&gt;/);
+  });
   it("prints the sale's own GST number, not the salon's current one", () => {
     const email = buildReceiptEmail(sale(), SALON);
 

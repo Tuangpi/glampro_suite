@@ -18,6 +18,7 @@ import { servicesRouter } from "./routes/services.routes.js";
 import { settingsRouter } from "./routes/settings.routes.js";
 import { shiftsRouter } from "./routes/shifts.routes.js";
 import { staffRouter } from "./routes/staff.routes.js";
+import { vouchersRouter } from "./routes/vouchers.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { apiLimiter } from "./middleware/rateLimit.js";
 
@@ -93,6 +94,9 @@ export function createApp(): Express {
   // add-ons, so it omits them and says so rather than refusing the whole request the way
   // the two mounts above do.
   app.use(`${API_PREFIX}/sales`, salesRouter);
+  // Voucher campaigns (ADR 0020). Reads are open so the till can list running codes;
+  // writes are manager-only, and the till itself only ever previews one on a cart.
+  app.use(`${API_PREFIX}/vouchers`, vouchersRouter);
   // Screens 03 and 06. A booking's duration and eligible performers come from
   // the service (M2), so this mount is the boundary that refuses them rather
   // than trusting the list the form sent (ADR 0013).

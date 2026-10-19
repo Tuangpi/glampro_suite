@@ -42,6 +42,7 @@ import {
   isRedemptionPaymentMethod,
   type SalePaymentInput,
   type SalePaymentMethod,
+  type VoucherPreview,
 } from "@glampro_suite/shared";
 
 import { Plus, Trash } from "@/components/icons";
@@ -52,6 +53,8 @@ import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
 import { PAYMENT_METHOD_OPTIONS } from "@/constants/sale";
 import { useCustomerHoldings } from "@/hooks/useCustomers";
+import { useVoucherPreview } from "@/hooks/useSale";
+import { getErrorMessage } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { centsToPrice, priceToCents } from "@/lib/money";
 import { packageCoverage, type PaymentLine } from "@/lib/package-coverage";
@@ -78,12 +81,22 @@ export interface PaymentDialogProps {
   hasCustomer: boolean;
   /** The cart holds a package, value package or gift card, so it needs a customer. */
   needsCustomer: boolean;
+  /**
+   * The cart carries a manual line discount, so a voucher cannot be added: ADR 0020's
+   * D1 rule refuses the pair. The sheet says why rather than letting the API refuse the
+   * sale after the money has been counted.
+   */
+  hasManualDiscount: boolean;
   /** The write is in flight; every control is frozen so one attempt stays one attempt. */
   isPending: boolean;
   /** The server's refusal, shown above the tenders. */
   errorMessage: string | null;
   onClose: () => void;
-  onConfirm: (payments: SalePaymentInput[], idempotencyKey: string) => void;
+  onConfirm: (
+    payments: SalePaymentInput[],
+    idempotencyKey: string,
+    voucherCode: string | null,
+  ) => void;
 }
 
 let nextTenderId = 1;
@@ -94,6 +107,7 @@ export default function PaymentDialog({
   customerId,
   hasCustomer,
   needsCustomer,
+  hasManualDiscount,
   isPending,
   errorMessage,
   onClose,
@@ -107,6 +121,17 @@ export default function PaymentDialog({
   const [tenders, setTenders] = useState<TenderDraft[]>(() => [
     { id: nextTenderId++, method: "CASH", amount: centsToPrice(totalCents) },
   ]);
+
+  // The voucher step (ADR 0020): the code is previewed against the server's own
+  // arithmetic before it is posted, so the sheet never offers a discount the write
+  // would refuse or re-price.
+  const voucherPreview = useVoucherPreview();
+  const [voucherCode, setVoucherCode] = useState("");
+  const [voucher, setVoucher] = useState<VoucherPreview | null>(null);
+  const [voucherError, setVoucherError] = useState<string | null>(null);
+  // What the customer actually owes: the cart, less whatever the applied code took
+  // off. Tenders, change and the blocker all read this figure.
+  const dueCents = voucher === null ? totalCents : priceToCents(voucher.totalAmount);
 
   // What this customer can still spend. A walk-in has none, and the query stays idle
   // rather than asking the API for a customer that is not there.
@@ -129,7 +154,7 @@ export default function PaymentDialog({
     if (holding.kind === "PREPAID_CREDIT") {
       // Credit pays the rest of the bill, up to what is left on it — never more than
       // the sale, which the server refuses as overpayment.
-      return Math.min(priceToCents(holding.amountRemaining), Math.max(totalCents - alreadyPaid, 0));
+      return Math.min(priceToCents(holding.amountRemaining), Math.max(dueCents - alreadyPaid, 0));
     }
 
     return packageCoverage(holding, lines).cents;
@@ -143,7 +168,7 @@ export default function PaymentDialog({
     tenderCents.push(cents);
     paidCents += cents;
   }
-  const remainingCents = totalCents - paidCents;
+  const remainingCents = dueCents - paidCents;
 
   const hasBadAmount = tenders.some(
     (tender) =>
@@ -163,28 +188,30 @@ export default function PaymentDialog({
   // Change is a money tender's business. A package or credit that pays more than the
   // sale is a mistake the server refuses, so the sheet says so before it posts.
   const overRedeemed =
-    paidCents > totalCents && tenders.some((tender) => isRedemptionPaymentMethod(tender.method));
+    paidCents > dueCents && tenders.some((tender) => isRedemptionPaymentMethod(tender.method));
 
   /**
    * Why the sale cannot be posted yet, or `null` when it can. Rendered as the
    * sentence beside the buttons *and* used to disable them, so the reason for a
    * refusal is never a mystery.
    */
-  const blocker = blockedByCustomer
-    ? "Pick a customer first — this cart grants credit, which has to belong to somebody."
-    : redemptionWithoutCustomer
-      ? "Attach a customer first — package and credit tenders spend somebody's credit."
-      : missingHolding
-        ? "Choose which package or credit is paying."
-        : emptyRedemption
-          ? "That package or credit covers nothing in this cart. Pick another tender."
-          : overRedeemed
-            ? "A package or credit cannot pay more than the sale totals. Remove a tender that covers a line twice."
-            : hasBadAmount
-              ? "Enter an amount for every tender."
-              : remainingCents > 0 && !hasCustomer
-                ? `The tenders are ${formatPrice(centsToPrice(remainingCents))} short and there is no customer to carry the balance.`
-                : null;
+  const blocker = voucherPreview.isPending
+    ? "Wait for the voucher preview before taking payment."
+    : blockedByCustomer
+      ? "Pick a customer first — this cart grants credit, which has to belong to somebody."
+      : redemptionWithoutCustomer
+        ? "Attach a customer first — package and credit tenders spend somebody's credit."
+        : missingHolding
+          ? "Choose which package or credit is paying."
+          : emptyRedemption
+            ? "That package or credit covers nothing in this cart. Pick another tender."
+            : overRedeemed
+              ? "A package or credit cannot pay more than the sale totals. Remove a tender that covers a line twice."
+              : hasBadAmount
+                ? "Enter an amount for every tender."
+                : remainingCents > 0 && !hasCustomer
+                  ? `The tenders are ${formatPrice(centsToPrice(remainingCents))} short and there is no customer to carry the balance.`
+                  : null;
 
   function setTender(id: number, patch: Partial<TenderDraft>) {
     setTenders((current) =>
@@ -211,6 +238,59 @@ export default function PaymentDialog({
     setTenders((current) => current.filter((tender) => tender.id !== id));
   }
 
+  /**
+   * Keeps a single full-amount tender honest when a voucher changes the bill. A money
+   * tender typed at the old due follows the new one; anything else (a split, a
+   * redemption) is left exactly as the cashier entered it.
+   */
+  function retotalTenders(nextDueCents: number, previousDueCents: number) {
+    setTenders((current) =>
+      current.length === 1
+        ? current.map((tender) =>
+            !isRedemptionPaymentMethod(tender.method) &&
+            priceToCents(tender.amount) === previousDueCents
+              ? { ...tender, amount: centsToPrice(nextDueCents) }
+              : tender,
+          )
+        : current,
+    );
+  }
+
+  /**
+   * Asks the server what the code is worth on this cart. The write posts the same
+   * code (not the figure), so this preview and the receipt cannot disagree.
+   */
+  async function applyVoucher() {
+    if (isPending || voucherPreview.isPending || hasManualDiscount || voucher !== null) return;
+    const code = voucherCode.trim();
+    if (code.length < 3) {
+      setVoucherError("Enter the voucher code.");
+      return;
+    }
+    setVoucherError(null);
+    try {
+      const preview = await voucherPreview.mutateAsync({
+        voucherCode: code,
+        ...(customerId ? { customerId } : {}),
+        // Prices are the server's to read; the preview takes only what was sold.
+        lines: lines.map(({ itemType, itemId, quantity }) => ({ itemType, itemId, quantity })),
+      });
+      setVoucher(preview);
+      setVoucherCode(preview.code);
+      retotalTenders(priceToCents(preview.totalAmount), dueCents);
+    } catch (error) {
+      setVoucherError(getErrorMessage(error));
+    }
+  }
+
+  /** Takes the code off the sheet; the sale is posted at the cart's own total. */
+  function removeVoucher() {
+    setVoucher(null);
+    setVoucherCode("");
+    setVoucherError(null);
+    retotalTenders(totalCents, dueCents);
+  }
+
   /** "Rest" — what a split needs after the first tender has been typed. */
   function fillRemaining(id: number) {
     setTender(id, { amount: centsToPrice(Math.max(remainingCents, 0)) });
@@ -222,6 +302,7 @@ export default function PaymentDialog({
   }
 
   function submit() {
+    if (isPending || blocker !== null) return;
     onConfirm(
       tenders.map((tender, index) => ({
         method: tender.method,
@@ -231,6 +312,7 @@ export default function PaymentDialog({
         ...(isRedemptionPaymentMethod(tender.method) ? { holdingId: tender.holdingId } : {}),
       })),
       idempotencyKey,
+      voucher === null ? null : voucher.code,
     );
   }
 
@@ -271,9 +353,69 @@ export default function PaymentDialog({
 
         <div className="flex items-baseline justify-between rounded-md bg-surface-2 px-4 py-3">
           <span className="text-sm font-bold text-ink-body">Total due</span>
-          <span className="text-lg font-heavy text-ink">
-            {formatPrice(centsToPrice(totalCents))}
-          </span>
+          <span className="text-lg font-heavy text-ink">{formatPrice(centsToPrice(dueCents))}</span>
+        </div>
+
+        {/* The voucher step (ADR 0020). A code is a campaign the manager published,
+            not a tender: it changes the bill, and the server prices it. D1 refuses a
+            voucher beside manual line discounts, so the field says why up front. */}
+        <div className="flex flex-col gap-2 rounded-md border border-line-soft bg-surface p-3">
+          <div className="flex items-end gap-2">
+            <label className="flex flex-1 flex-col gap-1.5">
+              <span className="text-xs font-bold text-ink-body">Voucher</span>
+              <input
+                type="text"
+                value={voucherCode}
+                disabled={
+                  isPending || voucherPreview.isPending || voucher !== null || hasManualDiscount
+                }
+                aria-label="Voucher code"
+                placeholder="Enter a code"
+                onChange={(event) => setVoucherCode(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && voucher === null) {
+                    event.preventDefault();
+                    void applyVoucher();
+                  }
+                }}
+                className={cn(CONTROL_CLASS, "h-control px-3 uppercase")}
+              />
+            </label>
+            {voucher === null ? (
+              <Button
+                variant="secondary"
+                loading={voucherPreview.isPending}
+                disabled={isPending || hasManualDiscount || voucherCode.trim().length < 3}
+                onClick={() => void applyVoucher()}
+              >
+                Apply
+              </Button>
+            ) : (
+              <Button variant="ghost" disabled={isPending} onClick={removeVoucher}>
+                Remove
+              </Button>
+            )}
+          </div>
+
+          {hasManualDiscount ? (
+            <p className="text-xs text-ink-muted">
+              This cart has a manual line discount. Remove it from the cart before applying a
+              voucher — the two cannot share a sale.
+            </p>
+          ) : null}
+
+          {voucherError ? (
+            <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
+              {voucherError}
+            </p>
+          ) : null}
+
+          {voucher !== null ? (
+            <p className="text-sm text-success-text">
+              {voucher.code} applied — −{formatPrice(voucher.discountAmount)}
+              {voucher.description ? ` · ${voucher.description}` : ""}
+            </p>
+          ) : null}
         </div>
 
         <ul aria-label="Tenders" className="flex flex-col gap-3">

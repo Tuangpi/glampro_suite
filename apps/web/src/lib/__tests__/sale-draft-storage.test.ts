@@ -9,6 +9,7 @@ import {
   saleDraftIdentity,
   setSaleDraftCustomer,
   setSaleDraftLines,
+  setSaleDraftHeldSale,
 } from "@/lib/sale-draft-storage";
 
 const LINE: CartLine = {
@@ -37,6 +38,16 @@ const CUSTOMER: CustomerSummary = {
 };
 
 describe("sale draft storage", () => {
+  it("preserves a resumed hold across edits and isolates it by identity", () => {
+    const identity = saleDraftIdentity("hold-tenant", "hold-user");
+    setSaleDraftHeldSale(identity, "sale-9");
+    setSaleDraftLines(identity, [LINE]);
+    setSaleDraftCustomer(identity, CUSTOMER);
+    expect(readSaleDraft(identity).heldSaleId).toBe("sale-9");
+    expect(readSaleDraft(saleDraftIdentity("other", "hold-user")).heldSaleId).toBeUndefined();
+    clearSaleDraft(identity);
+    expect(readSaleDraft(identity).heldSaleId).toBeUndefined();
+  });
   it("keeps each tenant and user in a separate draft", () => {
     const first = saleDraftIdentity("tenant-1", "user-1");
     const second = saleDraftIdentity("tenant-1", "user-2");

@@ -4,15 +4,19 @@ import {
   createSaleSchema,
   emailSaleReceiptSchema,
   idParamSchema,
+  refundSaleSchema,
   saleItemSearchQuerySchema,
   saleListQuerySchema,
   voidSaleSchema,
+  voucherPreviewInputSchema,
   type CompleteSaleInput,
   type CreateSaleInput,
   type EmailSaleReceiptInput,
+  type RefundSaleInput,
   type SaleItemSearchQuery,
   type SaleListQuery,
   type VoidSaleInput,
+  type VoucherPreviewInput,
 } from "@glampro_suite/shared";
 
 import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
@@ -27,6 +31,8 @@ import {
   discardHold,
   getSale,
   listSales,
+  previewVoucher,
+  refundSale,
   searchSaleItems,
   voidSale,
 } from "../services/sale.service.js";
@@ -83,6 +89,29 @@ salesRouter.get(
     try {
       const query = validated<SaleListQuery>(req, "query");
       res.status(200).json({ data: await listSales(query) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * `POST /api/sales/voucher-preview` — what a code is worth on this cart (ADR 0020).
+ *
+ * A `POST` because the cart is too large for a query string and may carry a customer,
+ * but nothing is written: `200` with the server's own arithmetic, which is the same
+ * arithmetic `POST /` will use. Mounted before `/:id` so the literal path is never read
+ * as a sale id.
+ */
+salesRouter.post(
+  "/voucher-preview",
+  auth,
+  requireModule("sales"),
+  validate(voucherPreviewInputSchema),
+  async (req, res, next) => {
+    try {
+      const input = validated<VoucherPreviewInput>(req, "body");
+      res.status(200).json({ data: await previewVoucher(input) });
     } catch (error) {
       next(error);
     }
@@ -195,6 +224,36 @@ salesRouter.post(
       const { id } = validated<{ id: string }>(req, "params");
       const { reason } = validated<VoidSaleInput>(req, "body");
       res.status(200).json({ data: await voidSale(id, { reason }, req.user.id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Records a full-sale refund (ADR 0020 / R1).
+ *
+ * Manager-only, like the void: sending money back is an authorisation, not a cashier's
+ * convenience. The body names the reason and whether product lines go back on the shelf;
+ * the **amount is not in the body** and the actor is the verified token's user.
+ *
+ * `200`, not `201`: the sale already existed, and the receipt returned is the same
+ * resource `GET /:id` serves, now carrying the refund.
+ */
+salesRouter.post(
+  "/:id/refund",
+  auth,
+  requireModule("sales"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(idParamSchema, "params"),
+  validate(refundSaleSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id } = validated<{ id: string }>(req, "params");
+      const input = validated<RefundSaleInput>(req, "body");
+      res.status(200).json({ data: await refundSale(id, input, req.user.id) });
     } catch (error) {
       next(error);
     }

@@ -33,16 +33,19 @@ import {
   type SaleDetail,
   type SaleItem,
   type SaleItemKind,
+  type RefundSaleInput,
   type SaleItemSearchResult,
   type SaleLineInput,
   type SaleList,
   type SaleReceiptEmailResult,
+  type VoucherPreview,
+  type VoucherPreviewInput,
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
 import { useAuth } from "@/contexts/AuthContext";
 import { del, get, getPaginated, post } from "@/lib/api";
-import { discountedPrice } from "@/lib/money";
+import { discountedPrice, priceToCents } from "@/lib/money";
 import {
   clearSaleDraft,
   readSaleDraft,
@@ -255,7 +258,7 @@ export function toSaleLineInputs(lines: CartLine[]): SaleLineInput[] {
 /**
  * A parked cart, back in the till.
  *
- * `price` is the figure the hold was parked at and `memberPrice` is `null`, because a
+ * `price` is the pre-discount figure the hold was parked at and `memberPrice` is `null`, because a
  * stored line carries **one** price and not the catalogue's member/non-member pair.
  * Inventing the second here would be the browser naming a price, so a resumed line
  * draws the quote it was parked with and the server re-prices every line from the
@@ -268,7 +271,12 @@ export function cartLinesFrom(sale: SaleDetail): CartLine[] {
     itemId: line.itemId,
     name: line.itemName,
     quantity: line.quantity,
-    price: line.unitPrice,
+    // Stored unitPrice is already discounted. Restore the original per-unit cents
+    // before the cart applies the preserved rate, otherwise pickup discounts twice.
+    price: (
+      (priceToCents(line.unitPrice) + priceToCents(line.discountAmount) / line.quantity) /
+      100
+    ).toFixed(2),
     memberPrice: null,
     ...(line.staffId ? { staffId: line.staffId } : {}),
     // The rate comes back with the line: it is part of what the cashier set, and the
@@ -408,8 +416,7 @@ export function useSaleCart(): SaleCart {
  * The cart is cleared on success, so the rail badge drops with the sale rather
  * than waiting for the receipt to be dismissed. The server-backed views a sale
  * moves — the item grid (stock fell) and the catalogue's list and low-stock
- * count — are invalidated with it. Customer aggregates are not: a sale writes
- * points and outstandings no screen reads yet, so there is nothing to refresh.
+ * count — are invalidated with it, along with customer history/balances and reports.
  */
 export function useCreateSale() {
   const queryClient = useQueryClient();
@@ -435,8 +442,7 @@ export function useCreateSale() {
  *
  * The cart is spent, so it empties and its browser draft goes with it. The server-backed
  * views a sale moves are refetched: the item grid (stock fell) and the catalogue's list
- * and low-stock count. Customer aggregates are not — a completed sale writes points and
- * outstandings no screen reads yet, so there is nothing to refresh.
+ * and low-stock count, customer history/balances, reports and dashboard totals.
  *
  * `fromHold` adds the hold list, because a cart that was *parked* has to leave it. A
  * plain sale passes `false` rather than refetching a list it cannot have changed.
@@ -448,10 +454,19 @@ function invalidateAfterSale(
 ): void {
   queryClient.setQueryData<CartLine[]>(queryKeys.sale.openCart(identity ?? "anonymous"), []);
   clearSaleDraft(identity);
+  invalidateSaleViews(queryClient);
+  if (fromHold) void queryClient.invalidateQueries({ queryKey: queryKeys.sale.holds() });
+}
+
+/** Refresh persisted sale effects without clearing another open cart. */
+function invalidateSaleViews(queryClient: QueryClient): void {
+  void queryClient.invalidateQueries({ queryKey: queryKeys.sale.history() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.sale.items() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.products.list() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.products.count() });
-  if (fromHold) void queryClient.invalidateQueries({ queryKey: queryKeys.sale.holds() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.customers.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.reports.all() });
+  void queryClient.invalidateQueries({ queryKey: queryKeys.dashboard.summary() });
 }
 
 /**
@@ -460,10 +475,24 @@ function invalidateAfterSale(
  * Tenant-wide rather than per-user, because that is the point of a shared hold: a
  * colleague has to be able to finish the cart somebody else parked (ADR 0015).
  */
-export function useHeldSales() {
+export function useHeldSales(page = 1) {
   return useQuery({
-    queryKey: queryKeys.sale.holds(),
-    queryFn: () => get<SaleList>("/sales", { status: "HELD" }),
+    queryKey: [...queryKeys.sale.holds(), page],
+    queryFn: () => get<SaleList>("/sales", { status: "HELD", page }),
+  });
+}
+
+export function useSaleHistory(status: "COMPLETED" | "VOID", page: number, enabled: boolean) {
+  return useQuery({
+    queryKey: [...queryKeys.sale.history(), { status, page }],
+    queryFn: () => get<SaleList>("/sales", { status, page }),
+    enabled,
+  });
+}
+
+export function useOpenSaleReceipt() {
+  return useMutation({
+    mutationFn: (id: string) => get<SaleDetail>(`/sales/${id}`),
   });
 }
 
@@ -575,9 +604,49 @@ export function useVoidSale() {
     mutationFn: ({ saleId, reason }: { saleId: string; reason: string }) =>
       post<SaleDetail>(`/sales/${saleId}/void`, { reason }),
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.sale.items() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.products.list() });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.products.count() });
+      invalidateSaleViews(queryClient);
+    },
+  });
+}
+
+/**
+ * What a voucher code is worth on the cart the cashier is about to pay for
+ * (ADR 0020): `POST /api/sales/voucher-preview`.
+ *
+ * A mutation rather than a query because the cart is the request body and a preview is
+ * an action the cashier asks for by pressing **Apply** — not a cache entry that should
+ * refetch behind their back. Nothing is written; the server prices the catalogue and
+ * allocates the code exactly as the sale write will, so the sheet never shows a figure
+ * the receipt would not charge.
+ *
+ * A refusal (expired, below its minimum, already redeemed) is an error the dialog shows
+ * beside the field; the sale can still be posted without the voucher.
+ */
+export function useVoucherPreview() {
+  return useMutation({
+    mutationFn: (input: VoucherPreviewInput) =>
+      post<VoucherPreview>("/sales/voucher-preview", input),
+  });
+}
+
+/**
+ * Records a full-sale refund: `POST /api/sales/:id/refund` (ADR 0020).
+ *
+ * The body names the reason and whether product lines go back on the shelf; the
+ * **amount is not in it** and the actor is the token's. The server answers with the same
+ * receipt shape `GET /:id` serves, so the screen redraws from its own row. A refund puts
+ * stock back only when asked, so the item grid and the catalogue's counts move like a
+ * void's do; the sale itself stays `COMPLETED` and keeps its number.
+ */
+export function useRefundSale() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ saleId, input }: { saleId: string; input: RefundSaleInput }) =>
+      post<SaleDetail>(`/sales/${saleId}/refund`, input),
+    onSuccess: (sale) => {
+      queryClient.setQueryData(queryKeys.sale.detail(sale.id), sale);
+      invalidateSaleViews(queryClient);
     },
   });
 }

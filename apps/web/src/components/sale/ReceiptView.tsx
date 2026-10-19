@@ -36,6 +36,7 @@ export interface ReceiptViewProps {
   sale: SaleDetail;
   /** Clears the receipt and returns the till to an empty cart. */
   onNewSale: () => void;
+  returnLabel?: string;
   /**
    * The customer's saved address, prefilled in the email dialog (TK2610-0010). `null`
    * for a walk-in or a customer who never gave one — the cashier can still type one.
@@ -49,21 +50,35 @@ export interface ReceiptViewProps {
   canVoid: boolean;
   /** Opens the void dialog. */
   onVoid: () => void;
+  /**
+   * Whether the signed-in user may record a refund — the same manager gate the void
+   * uses (ADR 0020). Used only to hide the action; the API refuses anybody else.
+   */
+  canRefund: boolean;
+  /** Opens the refund dialog. */
+  onRefund: () => void;
 }
 
 export default function ReceiptView({
   sale,
   onNewSale,
+  returnLabel = "New sale",
   customerEmail,
   canVoid,
   onVoid,
+  canRefund,
+  onRefund,
 }: ReceiptViewProps) {
   const { formatDateTime, formatPrice } = useSalonFormatting();
   const [emailOpen, setEmailOpen] = useState(false);
   const changeCents = priceToCents(sale.paidAmount) - priceToCents(sale.totalAmount);
+  // A refunded sale still stands on the books, so neither action is offered again: the
+  // server records one refund per sale and refuses a void of a refunded one.
+  const refunded = sale.refundedAt !== null;
   // A void is only reachable from a sale that stands: a voided one has nothing left to
   // take off the books, and the service says the same thing.
-  const voidable = sale.status === "COMPLETED" && canVoid;
+  const voidable = sale.status === "COMPLETED" && canVoid && !refunded;
+  const refundable = sale.status === "COMPLETED" && canRefund && !refunded;
   const receiptLabel = sale.receiptNumber === null ? "This sale" : `Receipt #${sale.receiptNumber}`;
 
   return (
@@ -105,6 +120,11 @@ export default function ReceiptView({
               <Mail aria-hidden />
               Email receipt
             </Button>
+            {refundable ? (
+              <Button variant="danger" size="sm" className="print:hidden" onClick={onRefund}>
+                Refund sale
+              </Button>
+            ) : null}
             {voidable ? (
               <Button variant="danger" size="sm" className="print:hidden" onClick={onVoid}>
                 Void sale
@@ -115,7 +135,7 @@ export default function ReceiptView({
         footer={
           <div className="flex items-center justify-between gap-4">
             <Button variant="secondary" className="print:hidden" onClick={onNewSale}>
-              New sale
+              {returnLabel}
             </Button>
             <div className="text-right">
               <p className="text-xs text-ink-muted">Total</p>
@@ -143,8 +163,20 @@ export default function ReceiptView({
                     {Number(line.discountPercent)}% off · −{formatPrice(line.discountAmount)}
                   </p>
                 ) : null}
+                {/* A voucher's share of this line (ADR 0020). `lineTotal` is the
+                    pre-voucher figure, so the amount on the right is `netLineTotal`
+                    and the line sums into the sale's total. */}
+                {priceToCents(line.voucherDiscountAmount) > 0 ? (
+                  <p className="text-xs text-success-text">
+                    Voucher · −{formatPrice(line.voucherDiscountAmount)}
+                  </p>
+                ) : null}
               </div>
-              <p className="shrink-0 font-heavy text-ink">{formatPrice(line.lineTotal)}</p>
+              <p className="shrink-0 font-heavy text-ink">
+                {formatPrice(
+                  priceToCents(line.voucherDiscountAmount) > 0 ? line.netLineTotal : line.lineTotal,
+                )}
+              </p>
             </li>
           ))}
         </ul>
@@ -168,6 +200,18 @@ export default function ReceiptView({
               <dd className="font-bold text-success-text">−{formatPrice(sale.discountAmount)}</dd>
             </div>
           ) : null}
+          {/* A voucher changes the bill but is not a tender, so it gets its own row
+              above the total rather than sitting among the tenders (ADR 0020). */}
+          {priceToCents(sale.voucherDiscountAmount) > 0 ? (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-sm text-ink-muted">
+                Voucher{sale.voucherCode === null ? "" : ` ${sale.voucherCode}`}
+              </dt>
+              <dd className="font-bold text-success-text">
+                −{formatPrice(sale.voucherDiscountAmount)}
+              </dd>
+            </div>
+          ) : null}
           {/* Inclusive GST backed out of the total by the server — the receipt
               shows the component without changing what was charged. */}
           {priceToCents(sale.taxAmount) > 0 ? (
@@ -180,14 +224,20 @@ export default function ReceiptView({
             <dt className="text-sm text-ink-muted">Paid</dt>
             <dd className="font-bold text-ink">{formatPrice(sale.paidAmount)}</dd>
           </div>
-          <div className="flex items-baseline justify-between gap-3">
-            <dt className="text-sm text-ink-muted">
-              {changeCents >= 0 ? "Change" : "Outstanding"}
-            </dt>
-            <dd className={changeCents >= 0 ? "font-bold text-ink" : "font-bold text-danger"}>
-              {formatPrice(Math.abs(changeCents) / 100)}
-            </dd>
-          </div>
+          {sale.status !== "VOID" ? (
+            <div className="flex items-baseline justify-between gap-3">
+              <dt className="text-sm text-ink-muted">
+                {changeCents >= 0 ? "Change" : "Outstanding"}
+              </dt>
+              <dd className={changeCents >= 0 ? "font-bold text-ink" : "font-bold text-danger"}>
+                {formatPrice(Math.abs(changeCents) / 100)}
+              </dd>
+            </div>
+          ) : (
+            <p className="text-sm text-ink-muted">
+              Sale reversed. Any money refund must be handled separately.
+            </p>
+          )}
         </dl>
 
         <div className="mt-4 flex flex-wrap items-center gap-2 px-1 pb-1">
@@ -215,6 +265,32 @@ export default function ReceiptView({
           </p>
         ) : null}
       </Card>
+
+      {sale.refundedAt !== null ? (
+        // Printed as well as drawn, like the void banner: a reprint of a refunded
+        // receipt has to say the money went back, and to whom the record attributes it.
+        <div
+          role="status"
+          className="flex flex-col gap-1 rounded-card border border-warning/40 bg-warning-soft px-4.5 py-3.5 text-sm text-ink-body"
+        >
+          <p className="font-bold text-ink">
+            {formatPrice(sale.refundAmount ?? "0.00")} refunded on {formatDateTime(sale.refundedAt)}
+            {sale.refundedByName === null ? "" : ` by ${sale.refundedByName}`}.
+          </p>
+          <p>{sale.refundReason ?? "No reason was recorded."}</p>
+          {sale.refundPayouts.map((payout, index) => (
+            <p key={index}>
+              {PAYMENT_METHOD_LABELS[payout.method]} returned: {formatPrice(payout.amount)}
+            </p>
+          ))}
+          <p className="text-xs text-ink-muted">
+            {sale.refundRestocked
+              ? "The product lines went back into stock."
+              : "The product lines were not restocked."}{" "}
+            The sale keeps its number and its lines; the refund is the record of the money.
+          </p>
+        </div>
+      ) : null}
 
       {sale.status === "VOID" ? (
         // Printed as well as drawn: a sheet that does not say VOID could be filed as a

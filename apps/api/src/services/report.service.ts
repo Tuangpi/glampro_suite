@@ -16,6 +16,7 @@ import {
   dashboardSummarySchema,
   isRedemptionPaymentMethod,
   reportOverviewSchema,
+  saleDetailSchema,
   zReportSchema,
   type DashboardQuery,
   type DashboardSummary,
@@ -28,6 +29,7 @@ import {
   type ZReportQuery,
 } from "@glampro_suite/shared";
 
+import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
 import { resolveLowStockThreshold } from "./catalogue.service.js";
@@ -74,7 +76,7 @@ export async function dashboardSummary(query: DashboardQuery): Promise<Dashboard
     ...(to ? { lte: to } : {}),
   };
 
-  const [sales, appointments, newCustomers, threshold] = await Promise.all([
+  const [sales, appointments, newCustomers, threshold, refunds] = await Promise.all([
     prisma.sale.aggregate({
       where: { status: "COMPLETED", soldAt: window },
       _sum: { paidAmount: true },
@@ -87,6 +89,7 @@ export async function dashboardSummary(query: DashboardQuery): Promise<Dashboard
     }),
     prisma.customer.count({ where: { createdAt: window } }),
     resolveLowStockThreshold(),
+    prisma.saleRefund.aggregate({ where: { refundedAt: window }, _sum: { amount: true } }),
   ]);
 
   const lowStock = await prisma.product.count({
@@ -94,7 +97,9 @@ export async function dashboardSummary(query: DashboardQuery): Promise<Dashboard
   });
 
   return dashboardSummarySchema.parse({
-    incomeToday: money(sales._sum.paidAmount),
+    incomeToday: money(
+      (sales._sum.paidAmount ?? new Prisma.Decimal(0)).minus(refunds._sum.amount ?? 0),
+    ),
     salesToday: sales._count._all,
     appointmentsToday: appointments,
     newCustomersToday: newCustomers,
@@ -123,6 +128,18 @@ function centsToMoney(value: bigint): string {
   const whole = absolute / 100n;
   const cents = (absolute % 100n).toString().padStart(2, "0");
   return `${negative ? "-" : ""}${whole}.${cents}`;
+}
+
+/** Historical refunds have no tender evidence; never fabricate a payout method. */
+function refundTenders(refunds: { payouts: Prisma.JsonValue | null }[]): ReportTender[] {
+  return tenderSubtotals(
+    refunds.flatMap((refund) =>
+      saleDetailSchema.shape.refundPayouts.parse(refund.payouts ?? []).map((payout) => ({
+        method: payout.method,
+        amount: new Prisma.Decimal(payout.amount),
+      })),
+    ),
+  );
 }
 
 interface TenderRow {
@@ -234,58 +251,83 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
     return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
   }
 
-  const [sales, lines, performances, payments, commissions, liability] = await Promise.all([
-    prisma.sale.findMany({
-      where: { status: "COMPLETED", soldAt },
-      select: {
-        soldAt: true,
-        totalQuantity: true,
-        totalAmount: true,
-        paidAmount: true,
-        taxAmount: true,
-      },
-      orderBy: { soldAt: "asc" },
-    }),
-    prisma.saleLine.findMany({
-      where: { sale: { status: "COMPLETED", soldAt } },
-      select: {
-        itemType: true,
-        itemId: true,
-        itemName: true,
-        quantity: true,
-        lineTotal: true,
-        discountAmount: true,
-      },
-    }),
-    prisma.employeePerformance.findMany({
-      where: { sale: { status: "COMPLETED", soldAt } },
-      select: {
-        amount: true,
-        user: { select: { id: true, name: true, position: true } },
-      },
-    }),
-    prisma.salePayment.findMany({
-      where: { sale: { status: "COMPLETED", soldAt } },
-      select: { method: true, amount: true },
-    }),
-    // A commission either belongs to a completed sale in the range or, when it is
-    // booked against a period, was created in the range. Counting the second kind
-    // by its sale date would drop it when the sale predates the commission.
-    prisma.employeeCommission.findMany({
-      where: {
-        OR: [
-          { sale: { status: "COMPLETED", soldAt } },
-          { saleId: null, createdAt: { gte: from, lte: to } },
-        ],
-      },
-      select: {
-        userId: true,
-        amount: true,
-        user: { select: { name: true, position: true } },
-      },
-    }),
-    liabilitySnapshot(),
-  ]);
+  const [sales, lines, performances, payments, commissions, liability, refunds, reconciliation] =
+    await Promise.all([
+      prisma.sale.findMany({
+        where: { status: "COMPLETED", soldAt },
+        select: {
+          soldAt: true,
+          totalQuantity: true,
+          totalAmount: true,
+          paidAmount: true,
+          taxAmount: true,
+        },
+        orderBy: { soldAt: "asc" },
+      }),
+      prisma.saleLine.findMany({
+        where: { sale: { status: "COMPLETED", soldAt } },
+        select: {
+          itemType: true,
+          itemId: true,
+          itemName: true,
+          quantity: true,
+          lineTotal: true,
+          discountAmount: true,
+          voucherDiscountAmount: true,
+        },
+      }),
+      prisma.employeePerformance.findMany({
+        where: {
+          OR: [
+            { refundAdjustment: false, sale: { status: "COMPLETED", soldAt } },
+            { refundAdjustment: true, createdAt: { gte: from, lte: to } },
+          ],
+        },
+        select: {
+          refundAdjustment: true,
+          amount: true,
+          user: { select: { id: true, name: true, position: true } },
+        },
+      }),
+      prisma.salePayment.findMany({
+        where: { sale: { status: "COMPLETED", soldAt } },
+        select: { method: true, amount: true },
+      }),
+      // A commission either belongs to a completed sale in the range or, when it is
+      // booked against a period, was created in the range. Counting the second kind
+      // by its sale date would drop it when the sale predates the commission.
+      prisma.employeeCommission.findMany({
+        where: {
+          OR: [
+            { refundAdjustment: false, sale: { status: "COMPLETED", soldAt } },
+            { refundAdjustment: true, createdAt: { gte: from, lte: to } },
+            { saleId: null, createdAt: { gte: from, lte: to } },
+          ],
+        },
+        select: {
+          userId: true,
+          reconciliationRequired: true,
+          amount: true,
+          user: { select: { name: true, position: true } },
+        },
+      }),
+      liabilitySnapshot(),
+      prisma.saleRefund.findMany({
+        where: { refundedAt: { gte: from, lte: to } },
+        select: {
+          amount: true,
+          refundedAt: true,
+          payouts: true,
+          sale: { select: { taxAmount: true } },
+        },
+      }),
+      prisma.employeeCommission.count({
+        where: {
+          reconciliationRequired: true,
+          sale: { refund: { refundedAt: { gte: from, lte: to } } },
+        },
+      }),
+    ]);
 
   const byDay = new Map<
     string,
@@ -329,7 +371,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
     { serviceId: string; name: string; quantity: number; revenue: bigint }
   >();
   for (const line of lines) {
-    discounts = addMoney(discounts, line.discountAmount);
+    discounts = addMoney(addMoney(discounts, line.discountAmount), line.voucherDiscountAmount);
 
     const key = `${line.itemType}:${line.itemId}`;
     const row = byItem.get(key) ?? {
@@ -340,7 +382,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
       revenue: 0n,
     };
     row.quantity += line.quantity;
-    row.revenue = addMoney(row.revenue, line.lineTotal);
+    row.revenue = addMoney(row.revenue, line.lineTotal.minus(line.voucherDiscountAmount));
     byItem.set(key, row);
 
     if (line.itemType === "SERVICE") {
@@ -351,7 +393,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
         revenue: 0n,
       };
       service.quantity += line.quantity;
-      service.revenue = addMoney(service.revenue, line.lineTotal);
+      service.revenue = addMoney(service.revenue, line.lineTotal.minus(line.voucherDiscountAmount));
       byService.set(line.itemId, service);
     }
   }
@@ -376,7 +418,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
       revenue: 0n,
       commission: 0n,
     };
-    row.creditedLines += 1;
+    if (!performance.refundAdjustment) row.creditedLines += 1;
     row.revenue = addMoney(row.revenue, performance.amount);
     byStaff.set(row.userId, row);
   }
@@ -393,23 +435,41 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
     byStaff.set(row.userId, row);
   }
 
+  let refundAmount = 0n;
+  let refundTax = 0n;
+  for (const refund of refunds) {
+    refundAmount = addMoney(refundAmount, refund.amount);
+    refundTax = addMoney(refundTax, refund.sale.taxAmount);
+    const date = dateKey(refund.refundedAt);
+    const row = byDay.get(date) ?? { date, sales: 0, quantity: 0, revenue: 0n, paid: 0n, tax: 0n };
+    row.revenue -= addMoney(0n, refund.amount);
+    row.paid -= addMoney(0n, refund.amount);
+    row.tax -= addMoney(0n, refund.sale.taxAmount);
+    byDay.set(date, row);
+  }
+
   return reportOverviewSchema.parse({
     from: query.from,
     to: query.to,
     totals: {
-      revenue: centsToMoney(revenue),
-      paid: centsToMoney(paid),
-      tax: centsToMoney(tax),
+      grossSales: centsToMoney(revenue + discounts),
+      refunds: centsToMoney(refundAmount),
+      commissionReconciliation: reconciliation,
+      revenue: centsToMoney(revenue - refundAmount),
+      paid: centsToMoney(paid - refundAmount),
+      tax: centsToMoney(tax - refundTax),
       discounts: centsToMoney(discounts),
       sales: sales.length,
       items,
     },
-    salesByDay: [...byDay.values()].map((row) => ({
-      ...row,
-      revenue: centsToMoney(row.revenue),
-      paid: centsToMoney(row.paid),
-      tax: centsToMoney(row.tax),
-    })),
+    salesByDay: [...byDay.values()]
+      .sort((a, b) => a.date.localeCompare(b.date))
+      .map((row) => ({
+        ...row,
+        revenue: centsToMoney(row.revenue),
+        paid: centsToMoney(row.paid),
+        tax: centsToMoney(row.tax),
+      })),
     topItems: [...byItem.values()]
       .sort((a, b) =>
         a.revenue === b.revenue ? b.quantity - a.quantity : a.revenue > b.revenue ? -1 : 1,
@@ -443,6 +503,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
         commission: centsToMoney(row.commission),
       })),
     tenders: tenderSubtotals(payments),
+    refundTenders: refundTenders(refunds),
     liability,
     asOf: new Date().toISOString(),
   });
@@ -461,14 +522,14 @@ export async function zReport(query: ZReportQuery): Promise<ZReport> {
   const { from, to } = salonDayBounds(query.date, query.timeZone);
   const soldAt = { gte: from, lt: to };
 
-  const [sales, lines, payments, voids, outstanding] = await Promise.all([
+  const [sales, lines, payments, voids, outstanding, refunds] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "COMPLETED", soldAt },
       select: { totalQuantity: true, totalAmount: true, paidAmount: true, taxAmount: true },
     }),
     prisma.saleLine.findMany({
       where: { sale: { status: "COMPLETED", soldAt } },
-      select: { discountAmount: true },
+      select: { discountAmount: true, voucherDiscountAmount: true },
     }),
     prisma.salePayment.findMany({
       where: { sale: { status: "COMPLETED", soldAt } },
@@ -484,6 +545,10 @@ export async function zReport(query: ZReportQuery): Promise<ZReport> {
       where: { sale: { soldAt } },
       select: { unpaidAmount: true },
     }),
+    prisma.saleRefund.findMany({
+      where: { refundedAt: soldAt },
+      select: { amount: true, payouts: true, sale: { select: { taxAmount: true } } },
+    }),
   ]);
 
   let netSales = 0n;
@@ -498,7 +563,8 @@ export async function zReport(query: ZReportQuery): Promise<ZReport> {
   }
 
   let discounts = 0n;
-  for (const line of lines) discounts = addMoney(discounts, line.discountAmount);
+  for (const line of lines)
+    discounts = addMoney(addMoney(discounts, line.discountAmount), line.voucherDiscountAmount);
 
   let collected = 0n;
   let redeemed = 0n;
@@ -517,6 +583,8 @@ export async function zReport(query: ZReportQuery): Promise<ZReport> {
   for (const row of outstanding)
     outstandingCreated = addMoney(outstandingCreated, row.unpaidAmount);
 
+  const refundAmount = refunds.reduce((sum, row) => addMoney(sum, row.amount), 0n);
+  const refundTax = refunds.reduce((sum, row) => addMoney(sum, row.sale.taxAmount), 0n);
   return zReportSchema.parse({
     date: query.date,
     timeZone: query.timeZone,
@@ -525,15 +593,17 @@ export async function zReport(query: ZReportQuery): Promise<ZReport> {
     totals: {
       grossSales: centsToMoney(netSales + discounts),
       discounts: centsToMoney(discounts),
-      netSales: centsToMoney(netSales),
-      tax: centsToMoney(tax),
+      refunds: centsToMoney(refundAmount),
+      netSales: centsToMoney(netSales - refundAmount),
+      tax: centsToMoney(tax - refundTax),
       paid: centsToMoney(paid),
-      collected: centsToMoney(collected),
+      collected: centsToMoney(collected - refundAmount),
       redeemed: centsToMoney(redeemed),
       sales: sales.length,
       items,
     },
     tenders: tenderSubtotals(payments),
+    refundTenders: refundTenders(refunds),
     voids: { count: voids.length, amount: centsToMoney(voidAmount) },
     outstandingCreated: centsToMoney(outstandingCreated),
     asOf: new Date().toISOString(),

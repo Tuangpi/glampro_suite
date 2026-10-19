@@ -254,7 +254,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0016 — P1-05 Customer profile page
 
-- Status: IN PROGRESS
+- Status: DONE
 - Expected result: Customer profile page: visit history, package & credit balances, notes, photos
 - Completion check / dependencies: Verify profile visits, package/credit balances, notes and photos with tenant permissions and privacy controls.
 - Carried-forward finding (ADR 0003): verify every customer email writer trims and
@@ -276,15 +276,64 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   succeeded on `glampro_suite` at `localhost:5432`; all 17 migrations applied,
   live schema diff empty; 6 staff, 10 customers, 13 appointments, 10 sales.
   Photo/notice/consent tables empty; configure notice and data consent for uploads.
-- Remaining: browser/visual UAT has not been performed. Keep IN PROGRESS; do not
-  mark TK2610-0016 complete externally or start TK2610-0017 yet.
+- Completion (October 19, 2026): user confirmed they tested the profile and accepted
+  it as complete, and explicitly requested continuation to POS upgrades. Combined
+  with the implementation/rollout checks above, TK2610-0016 is ready to mark Done
+  externally. Agent did not perform a browser walkthrough.
 
 ### TK2610-0017 — P1-07 POS upgrades
 
-- Status: Not assessed
+- Status: IN PROGRESS
 - Expected result: POS: discounts/vouchers, refunds/voids, tips, side-by-side cart, barcode scan
+- October 19 ADR 0020 continuation: voucher/refund schema, services, routes, payment
+  preview and receipt/refund UI implemented. Concurrent refund retries preserve
+  first audit data; refund/void share a row lock. Email receipts show net lines,
+  vouchers and refunds. API 358/358, web 411/411, shared 99/99; root build,
+  workspace typecheck and lint pass. Migration status: 18 applied, up to date.
+  L2 allocation formula/columns remain deferred, not invented. Recorded refunds
+  do not reconcile debt, holdings or report revenue; policy/UAT remain required.
+  No commit, deployment or external task update. See reconstructed ADR 0020.
 - Completion check / dependencies: Verify discounts, vouchers, refunds/voids, tips, side-by-side cart and barcode scanning. Resolve loyalty policy, held-sale identity/pricing/retry/listing issues, reversal integrity/receipt retention and cache/outstanding-balance issues (ADRs 0015–0017). A void is not a payment refund.
-- Next: audit current implementation against the full expected result and check.
+- October 19 audit: line percentage discounts, manager-only terminal whole-sale
+  voids and desktop side-by-side catalogue/cart exist. Inspected POS schema,
+  contracts, service and screen have no vouchers, tips, barcode lookup or payment
+  refund implementation. A void explicitly does not return money.
+- Confirmed carried gaps: resumed hold identity is component-only and lost on
+  reload; hold creation sends no idempotency key; held listing is limit-only;
+  void cache invalidation misses reports/customer views; voided short-tender
+  receipt still labels the difference Outstanding. Service awards catalogue
+  points times quantity despite ADR 0017's discounted-payable policy.
+- Verification: focused Sale and draft-storage output reports 28/28 passing;
+  terminal wrapper did not confirm clean exit. Missing holdings-query mock warning
+  remains. No database-backed test rerun or browser check during this audit.
+- Historical blocker resolved October 19: user approved L2 + E1 + R1 + A1 + P1
+  and authorized Act-mode implementation. Tip policy remains outside this slice.
+- Browser fixes verified October 19: resumed hold ID persists in tenant/user draft;
+  pressing Hold on a resumed hold does not create a duplicate; stored discounts
+  are reconstructed before preview to avoid double discount (including 100%).
+  Completed/void sale writes invalidate customer/report/dashboard views; voided
+  receipts retain paid history without an active Outstanding/Change claim and
+  explicitly distinguish a reversal from a money refund.
+- New verification: web 408/408 across 46 files, web typecheck and lint exit 0.
+  Holdings mock warning fixed. No browser UAT or API/database tests rerun for this
+  browser-only slice. No schema changes. Hold-create network retry idempotency,
+  list completeness, current-catalogue repricing and backend reversal/retention
+  concurrency remain unfinished; this task is not ready to mark Done externally.
+- Approved policy slice implemented October 19: forward migration for loyalty
+  snapshots, actual payout JSON and accounting adjustment markers; L2/E1 earning,
+  R1 eligibility, P1 split-payout dialog/validation and A1 refund-date reporting,
+  negative performance/unpaid commission rows, paid-commission reconciliation flags.
+  Preserve original sales, consumed vouchers and historical awards; retry/concurrency
+  guards cover the transaction. Legacy commission payment status requires reconciliation.
+- Next: remaining POS scope (historical browsing, tips/barcode,
+  hold integrity/completeness review). Keep IN PROGRESS; do not start TK2610-0018.
+- Policy verification: API 361/361, web 411/411, shared 100/100; root typecheck,
+  lint and build passed. Prisma valid, 19 migrations up to date, live schema diff
+  empty and git diff check clean. No browser UAT, commit or deployment.
+- Subsequent user acceptance, October 19, 2026: UAT accepted for the delivered
+  ADR 0020 voucher/refund and loyalty/refund-accounting policy slice. No agent
+  browser walkthrough. Remaining POS scope above is not completed or deferred
+  by this acceptance; TK2610-0017 stays IN PROGRESS. No commit or deployment.
 
 ### TK2610-0018 — P1-01 Calendar view: day/week, staff columns, drag-and-drop
 

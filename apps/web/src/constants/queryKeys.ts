@@ -42,6 +42,7 @@ export const queryKeys = {
     detail: (id: string) => ["sale", "detail", id] as const,
     /** The parked carts. One prefix, so a hold, a pickup and a discard all move it. */
     holds: () => ["sale", "holds"] as const,
+    history: () => ["sale", "history"] as const,
   },
 
   appointments: {
@@ -64,6 +65,7 @@ export const queryKeys = {
   },
 
   customers: {
+    all: () => ["customers"] as const,
     list: () => ["customers", "list"] as const,
     detail: (id: string) => ["customers", "detail", id] as const,
     /**
@@ -129,6 +131,7 @@ export const queryKeys = {
   },
 
   reports: {
+    all: () => ["reports"] as const,
     overview: () => ["reports", "overview"] as const,
     zReport: () => ["reports", "z-report"] as const,
   },

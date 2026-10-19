@@ -2,7 +2,9 @@
 
 ## Current State
 
-- Current task: TK2610-0016 / P1-05 customer profile is **IN PROGRESS**; browser/visual UAT remains. User-authorized local development reset and demo seed completed October 19: `glampro_suite` at `localhost:5432`, all 17 migrations applied including photos, schema diff empty; 6 staff, 10 customers, 13 appointments, 10 sales. Consent notices/events/photos empty; configure a notice and record data consent before uploading photos. Development reset/reseed standing permission is saved in PROJECT. Prior automated checks: API 351/351, web 404/404, shared 96/96; build/typecheck/lint pass. Four unchanged API formatting failures remain. Do not start TK2610-0017 yet.
+- Current task: TK2610-0017 / P1-07 POS upgrades is **IN PROGRESS**. ADR 0020 voucher/refund and L2 + E1 + R1 + A1 + P1 policy slice implemented; user accepted UAT on October 19, 2026. Additive migration applied locally (19 migrations). Original sales/awards preserved. Remaining POS scope: tips/barcode, historical browsing and hold integrity/completeness review. Acceptance does not establish completion or deferral of those items. Do not start TK2610-0018.
+- Latest checks (October 19): API 361/361, web 411/411, shared 100/100; root typecheck, lint and production build passed. Prisma validation passed, live schema diff empty (exit 0), migration status up to date, git diff check clean. User subsequently accepted UAT; no agent browser walkthrough, commit or deployment. Logs: `/tmp/pos-policy-*.log`.
+- Most recently completed: TK2610-0016 customer profile. On October 19 the user explicitly confirmed testing and acceptance, and requested POS upgrades. Prior rollout and automated checks remain historical evidence; no agent browser walkthrough. Ready to mark Done externally. Existing uncommitted implementation changes preserved.
 - Milestone verification (October 19): root production build, typecheck and workspace lint exit 0; web 392/392, shared 92/92 and pure demo-dataset 13/13 tests pass. Root formatting still fails on four unchanged API files. No database-backed API rerun or browser walkthrough; earlier API 339/339 is historical evidence. See the milestone handoff below for the readiness checklist and accepted demo limits.
 - Most recent work: TK2610-0012 / P0-06 reports (commit `18c973f`) audited against its completion check and signed off after UAT. The Z-report draws the salon-local day, counts voids by `voidedAt`, splits collected from redeemed and carries the snapshotted GST. The overview returns sales-by-day, top items, service and staff totals with commission, tender subtotals and a liability snapshot that excludes expired/exhausted holdings. ADR 0010 conflict closed: `?threshold=` filters only while row badges use the stored tenant threshold, with a new row-flag test. Verified: API 339/339, web 392/392 across 43 files, API typecheck/ESLint/scoped Prettier and web typecheck pass. That ADR 0010 edit and a Prettier re-wrap of `report.service.ts` are uncommitted.
 - Earlier: TK2610-0011 / P0-04 local payment methods and redemption. The four local rails are **recorded tenders** (`PAYNOW_SGQR`, `NETS`, `GRABPAY`, `ATOME`); `PACKAGE` and `PREPAID_CREDIT` are redemption tenders that carry a `holdingId`, draw the holding inside the sale transaction and are restored on void; `GET /api/customers/:id/holdings` feeds the payment sheet. Migration `20261019034125_local_payment_methods_and_redemption_holding` applied locally. ADR 0019 records both decisions (manual recording; credit is fungible). Committed as `c2274bc`.
@@ -16,6 +18,15 @@
 - Earlier records report P0-07, P0-08, P0-03 and P1-09 Done. This consolidation does not independently revalidate their product behavior.
 
 ## Unresolved decisions and carried-forward findings
+
+### October 19 — TK2610-0017 approved policy implementation
+
+- Added forward migration `20261019190000_pos_loyalty_refund_policy`; no historical recalculation or destructive reset. Loyalty input/result snapshots live on sale lines; payout evidence is nullable JSON on refunds for historical compatibility. Performance/commission adjustment markers and commission payment/reconciliation state are additive.
+- Service and UI enforce actual positive cent-exact payout splits. Server refuses debt, redemption or grant sales. Original completed sales/tenders and consumed vouchers stand; refund transaction appends points/performance/unpaid-commission reversals once. Paid commissions are flagged, not recovered. Reporting recognizes reversal dates and separates gross/refunds/net and incoming/outgoing tenders.
+- Verified all suites and build/type/lint/schema checks above. Added discounted/member/quantity flooring, zero-price, debt/tender independence, historical snapshots, eligibility refusal, exact split, paid commission and refund-period coverage; retained idempotency/concurrency tests. Browser test now submits actual split money methods.
+- Limitations: pre-policy commission records have no paid evidence; reconcile actual historical payouts before operational use. No payment/reconciliation management UI introduced. Item/service rankings remain gross after-discount sales; overall/day/staff figures reflect refund-date reversals. Historical refund payouts remain unknown rather than fabricated.
+- User accepted UAT for the delivered slice on October 19, 2026. This is user-reported acceptance, not an agent browser walkthrough. No additional runtime tests were run for this documentation-only update.
+- Next: remaining TK2610-0017 POS scope only; UAT for the delivered slice is accepted. TK2610-0018 not started.
 
 These are historical code-review findings, not fresh runtime reproductions. Verify
 against current code when starting the related task. No policy is changed here.
@@ -70,6 +81,65 @@ milestone review and disclosed limits. No external task system was changed.
 This approval does not sign off Phase 2 or final launch readiness.
 
 ## Recent handoffs
+
+### October 19, 2026 — TK2610-0017 ADR 0020 continuation
+
+- Finished voucher preview/apply/remove, tender retotaling and code submission.
+  Checkout blocks during preview; payment state remounts when cart/customer changes.
+- Added manager refund dialog with explicit stock choice and external-money notice.
+  Browser and email receipts disclose vouchers/refunds and voucher-adjusted lines.
+- Added shared/service/route/browser regressions. Refund retries are idempotent
+  under contention, point reversal is append-only, and refund/void share a sale lock.
+- Verified API 358/358, web 411/411, shared 99/99; root build, workspace typecheck
+  and lint pass. Migration status reports 18 migrations, database up to date.
+- Original ADR 0020 absent; added a clearly labeled reconstructed implementation
+  record under docs. L2 allocation formula/columns remain deferred; earning still
+  uses catalogue points × quantity. Refund debt/holding/report accounting needs
+  policy. No browser UAT, commit, deploy, reset or reseed in this continuation.
+- Task remains IN PROGRESS. Next: resolve L2 and refund accounting limits in ADR
+  0020 before production acceptance; do not start TK2610-0018.
+
+### October 19, 2026 — TK2610-0017 authorized browser bug-fix slice
+
+- User chose verified held-cart/cache/receipt fixes first; vouchers, tips, refunds
+  and loyalty changes remain blocked pending explicit policy.
+- Added backward-compatible optional resumed hold ID to tenant/user browser draft;
+  restored on page remount, cleared on completion/leave/discard. Re-parking a
+  resumed cart no longer creates another held row. Existing server hold is not
+  edited by Leave it held; local edits are still discarded by that explicit action.
+- Rebuilt held line pre-discount preview from stored unit price and line discount
+  divided by quantity; avoids applying the saved rate twice, including 100% off.
+  Still a historical quote, not a guarantee of current catalogue price.
+- Shared cache invalidation refreshes customer views (including holdings/history),
+  reports and dashboard after completion/void without clearing another open cart
+  on void. Voided receipt preserves paid history, suppresses active debt/change
+  and explicitly says money refunds are handled separately.
+- Web suite 408/408 across 46 files; web typecheck/lint exit 0. Added reload/hold,
+  10%/100% discount, storage isolation, cache invalidation and voided short tender
+  regressions. Fixed missing holdings fixture. Initial reload test needed to await
+  async cart hydration; corrected and reran full suite. No weakened assertions.
+- No schema/API changes, DB operations, browser UAT, commit or deployment. API
+  tests not rerun for browser-only changes. Retry idempotency, complete held listing,
+  current catalogue preview, backend reversal races/retention and financial policy
+  remain; TK2610-0017 stays BLOCKED, not externally Done.
+
+### October 19, 2026 — TK2610-0016 accepted; TK2610-0017 POS audit (BLOCKED)
+
+- User confirmed customer profile UAT acceptance and authorized POS continuation.
+  Marked TK2610-0016 DONE; no external tracker changed.
+- Inspected source DOCX POS requirements, ADRs 0015–0017, Prisma sale models,
+  shared sales contracts, sale service, POS screen/hooks, draft storage, receipt
+  and test names. Existing discounts, terminal voids and desktop two-column cart
+  do not satisfy missing vouchers/tips/barcode/refunds.
+- Confirmed component-only resumed hold ID, no hold-create idempotency key,
+  limit-only listing, narrow void cache refresh and voided Outstanding label.
+  Catalogue points remain unchanged by discounts, conflicting with ADR 0017.
+- Focused Vitest output: Sale 25/25 and draft storage 3/3, with undefined holdings
+  query mock warning; terminal wrapper closed without confirming exit status.
+  No API DB tests, browser walkthrough, database commands or application edits.
+- Await explicit policy for loyalty formula, voucher scope, tip allocation/tax
+  and refund scope/accounting. Do not silently equate void with refund or invent
+  tax policy. Preserve all existing uncommitted work; do not start TK2610-0018.
 
 ### October 19, 2026 — Authorized development database reset and demo seed
 

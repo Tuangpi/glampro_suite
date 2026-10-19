@@ -13,6 +13,7 @@
 import { Clock, Trash } from "@/components/icons";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import SaleListPagination from "@/components/sale/SaleListPagination";
 import EmptyState from "@/components/ui/EmptyState";
 import type { SaleSummary } from "@glampro_suite/shared";
 
@@ -32,6 +33,10 @@ export interface HeldCartsPanelProps {
   onPickUp: (id: string) => void;
   onDiscard: (id: string) => void;
   onRetry: () => void;
+  page: number;
+  hasMore: boolean;
+  isFetching: boolean;
+  onPageChange: (page: number) => void;
 }
 
 export default function HeldCartsPanel({
@@ -44,6 +49,10 @@ export default function HeldCartsPanel({
   onPickUp,
   onDiscard,
   onRetry,
+  page,
+  hasMore,
+  isFetching,
+  onPageChange,
 }: HeldCartsPanelProps) {
   const { formatDateTime, formatPrice } = useSalonFormatting();
   return (
@@ -122,6 +131,8 @@ export default function HeldCartsPanel({
           })}
         </ul>
       )}
+      <SaleListPagination page={page} hasMore={hasMore}
+        disabled={isFetching || isError || busyId !== null} onPageChange={onPageChange} />
     </Card>
   );
 }

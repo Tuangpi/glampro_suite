@@ -47,7 +47,9 @@ import CustomerPicker from "@/components/sale/CustomerPicker";
 import HeldCartsPanel from "@/components/sale/HeldCartsPanel";
 import PaymentDialog from "@/components/sale/PaymentDialog";
 import ReceiptView from "@/components/sale/ReceiptView";
+import RefundSaleDialog from "@/components/sale/RefundSaleDialog";
 import SaleItemGrid from "@/components/sale/SaleItemGrid";
+import SaleHistoryPanel from "@/components/sale/SaleHistoryPanel";
 import VoidSaleDialog from "@/components/sale/VoidSaleDialog";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -55,6 +57,7 @@ import Tabs from "@/components/ui/Tabs";
 import { showToast } from "@/components/ui/toast-store";
 import { SALE_KIND_LABELS, VOID_SALE_ROLES } from "@/constants/sale";
 import { useAuth } from "@/contexts/AuthContext";
+import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useServiceList } from "@/hooks/useServices";
 import { useStaffList } from "@/hooks/useStaff";
 import {
@@ -66,6 +69,7 @@ import {
   useDiscardHold,
   useHeldSales,
   useHoldSale,
+  useRefundSale,
   useResumeHold,
   useSaleCart,
   useSaleItems,
@@ -73,7 +77,12 @@ import {
 } from "@/hooks/useSale";
 import { getErrorMessage } from "@/lib/api";
 import { cartTotalCents, priceToCents } from "@/lib/money";
-import { readSaleDraft, saleDraftIdentity, setSaleDraftCustomer } from "@/lib/sale-draft-storage";
+import {
+  readSaleDraft,
+  saleDraftIdentity,
+  setSaleDraftCustomer,
+  setSaleDraftHeldSale,
+} from "@/lib/sale-draft-storage";
 
 /**
  * How many rows a picker reads. The number `AppointmentFormDrawer` uses, and for
@@ -105,12 +114,23 @@ export default function Sale() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<SaleDetail | null>(null);
+  const [historicalReceipt, setHistoricalReceipt] = useState(false);
+  const [heldPage, setHeldPage] = useState(1);
   /** The parked cart this till is ringing up, or `null` for an ordinary sale. */
-  const [heldSaleId, setHeldSaleId] = useState<string | null>(null);
+  const [heldSaleId, updateHeldSaleId] = useState<string | null>(
+    () => readSaleDraft(draftIdentity).heldSaleId ?? null,
+  );
+  function setHeldSaleId(id: string | null) {
+    setSaleDraftHeldSale(draftIdentity, id);
+    updateHeldSaleId(id);
+  }
   /** The hold whose pickup or discard is in flight, so that row's buttons wait. */
   const [busyHoldId, setBusyHoldId] = useState<string | null>(null);
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidError, setVoidError] = useState<string | null>(null);
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
+  const { formatPrice } = useSalonFormatting();
 
   // Typing should not fire a query per keystroke, but the box must still feel
   // immediate, so the term is debounced rather than submitted.
@@ -133,8 +153,9 @@ export default function Sale() {
   const completeSale = useCompleteSale();
   const resumeHold = useResumeHold();
   const discardHold = useDiscardHold();
-  const heldCarts = useHeldSales();
+  const heldCarts = useHeldSales(heldPage);
   const voidSale = useVoidSale();
+  const refundSale = useRefundSale();
 
   /**
    * Whether this user may void a receipt (ADR 0016).
@@ -143,6 +164,8 @@ export default function Sale() {
    * the server is what enforces it, and a button that always 403s is worse than none.
    */
   const canVoid = user !== null && VOID_SALE_ROLES.includes(user.globalRole);
+  /** The same manager gate the refund route enforces (ADR 0020), mirroring it for the UI. */
+  const canRefund = canVoid;
   // No `kind` filter: one request answers every searchable kind, and the response
   // names the kinds this salon may sell. See the module comment.
   const items = useSaleItems({ search: search || undefined });
@@ -212,12 +235,17 @@ export default function Sale() {
     setCheckoutOpen(true);
   }
 
-  async function takePayment(payments: SalePaymentInput[], idempotencyKey: string) {
+  async function takePayment(
+    payments: SalePaymentInput[],
+    idempotencyKey: string,
+    voucherCode: string | null,
+  ) {
     setCheckoutError(null);
     const cartBody = {
       ...(customer ? { customerId: customer.id } : {}),
       lines: toSaleLineInputs(cart.lines),
       payments,
+      ...(voucherCode === null ? {} : { voucherCode }),
     };
     try {
       // A parked cart is **rung up**, not re-posted: the same row takes the money, so
@@ -256,6 +284,10 @@ export default function Sale() {
    * refuses a hold that carries one — so the checkout dialog never opens on this path.
    */
   async function holdCart() {
+    if (heldSaleId) {
+      showToast("info", "This cart is already held. Take payment or leave it held.");
+      return;
+    }
     if (isReadOnly) {
       showToast("error", "This salon's subscription is suspended, so the till cannot take money.");
       return;
@@ -338,6 +370,31 @@ export default function Sale() {
     }
   }
 
+  /**
+   * Records a full-sale refund (ADR 0020).
+   *
+   * The amount is the sale's, not the dialog's: this sends the reason and whether the
+   * goods came back, and the server answers with the same receipt now carrying the
+   * refund. The screen redraws from that row, exactly as it does after a void.
+   */
+  async function refundReceipt(input: import("@glampro_suite/shared").RefundSaleInput) {
+    if (!receipt) return;
+    setRefundError(null);
+    try {
+      const refunded = await refundSale.mutateAsync({ saleId: receipt.id, input });
+      setRefundOpen(false);
+      setReceipt(refunded);
+      showToast(
+        "info",
+        refunded.receiptNumber === null
+          ? "Refund recorded."
+          : `Refund recorded against receipt #${refunded.receiptNumber}.`,
+      );
+    } catch (error) {
+      setRefundError(getErrorMessage(error));
+    }
+  }
+
   /** Back to an empty till. The cart is already empty — the sale consumed it. */
   function startNewSale() {
     setReceipt(null);
@@ -347,6 +404,8 @@ export default function Sale() {
     setHeldSaleId(null);
     setVoidOpen(false);
     setVoidError(null);
+    setRefundOpen(false);
+    setRefundError(null);
     setSearchInput("");
     setSearch("");
     setKind("SERVICE");
@@ -378,7 +437,7 @@ export default function Sale() {
         <h2 className="text-xl">Sale</h2>
         <p className="mt-1 text-sm text-ink-muted">
           {receipt
-            ? "Sale complete. Review your receipt below."
+            ? historicalReceipt ? "Stored sale receipt. Your current cart is unchanged." : "Sale complete. Review your receipt below."
             : "Add services and products to the cart, then take payment."}
         </p>
       </header>
@@ -388,12 +447,23 @@ export default function Sale() {
         <>
           <ReceiptView
             sale={receipt}
-            onNewSale={startNewSale}
-            customerEmail={customer?.email ?? null}
-            canVoid={canVoid}
+            onNewSale={historicalReceipt ? () => {
+              setReceipt(null);
+              setHistoricalReceipt(false);
+              setVoidOpen(false);
+              setRefundOpen(false);
+            } : startNewSale}
+            returnLabel={historicalReceipt ? "Back to cart" : "New sale"}
+            customerEmail={historicalReceipt ? null : customer?.email ?? null}
+            canVoid={canVoid && !isReadOnly}
             onVoid={() => {
               setVoidError(null);
               setVoidOpen(true);
+            }}
+            canRefund={canRefund && !isReadOnly}
+            onRefund={() => {
+              setRefundError(null);
+              setRefundOpen(true);
             }}
           />
 
@@ -408,10 +478,28 @@ export default function Sale() {
               onConfirm={(reason) => void voidReceipt(reason)}
             />
           ) : null}
+
+          {refundOpen ? (
+            <RefundSaleDialog
+              receiptLabel={
+                receipt.receiptNumber === null ? "This sale" : `Receipt #${receipt.receiptNumber}`
+              }
+              amountLabel={formatPrice(receipt.totalAmount)}
+              amount={receipt.totalAmount}
+              isPending={refundSale.isPending}
+              errorMessage={refundError}
+              onClose={() => setRefundOpen(false)}
+              onConfirm={(input) => void refundReceipt(input)}
+            />
+          ) : null}
         </>
       ) : (
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="flex flex-col gap-4">
+            <SaleHistoryPanel onOpen={(sale) => {
+              setHistoricalReceipt(true);
+              setReceipt(sale);
+            }} />
             <Card
               title="Customer"
               description="A walk-in sale needs nobody. A package, a card or prepaid credit does."
@@ -513,6 +601,10 @@ export default function Sale() {
               onPickUp={(id) => void pickUpHold(id)}
               onDiscard={(id) => void discardHeldCart(id)}
               onRetry={() => void heldCarts.refetch()}
+              page={heldPage}
+              hasMore={heldCarts.data?.hasMore ?? false}
+              isFetching={heldCarts.isFetching}
+              onPageChange={setHeldPage}
             />
           </div>
         </div>
@@ -520,6 +612,7 @@ export default function Sale() {
 
       {checkoutOpen ? (
         <PaymentDialog
+          key={JSON.stringify([cart.lines, customer?.id, isMember])}
           totalCents={totalCents}
           lines={cart.lines.map((line) => ({
             itemType: line.itemType,
@@ -530,10 +623,11 @@ export default function Sale() {
           customerId={customer?.id ?? null}
           hasCustomer={customer !== null}
           needsCustomer={needsCustomer}
+          hasManualDiscount={cart.lines.some((line) => (line.discountPercent ?? 0) > 0)}
           isPending={createSale.isPending || completeSale.isPending}
           errorMessage={checkoutError}
           onClose={() => setCheckoutOpen(false)}
-          onConfirm={(payments, key) => void takePayment(payments, key)}
+          onConfirm={(payments, key, voucherCode) => void takePayment(payments, key, voucherCode)}
         />
       ) : null}
     </div>

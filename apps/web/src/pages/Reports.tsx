@@ -193,8 +193,22 @@ export default function Reports() {
         <StatTile
           icon={<BarChart />}
           value={undefined}
+          display={data ? formatPrice(data.totals.grossSales) : undefined}
+          label="Gross sales"
+          tone="neutral"
+        />
+        <StatTile
+          icon={<BarChart />}
+          value={undefined}
+          display={data ? formatPrice(data.totals.refunds) : undefined}
+          label="Refunds"
+          tone="warning"
+        />
+        <StatTile
+          icon={<BarChart />}
+          value={undefined}
           display={data ? formatPrice(data.totals.revenue) : undefined}
-          label="Revenue"
+          label="Net revenue"
           tone="purple"
         />
         <StatTile
@@ -226,6 +240,12 @@ export default function Reports() {
           tone="neutral"
         />
       </section>
+      {data?.totals.commissionReconciliation ? (
+        <p role="status" className="text-sm text-ink-body">
+          {data.totals.commissionReconciliation} paid commission adjustment(s) require
+          reconciliation. No recovery has been recorded.
+        </p>
+      ) : null}
 
       <Card
         title="Daily close"
@@ -250,6 +270,7 @@ export default function Reports() {
           <div className="flex flex-col gap-4">
             <dl className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-6">
               <Figure label="Gross sales" value={formatPrice(closeData.totals.grossSales)} />
+              <Figure label="Refunds" value={formatPrice(closeData.totals.refunds)} />
               <Figure label="Discounts" value={formatPrice(closeData.totals.discounts)} />
               <Figure label="Net sales" value={formatPrice(closeData.totals.netSales)} />
               <Figure label="GST included" value={formatPrice(closeData.totals.tax)} />
@@ -282,6 +303,14 @@ export default function Reports() {
                   />
                 }
               />
+              {(closeData.refundTenders ?? []).length > 0 ? (
+                <Table
+                  caption="Daily refund payouts"
+                  columns={tenderColumns}
+                  rows={closeData.refundTenders}
+                  rowKey={(row) => row.method}
+                />
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -384,6 +413,19 @@ export default function Reports() {
                   icon={<Users />}
                 />
               }
+            />
+          </Card>
+          <Card
+            title="Refund payouts"
+            description="Actual money returned in this range; historical refunds may have no tender evidence."
+            flush
+          >
+            <Table
+              caption="Refund payout totals"
+              columns={tenderColumns}
+              rows={data?.refundTenders ?? []}
+              rowKey={(row) => row.method}
+              className="rounded-none border-0"
             />
           </Card>
           <Card

@@ -726,6 +726,107 @@ describe(
      * both. A test that only checked "POST with hold returns 201" would pass with the
      * whole distinction gone.
      */
+    describe("voucher campaigns and recorded refunds", () => {
+      it("restricts publishing and refunds to managers, and completes a voucher sale", async () => {
+        const campaign = {
+          code: "route-ten",
+          discountType: "PERCENTAGE",
+          value: 10,
+          startsAt: new Date(Date.now() - 60_000).toISOString(),
+          endsAt: new Date(Date.now() + 3_600_000).toISOString(),
+        };
+        assert.equal((await send("POST", "/api/vouchers", campaign, cashierToken)).status, 403);
+        const published = await send("POST", "/api/vouchers", campaign, token);
+        assert.equal(published.status, 201);
+        const voucher = await dataOf<{ id: string; code: string }>(published);
+        assert.equal(voucher.code, "ROUTE-TEN");
+        assert.equal((await send("POST", "/api/vouchers", campaign, token)).status, 409);
+        const itemId = await seededIdOf("SERVICE");
+        const lines = [{ itemType: "SERVICE", itemId, quantity: 1 }];
+        const quoted = await send(
+          "POST",
+          "/api/sales/voucher-preview",
+          { voucherCode: voucher.code, lines },
+          cashierToken,
+        );
+        assert.equal(quoted.status, 200);
+        assert.equal((await dataOf<{ totalAmount: string }>(quoted)).totalAmount, "45.00");
+        const invalid = await send(
+          "POST",
+          "/api/sales",
+          {
+            voucherCode: voucher.code,
+            lines: [{ ...lines[0], discountPercent: 10 }],
+            payments: [],
+          },
+          token,
+        );
+        assert.equal(invalid.status, 422);
+        const created = await send(
+          "POST",
+          "/api/sales",
+          {
+            voucherCode: voucher.code,
+            lines,
+            payments: [{ method: "CASH", amount: 45 }],
+          },
+          token,
+        );
+        assert.equal(created.status, 201);
+        const sale = await dataOf<{
+          id: string;
+          totalAmount: string;
+          voucherDiscountAmount: string;
+        }>(created);
+        assert.equal(sale.totalAmount, "45.00");
+        assert.equal(sale.voucherDiscountAmount, "5.00");
+        assert.equal(
+          (
+            await send(
+              "POST",
+              `/api/sales/${sale.id}/refund`,
+              { reason: "Returned", payouts: [{ method: "CASH", amount: 45 }], restock: false },
+              cashierToken,
+            )
+          ).status,
+          403,
+        );
+        assert.equal(
+          (await send("POST", `/api/sales/${sale.id}/refund`, { reason: "Returned" }, token))
+            .status,
+          422,
+        );
+        const refunded = await send(
+          "POST",
+          `/api/sales/${sale.id}/refund`,
+          {
+            reason: "Returned",
+            payouts: [{ method: "CASH", amount: 45 }],
+            restock: false,
+            amount: 999,
+          },
+          token,
+        );
+        assert.equal(refunded.status, 200);
+        const record = await dataOf<{
+          refundAmount: string;
+          refundedByName: string;
+          status: string;
+        }>(refunded);
+        assert.equal(record.refundAmount, "45.00");
+        assert.equal(record.refundedByName, "Ola Owner");
+        assert.equal(record.status, "COMPLETED");
+        const campaignAfter = await dataOf<{ redeemedCount: number }>(
+          await request("GET", `/api/vouchers/${voucher.id}`, token),
+        );
+        assert.equal(
+          campaignAfter.redeemedCount,
+          1,
+          "a refund must not restore voucher availability",
+        );
+      });
+    });
+
     describe("parking a cart and picking it up again", () => {
       /** The cart the tests below pick up, parked by the first of them. */
       let parked: ReceiptBody | undefined;
@@ -1322,7 +1423,7 @@ describe(
           }),
         );
         assert.equal(performance.amount.toFixed(2), "25.00");
-        assert.equal(receipt.pointsEarned, 5, "points are per unit and do not scale with money");
+        assert.equal(receipt.pointsEarned, 2, "discounted points are rounded down per line");
 
         // And a discounted sale still voids, reversing the discounted figures.
         const voided = await dataOf<ReceiptBody>(

@@ -47,7 +47,15 @@ import {
 import { SaleLineItemType } from "../../generated/prisma/enums.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
-import { createSale, getSale, searchSaleItems, voidSale } from "./sale.service.js";
+import {
+  completeSale,
+  createSale,
+  getSale,
+  previewVoucher,
+  refundSale,
+  searchSaleItems,
+  voidSale,
+} from "./sale.service.js";
 
 const databaseUrl = process.env["DATABASE_URL"];
 
@@ -636,6 +644,385 @@ describe(
       assert.equal(receipt.lines[0]?.unitPrice, "50.00");
       assert.equal(receipt.lines[0]?.lineTotal, "100.00");
       assert.equal(receipt.paymentStatus, "PAID");
+    });
+
+    it("previews a voucher without consuming it, and snapshots the discount on completion", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const voucher = await prisma.voucher.create({
+          data: {
+            tenantId: TENANT_A,
+            code: "POS-TEN",
+            discountType: "PERCENTAGE",
+            value: 10,
+            startsAt: new Date(Date.now() - 60_000),
+            endsAt: new Date(Date.now() + 3_600_000),
+          },
+        });
+        const lines = [{ itemType: "SERVICE" as const, itemId, quantity: 2 }];
+        const preview = await previewVoucher({ voucherCode: voucher.code, lines });
+        assert.equal(preview.totalAmount, "90.00");
+        assert.equal(preview.discountAmount, "10.00");
+        assert.equal(
+          (await prisma.voucher.findFirstOrThrow({ where: { id: voucher.id } })).redeemedCount,
+          0,
+        );
+        const sale = await createSale({
+          voucherCode: voucher.code,
+          customerId: await customerIdOf(TENANT_A, false),
+          lines,
+          payments: [{ method: "CASH", amount: 90 }],
+        });
+        assert.equal(sale.voucherCode, voucher.code);
+        assert.equal(sale.totalAmount, "90.00");
+        assert.equal(sale.pointsEarned, 9, "voucher allocation scales the catalogue points");
+        assert.equal(sale.lines[0]?.netLineTotal, "90.00");
+        assert.equal(sale.lines[0]?.lineTotal, "100.00");
+        assert.equal(
+          (await prisma.voucher.findFirstOrThrow({ where: { id: voucher.id } })).redeemedCount,
+          1,
+        );
+        await voidSale(sale.id, { reason: "Voucher test reversal" }, await staffIdOf(TENANT_A));
+        assert.equal(
+          (await prisma.voucher.findFirstOrThrow({ where: { id: voucher.id } })).redeemedCount,
+          0,
+        );
+      });
+    });
+
+    it("refuses mixed discounts in both direct sales and held-sale completion", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const lines = [{ itemType: "SERVICE" as const, itemId, quantity: 1, discountPercent: 10 }];
+        const input = {
+          lines,
+          voucherCode: "POS-TEN",
+          payments: [{ method: "CASH" as const, amount: 45 }],
+        };
+        await assert.rejects(createSale(input), hasCode("VOUCHER_WITH_MANUAL_DISCOUNT"));
+        const held = await createSale({ lines, payments: [], hold: true });
+        await assert.rejects(completeSale(held.id, input), hasCode("VOUCHER_WITH_MANUAL_DISCOUNT"));
+        assert.equal((await getSale(held.id)).status, "HELD");
+      });
+    });
+
+    it("allows only one sale to consume a campaign's final redemption", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const voucher = await prisma.voucher.create({
+          data: {
+            tenantId: TENANT_A,
+            code: "POS-LAST",
+            discountType: "FIXED",
+            value: 5,
+            maxRedemptions: 1,
+            startsAt: new Date(Date.now() - 60_000),
+            endsAt: new Date(Date.now() + 3_600_000),
+          },
+        });
+        const input = {
+          voucherCode: voucher.code,
+          lines: [{ itemType: "SERVICE" as const, itemId, quantity: 1 }],
+          payments: [{ method: "CASH" as const, amount: 45 }],
+        };
+        const attempts = await Promise.allSettled([createSale(input), createSale(input)]);
+        assert.equal(attempts.filter((result) => result.status === "fulfilled").length, 1);
+        const rejected = attempts.find((result) => result.status === "rejected");
+        assert.ok(rejected?.status === "rejected");
+        assert.ok(hasCode("VOUCHER_REDEMPTION_LIMIT_REACHED")(rejected.reason));
+        assert.equal(
+          (await prisma.voucher.findFirstOrThrow({ where: { id: voucher.id } })).redeemedCount,
+          1,
+        );
+        assert.equal(await prisma.voucherRedemption.count({ where: { voucherId: voucher.id } }), 1);
+      });
+    });
+
+    it("never records both a void and a refund when they race", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const actor = await staffIdOf(TENANT_A);
+        const sale = await createSale({
+          lines: [{ itemType: "SERVICE", itemId, quantity: 1 }],
+          payments: [{ method: "CASH", amount: 50 }],
+        });
+        const results = await Promise.allSettled([
+          refundSale(
+            sale.id,
+            { payouts: [{ method: "CASH", amount: 50 }], reason: "Refund race", restock: false },
+            actor,
+          ),
+          voidSale(sale.id, { reason: "Void race" }, actor),
+        ]);
+        assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+        const current = await getSale(sale.id);
+        assert.ok(
+          current.status === "VOID" ? current.refundedAt === null : current.refundedAt !== null,
+        );
+      });
+    });
+
+    it("records a refund once under concurrent retries, offsets points and preserves the receipt", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const customerId = await customerIdOf(TENANT_A, false);
+        const actorId = await staffIdOf(TENANT_A);
+        const product = await prisma.product.create({
+          data: {
+            tenantId: TENANT_A,
+            name: "Refund fixture",
+            quantity: 4,
+            memberPrice: 10,
+            nonmemberPrice: 10,
+            points: 3,
+          },
+        });
+        const sale = await createSale({
+          customerId,
+          lines: [{ itemType: "PRODUCT", itemId: product.id, quantity: 2 }],
+          payments: [{ method: "CASH", amount: 20 }],
+        });
+        const results = await Promise.all(
+          [1, 2].map(() =>
+            refundSale(
+              sale.id,
+              {
+                payouts: [{ method: "CASH", amount: 20 }],
+                reason: "Goods returned",
+                restock: true,
+              },
+              actorId,
+            ),
+          ),
+        );
+        for (const refunded of results) {
+          assert.equal(refunded.status, "COMPLETED");
+          assert.equal(refunded.receiptNumber, sale.receiptNumber);
+          assert.deepEqual(refunded.payments, sale.payments);
+          assert.equal(refunded.refundAmount, "20.00");
+          assert.equal(refunded.pointsEarned, 0);
+        }
+        assert.equal(
+          (await prisma.product.findFirstOrThrow({ where: { id: product.id } })).quantity,
+          4,
+        );
+        assert.equal(await prisma.saleRefund.count({ where: { saleId: sale.id } }), 1);
+        assert.deepEqual(
+          (
+            await prisma.customerPoint.findMany({
+              where: { saleId: sale.id },
+              orderBy: { createdAt: "asc" },
+            })
+          ).map((row) => row.point),
+          [6, -6],
+        );
+        const retry = await refundSale(
+          sale.id,
+          {
+            payouts: [{ method: "CASH", amount: 20 }],
+            reason: "A different reason",
+            restock: false,
+          },
+          actorId,
+        );
+        assert.equal(retry.refundReason, "Goods returned");
+        await assert.rejects(
+          voidSale(sale.id, { reason: "Cannot reverse twice" }, actorId),
+          hasCode("SALE_ALREADY_REFUNDED"),
+        );
+        await assert.rejects(
+          runAsTenant(TENANT_B, () =>
+            refundSale(
+              sale.id,
+              { payouts: [{ method: "CASH", amount: 20 }], reason: "Foreign sale", restock: false },
+              actorId,
+            ),
+          ),
+          hasCode("SALE_NOT_FOUND"),
+        );
+      });
+    });
+
+    it("snapshots per-line discounted points, floors after quantity, and preserves history", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const customerId = await customerIdOf(TENANT_A, true);
+        const product = await prisma.product.create({
+          data: {
+            tenantId: TENANT_A,
+            name: "L2 points snapshot",
+            quantity: 20,
+            memberPrice: 10,
+            nonmemberPrice: 20,
+            points: 5,
+          },
+        });
+        const sale = await createSale({
+          customerId,
+          lines: [{ itemType: "PRODUCT", itemId: product.id, quantity: 3, discountPercent: 50 }],
+          payments: [],
+        });
+        assert.equal(sale.pointsEarned, 7);
+        assert.equal(sale.outstandingAmount, "15.00", "E1 awards points even on debt");
+        const line = await prisma.saleLine.findFirstOrThrow({ where: { saleId: sale.id } });
+        assert.equal(line.loyaltyBasePoints, 15);
+        assert.equal(line.loyaltyOriginalAmount?.toFixed(2), "30.00");
+        assert.equal(line.loyaltyNetAmount?.toFixed(2), "15.00");
+        assert.equal(line.loyaltyAwardedPoints, 7);
+        await prisma.product.update({
+          where: { id: product.id },
+          data: { points: 100, memberPrice: 30 },
+        });
+        assert.equal((await getSale(sale.id)).pointsEarned, 7);
+        assert.equal(
+          (await voidSale(sale.id, { reason: "Snapshot reversal" }, await staffIdOf(TENANT_A)))
+            .pointsEarned,
+          0,
+        );
+        const free = await createSale({
+          customerId,
+          lines: [{ itemType: "PRODUCT", itemId: product.id, quantity: 1, discountPercent: 100 }],
+          payments: [],
+        });
+        assert.equal(free.pointsEarned, 0);
+        await prisma.product.update({ where: { id: product.id }, data: { memberPrice: 0 } });
+        const zero = await createSale({
+          customerId,
+          lines: [{ itemType: "PRODUCT", itemId: product.id, quantity: 1 }],
+          payments: [],
+        });
+        assert.equal(zero.pointsEarned, 0);
+      });
+    });
+
+    it("rejects debt, non-money funding and grants, and validates exact split payouts", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const customerId = await customerIdOf(TENANT_A, false);
+        const actor = await staffIdOf(TENANT_A);
+        const input = {
+          reason: "Returned money",
+          restock: false,
+          payouts: [{ method: "CASH" as const, amount: 50 }],
+        };
+        const debt = await createSale({
+          customerId,
+          lines: [{ itemType: "SERVICE", itemId, quantity: 1 }],
+          payments: [{ method: "CASH", amount: 20 }],
+        });
+        await assert.rejects(refundSale(debt.id, input, actor), hasCode("SALE_NOT_REFUNDABLE"));
+        const sale = await createSale({
+          lines: [{ itemType: "SERVICE", itemId, quantity: 1 }],
+          payments: [{ method: "CARD", amount: 50 }],
+        });
+        await assert.rejects(
+          refundSale(sale.id, { ...input, payouts: [{ method: "CASH", amount: 49.99 }] }, actor),
+          hasCode("REFUND_PAYOUT_MISMATCH"),
+        );
+        assert.equal(await prisma.saleRefund.count({ where: { saleId: sale.id } }), 0);
+        await prisma.salePayment.updateMany({
+          where: { saleId: sale.id },
+          data: { method: "PREPAID_CREDIT" },
+        });
+        await assert.rejects(refundSale(sale.id, input, actor), hasCode("SALE_NOT_REFUNDABLE"));
+        await prisma.salePayment.updateMany({
+          where: { saleId: sale.id },
+          data: { method: "CARD" },
+        });
+        await prisma.saleLine.updateMany({
+          where: { saleId: sale.id },
+          data: { itemType: "GIFT_CARD" },
+        });
+        await assert.rejects(refundSale(sale.id, input, actor), hasCode("SALE_NOT_REFUNDABLE"));
+        await prisma.saleLine.updateMany({
+          where: { saleId: sale.id },
+          data: { itemType: "SERVICE" },
+        });
+        const refunded = await refundSale(
+          sale.id,
+          {
+            ...input,
+            payouts: [
+              { method: "CASH", amount: 20 },
+              { method: "CARD", amount: 30 },
+            ],
+          },
+          actor,
+        );
+        assert.deepEqual(refunded.refundPayouts, [
+          { method: "CASH", amount: "20.00" },
+          { method: "CARD", amount: "30.00" },
+        ]);
+      });
+    });
+
+    it("appends performance and unpaid commission reversals, flags paid commission, and reports on refund date", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const actor = await staffIdOf(TENANT_A);
+        const sale = await createSale({
+          lines: [{ itemType: "SERVICE", itemId, quantity: 1, staffId: actor }],
+          payments: [{ method: "CASH", amount: 50 }],
+        });
+        await prisma.sale.update({
+          where: { id: sale.id },
+          data: { soldAt: new Date("2020-01-01T12:00:00Z") },
+        });
+        await prisma.employeeCommission.create({
+          data: { tenantId: TENANT_A, saleId: sale.id, userId: actor, rate: 10, amount: 5 },
+        });
+        const paid = await prisma.employeeCommission.create({
+          data: {
+            tenantId: TENANT_A,
+            saleId: sale.id,
+            userId: actor,
+            rate: 10,
+            amount: 5,
+            paidAt: new Date(),
+          },
+        });
+        const input = {
+          reason: "Money returned",
+          restock: false,
+          payouts: [{ method: "CASH" as const, amount: 50 }],
+        };
+        const refund = await refundSale(sale.id, input, actor);
+        await refundSale(sale.id, input, actor);
+        const performance = await prisma.employeePerformance.findMany({
+          where: { saleId: sale.id },
+        });
+        assert.equal(performance.length, 2);
+        assert.equal(
+          performance.reduce((sum, row) => sum + Number(row.amount), 0),
+          0,
+        );
+        const commissions = await prisma.employeeCommission.findMany({
+          where: { saleId: sale.id },
+        });
+        assert.equal(commissions.length, 3);
+        assert.equal(commissions.find((row) => row.refundAdjustment)?.amount.toFixed(2), "-5.00");
+        assert.equal(commissions.find((row) => row.id === paid.id)?.reconciliationRequired, true);
+        const { reportOverview, zReport } = await import("./report.service.js");
+        const day = refund.refundedAt!.slice(0, 10);
+        const report = await reportOverview({
+          from: `${day}T00:00:00Z`,
+          to: `${day}T23:59:59.999Z`,
+          timeZone: "UTC",
+        });
+        assert.ok(Number(report.totals.refunds) >= 50);
+        assert.equal(report.totals.commissionReconciliation, 1);
+        assert.ok(report.refundTenders.some((row) => row.method === "CASH"));
+        assert.ok(
+          report.staffPerformance.some((row) => row.userId === actor && Number(row.revenue) < 0),
+        );
+        const close = await zReport({ date: day, timeZone: "UTC" });
+        assert.equal(close.totals.refunds, report.totals.refunds);
+        const historical = await reportOverview({
+          from: "2020-01-01T00:00:00Z",
+          to: "2020-01-01T23:59:59Z",
+          timeZone: "UTC",
+        });
+        assert.equal(historical.totals.revenue, "50.00");
+        assert.equal(historical.totals.refunds, "0.00");
+      });
     });
 
     it("gives a member the member price and an ordinary customer the other one", async () => {

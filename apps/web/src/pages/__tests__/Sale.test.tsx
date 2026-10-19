@@ -72,6 +72,7 @@ vi.mock("@/contexts/AuthContext", () => ({
 }));
 
 const { default: Sale } = await import("@/pages/Sale");
+const { cartLinesFrom, lineUnitPrice } = await import("@/hooks/useSale");
 
 const SERVICE = {
   kind: "SERVICE",
@@ -160,6 +161,14 @@ function receipt(overrides: Partial<SaleDetail> = {}): SaleDetail {
     taxAmount: "6.61",
     taxRate: "9.00",
     gstRegistrationNumber: "GST-123",
+    voucherCode: null,
+    voucherDiscountAmount: "0.00",
+    refundedAt: null,
+    refundAmount: null,
+    refundReason: null,
+    refundedByName: null,
+    refundRestocked: null,
+    refundPayouts: [],
     outstandingAmount: "0.00",
     pointsEarned: 5,
     lines: [
@@ -173,6 +182,8 @@ function receipt(overrides: Partial<SaleDetail> = {}): SaleDetail {
         lineTotal: "80.00",
         discountPercent: "0.00",
         discountAmount: "0.00",
+        voucherDiscountAmount: "0.00",
+        netLineTotal: "80.00",
         taxAmount: "6.61",
         taxRate: "9.00",
         staffId: null,
@@ -184,9 +195,9 @@ function receipt(overrides: Partial<SaleDetail> = {}): SaleDetail {
   };
 }
 
-function renderSale() {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-
+function renderSale(
+  queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+) {
   return render(
     <QueryClientProvider client={queryClient}>
       <Sale />
@@ -212,6 +223,125 @@ beforeEach(() => {
   // list, a held cart and its customer.
   get.mockReset().mockResolvedValue({ items: [] });
   del.mockReset().mockResolvedValue({ id: "sale-9" });
+});
+
+describe("vouchers and recorded refunds", () => {
+  const preview = {
+    code: "SAVE10",
+    description: null,
+    discountType: "PERCENTAGE",
+    value: "10.00",
+    discountAmount: "8.00",
+    eligibleTotal: "80.00",
+    totalAmount: "72.00",
+    minSpend: "0.00",
+    endsAt: "2027-01-01T00:00:00.000Z",
+  };
+
+  it("applies the server quote, updates the tender and submits only the voucher code", async () => {
+    const user = userEvent.setup();
+    post.mockImplementation(async (path: string) =>
+      path === "/sales/voucher-preview" ? preview : receipt({ totalAmount: "72.00" }),
+    );
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.type(screen.getByRole("textbox", { name: "Voucher code" }), "save10");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    await screen.findByText(/SAVE10 applied/);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    );
+    expect(post).toHaveBeenLastCalledWith(
+      "/sales",
+      expect.objectContaining({
+        voucherCode: "SAVE10",
+        payments: [{ method: "CASH", amount: 72 }],
+      }),
+    );
+  });
+
+  it("blocks payment during preview and restores the original tender when removed", async () => {
+    const user = userEvent.setup();
+    let resolvePreview!: (value: typeof preview) => void;
+    post.mockImplementation((path: string) =>
+      path === "/sales/voucher-preview"
+        ? new Promise((resolve) => {
+            resolvePreview = resolve;
+          })
+        : Promise.resolve(receipt()),
+    );
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.type(screen.getByRole("textbox", { name: "Voucher code" }), "SAVE10");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+    expect(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    ).toBeDisabled();
+    resolvePreview(preview);
+    await screen.findByText(/SAVE10 applied/);
+    await user.click(screen.getByRole("button", { name: "Remove" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    );
+    expect(post).toHaveBeenLastCalledWith(
+      "/sales",
+      expect.objectContaining({ payments: [{ method: "CASH", amount: 80 }] }),
+    );
+    expect(post.mock.calls.at(-1)?.[1]).not.toHaveProperty("voucherCode");
+  });
+
+  it("requires a restock choice, records the refund and removes reversal actions", async () => {
+    const user = userEvent.setup();
+    post.mockImplementation(async (path: string) =>
+      path.endsWith("/refund")
+        ? receipt({
+            refundedAt: "2026-10-19T12:00:00.000Z",
+            refundAmount: "80.00",
+            refundReason: "Customer returned",
+            refundRestocked: false,
+            refundedByName: "Ava Owner",
+            pointsEarned: 0,
+          })
+        : receipt(),
+    );
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    );
+    await user.click(await screen.findByRole("button", { name: "Refund sale" }));
+    await user.type(
+      screen.getByRole("textbox", { name: "Reason for refunding this sale" }),
+      "Customer returned",
+    );
+    expect(screen.getByRole("button", { name: "Record refund S$80.00" })).toBeDisabled();
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "Restock returned products?" }),
+      "false",
+    );
+    expect(screen.getByRole("button", { name: "Record refund S$80.00" })).toBeDisabled();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Refund method 1" }), "CASH");
+    await user.clear(screen.getByRole("textbox", { name: "Refund amount 1" }));
+    await user.type(screen.getByRole("textbox", { name: "Refund amount 1" }), "30");
+    expect(screen.getByRole("button", { name: "Record refund S$80.00" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Add refund method" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Refund method 2" }), "CARD");
+    await user.click(screen.getByRole("button", { name: "Record refund S$80.00" }));
+    await screen.findByText("Customer returned");
+    expect(post).toHaveBeenLastCalledWith("/sales/sale-1/refund", {
+      reason: "Customer returned",
+      restock: false,
+      payouts: [
+        { method: "CASH", amount: 30 },
+        { method: "CARD", amount: 50 },
+      ],
+    });
+    expect(screen.queryByRole("button", { name: "Refund sale" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Void sale" })).not.toBeInTheDocument();
+  });
 });
 
 describe("performer identities", () => {
@@ -550,6 +680,7 @@ function heldCart(): SaleDetail {
 /** Points `get` at the hold list, the parked cart and its customer. */
 function withHeldCart(rows: SaleSummary[] = [HELD_ROW]) {
   get.mockImplementation((url: string) => {
+    if (url === "/customers/c1/holdings") return Promise.resolve({ items: [] });
     if (url === "/customers/c1") return Promise.resolve(CUSTOMER);
     if (url === "/sales/sale-9") return Promise.resolve(heldCart());
     if (url === "/sales") return Promise.resolve({ items: rows });
@@ -609,6 +740,43 @@ describe("holding a cart", () => {
 });
 
 describe("picking a parked cart up", () => {
+  it("applies a held line discount only once, including fully discounted lines", () => {
+    for (const [unitPrice, discountAmount, discountPercent] of [
+      ["72.00", "24.00", "10.00"],
+      ["0.00", "240.00", "100.00"],
+    ]) {
+      const sale = heldCart();
+      sale.lines = sale.lines.map((line) => ({
+        ...line,
+        quantity: 3,
+        unitPrice,
+        discountAmount,
+        discountPercent,
+      }));
+      const [line] = cartLinesFrom(sale);
+      expect(line!.price).toBe("80.00");
+      expect(lineUnitPrice(line!, false)).toBe(unitPrice);
+    }
+  });
+  it("keeps the resumed hold identity after reload and does not park a duplicate", async () => {
+    withHeldCart();
+    const user = userEvent.setup();
+    const first = renderSale();
+    await user.click(await screen.findByRole("button", { name: "Pick up" }));
+    await screen.findByText(/Ringing up the/);
+    first.unmount();
+    renderSale();
+    expect(await screen.findByText(/Ringing up the/)).toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Hold" }));
+    expect(post).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/sales/sale-9/complete", expect.any(Object)),
+    );
+  });
   it("fills the till, then completes the hold instead of creating a sale", async () => {
     withHeldCart();
     post.mockResolvedValue(receipt({ id: "sale-9", receiptNumber: 77 }));
@@ -739,6 +907,32 @@ describe("discounting a line", () => {
 });
 
 describe("voiding a rung-up sale", () => {
+  it("does not present a reversed short tender as active outstanding debt", async () => {
+    const user = userEvent.setup();
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const invalidate = vi.spyOn(client, "invalidateQueries");
+    renderSale(client);
+    await ringUpAReceipt(user);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["customers"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["reports"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["dashboard", "summary"] });
+    invalidate.mockClear();
+    post.mockResolvedValueOnce(
+      receipt({ status: "VOID", paidAmount: "20.00", outstandingAmount: "0.00" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Void sale" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(within(dialog).getByLabelText("Reason for voiding this sale"), "Wrong sale");
+    await user.click(within(dialog).getByRole("button", { name: "Void it" }));
+    expect(
+      await screen.findByText(/Any money refund must be handled separately/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Outstanding")).not.toBeInTheDocument();
+    expect(screen.getByText("S$20.00")).toBeInTheDocument();
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["customers"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["reports"] });
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ["dashboard", "summary"] });
+  });
   it("asks for a reason, posts it, and draws the voided receipt the server sent back", async () => {
     const user = userEvent.setup();
     renderSale();

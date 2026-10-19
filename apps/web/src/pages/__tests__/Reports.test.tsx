@@ -19,6 +19,9 @@ const OVERVIEW: ReportOverview = {
   from: "2026-10-01T00:00:00.000Z",
   to: "2026-10-03T23:59:59.999Z",
   totals: {
+    grossSales: "110.00",
+    refunds: "0.00",
+    commissionReconciliation: 0,
     revenue: "105.00",
     paid: "95.00",
     tax: "8.67",
@@ -66,6 +69,7 @@ const OVERVIEW: ReportOverview = {
     outstanding: { customers: 2, balance: "15.00" },
     totalMoney: "70.00",
   },
+  refundTenders: [],
   asOf: "2026-10-03T23:59:59.999Z",
 };
 
@@ -76,6 +80,7 @@ const CLOSE: ZReport = {
   to: "2026-10-02T16:00:00.000Z",
   totals: {
     grossSales: "90.00",
+    refunds: "0.00",
     discounts: "5.00",
     netSales: "85.00",
     tax: "7.00",
@@ -90,6 +95,7 @@ const CLOSE: ZReport = {
     { method: "CARD", amount: "70.00", redemption: false },
   ],
   voids: { count: 1, amount: "20.00" },
+  refundTenders: [],
   outstandingCreated: "10.00",
   asOf: "2026-10-02T23:59:59.999Z",
 };

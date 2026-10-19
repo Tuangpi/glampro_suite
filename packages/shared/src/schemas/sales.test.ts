@@ -6,6 +6,8 @@ import {
   SALE_ITEM_KINDS,
   completeSaleSchema,
   createSaleSchema,
+  createVoucherSchema,
+  refundSaleSchema,
   discountPercentSchema,
   saleDetailSchema,
   saleItemSchema,
@@ -19,6 +21,74 @@ import {
 
 /** The fields every kind carries, so each case below only states what differs. */
 const base = { id: "item-1", name: "Aloha", price: "10.00", memberPrice: null };
+
+describe("voucher and refund contracts", () => {
+  const body = {
+    voucherCode: " save10 ",
+    lines: [{ itemType: "SERVICE", itemId: "service-1", quantity: 1 }],
+    payments: [{ method: "CASH", amount: 10 }],
+  };
+
+  it("normalizes a single code and refuses vouchers on holds or manually discounted sales", () => {
+    assert.equal(createSaleSchema.parse(body).voucherCode, "SAVE10");
+    assert.equal(createSaleSchema.safeParse({ ...body, hold: true }).success, false);
+    const mixed = { ...body, lines: [{ ...body.lines[0], discountPercent: 5 }] };
+    assert.equal(createSaleSchema.safeParse(mixed).success, false);
+    assert.equal(completeSaleSchema.safeParse(mixed).success, false);
+  });
+
+  it("requires an explicit stock choice and never accepts a client refund amount or actor", () => {
+    assert.equal(refundSaleSchema.safeParse({ reason: "Returned" }).success, false);
+    assert.deepEqual(
+      refundSaleSchema.parse({
+        reason: " Returned ",
+        restock: false,
+        payouts: [{ method: "CASH", amount: 10 }],
+        amount: 900,
+        actorId: "forged",
+      }),
+      { reason: "Returned", restock: false, payouts: [{ method: "CASH", amount: 10 }] },
+    );
+  });
+
+  it("validates campaign dates and percentage bounds", () => {
+    const campaign = {
+      code: "sale10",
+      discountType: "PERCENTAGE",
+      value: 10,
+      startsAt: "2026-10-19T00:00:00Z",
+      endsAt: "2026-10-20T00:00:00Z",
+    };
+    assert.equal(createVoucherSchema.parse(campaign).code, "SALE10");
+    assert.equal(createVoucherSchema.safeParse({ ...campaign, value: 101 }).success, false);
+    assert.equal(
+      createVoucherSchema.safeParse({ ...campaign, endsAt: campaign.startsAt }).success,
+      false,
+    );
+  });
+
+  it("requires positive cent-exact money payouts, never redemptions", () => {
+    const input = { reason: "Returned", restock: true };
+    for (const payouts of [
+      [],
+      [{ method: "PACKAGE", amount: 10 }],
+      [{ method: "CASH", amount: 0 }],
+      [{ method: "CARD", amount: 1.001 }],
+    ]) {
+      assert.equal(refundSaleSchema.safeParse({ ...input, payouts }).success, false);
+    }
+    assert.equal(
+      refundSaleSchema.safeParse({
+        ...input,
+        payouts: [
+          { method: "CASH", amount: 10.25 },
+          { method: "CARD", amount: 2.5 },
+        ],
+      }).success,
+      true,
+    );
+  });
+});
 
 describe("saleItemSearchQuerySchema", () => {
   it("defaults the limit and leaves search and kind absent rather than empty", () => {
@@ -279,6 +349,13 @@ const receipt = {
   taxAmount: "6.61",
   taxRate: "9.00",
   gstRegistrationNumber: "GST-123",
+  voucherCode: null,
+  voucherDiscountAmount: "0.00",
+  refundedAt: null,
+  refundAmount: null,
+  refundReason: null,
+  refundedByName: null,
+  refundRestocked: null,
   outstandingAmount: "0.00",
   pointsEarned: 5,
   lines: [],
@@ -403,6 +480,8 @@ describe("saleLineSchema", () => {
     lineTotal: "66.66",
     discountPercent: "33.33",
     discountAmount: "33.34",
+    voucherDiscountAmount: "0.00",
+    netLineTotal: "66.66",
     taxAmount: "5.50",
     taxRate: "9.00",
     staffId: null,

@@ -199,6 +199,9 @@ export const reportOverviewSchema = z.object({
   from: z.string(),
   to: z.string(),
   totals: z.object({
+    grossSales: z.string().default("0.00"),
+    refunds: z.string().default("0.00"),
+    commissionReconciliation: z.number().int().min(0).default(0),
     revenue: z.string(),
     paid: z.string(),
     /** GST included in the range's revenue, as money (TK2610-0009 / P0-01). */
@@ -215,6 +218,7 @@ export const reportOverviewSchema = z.object({
   serviceSales: z.array(reportServiceSalesSchema),
   /** Every tender used by a completed sale in the range. */
   tenders: z.array(reportTenderSchema),
+  refundTenders: z.array(reportTenderSchema).default([]),
   /** What customers can still spend, as of the request. */
   liability: reportLiabilitySchema,
   asOf: z.string(),
@@ -234,6 +238,7 @@ export const zReportSchema = z.object({
   to: z.string(),
   totals: z.object({
     grossSales: z.string(),
+    refunds: z.string().default("0.00"),
     discounts: z.string(),
     netSales: z.string(),
     tax: z.string(),
@@ -244,6 +249,7 @@ export const zReportSchema = z.object({
     items: z.number().int().min(0),
   }),
   tenders: z.array(reportTenderSchema),
+  refundTenders: z.array(reportTenderSchema).default([]),
   voids: z.object({
     count: z.number().int().min(0),
     amount: z.string(),

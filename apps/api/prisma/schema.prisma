@@ -120,6 +120,14 @@ enum SaleStatus {
   VOID
 }
 
+/// How a voucher takes money off. `PERCENTAGE` stores 0.01–100 in `Voucher.value`;
+/// `FIXED` stores a money amount. Two named kinds rather than a boolean, because a
+/// report and the till both need to say which one applied.
+enum VoucherDiscountType {
+  PERCENTAGE
+  FIXED
+}
+
 /// Which catalogue row a sale line points at.
 ///
 /// Legacy kept five separate line tables — `sale_products`, `sale_services`,
@@ -207,6 +215,11 @@ model User {
   /// so the receipt can print a name, and it is the one `Sale`↔`User` link that does not
   /// cascade ([ADR 0016](../../../PROJECT.md#adr-0016)).
   voidedSales  Sale[] @relation("SaleVoidedBy")
+  /// Vouchers this manager created. `SetNull`, so removing an account does not
+  /// delete a campaign the salon still honours; the voucher keeps its code and dates.
+  createdVouchers Voucher[] @relation("VoucherCreatedBy")
+  /// Refunds this manager recorded. The audit trail survives account removal.
+  recordedRefunds SaleRefund[] @relation("SaleRefundedBy")
   saleLines    SaleLine[]
   performances EmployeePerformance[]
   leaves       EmployeeLeave[]
@@ -353,6 +366,9 @@ model Tenant {
   privacyNotices      PrivacyNotice[]
   consentEvents       CustomerConsentEvent[]
   photos              CustomerPhoto[]
+  vouchers            Voucher[]
+  voucherRedemptions  VoucherRedemption[]
+  saleRefunds         SaleRefund[]
 
   @@index([status])
   @@map("tenants")
@@ -875,6 +891,9 @@ model EmployeeCommission {
   rate     Decimal @db.Decimal(5, 2)
   /// Derived at sale time and stored so a later rate change does not rewrite history.
   amount   Decimal @db.Decimal(12, 2)
+  paidAt DateTime?
+  refundAdjustment Boolean @default(false)
+  reconciliationRequired Boolean @default(false)
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -962,6 +981,14 @@ model Sale {
   /// salon's setting changes. `null` when GST was disabled or the row predates
   /// the column.
   gstRegistrationNumber String?
+  /// The voucher code the customer presented, snapshotted here so the receipt keeps
+  /// saying why the total was lower even if the voucher row is later archived
+  /// (ADR 0020). `null` for the ordinary sale nobody vouchered.
+  voucherCode           String?
+  /// What the voucher took off the **sale**, after the per-line allocation. The lines
+  /// carry their share in `SaleLine.voucherDiscountAmount`; this is the figure the
+  /// receipt and the refund read, so no caller has to re-add the allocation.
+  voucherDiscountAmount Decimal @default(0) @db.Decimal(12, 2)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -980,6 +1007,13 @@ model Sale {
   outstandingPayments CustomerOutstandingPayment[]
   redemptions CustomerRedemption[]
   performances EmployeePerformance[]
+  /// The one voucher this sale consumed. Unique through `VoucherRedemption.saleId`,
+  /// so a second voucher on one sale is refused by the database rather than by a
+  /// service check two tills could race past.
+  voucherRedemption VoucherRedemption?
+  /// The one full-sale refund recorded against it, if any (ADR 0020). A refund is an
+  /// appended record, never an edit to this row's totals or tenders.
+  refund SaleRefund?
 
   /// One receipt reference per salon. Legacy wrote `random_int(100000, 999999)`
   /// into a nullable string with **no constraint at all**, so two sales could share
@@ -1082,6 +1116,18 @@ model SaleLine {
   /// rate rounds to the cent on the *unit* price, so this is `(listPrice - unitPrice) *
   /// quantity` and the line's own arithmetic stays exact.
   discountAmount Decimal @default(0) @db.Decimal(12, 2)
+  /// The voucher's share of the reduction, allocated to this line by the service
+  /// (ADR 0020). Kept apart from `discountAmount`, which is the cashier's manual
+  /// rate: D1 forbids the two on one sale, and the receipt must say which one it
+  /// was. `lineTotal` stays the pre-voucher line; the net is
+  /// `lineTotal - voucherDiscountAmount`.
+  voucherDiscountAmount Decimal @default(0) @db.Decimal(12, 2)
+
+  /// Null for historical rows; new completions snapshot the L2 calculation.
+  loyaltyBasePoints Int?
+  loyaltyOriginalAmount Decimal? @db.Decimal(12, 2)
+  loyaltyNetAmount Decimal? @db.Decimal(12, 2)
+  loyaltyAwardedPoints Int?
 
   /// GST included in this line, as money (TK2610-0009 / P0-01). Inclusive
   /// prices, so `lineTotal × rate / (100 + rate)`, rounded to the cent on
@@ -1315,6 +1361,114 @@ model CustomerRedemption {
   @@index([tenantId, holdingId])
   @@map("customer_redemptions")
 }
+/// A manager-created promotion the till can apply to one sale (ADR 0020).
+///
+/// A voucher is **not** a tender and **not** a manual line discount. It is a
+/// sale-level reduction the salon publishes in advance: percentage or fixed money,
+/// with a validity window, a minimum eligible spend and an optional total redemption
+/// limit. Only SERVICE and PRODUCT lines are eligible; packages, prepaid credit and
+/// gift cards are excluded because discounting them would discount the credit they
+/// grant, which is money the salon has not earned yet.
+model Voucher {
+  id          String              @id @default(cuid())
+  tenantId    String
+  /// What the customer says or types at the till. Upper-cased by the service, so two
+  /// spellings of one code cannot become two vouchers.
+  code        String
+  description String?
+  discountType VoucherDiscountType
+  /// A percentage (`PERCENTAGE`, 0.01–100) or a money amount (`FIXED`). One column
+  /// because only one kind applies, and the discriminator says how to read it.
+  value       Decimal             @db.Decimal(12, 2)
+  startsAt    DateTime
+  endsAt      DateTime
+  /// The minimum **eligible** line total, after any manual discount. Manual discounts
+  /// and vouchers cannot be combined (D1), so in practice this is the services and
+  /// products part of the cart.
+  minSpend    Decimal             @default(0) @db.Decimal(12, 2)
+  /// Total redemptions allowed across all sales; `null` is unlimited. Enforced by a
+  /// count-guarded update at completion, so two tills cannot spend the last one twice.
+  maxRedemptions Int?
+  /// How many completed sales have consumed it. Only a full void gives one back; a
+  /// refund does not (R1), because the customer kept the discount they were given.
+  redeemedCount  Int               @default(0)
+  /// A switched-off voucher stays for history but is refused by the till.
+  isActive    Boolean             @default(true)
+  createdById String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  tenant      Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User?              @relation("VoucherCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  redemptions VoucherRedemption[]
+
+  /// One row per code per salon. Case is normalised before insert, so the index is
+  /// the case-insensitive uniqueness the till needs.
+  @@unique([tenantId, code])
+  @@index([tenantId, startsAt, endsAt])
+  @@map("vouchers")
+}
+
+/// One sale's consumption of a voucher.
+///
+/// `saleId` is unique: a sale takes **one** voucher (V1), and the database is what
+/// enforces it. The row is the audit trail and the redemption counter's source of
+/// truth; a full void stamps `revertedAt` and gives the count back, while a refund
+/// leaves it consumed.
+model VoucherRedemption {
+  id        String   @id @default(cuid())
+  tenantId  String
+  voucherId String
+  saleId    String   @unique
+  /// The money the voucher took off this sale, snapshotted so a later edit to the
+  /// voucher cannot rewrite what the customer was given.
+  amount    Decimal  @db.Decimal(12, 2)
+  createdAt DateTime @default(now())
+  /// Set by a full void, never by a refund (ADR 0020).
+  revertedAt DateTime?
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  voucher Voucher @relation(fields: [voucherId], references: [id], onDelete: Restrict)
+  sale    Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, voucherId])
+  @@map("voucher_redemptions")
+}
+
+/// A recorded full-sale refund (ADR 0020 / R1).
+///
+/// A refund is **money returning to the customer**, recorded after the fact. It is
+/// not a void: the sale, its receipt number and its tenders stay exactly as they
+/// were, and this row is appended beside them. The system does not move money — no
+/// provider call and no settlement — so the UI must say "recorded" rather than imply
+/// a transfer. One refund per sale, enforced by the unique `saleId`; the actor comes
+/// from the verified token and the reason is mandatory.
+model SaleRefund {
+  id        String   @id @default(cuid())
+  tenantId  String
+  saleId    String   @unique
+  /// What was refunded: the sale's `totalAmount`, snapshotted here.
+  amount    Decimal  @db.Decimal(12, 2)
+  /// Actual money payout split. Null only for records predating P1.
+  payouts Json?
+  reason    String
+  /// The manager's explicit choice. `true` puts PRODUCT lines back on the shelf;
+  /// `false` leaves stock as it is (goods not returned, or already accounted for).
+  restocked Boolean
+  refundedById String?
+  refundedAt   DateTime @default(now())
+  createdAt    DateTime @default(now())
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale       Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  /// `SetNull`, like the void actor: deleting a departing manager must not delete
+  /// the refund record or the sale it belongs to.
+  refundedBy User?  @relation("SaleRefundedBy", fields: [refundedById], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, refundedAt])
+  @@map("sale_refunds")
+}
+
 /// What a staff member sold, per sale, for the performance report.
 ///
 /// Legacy `employee_performances`. `item_id` and `type` were both nullable
@@ -1330,6 +1484,7 @@ model EmployeePerformance {
   itemId   String?
   /// Legacy `amount` was an **integer**, so any fraction was truncated.
   amount    Decimal  @db.Decimal(12, 2)
+  refundAdjustment Boolean @default(false)
   createdAt DateTime @default(now())
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)

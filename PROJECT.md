@@ -467,6 +467,11 @@ all reversal types, thermal output or unchanged first actor under a different ac
 
 ### ADR 0017
 
+October 19 POS continuation: the user approved L2 + E1 + R1 + A1 + P1. Discounted
+loyalty snapshots, recorded exact money payout splits and refund-date accounting
+adjustments are implemented in `docs/ADR-0020-pos-vouchers-refunds.md`. The ADR
+remains explicitly reconstructed; subsequent policy approval is recorded separately.
+
 **Accepted October 14, 2026 — discount is a recorded line percentage, not posted price.**
 Rate 0–100 with <=2 decimals; unknown price fields stripped; catalogue/member price
 remains authoritative. Decimal arithmetic: discountPerUnit = round(listPrice × rate /
@@ -476,10 +481,10 @@ and expose line/sale discount totals on receipt. Avoid cart-wide allocation, arb
 price overrides or unapproved caps. Any authorized till user may discount up to 100%
 without extra approval; future caps/approvers/commission basis need explicit policy.
 
-Policy said performance and loyalty follow discounted payable money; code awards
-catalogue points × quantity and existing test expects unchanged points. Resolve
-loyalty explicitly. Performance uses discounted lineTotal even with debt, not cash
-received; no commission rows are computed by this path. DB has no arithmetic/rate
+Historical discrepancy resolved October 19 by ADR 0020 L2/E1: catalogue points ×
+quantity × net/original amount, floored per line with snapshotted inputs/results;
+earned on completion regardless of debt/tender. Performance uses net discounted
+line totals; no positive commission rows are computed by this path. DB has no arithmetic/rate
 CHECK constraints. Web normalizes/caps on blur/Enter; step=1 permits contract decimals;
 JS preview is not exhaustive Decimal equivalence. Receipt omits positive rates rounded
 to zero money. Shared 35 and mocked web 29 tests historically passed; no live ledger,

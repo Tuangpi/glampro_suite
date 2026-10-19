@@ -489,6 +489,9 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
 
     assert.equal(response.status, 200);
     assert.deepEqual(body.totals, {
+      grossSales: "110.00",
+      refunds: "0.00",
+      commissionReconciliation: 0,
       revenue: "105.00",
       paid: "95.00",
       tax: "8.67",

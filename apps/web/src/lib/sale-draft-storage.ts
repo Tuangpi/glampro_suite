@@ -38,12 +38,14 @@ const saleDraftSchema = z.object({
   version: z.literal(1),
   lines: z.array(cartLineSchema).max(MAX_SALE_LINES),
   customer: customerSummarySchema.nullable(),
+  heldSaleId: z.string().min(1).nullable().optional(),
 });
 
 export interface SaleDraft {
   version: 1;
   lines: CartLine[];
   customer: CustomerSummary | null;
+  heldSaleId?: string | null;
 }
 
 const EMPTY_DRAFT: SaleDraft = { version: 1, lines: [], customer: null };
@@ -76,7 +78,7 @@ export function readSaleDraft(identity: string | null): SaleDraft {
 
 function writeSaleDraft(identity: string, draft: SaleDraft): void {
   const key = storageKey(identity);
-  if (draft.lines.length === 0 && draft.customer === null) {
+  if (draft.lines.length === 0 && draft.customer === null && !draft.heldSaleId) {
     localStorage.removeItem(key);
     return;
   }
@@ -99,4 +101,9 @@ export function setSaleDraftCustomer(
 export function clearSaleDraft(identity: string | null): void {
   if (!identity) return;
   localStorage.removeItem(storageKey(identity));
+}
+
+export function setSaleDraftHeldSale(identity: string | null, heldSaleId: string | null): void {
+  if (!identity) return;
+  writeSaleDraft(identity, { ...readSaleDraft(identity), heldSaleId });
 }

@@ -47,6 +47,22 @@ export const SALE_ITEM_KINDS = [
 
 export const saleItemKindSchema = z.enum(SALE_ITEM_KINDS);
 
+/**
+ * A voucher code as the till accepts it.
+ *
+ * Trimmed and upper-cased before it is compared, because a customer reading
+ * "save10" off a flyer and a manager typing "SAVE10" mean the same campaign. The
+ * character set excludes spaces and punctuation so a code can be printed, typed and
+ * put in a URL without escaping.
+ */
+export const voucherCodeSchema = z
+  .string()
+  .trim()
+  .min(3)
+  .max(40)
+  .regex(/^[A-Za-z0-9_-]+$/, "Use letters, numbers, hyphens or underscores.")
+  .transform((code) => code.toUpperCase());
+
 export type SaleItemKind = z.infer<typeof saleItemKindSchema>;
 
 /**
@@ -330,7 +346,30 @@ const saleBodySchema = z.object({
   note: z.string().trim().max(1000).optional(),
   lines: z.array(saleLineInputSchema).min(1).max(MAX_SALE_LINES),
   payments: z.array(salePaymentInputSchema).max(MAX_SALE_PAYMENTS).default([]),
+  /**
+   * A management voucher to apply (V1/D1). Optional, one per sale, and only on a
+   * completed sale: a parked cart has no customer price yet, so the code is not
+   * consumed while it sits in the hold. The service validates dates, spend and the
+   * redemption limit and computes the money; the browser never sends an amount.
+   */
+  voucherCode: voucherCodeSchema.optional(),
 });
+
+/** D1: a voucher and a manual line discount never share a sale. */
+function refuseMixedDiscounts(
+  input: { voucherCode?: string; lines: readonly { discountPercent?: number }[] },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.voucherCode === undefined) return;
+  if (input.lines.some((line) => (line.discountPercent ?? 0) > 0)) {
+    ctx.addIssue({
+      code: "custom",
+      message:
+        "Remove the manual line discounts before applying a voucher; they cannot be combined.",
+      path: ["voucherCode"],
+    });
+  }
+}
 
 /**
  * `POST /api/sales` — the whole sale in one request.
@@ -350,9 +389,22 @@ export const createSaleSchema = saleBodySchema
     hold: z.boolean().optional(),
     idempotencyKey: z.string().trim().min(8).max(128).optional(),
   })
-  .refine((input) => !(input.hold === true && input.payments.length > 0), {
-    message: "A held sale takes no payment; resume it and complete it to take money.",
-    path: ["payments"],
+  .superRefine((input, ctx) => {
+    if (input.hold === true && input.payments.length > 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "A held sale takes no payment; resume it and complete it to take money.",
+        path: ["payments"],
+      });
+    }
+    if (input.hold === true && input.voucherCode !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        message: "A voucher is consumed when the sale is completed, not while it is held.",
+        path: ["voucherCode"],
+      });
+    }
+    refuseMixedDiscounts(input, ctx);
   });
 
 export type CreateSaleInput = z.infer<typeof createSaleSchema>;
@@ -371,7 +423,7 @@ export type CreateSaleInput = z.infer<typeof createSaleSchema>;
  * is handed from the catalogue. The hold's own line rows are rewritten in the same
  * transaction, because a draft nobody has printed is not history (ADR 0015).
  */
-export const completeSaleSchema = saleBodySchema;
+export const completeSaleSchema = saleBodySchema.superRefine(refuseMixedDiscounts);
 
 export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
 
@@ -391,6 +443,7 @@ export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
 export const saleListQuerySchema = z.object({
   status: saleStatusSchema.default("HELD"),
   limit: z.coerce.number().int().min(1).max(MAX_SALE_LIST).default(MAX_SALE_LIST),
+  page: z.coerce.number().int().min(1).max(1000000).optional(),
 });
 
 export type SaleListQuery = z.infer<typeof saleListQuerySchema>;
@@ -427,6 +480,8 @@ export type SaleSummary = z.infer<typeof saleSummarySchema>;
 
 export const saleListSchema = z.object({
   items: z.array(saleSummarySchema),
+  page: z.number().int().positive(),
+  hasMore: z.boolean(),
 });
 
 export type SaleList = z.infer<typeof saleListSchema>;
@@ -454,6 +509,14 @@ export const saleLineSchema = z.object({
   discountPercent: z.string(),
   /** What that rate took off the whole line, as money. The `Discount` row's parts. */
   discountAmount: z.string(),
+  /**
+   * The voucher's share of this line (ADR 0020), or `"0.00"`. `lineTotal` stays the
+   * pre-voucher figure, so `netLineTotal` is what this line actually contributed to
+   * the sale and what GST was backed out of.
+   */
+  voucherDiscountAmount: z.string(),
+  /** `lineTotal - voucherDiscountAmount`. */
+  netLineTotal: z.string(),
   /**
    * GST included in this line, as money (TK2610-0009 / P0-01).
    *
@@ -552,6 +615,23 @@ export const saleDetailSchema = z.object({
    * current number for those historical rows.
    */
   gstRegistrationNumber: z.string().nullable(),
+  /** The voucher code applied, or `null` (ADR 0020). */
+  voucherCode: z.string().nullable(),
+  /** What that voucher took off the sale, as money. `"0.00"` when none. */
+  voucherDiscountAmount: z.string(),
+  /** When a full-sale refund was recorded, or `null` while none has been (ADR 0020). */
+  refundedAt: z.string().nullable(),
+  /** What was refunded: always the sale's total, snapshotted on the refund row. */
+  refundAmount: z.string().nullable(),
+  /** The manager's reason. `null` unless a refund exists. */
+  refundReason: z.string().nullable(),
+  /** Who recorded it, by name; `null` if that account has since been deleted. */
+  refundedByName: z.string().nullable(),
+  /** Whether the manager chose to put product lines back on the shelf. */
+  refundRestocked: z.boolean().nullable(),
+  refundPayouts: z
+    .array(z.object({ method: z.enum(PAYMENT_METHODS), amount: z.string() }))
+    .default([]),
   /** `totalAmount - paidAmount`, never negative. Non-zero means a `CustomerOutstanding`. */
   outstandingAmount: z.string(),
   /** The points this sale earned its customer; `0` for a walk-in. */
@@ -608,3 +688,187 @@ export const saleReceiptEmailResultSchema = z.object({
 });
 
 export type SaleReceiptEmailResult = z.infer<typeof saleReceiptEmailResultSchema>;
+
+/**
+ * Voucher management contracts (ADR 0020).
+ *
+ * A voucher is a **published promotion**, so creating and changing one is a manager's
+ * job. The till only ever reads a preview or posts a code; it never names the money
+ * the code is worth.
+ */
+export const voucherDiscountTypeSchema = z.enum(["PERCENTAGE", "FIXED"]);
+
+export type VoucherDiscountType = z.infer<typeof voucherDiscountTypeSchema>;
+
+/** A stored voucher, as the management list and editor read it. */
+export const voucherSchema = z.object({
+  id: z.string(),
+  code: z.string(),
+  description: z.string().nullable(),
+  discountType: voucherDiscountTypeSchema,
+  /** A percentage or a money amount, formatted like every other `Decimal` on the wire. */
+  value: z.string(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  minSpend: z.string(),
+  /** `null` is unlimited. */
+  maxRedemptions: z.number().int().nullable(),
+  redeemedCount: z.number().int(),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+});
+
+export type Voucher = z.infer<typeof voucherSchema>;
+
+export const voucherListQuerySchema = z.object({
+  search: z.string().trim().max(100).optional(),
+  /** `true` asks for switched-off campaigns too; the default is the usable list. */
+  includeInactive: z
+    .union([z.boolean(), z.enum(["true", "false"])])
+    .transform((value) => value === true || value === "true")
+    .default(false),
+});
+
+export type VoucherListQuery = z.infer<typeof voucherListQuerySchema>;
+
+export const voucherListSchema = z.object({
+  items: z.array(voucherSchema),
+});
+
+export type VoucherList = z.infer<typeof voucherListSchema>;
+
+const voucherFields = {
+  description: z.string().trim().max(200).optional(),
+  discountType: voucherDiscountTypeSchema,
+  /** Percentage 0.01–100, or a positive money amount. Checked against the type below. */
+  value: moneySchema,
+  startsAt: z.iso.datetime({ offset: true }),
+  endsAt: z.iso.datetime({ offset: true }),
+  minSpend: moneySchema.default(0),
+  /** `null` or omitted is unlimited. */
+  maxRedemptions: z.coerce.number().int().min(1).max(1_000_000).nullable().optional(),
+  isActive: z.boolean().default(true),
+};
+
+function checkVoucherValue(
+  input: { discountType: VoucherDiscountType; value: number; startsAt: string; endsAt: string },
+  ctx: z.RefinementCtx,
+): void {
+  if (input.discountType === "PERCENTAGE" && (input.value <= 0 || input.value > 100)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "A percentage voucher must be greater than 0 and at most 100.",
+      path: ["value"],
+    });
+  }
+  if (input.discountType === "FIXED" && input.value <= 0) {
+    ctx.addIssue({
+      code: "custom",
+      message: "A fixed voucher must be worth something.",
+      path: ["value"],
+    });
+  }
+  if (Date.parse(input.endsAt) <= Date.parse(input.startsAt)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "The voucher has to end after it starts.",
+      path: ["endsAt"],
+    });
+  }
+}
+
+/** `POST /api/vouchers` — a manager publishes a campaign. The code is normalised. */
+export const createVoucherSchema = z
+  .object({
+    code: voucherCodeSchema,
+    ...voucherFields,
+  })
+  .superRefine(checkVoucherValue);
+
+export type CreateVoucherInput = z.infer<typeof createVoucherSchema>;
+
+/**
+ * `PATCH /api/vouchers/:id` — every field optional.
+ *
+ * The cross-field checks run against the **stored row after the merge**, in the
+ * service, because `{ endsAt }` alone cannot be judged without the row's `startsAt`.
+ * This contract still refuses a malformed instant or a switched-off code with no
+ * identity change.
+ */
+export const updateVoucherSchema = z
+  .object({
+    description: voucherFields.description,
+    discountType: voucherDiscountTypeSchema.optional(),
+    value: moneySchema.optional(),
+    startsAt: z.iso.datetime({ offset: true }).optional(),
+    endsAt: z.iso.datetime({ offset: true }).optional(),
+    minSpend: moneySchema.optional(),
+    maxRedemptions: voucherFields.maxRedemptions,
+    isActive: z.boolean().optional(),
+  })
+  .refine((input) => Object.values(input).some((value) => value !== undefined), {
+    message: "Change at least one field.",
+  });
+
+export type UpdateVoucherInput = z.infer<typeof updateVoucherSchema>;
+
+/**
+ * `POST /api/sales/voucher-preview` — what a code is worth on **this** cart.
+ *
+ * The till needs the answer before it takes money, so it sends the same cart it
+ * would post and gets back the server's own arithmetic. The response carries no
+ * customer or line detail, only the figures the payment sheet draws.
+ */
+export const voucherPreviewInputSchema = z.object({
+  voucherCode: voucherCodeSchema,
+  customerId: z.string().min(1).max(64).optional(),
+  lines: z.array(saleLineInputSchema).min(1).max(MAX_SALE_LINES),
+});
+
+export type VoucherPreviewInput = z.infer<typeof voucherPreviewInputSchema>;
+
+export const voucherPreviewSchema = z.object({
+  code: z.string(),
+  description: z.string().nullable(),
+  discountType: voucherDiscountTypeSchema,
+  value: z.string(),
+  /** What the voucher would take off this cart, computed by the server. */
+  discountAmount: z.string(),
+  /** The SERVICE + PRODUCT subtotal it was computed from. */
+  eligibleTotal: z.string(),
+  /** What the cart would total after the voucher. */
+  totalAmount: z.string(),
+  minSpend: z.string(),
+  endsAt: z.string(),
+});
+
+export type VoucherPreview = z.infer<typeof voucherPreviewSchema>;
+
+/**
+ * `POST /api/sales/:id/refund` — record a full-sale refund (ADR 0020 / R1).
+ *
+ * The amount is deliberately **not** in the body. A caller that could name it could
+ * refund more than the sale; the server uses the sale's total. `restock` is required
+ * because "we put the shampoo back" and "the customer kept it" are different facts
+ * and a default would silently choose one. The actor comes from the JWT, like a void.
+ */
+export const refundSaleSchema = z.object({
+  reason: z.string().trim().min(3).max(500),
+  restock: z.boolean(),
+  payouts: z
+    .array(
+      z.object({
+        method: z
+          .enum(PAYMENT_METHODS)
+          .refine((method) => !isRedemptionPaymentMethod(method), "Refunds require money tenders."),
+        amount: moneySchema.refine(
+          (amount) => amount > 0 && Math.abs(amount * 100 - Math.round(amount * 100)) < 0.000001,
+          "Enter a positive payout amount with at most two decimal places.",
+        ),
+      }),
+    )
+    .min(1)
+    .max(MAX_SALE_PAYMENTS),
+});
+
+export type RefundSaleInput = z.infer<typeof refundSaleSchema>;

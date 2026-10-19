@@ -34,9 +34,11 @@ import {
   saleDetailSchema,
   saleItemSearchResultSchema,
   saleListSchema,
+  voucherPreviewSchema,
   type CompleteSaleInput,
   type CreateSaleInput,
   type ModuleCode,
+  type RefundSaleInput,
   type SaleDetail,
   type SaleItem,
   type SaleItemKind,
@@ -47,6 +49,8 @@ import {
   type SaleListQuery,
   type SalePaymentInput,
   type VoidSaleInput,
+  type VoucherPreview,
+  type VoucherPreviewInput,
 } from "@glampro_suite/shared";
 
 import { moduleEntitlements } from "../lib/entitlements.js";
@@ -637,11 +641,29 @@ interface PricedLine {
   discountPercent: Prisma.Decimal;
   /** The money that rate took off the whole line, for the receipt's `Discount` row. */
   discountAmount: Prisma.Decimal;
-  /** GST included in the line, backed out of the inclusive total (TK2610-0009). */
+  /**
+   * The voucher's share of this line (ADR 0020). Zero unless a code was applied, and
+   * never on the same sale as a manual discount (D1).
+   */
+  voucherDiscountAmount: Prisma.Decimal;
+  /** `lineTotal - voucherDiscountAmount`: what the line actually contributed. */
+  netLineTotal: Prisma.Decimal;
+  /** GST included in the net line total, backed out of the inclusive figure (TK2610-0009). */
   taxAmount: Prisma.Decimal;
   /** The GST rate applied, snapshotted at sale time; `0` when disabled. */
   taxRate: Prisma.Decimal;
-  pointsEarned: number;
+}
+
+/** L2/E1: per-line floor, snapshotted at completion, independent of tender. */
+function loyaltyPoints(line: PricedLine): number {
+  const original = line.lineTotal.plus(line.discountAmount);
+  if (original.lessThanOrEqualTo(0) || line.netLineTotal.lessThanOrEqualTo(0)) return 0;
+  return new Prisma.Decimal(line.item.points)
+    .mul(line.input.quantity)
+    .mul(line.netLineTotal)
+    .div(original)
+    .floor()
+    .toNumber();
 }
 
 /**
@@ -720,12 +742,178 @@ async function priceCart(
       lineTotal,
       discountPercent,
       discountAmount: discountPerUnit.mul(line.quantity),
+      voucherDiscountAmount: new Prisma.Decimal(0),
+      netLineTotal: lineTotal,
       taxAmount: gstForLine(lineTotal, gstEnabled),
       taxRate: rate,
-      // Points are per unit, so a line of three earns three times one.
-      pointsEarned: item.points * line.quantity,
     };
   });
+}
+
+/**
+ * The voucher's part of the cart, after it has been priced.
+ *
+ * `voucher` is the row as it stood when the code was quoted — enough to claim it inside
+ * the write's transaction and to describe it on the preview. `discountAmount` and
+ * `eligibleTotal` are the server's arithmetic, never the browser's.
+ */
+interface VoucherQuote {
+  voucher: {
+    id: string;
+    code: string;
+    description: string | null;
+    discountType: "PERCENTAGE" | "FIXED";
+    value: Prisma.Decimal;
+    minSpend: Prisma.Decimal;
+    maxRedemptions: number | null;
+    endsAt: Date;
+  };
+  discountAmount: Prisma.Decimal;
+  eligibleTotal: Prisma.Decimal;
+}
+
+/**
+ * Only the things a voucher may reduce (ADR 0020).
+ *
+ * A package, value package or gift card grants credit rather than selling a service or
+ * a product, so discounting one would discount money the customer can spend elsewhere.
+ * The list is explicit rather than "everything except…" so a new kind has to be
+ * considered before a voucher silently covers it.
+ */
+const VOUCHER_ELIGIBLE_KINDS: ReadonlySet<SaleItemKind> = new Set<SaleItemKind>([
+  "SERVICE",
+  "PRODUCT",
+]);
+
+/** One refusal shape, so every failed code points at the control that carried it. */
+function voucherInvalid(message: string, code: string): never {
+  throw badRequest(message, [{ path: "body.voucherCode", message }], code);
+}
+
+/**
+ * Applies a published voucher to an already-priced cart.
+ *
+ * The amount is computed **here**, from the catalogue prices the sale will actually be
+ * written with. The client only ever supplies the code, so a hand-edited request cannot
+ * name a larger discount than the campaign allows.
+ *
+ * The discount is split across the eligible lines in proportion to their totals, and
+ * the last line takes the rounding remainder. That keeps
+ * `SUM(voucherDiscountAmount) === discountAmount` exactly, so the receipt's lines add
+ * up to the sale total without a reconciliation row.
+ */
+async function applyVoucher(
+  priced: PricedLine[],
+  code: string,
+  gstEnabled: boolean,
+): Promise<{ priced: PricedLine[]; voucher: VoucherQuote }> {
+  const voucher = await prisma.voucher.findFirst({
+    where: { code: code.toUpperCase() },
+    select: {
+      id: true,
+      code: true,
+      description: true,
+      discountType: true,
+      value: true,
+      startsAt: true,
+      endsAt: true,
+      minSpend: true,
+      maxRedemptions: true,
+      redeemedCount: true,
+      isActive: true,
+    },
+  });
+
+  if (!voucher) {
+    voucherInvalid("That voucher code is not recognised.", "VOUCHER_NOT_FOUND");
+  }
+  if (!voucher.isActive) {
+    voucherInvalid("That voucher is no longer available.", "VOUCHER_INACTIVE");
+  }
+
+  const now = new Date();
+  if (voucher.startsAt.getTime() > now.getTime()) {
+    voucherInvalid("That voucher is not available yet.", "VOUCHER_NOT_STARTED");
+  }
+  if (voucher.endsAt.getTime() < now.getTime()) {
+    voucherInvalid("That voucher has expired.", "VOUCHER_EXPIRED");
+  }
+  if (voucher.maxRedemptions !== null && voucher.redeemedCount >= voucher.maxRedemptions) {
+    voucherInvalid("That voucher has been fully redeemed.", "VOUCHER_REDEMPTION_LIMIT_REACHED");
+  }
+
+  const eligible = priced
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => VOUCHER_ELIGIBLE_KINDS.has(line.item.itemType));
+  const eligibleTotal = eligible.reduce(
+    (sum, { line }) => sum.plus(line.lineTotal),
+    new Prisma.Decimal(0),
+  );
+
+  if (eligible.length === 0 || eligibleTotal.lessThanOrEqualTo(0)) {
+    voucherInvalid(
+      "This voucher does not apply to anything in the cart. It covers services and products only.",
+      "VOUCHER_NOT_APPLICABLE",
+    );
+  }
+  if (eligibleTotal.lessThan(voucher.minSpend)) {
+    voucherInvalid(
+      `This voucher needs at least ${voucher.minSpend.toFixed(2)} of services and products.`,
+      "VOUCHER_MIN_SPEND_NOT_MET",
+    );
+  }
+
+  const rawDiscount =
+    voucher.discountType === "PERCENTAGE"
+      ? eligibleTotal.mul(voucher.value).div(100)
+      : voucher.value;
+  const discountAmount = Prisma.Decimal.min(rawDiscount, eligibleTotal).toDecimalPlaces(2);
+  if (discountAmount.lessThanOrEqualTo(0)) {
+    voucherInvalid("This voucher is worth nothing on this cart.", "VOUCHER_NOT_APPLICABLE");
+  }
+
+  const next = priced.map((line) => ({ ...line }));
+  let remaining = discountAmount;
+
+  eligible.forEach(({ line, index }, position) => {
+    const isLast = position === eligible.length - 1;
+    let share = isLast
+      ? remaining
+      : discountAmount.mul(line.lineTotal).div(eligibleTotal).toDecimalPlaces(2);
+
+    // Defensive caps: a rounding step must never take a line below zero, nor hand out
+    // more than the voucher is worth.
+    share = Prisma.Decimal.min(share, line.lineTotal, remaining);
+    remaining = remaining.minus(share);
+
+    const netLineTotal = line.lineTotal.minus(share);
+    next[index] = {
+      ...line,
+      voucherDiscountAmount: share,
+      netLineTotal,
+      // GST is inclusive, so the reduction lowers the tax component too. Recomputed on
+      // the net line rather than subtracted from the old tax, so rounding is consistent.
+      taxAmount: gstForLine(netLineTotal, gstEnabled),
+    };
+  });
+
+  return {
+    priced: next,
+    voucher: {
+      voucher: {
+        id: voucher.id,
+        code: voucher.code,
+        description: voucher.description,
+        discountType: voucher.discountType,
+        value: voucher.value,
+        minSpend: voucher.minSpend,
+        maxRedemptions: voucher.maxRedemptions,
+        endsAt: voucher.endsAt,
+      },
+      discountAmount,
+      eligibleTotal,
+    },
+  };
 }
 
 /**
@@ -742,10 +930,12 @@ async function resolveCart(input: {
   customerId?: string;
   staffId?: string;
   lines: SaleLineInput[];
+  voucherCode?: string;
 }): Promise<{
   priced: PricedLine[];
   customerId: string | null;
   gstRegistrationNumber: string | null;
+  voucher: VoucherQuote | null;
 }> {
   // A foreign customer is not found rather than forbidden: the extension scopes the
   // lookup, so this cannot tell "no such customer" from "not yours", and must not.
@@ -789,12 +979,32 @@ async function resolveCart(input: {
     tenant?.gstEnabled ?? false,
   );
 
+  // A voucher is priced against the same lines the sale will be written with, and the
+  // quote is kept so the write can claim it inside its transaction (ADR 0020).
+  let finalPriced = priced;
+  let voucher: VoucherQuote | null = null;
+  if (input.voucherCode !== undefined) {
+    // D1: the two kinds of reduction are exclusive. Refusing here — before the code is
+    // priced — keeps the voucher's arithmetic off lines that already carry a discount,
+    // and keeps the receipt from having to explain two reductions at once.
+    if (priced.some((line) => line.discountPercent.greaterThan(0))) {
+      voucherInvalid(
+        "A voucher cannot be used with a manual line discount. Remove the discount before applying the code.",
+        "VOUCHER_WITH_MANUAL_DISCOUNT",
+      );
+    }
+    const applied = await applyVoucher(priced, input.voucherCode, tenant?.gstEnabled ?? false);
+    finalPriced = applied.priced;
+    voucher = applied.voucher;
+  }
+
   return {
-    priced,
+    priced: finalPriced,
     customerId: customer?.id ?? null,
     // The receipt's legal identity, snapshotted only while GST is charged: a number
     // beside a zero-tax sale would claim a tax invoice that was never issued.
     gstRegistrationNumber: tenant?.gstEnabled ? tenant.gstRegistrationNumber : null,
+    voucher,
   };
 }
 
@@ -808,7 +1018,10 @@ async function resolveCart(input: {
  */
 function totalsOf(priced: PricedLine[], payments: SalePaymentInput[]) {
   const totalQuantity = priced.reduce((sum, line) => sum + line.input.quantity, 0);
-  const totalAmount = priced.reduce((sum, line) => sum.plus(line.lineTotal), new Prisma.Decimal(0));
+  const totalAmount = priced.reduce(
+    (sum, line) => sum.plus(line.netLineTotal),
+    new Prisma.Decimal(0),
+  );
   // The sale's GST is the sum of the rounded line components — never a rate
   // applied to the total — so the receipt matches its lines to the cent.
   const taxAmount = priced.reduce((sum, line) => sum.plus(line.taxAmount), new Prisma.Decimal(0));
@@ -828,6 +1041,56 @@ function totalsOf(priced: PricedLine[], payments: SalePaymentInput[]) {
     paymentStatus: (paidAmount.greaterThanOrEqualTo(totalAmount) ? "PAID" : "UNPAID") as
       "PAID" | "UNPAID",
   };
+}
+
+/**
+ * Claims one redemption inside the transaction that writes the sale.
+ *
+ * The update is **count-guarded** on the voucher's own availability, exactly like the
+ * stock decrement and the held-sale status check: two tills spending the last redemption
+ * at the same instant cannot both succeed, because the loser's `updateMany` matches no
+ * row and its whole sale rolls back. Checking `redeemedCount` in the service would leave
+ * a window between the read and the write.
+ *
+ * `VoucherRedemption.saleId` is unique too, so a duplicate write for one sale is refused
+ * by the database rather than by a convention.
+ */
+async function redeemVoucher(
+  tx: SaleTransaction,
+  tenantId: string,
+  saleId: string,
+  quote: VoucherQuote,
+): Promise<void> {
+  const now = new Date();
+  const where: Prisma.VoucherWhereInput = {
+    id: quote.voucher.id,
+    isActive: true,
+    startsAt: { lte: now },
+    endsAt: { gte: now },
+  };
+  if (quote.voucher.maxRedemptions !== null) {
+    where.redeemedCount = { lt: quote.voucher.maxRedemptions };
+  }
+
+  const claimed = await tx.voucher.updateMany({
+    where,
+    data: { redeemedCount: { increment: 1 } },
+  });
+  if (claimed.count === 0) {
+    throw conflict(
+      "That voucher has just been fully redeemed. Nothing has been charged.",
+      "VOUCHER_REDEMPTION_LIMIT_REACHED",
+    );
+  }
+
+  await tx.voucherRedemption.create({
+    data: {
+      tenantId,
+      voucherId: quote.voucher.id,
+      saleId,
+      amount: quote.discountAmount,
+    },
+  });
 }
 
 /**
@@ -854,6 +1117,7 @@ async function writeSale(
   priced: PricedLine[],
   customerId: string | null,
   gstRegistrationNumber: string | null,
+  voucher: VoucherQuote | null,
 ): Promise<string> {
   const totals = totalsOf(priced, input.payments);
   const soldAt = new Date();
@@ -917,6 +1181,10 @@ async function writeSale(
         taxAmount: totals.taxAmount,
         taxRate: totals.taxRate,
         gstRegistrationNumber,
+        // `null` for the ordinary sale nobody vouchered. Snapshotted rather than joined,
+        // so the receipt keeps explaining the lower total after the campaign is archived.
+        voucherCode: voucher?.voucher.code ?? null,
+        voucherDiscountAmount: voucher?.discountAmount ?? new Prisma.Decimal(0),
         paidAmount: totals.paidAmount,
         paymentStatus: totals.paymentStatus,
         soldAt,
@@ -928,6 +1196,9 @@ async function writeSale(
     });
 
     await writeLines(tx, tenantId, sale.id, priced);
+    if (voucher !== null) {
+      await redeemVoucher(tx, tenantId, sale.id, voucher);
+    }
     await writePayments(tx, tenantId, sale.id, input.payments);
     // After the tenders are written and before the ledgers are filled: the draw is
     // part of the sale, and a failure anywhere here rolls the whole receipt back.
@@ -987,6 +1258,13 @@ async function writeLines(
       lineTotal: line.lineTotal,
       discountPercent: line.discountPercent,
       discountAmount: line.discountAmount,
+      // The voucher's share is stored beside the manual discount, never instead of it:
+      // D1 keeps the two off one sale, but the receipt still has to say which applied.
+      voucherDiscountAmount: line.voucherDiscountAmount,
+      loyaltyBasePoints: line.item.points * line.input.quantity,
+      loyaltyOriginalAmount: line.lineTotal.plus(line.discountAmount),
+      loyaltyNetAmount: line.netLineTotal,
+      loyaltyAwardedPoints: loyaltyPoints(line),
       // Inclusive GST backed out of the line total at pricing time, with the
       // rate snapshotted alongside — a later rate change never rewrites this.
       taxAmount: line.taxAmount,
@@ -1320,7 +1598,7 @@ async function fillLedgers(
 
   // A point row needs a customer; a walk-in earns nothing, which is why the contract
   // documents `pointsEarned` as `0` for one rather than leaving it undefined.
-  const pointsEarned = priced.reduce((sum, line) => sum + line.pointsEarned, 0);
+  const pointsEarned = priced.reduce((sum, line) => sum + loyaltyPoints(line), 0);
   if (customerId !== null && pointsEarned !== 0) {
     await tx.customerPoint.create({
       data: { tenantId, customerId, saleId, point: pointsEarned },
@@ -1358,7 +1636,7 @@ async function fillLedgers(
         saleId,
         itemType: line.item.itemType,
         itemId: line.item.itemId,
-        amount: line.lineTotal,
+        amount: line.netLineTotal,
       })),
     });
   }
@@ -1484,6 +1762,22 @@ const SALE_SELECT = {
   // The registration number as it was when the sale was completed, so a reprint does
   // not change when the salon edits its settings (TK2610-0010).
   gstRegistrationNumber: true,
+  // The campaign this sale consumed, snapshotted on the sale. `null` for the ordinary
+  // sale nobody vouchered (ADR 0020).
+  voucherCode: true,
+  voucherDiscountAmount: true,
+  // The one full-sale refund, if any. The sale itself stays `COMPLETED`; this row is the
+  // record that the money went back (ADR 0020 / R1).
+  refund: {
+    select: {
+      amount: true,
+      reason: true,
+      restocked: true,
+      refundedAt: true,
+      refundedBy: { select: { name: true } },
+      payouts: true,
+    },
+  },
   // The points the ledger recorded, not a recomputation: the ledger is the record, so
   // a correction row written later moves this figure without touching the sale.
   points: { select: { point: true } },
@@ -1498,6 +1792,7 @@ const SALE_SELECT = {
       lineTotal: true,
       discountPercent: true,
       discountAmount: true,
+      voucherDiscountAmount: true,
       taxAmount: true,
       taxRate: true,
       staffId: true,
@@ -1541,6 +1836,14 @@ function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>
     taxAmount: amount(row.taxAmount),
     taxRate: amount(row.taxRate),
     gstRegistrationNumber: row.gstRegistrationNumber,
+    voucherCode: row.voucherCode,
+    voucherDiscountAmount: amount(row.voucherDiscountAmount),
+    refundedAt: row.refund?.refundedAt.toISOString() ?? null,
+    refundAmount: row.refund === null ? null : amount(row.refund.amount),
+    refundReason: row.refund?.reason ?? null,
+    refundedByName: row.refund?.refundedBy?.name ?? null,
+    refundRestocked: row.refund?.restocked ?? null,
+    refundPayouts: row.refund?.payouts ?? [],
     // Never negative, for the same reason the write clamps it: overpayment is change.
     outstandingAmount: amount(Prisma.Decimal.max(row.totalAmount.minus(row.paidAmount), 0)),
     pointsEarned: row.points.reduce((sum, entry) => sum + entry.point, 0),
@@ -1554,6 +1857,8 @@ function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>
       lineTotal: amount(line.lineTotal),
       discountPercent: amount(line.discountPercent),
       discountAmount: amount(line.discountAmount),
+      voucherDiscountAmount: amount(line.voucherDiscountAmount),
+      netLineTotal: amount(line.lineTotal.minus(line.voucherDiscountAmount)),
       taxAmount: amount(line.taxAmount),
       taxRate: amount(line.taxRate),
       staffId: line.staffId,
@@ -1579,6 +1884,43 @@ export async function getSale(id: string): Promise<SaleDetail> {
   if (!row) throw notFound("That sale does not exist.", "SALE_NOT_FOUND");
 
   return toSaleDetail(row);
+}
+
+/**
+ * `POST /api/sales/voucher-preview` — what a code is worth on **this** cart.
+ *
+ * The till asks before it takes money, and the answer is the same arithmetic the write
+ * will use: `resolveCart` prices the catalogue and `applyVoucher` allocates the reduction.
+ * The browser therefore never shows a figure the server would not charge, and a code that
+ * is expired or short of its minimum is refused here rather than at the payment step.
+ */
+export async function previewVoucher(input: VoucherPreviewInput): Promise<VoucherPreview> {
+  const { priced, voucher } = await resolveCart({
+    customerId: input.customerId,
+    lines: input.lines,
+    voucherCode: input.voucherCode,
+  });
+
+  // A preview never posts. `totalsOf` with no tenders gives the total after the voucher,
+  // which is the only other figure the payment sheet draws.
+  const totals = totalsOf(priced, []);
+  if (voucher === null) {
+    // Unreachable: `resolveCart` applies the code whenever it is present. If this ever
+    // changes, failing loudly beats drawing a preview for a voucher nobody quoted.
+    throw new Error("Voucher preview resolved without a voucher.");
+  }
+
+  return voucherPreviewSchema.parse({
+    code: voucher.voucher.code,
+    description: voucher.voucher.description,
+    discountType: voucher.voucher.discountType,
+    value: amount(voucher.voucher.value),
+    discountAmount: amount(voucher.discountAmount),
+    eligibleTotal: amount(voucher.eligibleTotal),
+    totalAmount: amount(totals.totalAmount),
+    minSpend: amount(voucher.voucher.minSpend),
+    endsAt: voucher.voucher.endsAt.toISOString(),
+  });
 }
 
 /**
@@ -1622,11 +1964,11 @@ export async function createSale(input: CreateSaleInput): Promise<SaleDetail> {
     if (replay) return getSale(replay.id);
   }
 
-  const { priced, customerId, gstRegistrationNumber } = await resolveCart(input);
+  const { priced, customerId, gstRegistrationNumber, voucher } = await resolveCart(input);
 
   try {
     return await getSale(
-      await writeSale(tenantId, input, priced, customerId, gstRegistrationNumber),
+      await writeSale(tenantId, input, priced, customerId, gstRegistrationNumber, voucher),
     );
   } catch (error) {
     // The concurrent-double-post case: this call lost the unique index to one that has
@@ -1657,6 +1999,7 @@ export async function createSale(input: CreateSaleInput): Promise<SaleDetail> {
  * mean "everything" by accident.
  */
 export async function listSales(query: SaleListQuery): Promise<SaleList> {
+  const page = query.page ?? 1;
   const rows = await prisma.sale.findMany({
     where: { status: query.status },
     select: {
@@ -1676,13 +2019,16 @@ export async function listSales(query: SaleListQuery): Promise<SaleList> {
     // `id` breaks ties, so two carts parked in the same millisecond still have a stable
     // order and the list does not shuffle under the cashier's finger.
     orderBy: [{ soldAt: "desc" }, { id: "desc" }],
-    take: query.limit,
+    take: query.limit + 1,
+    skip: (page - 1) * query.limit,
   });
 
   // Parsed once for the whole answer, so a column this reader left out is caught here
   // rather than reaching the browser outside its contract (AGENTS.md rule 6).
   return saleListSchema.parse({
-    items: rows.map((row) => ({
+    page,
+    hasMore: rows.length > query.limit,
+    items: rows.slice(0, query.limit).map((row) => ({
       id: row.id,
       receiptNumber: row.receiptNumber,
       status: row.status,
@@ -1733,7 +2079,7 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
     throw conflict("This sale was voided, so it cannot be completed.", "SALE_ALREADY_VOID");
   }
 
-  const { priced, customerId, gstRegistrationNumber } = await resolveCart(input);
+  const { priced, customerId, gstRegistrationNumber, voucher } = await resolveCart(input);
   const totals = totalsOf(priced, input.payments);
   const soldAt = new Date();
   // Whoever completes the sale rang it up, so the till's signed-in cashier wins. The
@@ -1755,6 +2101,8 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
         taxAmount: totals.taxAmount,
         taxRate: totals.taxRate,
         gstRegistrationNumber,
+        voucherCode: voucher?.voucher.code ?? null,
+        voucherDiscountAmount: voucher?.discountAmount ?? new Prisma.Decimal(0),
         paidAmount: totals.paidAmount,
         paymentStatus: totals.paymentStatus,
         soldAt,
@@ -1785,6 +2133,9 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
     // starts again at zero so the receipt reprints it in cart order.
     await tx.saleLine.deleteMany({ where: { saleId: held.id } });
     await writeLines(tx, tenantId, held.id, priced);
+    if (voucher !== null) {
+      await redeemVoucher(tx, tenantId, held.id, voucher);
+    }
     await writePayments(tx, tenantId, held.id, input.payments);
     await redeemPayments(
       tx,
@@ -1870,6 +2221,18 @@ type VoidableSale = Prisma.SaleGetPayload<{ select: typeof VOIDABLE_SALE_SELECT 
  *   means putting money back — a refund, which is a different verb.
  */
 async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<void> {
+  // A refund is the end of the sale's life: the money went back, and voiding afterwards
+  // would reverse ledgers a second time while leaving the refund row pointing at a sale
+  // the salon now calls undone (ADR 0020 / R1). Read inside the transaction so a refund
+  // committed a moment ago is seen even if the sale row was loaded before it.
+  const refund = await tx.saleRefund.findFirst({
+    where: { saleId: sale.id },
+    select: { id: true },
+  });
+  if (refund !== null) {
+    throw conflict("This sale has been refunded, so it cannot be voided.", "SALE_ALREADY_REFUNDED");
+  }
+
   const lineIds = sale.lines.map((line) => line.id);
   if (lineIds.length > 0) {
     const [packages, credits, cards] = await Promise.all([
@@ -1989,6 +2352,24 @@ async function reverseForVoid(
     await tx.customerGiftCardHolding.deleteMany({ where: { saleLineId: { in: lineIds } } });
   }
 
+  // A void gives the redemption back; a refund deliberately does not (ADR 0020 / R1).
+  // The row is marked rather than deleted, exactly like a `CustomerRedemption`, so the
+  // campaign's history keeps the sale that consumed and then released it.
+  const voucherRedemption = await tx.voucherRedemption.findFirst({
+    where: { saleId: sale.id, revertedAt: null },
+    select: { id: true, voucherId: true },
+  });
+  if (voucherRedemption !== null) {
+    await tx.voucher.updateMany({
+      where: { id: voucherRedemption.voucherId, redeemedCount: { gt: 0 } },
+      data: { redeemedCount: { decrement: 1 } },
+    });
+    await tx.voucherRedemption.update({
+      where: { id: voucherRedemption.id },
+      data: { revertedAt: new Date() },
+    });
+  }
+
   await tx.customerOutstanding.deleteMany({ where: { saleId: sale.id } });
   await tx.employeePerformance.deleteMany({ where: { saleId: sale.id } });
   await tx.employeeCommission.deleteMany({ where: { saleId: sale.id } });
@@ -2035,6 +2416,9 @@ export async function voidSale(
   }
 
   await prisma.$transaction(async (tx) => {
+    // Serialize with refund before checking its record. Otherwise a refund could
+    // commit after assertVoidable's read but before this void changes the status.
+    await tx.sale.update({ where: { id: sale.id }, data: { updatedAt: new Date() } });
     // Both refusals run here rather than before, so a void that is going to be refused
     // rolls back inside the same transaction that would have changed the row.
     await assertVoidable(tx, sale);
@@ -2056,6 +2440,215 @@ export async function voidSale(
 
     await reverseForVoid(tx, tenantId, sale);
   });
+
+  return getSale(sale.id);
+}
+
+/*
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Refund (ADR 0020 / R1)
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+/**
+ * `POST /api/sales/:id/refund` — records a **full-sale** refund.
+ *
+ * A refund is a fact appended to the sale, not an edit to it: the sale stays
+ * `COMPLETED`, its lines, tenders and receipt number stand, and a `SaleRefund` row says
+ * the money went back. This is why it is not a void — a void says the sale never
+ * happened, a refund says it did and was undone with the customer.
+ *
+ * **The amount comes from the sale row**, never the request. A caller that could name
+ * the figure could refund more than was taken. `restock` is the manager's explicit
+ * choice; products go back on the shelf only when they actually came back.
+ *
+ * A second refund returns the existing receipt rather than writing another row — the
+ * `saleId` unique index would refuse it anyway, so the answer is the same record a
+ * retry should see. A voided sale has nothing to refund.
+ */
+export async function refundSale(
+  saleId: string,
+  input: RefundSaleInput,
+  actorId: string,
+): Promise<SaleDetail> {
+  const sale = await prisma.sale.findFirst({
+    where: { id: saleId },
+    select: {
+      id: true,
+      status: true,
+      totalAmount: true,
+      customerId: true,
+      refund: { select: { id: true } },
+      points: { select: { point: true } },
+      lines: { select: { itemType: true, itemId: true, quantity: true } },
+    },
+  });
+  if (!sale) throw notFound("That sale does not exist.", "SALE_NOT_FOUND");
+
+  // Idempotent, like a void: the first reason and actor are the audit record.
+  if (sale.refund !== null) return getSale(sale.id);
+
+  if (sale.status === "HELD") {
+    throw conflict(
+      "This cart was never rung up, so there is nothing to refund. Discard it instead.",
+      "SALE_NOT_COMPLETED",
+    );
+  }
+  if (sale.status === "VOID") {
+    throw conflict("This sale was voided, so there is nothing to refund.", "SALE_ALREADY_VOID");
+  }
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      // Lock the sale row first. A void racing this refund either waits and then sees
+      // the row below, or holds the row itself and this read sees `VOID` — so the two
+      // endings cannot both be recorded.
+      await tx.sale.update({ where: { id: sale.id }, data: { updatedAt: new Date() } });
+      const current = await tx.sale.findFirst({
+        where: { id: sale.id },
+        select: {
+          status: true,
+          totalAmount: true,
+          paidAmount: true,
+          refund: { select: { id: true } },
+          lines: { select: { itemType: true } },
+          payments: { select: { method: true, amount: true } },
+          outstanding: { select: { id: true } },
+        },
+      });
+      if (current?.status !== "COMPLETED") {
+        throw conflict("This sale is no longer refundable.", "SALE_NOT_COMPLETED");
+      }
+      if (current.refund !== null) {
+        // A retry that waited for the first transaction returns its receipt without
+        // repeating stock or points adjustments.
+        return;
+      }
+
+      if (
+        current.paidAmount.lessThan(current.totalAmount) ||
+        current.outstanding !== null ||
+        current.lines.some((line) => line.itemType !== "SERVICE" && line.itemType !== "PRODUCT") ||
+        current.payments.some((payment) => isRedemptionPaymentMethod(payment.method)) ||
+        current.payments
+          .reduce((sum, payment) => sum.plus(payment.amount), new Prisma.Decimal(0))
+          .lessThan(current.totalAmount)
+      ) {
+        throw conflict(
+          "Only fully paid service/product sales funded by money tenders can be refunded.",
+          "SALE_NOT_REFUNDABLE",
+        );
+      }
+      const payoutTotal = input.payouts.reduce(
+        (sum, payout) => sum.plus(payout.amount),
+        new Prisma.Decimal(0),
+      );
+      if (
+        input.payouts.some(
+          (payout) =>
+            isRedemptionPaymentMethod(payout.method) ||
+            payout.amount <= 0 ||
+            !new Prisma.Decimal(payout.amount).equals(
+              new Prisma.Decimal(payout.amount).toDecimalPlaces(2),
+            ),
+        ) ||
+        !payoutTotal.equals(current.totalAmount)
+      ) {
+        throw badRequest(
+          "Refund payouts must equal the sale total exactly.",
+          undefined,
+          "REFUND_PAYOUT_MISMATCH",
+        );
+      }
+
+      await tx.saleRefund.create({
+        data: {
+          tenantId: requireTenantScope(),
+          saleId: sale.id,
+          // Snapshotted from the sale, so the refund cannot disagree with the receipt.
+          amount: sale.totalAmount,
+          payouts: input.payouts.map((payout) => ({
+            method: payout.method,
+            amount: new Prisma.Decimal(payout.amount).toFixed(2),
+          })),
+          reason: input.reason,
+          restocked: input.restock,
+          refundedById: actorId,
+          refundedAt: new Date(),
+        },
+      });
+
+      const performances = await tx.employeePerformance.findMany({
+        where: { saleId: sale.id, refundAdjustment: false },
+      });
+      if (performances.length > 0)
+        await tx.employeePerformance.createMany({
+          data: performances.map((row) => ({
+            tenantId: row.tenantId,
+            userId: row.userId,
+            saleId: sale.id,
+            itemType: row.itemType,
+            itemId: row.itemId,
+            amount: row.amount.negated(),
+            refundAdjustment: true,
+          })),
+        });
+      const commissions = await tx.employeeCommission.findMany({
+        where: { saleId: sale.id, refundAdjustment: false },
+      });
+      for (const commission of commissions) {
+        if (commission.paidAt !== null) {
+          await tx.employeeCommission.update({
+            where: { id: commission.id },
+            data: { reconciliationRequired: true },
+          });
+        } else {
+          await tx.employeeCommission.create({
+            data: {
+              tenantId: commission.tenantId,
+              userId: commission.userId,
+              saleId: sale.id,
+              rate: commission.rate,
+              amount: commission.amount.negated(),
+              refundAdjustment: true,
+            },
+          });
+        }
+      }
+
+      if (input.restock) {
+        for (const line of sale.lines) {
+          if (line.itemType !== "PRODUCT") continue;
+          // No upper guard: the goods are real and have come back. A stock level edited
+          // by hand in the meantime is the salon's business, not a reason to refuse.
+          await tx.product.updateMany({
+            where: { id: line.itemId },
+            data: { quantity: { increment: line.quantity } },
+          });
+        }
+      }
+
+      // The money went back, so the points earned on it go too. Like a void, this is an
+      // offsetting ledger row rather than an edit or delete of the original earn: the
+      // history of what the sale awarded stays readable, and the balance is the sum.
+      const pointsEarned = sale.points.reduce((sum, entry) => sum + entry.point, 0);
+      if (sale.customerId !== null && pointsEarned !== 0) {
+        await tx.customerPoint.create({
+          data: {
+            tenantId: requireTenantScope(),
+            customerId: sale.customerId,
+            saleId: sale.id,
+            point: -pointsEarned,
+          },
+        });
+      }
+    });
+  } catch (error) {
+    // The unique `saleId` is the real guard; a concurrent retry loses the insert race and
+    // gets the record the winner wrote rather than a second refund.
+    if (isUniqueViolation(error)) return getSale(sale.id);
+    throw error;
+  }
 
   return getSale(sale.id);
 }
