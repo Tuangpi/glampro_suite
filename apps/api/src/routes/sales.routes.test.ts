@@ -219,6 +219,7 @@ interface ReceiptBody {
   discountAmount: string;
   taxAmount: string;
   taxRate: string;
+  gstRegistrationNumber: string | null;
   pointsEarned: number;
   staffId: string | null;
   staffName: string | null;
@@ -1441,6 +1442,130 @@ describe(
         assert.equal(receipt.taxAmount, "0.00");
         assert.equal(receipt.taxRate, "0.00");
         assert.equal(receipt.lines[0]?.taxAmount, "0.00");
+      });
+    });
+
+    /*
+     * ───────────────────────────────────────────────────────────────────────────
+     * GST number snapshot + emailed receipts (TK2610-0010)
+     * ───────────────────────────────────────────────────────────────────────────
+     *
+     * The number is written **onto the sale**, so a reprint after the salon edits its
+     * settings still shows the registration that applied at the till. The email reads
+     * that stored receipt rather than repricing: the copy and the paper are one document.
+     */
+    describe("GST number snapshots and emailed receipts", () => {
+      async function setGst(enabled: boolean, registrationNumber: string | null): Promise<void> {
+        await runAsPlatform(() =>
+          prisma.tenant.update({
+            where: { id: TENANT_A },
+            data: { gstEnabled: enabled, gstRegistrationNumber: registrationNumber },
+          }),
+        );
+      }
+
+      /** A one-line cart — no stock, so these tests cannot run the shampoo out. */
+      async function ringUp(): Promise<ReceiptBody> {
+        const response = await send(
+          "POST",
+          "/api/sales",
+          {
+            lines: [{ itemType: "SERVICE", itemId: await seededIdOf("SERVICE"), quantity: 1 }],
+            payments: [{ method: "CASH", amount: 50 }],
+          },
+          token,
+        );
+        assert.equal(response.status, 201);
+        return dataOf<ReceiptBody>(response);
+      }
+
+      it("snapshots the salon's number, and keeps it when the setting changes", async () => {
+        await setGst(true, "GST-200012345");
+        try {
+          const sale = await ringUp();
+          assert.equal(sale.gstRegistrationNumber, "GST-200012345");
+
+          await setGst(true, "GST-CHANGED");
+          const reread = await dataOf<ReceiptBody>(
+            await request("GET", `/api/sales/${sale.id}`, token),
+          );
+          assert.equal(
+            reread.gstRegistrationNumber,
+            "GST-200012345",
+            "history does not move with the setting",
+          );
+        } finally {
+          await setGst(false, null);
+        }
+      });
+
+      it("stores no number while GST is switched off", async () => {
+        await setGst(false, "GST-200012345");
+        try {
+          assert.equal((await ringUp()).gstRegistrationNumber, null);
+        } finally {
+          await setGst(false, null);
+        }
+      });
+
+      it("emails the stored receipt to the address in the body", async () => {
+        const sale = await ringUp();
+
+        const response = await send(
+          "POST",
+          `/api/sales/${sale.id}/receipt/email`,
+          { email: "customer@example.com" },
+          token,
+        );
+
+        assert.equal(response.status, 200);
+        const sent = await dataOf<{ sent: boolean; to: string; messageId: string | null }>(
+          response,
+        );
+        assert.equal(sent.sent, true);
+        assert.equal(sent.to, "customer@example.com", "it went where the cashier said");
+      });
+
+      it("refuses a parked cart, which has no receipt yet", async () => {
+        const held = await dataOf<ReceiptBody>(
+          await send("POST", "/api/sales", await holdBody(), token),
+        );
+
+        const response = await send(
+          "POST",
+          `/api/sales/${held.id}/receipt/email`,
+          { email: "customer@example.com" },
+          token,
+        );
+
+        assert.equal(response.status, 409);
+        assert.equal((await envelope(response)).code, "SALE_NOT_COMPLETED");
+      });
+
+      it("requires a valid address, and a cashier may send one", async () => {
+        const sale = await ringUp();
+
+        const malformed = await send(
+          "POST",
+          `/api/sales/${sale.id}/receipt/email`,
+          { email: "not-an-address" },
+          token,
+        );
+        assert.equal(malformed.status, 422);
+        assert.ok(
+          (await envelope(malformed)).details?.some((detail) => detail.path === "body.email"),
+          "the address is required by the contract, not merely expected",
+        );
+
+        // Emailing a receipt is a till action, not an authorisation: the role guard the
+        // void carries must not have been copied onto it.
+        const byCashier = await send(
+          "POST",
+          `/api/sales/${sale.id}/receipt/email`,
+          { email: "customer@example.com" },
+          cashierToken,
+        );
+        assert.equal(byCashier.status, 200);
       });
     });
   },

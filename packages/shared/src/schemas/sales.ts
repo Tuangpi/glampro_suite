@@ -30,7 +30,7 @@ import {
   PAYMENT_STATUSES,
   SALE_STATUSES,
 } from "../constants.js";
-import { moneySchema } from "./common.js";
+import { emailSchema, moneySchema } from "./common.js";
 
 /**
  * Mirrors the `SaleLineItemType` enum. The order is the order the picker draws its
@@ -505,6 +505,16 @@ export const saleDetailSchema = z.object({
   taxAmount: z.string(),
   /** The GST rate applied to this sale, as stored; `"0.00"` when disabled. */
   taxRate: z.string(),
+  /**
+   * The salon's GST registration number, **snapshotted at completion**
+   * (TK2610-0010). A reprint or an emailed copy therefore shows the number that
+   * applied when the sale was rung up, even if the salon later changes it.
+   *
+   * `null` when the sale was written before the column existed and no number was
+   * recorded, or when GST was disabled. The receipt falls back to the salon's
+   * current number for those historical rows.
+   */
+  gstRegistrationNumber: z.string().nullable(),
   /** `totalAmount - paidAmount`, never negative. Non-zero means a `CustomerOutstanding`. */
   outstandingAmount: z.string(),
   /** The points this sale earned its customer; `0` for a walk-in. */
@@ -531,3 +541,33 @@ export const voidSaleSchema = z.object({
 });
 
 export type VoidSaleInput = z.infer<typeof voidSaleSchema>;
+
+/**
+ * `POST /api/sales/:id/receipt/email` — where the e-receipt should go.
+ *
+ * The address is **in the body rather than read from the customer row**: the cashier
+ * may be sending to a partner or a shared inbox, and the dialog prefills the customer's
+ * saved address so the common case is one tap. `emailSchema` is the same contract login
+ * and staff creation use, so the till cannot accept an address the rest of the app
+ * would refuse.
+ */
+export const emailSaleReceiptSchema = z.object({
+  email: emailSchema,
+});
+
+export type EmailSaleReceiptInput = z.infer<typeof emailSaleReceiptSchema>;
+
+/**
+ * What the send answers.
+ *
+ * Only the destination and the provider's message id — never the body it carried, and
+ * never the SMTP response. `messageId` is `null` when the transport (the development
+ * JSON transport, for instance) does not issue one.
+ */
+export const saleReceiptEmailResultSchema = z.object({
+  sent: z.literal(true),
+  to: emailSchema,
+  messageId: z.string().nullable(),
+});
+
+export type SaleReceiptEmailResult = z.infer<typeof saleReceiptEmailResultSchema>;

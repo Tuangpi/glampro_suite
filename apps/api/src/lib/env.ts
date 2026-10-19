@@ -50,4 +50,21 @@ export const env = {
   logLevel: process.env.LOG_LEVEL ?? (isProduction ? "info" : "debug"),
   /** Absolute or repo-relative directory for user uploads. */
   uploadsDir: process.env.UPLOADS_DIR ?? "uploads",
+  /**
+   * Outbound mail (2FA codes and emailed receipts, TK2610-0010).
+   *
+   * `host` being unset is the development/test path: `lib/email.ts` keeps the
+   * message off the network and logs it instead. In production the same absence is
+   * refused rather than silently dropping a customer's receipt.
+   */
+  smtp: {
+    host: process.env.SMTP_HOST?.trim() || null,
+    port: optionalNumber("SMTP_PORT", 587),
+    /** Implicit TLS (usually port 465). Port 587 upgrades with STARTTLS instead. */
+    secure: (process.env.SMTP_SECURE ?? "").trim().toLowerCase() === "true",
+    user: process.env.SMTP_USER?.trim() || null,
+    password: process.env.SMTP_PASSWORD ?? null,
+  },
+  /** The `From:` on every message. Override in production with a real mailbox. */
+  mailFrom: process.env.MAIL_FROM?.trim() || "Glampro Suite <no-reply@glampro.local>",
 } as const;

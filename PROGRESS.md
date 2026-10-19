@@ -2,11 +2,12 @@
 
 ## Current State
 
-- Current task: TK2610-0009 / P0-01 GST — implementation and automated checks complete, IN PROGRESS pending user UAT/sign-off. Most recently completed: TK2610-0008 / P0-05 (signed off October 19, 2026).
-- Most recent work: GST for Singapore salons — 9% inclusive, backed out per line, snapshotted on sale/lines, salon toggle + registration number, receipts and reports. Additive migration `20261019015129_gst_settings_and_sale_tax` applied. Verification: shared 92/92, web 387/387, API 312/312; typecheck and lint clean.
+- Current task: TK2610-0010 / P0-02 receipts, **IN PROGRESS** — email e-receipt and the GST-number snapshot shipped October 19, 2026. WhatsApp delivery is not started and needs a provider decision.
+- Most recent work: `Sale.gstRegistrationNumber` snapshotted at completion (migration `20261019120000_sale_gst_registration_number`, applied locally); `POST /api/sales/:id/receipt/email` renders the stored receipt and sends it via nodemailer (`SMTP_*` / `MAIL_FROM`); till has an "Email receipt" dialog beside Print. Verified: API 322/322, web 387/387, API typecheck/scoped lint/Prettier clean. Changes uncommitted.
+- Earlier: TK2610-0009 / P0-01 GST signed off DONE by user UAT (October 19, 2026): 9% inclusive, backed out per line, snapshotted on sale/lines, salon toggle + registration number, receipts and reports; migration `20261019015129_gst_settings_and_sale_tax` applied; shared 92/92, web 387/387, API 312/312.
 - Earlier: SETUP-05 database verification and repair. Schema drift found (live DB missing `tenants.time_zone`/`locale` and `tenant_operating_hours` despite `_prisma_migrations` rows; P0-09's 2FA columns existed only in `schema.prisma`). Repaired additively via `npm run db:migrate`: applied pending `20261015210000_tenant_localisation`, `20261016151623_tenant_operating_hours`, and newly generated `20261018141510_user_two_factor_auth` (purely additive, reviewed). No reset/reseed. Backup: `backups/glampro_suite_2026-10-18.dump` (pg_dump); `backups/` gitignored; `.env` never committed.
 - Environment facts: PostgreSQL at `localhost:5432`, db `glampro_suite`, shadow `glampro_shadow` also on 5432. Commented-out `SHADOW_DATABASE_URL` in `apps/api/.env` points at stale port 5433 (nothing listens) — use 5432 for shadow commands.
-- Verification: `prisma migrate status` → 12 migrations, up to date; `prisma migrate diff` live-DB↔schema and migrations↔schema both empty (exit 0); 0 rolled-back migrations; API tests 308/308 pass (exit 0), web/shared unchanged this session.
+- Verification (SETUP-05, October 18): `prisma migrate status` → 12 migrations, up to date at that time (14 now, after GST and the sale GST-number snapshot); `prisma migrate diff` live-DB↔schema and migrations↔schema both empty (exit 0); 0 rolled-back migrations; API tests 308/308 passed then.
 - One stale test fixed: `apps/api/src/routes/auth.routes.test.ts` replay case still asserted pre-P0-09 family revocation; now asserts ADR 0007 behavior (replay → 401 `SESSION_INVALIDATED`, rotated pair stays valid). Test-only change; service behavior unchanged. This was the blocker hiding behind the DB seed failure.
 - P0-09 / TK2610-0005 remains DONE; its "integration tests blocked" caveat is now cleared.
 - TK2610-0008 / P0-05 — DONE: user completed UAT and marked it done in the external system on October 19, 2026. Its Products.tsx/test changes are committed in 80bd83b (verified via git log; the earlier "uncommitted" note was stale).
@@ -57,13 +58,41 @@ already recorded complete and can be marked done externally if not already marke
 - TK2610-0014 / P1-09 — performer-picker cleanup.
 
 TK2610-0008 / P0-05 was signed off Done by the user on October 19, 2026 (UAT
-accepted) and is already marked done externally. No phase or readiness milestone
-is signed off; child completion alone does not sign off Phase 1 (TK2610-0001).
+accepted) and is already marked done externally. TK2610-0009 / P0-01 passed the
+user's UAT check on October 19, 2026; mark it done externally if not already. No
+phase or readiness milestone is signed off; child completion alone does not sign off
+Phase 1 (TK2610-0001).
 
 ## Recent handoffs
 
-### October 19, 2026 — TK2610-0009 / P0-01 GST (implementation complete, awaiting UAT)
+### October 19, 2026 — TK2610-0010 / P0-02 email e-receipt (IN PROGRESS)
 
+- Shipped the email half of P0-02. WhatsApp has no provider yet, so the task is not
+  done and no WhatsApp code was invented.
+- **GST snapshot:** `Sale.gstRegistrationNumber` is written by `resolveCart` only while
+  the salon's GST is enabled; additive migration
+  `20261019120000_sale_gst_registration_number` applied to `glampro_suite`. Reprints keep
+  the old number when the setting changes. Historical rows with tax fall back to the
+  current salon number; zero-tax rows print none.
+- **Email:** `receipt-email.service.ts` builds HTML + text from the stored `SaleDetail`
+  (same source as the paper), escaping salon/line copy. `POST /:id/receipt/email` sits
+  behind session auth, `requireModule("sales")`, `requireWritableTenant()` and a
+  30/15min limiter; 409 for HELD carts, 503 on provider/configuration failure. Dev/test
+  use nodemailer's JSON transport; production 503s when SMTP is unset.
+- **Web:** `useEmailSaleReceipt` mutation and `EmailReceiptDialog` (prefilled customer
+  address, shared-schema validation, stays open with the destination after a send).
+- Verification: migration applied; API typecheck + ESLint + Prettier clean; API 322/322 and web
+  387/387 pass (new: `sales.routes.test.ts` 5, `receipt-email.service.test.ts` 5). The
+  production build was not run this session.
+- Changes uncommitted; suggested message
+  `feat: snapshot GST number and email sale receipts (TK2610-0010)`.
+- Next: decide the WhatsApp provider (shared with TK2610-0021) or agree email-only scope,
+  then UAT.
+
+### October 19, 2026 — TK2610-0009 / P0-01 GST UAT sign-off (DONE)
+
+- User completed the UAT check (GST settings, sale receipt, report figures) and the
+  local tracker is promoted to DONE. External system/PDF updates stay with the user.
 - Policy: Singapore GST 9%, inclusive of catalogue prices. Back-calculated per line
   (`lineTotal × 9 / 109`, half-up 2dp); sale tax is the sum of rounded lines. Rate and
   amount are stored on `Sale`/`SaleLine`. GST defaults off, so existing salons are
@@ -75,7 +104,10 @@ is signed off; child completion alone does not sign off Phase 1 (TK2610-0001).
   ReceiptView "Includes GST (9%)" row, Reports GST column and totals tile.
 - Verification: migration applied; `build:shared`, shared/API/web typecheck and lint
   exit 0; shared 92/92, web 387/387, API 312/312 pass.
-- Next: user UAT (enable GST, ring a sale, check the report), then external sign-off.
+- Changes are uncommitted; suggested message
+  `feat: add inclusive GST settings, receipts and reports (TK2610-0009)`.
+- Next: TK2610-0010 / P0-02 receipts (thermal print + email/WhatsApp e-receipt with the
+  GST number).
 
 ### October 19, 2026 — TK2610-0008 / P0-05 UAT sign-off (DONE)
 

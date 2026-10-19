@@ -19,9 +19,12 @@
  * the point of a void being a state change rather than a delete: the receipt is still a
  * receipt, and it has to say what it now is (ADR 0016).
  */
+import { useState } from "react";
+
 import type { SaleDetail } from "@glampro_suite/shared";
 
-import { Banknote, CheckCircle, Printer } from "@/components/icons";
+import { Banknote, CheckCircle, Mail, Printer } from "@/components/icons";
+import EmailReceiptDialog from "@/components/sale/EmailReceiptDialog";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -34,6 +37,11 @@ export interface ReceiptViewProps {
   /** Clears the receipt and returns the till to an empty cart. */
   onNewSale: () => void;
   /**
+   * The customer's saved address, prefilled in the email dialog (TK2610-0010). `null`
+   * for a walk-in or a customer who never gave one — the cashier can still type one.
+   */
+  customerEmail: string | null;
+  /**
    * Whether the signed-in user may void — owner or manager (ADR 0016). Only ever used to
    * **hide** the action: the API refuses anybody else with a 403, and a button that
    * always fails is worse than no button.
@@ -43,12 +51,20 @@ export interface ReceiptViewProps {
   onVoid: () => void;
 }
 
-export default function ReceiptView({ sale, onNewSale, canVoid, onVoid }: ReceiptViewProps) {
+export default function ReceiptView({
+  sale,
+  onNewSale,
+  customerEmail,
+  canVoid,
+  onVoid,
+}: ReceiptViewProps) {
   const { formatDateTime, formatPrice } = useSalonFormatting();
+  const [emailOpen, setEmailOpen] = useState(false);
   const changeCents = priceToCents(sale.paidAmount) - priceToCents(sale.totalAmount);
   // A void is only reachable from a sale that stands: a voided one has nothing left to
   // take off the books, and the service says the same thing.
   const voidable = sale.status === "COMPLETED" && canVoid;
+  const receiptLabel = sale.receiptNumber === null ? "This sale" : `Receipt #${sale.receiptNumber}`;
 
   return (
     <div className="flex flex-col gap-6">
@@ -76,6 +92,18 @@ export default function ReceiptView({ sale, onNewSale, canVoid, onVoid }: Receip
             >
               <Printer aria-hidden />
               Print
+            </Button>
+            {/* The same receipt, sent rather than printed (TK2610-0010). The dialog
+                prefills the customer's address and the API builds the body from the
+                sale row, so the copy cannot drift from the sheet. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              className="print:hidden"
+              onClick={() => setEmailOpen(true)}
+            >
+              <Mail aria-hidden />
+              Email receipt
             </Button>
             {voidable ? (
               <Button variant="danger" size="sm" className="print:hidden" onClick={onVoid}>
@@ -217,6 +245,15 @@ export default function ReceiptView({ sale, onNewSale, canVoid, onVoid }: Receip
           <Banknote aria-hidden className="ml-auto shrink-0 text-ink-muted" />
         </p>
       )}
+
+      {emailOpen ? (
+        <EmailReceiptDialog
+          saleId={sale.id}
+          receiptLabel={receiptLabel}
+          defaultEmail={customerEmail}
+          onClose={() => setEmailOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -741,7 +741,11 @@ async function resolveCart(input: {
   customerId?: string;
   staffId?: string;
   lines: SaleLineInput[];
-}): Promise<{ priced: PricedLine[]; customerId: string | null }> {
+}): Promise<{
+  priced: PricedLine[];
+  customerId: string | null;
+  gstRegistrationNumber: string | null;
+}> {
   // A foreign customer is not found rather than forbidden: the extension scopes the
   // lookup, so this cannot tell "no such customer" from "not yours", and must not.
   const customer = input.customerId
@@ -771,7 +775,7 @@ async function resolveCart(input: {
   // prices under the same flag.
   const tenant = await prisma.tenant.findUnique({
     where: { id: requireTenantScope() },
-    select: { gstEnabled: true },
+    select: { gstEnabled: true, gstRegistrationNumber: true },
   });
 
   // "Is a member" is the membership reference legacy kept as free text
@@ -784,7 +788,13 @@ async function resolveCart(input: {
     tenant?.gstEnabled ?? false,
   );
 
-  return { priced, customerId: customer?.id ?? null };
+  return {
+    priced,
+    customerId: customer?.id ?? null,
+    // The receipt's legal identity, snapshotted only while GST is charged: a number
+    // beside a zero-tax sale would claim a tax invoice that was never issued.
+    gstRegistrationNumber: tenant?.gstEnabled ? tenant.gstRegistrationNumber : null,
+  };
 }
 
 /**
@@ -842,6 +852,7 @@ async function writeSale(
   input: CreateSaleInput,
   priced: PricedLine[],
   customerId: string | null,
+  gstRegistrationNumber: string | null,
 ): Promise<string> {
   const totals = totalsOf(priced, input.payments);
   const soldAt = new Date();
@@ -904,6 +915,7 @@ async function writeSale(
         totalAmount: totals.totalAmount,
         taxAmount: totals.taxAmount,
         taxRate: totals.taxRate,
+        gstRegistrationNumber,
         paidAmount: totals.paidAmount,
         paymentStatus: totals.paymentStatus,
         soldAt,
@@ -1204,6 +1216,9 @@ const SALE_SELECT = {
   paidAmount: true,
   taxAmount: true,
   taxRate: true,
+  // The registration number as it was when the sale was completed, so a reprint does
+  // not change when the salon edits its settings (TK2610-0010).
+  gstRegistrationNumber: true,
   // The points the ledger recorded, not a recomputation: the ledger is the record, so
   // a correction row written later moves this figure without touching the sale.
   points: { select: { point: true } },
@@ -1260,6 +1275,7 @@ function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>
     // reprints what the till charged, and history never moves (TK2610-0009).
     taxAmount: amount(row.taxAmount),
     taxRate: amount(row.taxRate),
+    gstRegistrationNumber: row.gstRegistrationNumber,
     // Never negative, for the same reason the write clamps it: overpayment is change.
     outstandingAmount: amount(Prisma.Decimal.max(row.totalAmount.minus(row.paidAmount), 0)),
     pointsEarned: row.points.reduce((sum, entry) => sum + entry.point, 0),
@@ -1341,10 +1357,12 @@ export async function createSale(input: CreateSaleInput): Promise<SaleDetail> {
     if (replay) return getSale(replay.id);
   }
 
-  const { priced, customerId } = await resolveCart(input);
+  const { priced, customerId, gstRegistrationNumber } = await resolveCart(input);
 
   try {
-    return await getSale(await writeSale(tenantId, input, priced, customerId));
+    return await getSale(
+      await writeSale(tenantId, input, priced, customerId, gstRegistrationNumber),
+    );
   } catch (error) {
     // The concurrent-double-post case: this call lost the unique index to one that has
     // already written the sale, so that sale exists and is the answer to this request.
@@ -1450,7 +1468,7 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
     throw conflict("This sale was voided, so it cannot be completed.", "SALE_ALREADY_VOID");
   }
 
-  const { priced, customerId } = await resolveCart(input);
+  const { priced, customerId, gstRegistrationNumber } = await resolveCart(input);
   const totals = totalsOf(priced, input.payments);
   const soldAt = new Date();
   // Whoever completes the sale rang it up, so the till's signed-in cashier wins. The
@@ -1471,6 +1489,7 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
         totalAmount: totals.totalAmount,
         taxAmount: totals.taxAmount,
         taxRate: totals.taxRate,
+        gstRegistrationNumber,
         paidAmount: totals.paidAmount,
         paymentStatus: totals.paymentStatus,
         soldAt,

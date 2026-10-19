@@ -389,6 +389,7 @@ export default function Sale() {
           <ReceiptView
             sale={receipt}
             onNewSale={startNewSale}
+            customerEmail={customer?.email ?? null}
             canVoid={canVoid}
             onVoid={() => {
               setVoidError(null);

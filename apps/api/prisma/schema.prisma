@@ -882,6 +882,12 @@ model Sale {
   voidReason String?
   /// Who answered for it — the verified JWT's user, never anything the request named.
   voidedById String?
+  /// The salon's GST registration number, snapshotted when the sale is
+  /// completed (TK2610-0010). Stored rather than joined so a reprint or an
+  /// emailed copy shows the number that applied at the time, even after the
+  /// salon's setting changes. `null` when GST was disabled or the row predates
+  /// the column.
+  gstRegistrationNumber String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

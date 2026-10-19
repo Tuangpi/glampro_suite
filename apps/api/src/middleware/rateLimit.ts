@@ -34,3 +34,22 @@ export const authLimiter = rateLimit({
     code: "RATE_LIMITED",
   },
 });
+
+/**
+ * Emailed receipts (TK2610-0010).
+ *
+ * A receipt send costs a provider message and can reach any address the cashier types, so
+ * it gets its own tighter budget than the API baseline. Successful sends count: the point
+ * is to stop a loop from mailing a customer fifty copies, not to punish typos.
+ */
+export const receiptEmailLimiter = rateLimit({
+  windowMs: FIFTEEN_MINUTES,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    statusCode: 429,
+    message: "Too many receipt emails. Please wait a few minutes and try again.",
+    code: "RATE_LIMITED",
+  },
+});

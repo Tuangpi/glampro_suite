@@ -2,12 +2,14 @@ import { Router } from "express";
 import {
   completeSaleSchema,
   createSaleSchema,
+  emailSaleReceiptSchema,
   idParamSchema,
   saleItemSearchQuerySchema,
   saleListQuerySchema,
   voidSaleSchema,
   type CompleteSaleInput,
   type CreateSaleInput,
+  type EmailSaleReceiptInput,
   type SaleItemSearchQuery,
   type SaleListQuery,
   type VoidSaleInput,
@@ -15,8 +17,10 @@ import {
 
 import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
+import { receiptEmailLimiter } from "../middleware/rateLimit.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
+import { emailSaleReceipt } from "../services/receipt-email.service.js";
 import {
   completeSale,
   createSale,
@@ -191,6 +195,32 @@ salesRouter.post(
       const { id } = validated<{ id: string }>(req, "params");
       const { reason } = validated<VoidSaleInput>(req, "body");
       res.status(200).json({ data: await voidSale(id, { reason }, req.user.id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Emails a copy of a receipt (TK2610-0010).
+ *
+ * A receipt is a record, not a new sale: `200` with where it went, not `201`. The send is
+ * a side effect with a provider cost, so it carries its own limiter; the body names only
+ * the destination, and the receipt itself is read fresh under the caller's tenant scope.
+ */
+salesRouter.post(
+  "/:id/receipt/email",
+  auth,
+  requireModule("sales"),
+  requireWritableTenant(),
+  receiptEmailLimiter,
+  validate(idParamSchema, "params"),
+  validate(emailSaleReceiptSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      const { email } = validated<EmailSaleReceiptInput>(req, "body");
+      res.status(200).json({ data: await emailSaleReceipt(id, email) });
     } catch (error) {
       next(error);
     }

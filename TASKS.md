@@ -129,19 +129,25 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0009 — P0-01 GST settings, tax line on sales & tax reports
 
-- Status: IN PROGRESS — implementation and automated checks complete; awaiting UAT/sign-off.
+- Status: DONE (October 19, 2026 — UAT completed by the user).
 - Expected result: Add GST settings, tax line on sales & tax reports
 - Completion check / dependencies: Verify GST settings/permissions, sale calculations and tax reports, including rounding and tenant isolation. Clarify tax policy first.
 - Policy used: Singapore GST at 9%, **inclusive** of catalogue prices. Tax is backed out per line (`lineTotal × 9 / 109`, half-up 2dp) and the sale total is the sum of the rounded lines, so no cent is invented by re-deriving from the sale total. Rate and amount are snapshotted on `Sale`/`SaleLine`. Existing salons keep GST off (`gstEnabled` default `false`).
 - Evidence (October 19, 2026): migration `20261019015129_gst_settings_and_sale_tax` applied additively; shared/API/web typecheck and lint exit 0; shared 92/92, web 387/387, API 312/312 pass. New tests cover the settings pair guard (`settings.routes.test.ts`), per-line 9% back-calculation and the disabled case (`sales.routes.test.ts`), tax totals/per-day figures (`reports.routes.test.ts`), the GST settings controls (`Settings.test.tsx`), the receipt row (`Sale.test.tsx`) and the schema contracts (`shared/schemas/settings.test.ts`).
-- Next: user UAT of Settings → Charge GST, a sale receipt and the Reports GST figures; then record external sign-off (PDF/external system stay with the user).
+- Sign-off: user completed the UAT check on October 19, 2026 (GST settings, sale receipt and report figures). Record the external system/PDF as done if not already; those updates stay with the user.
 
 ### TK2610-0010 — P0-02 Receipts: thermal print + email/WhatsApp e-receipt
 
-- Status: Not assessed
+- Status: IN PROGRESS — email e-receipt shipped October 19, 2026; WhatsApp not started.
 - Expected result: Receipts: print (thermal) + email/WhatsApp e-receipt with GST no.
 - Completion check / dependencies: Verify thermal printing and email/WhatsApp delivery with GST number, receipt content and tenant isolation. Resolve provider and legacy-numbering behavior (ADR 0011). Depends on GST/payment data and messaging setup.
-- Next: audit current implementation against the full expected result and check.
+- Done (October 19, 2026):
+  - **GST snapshot.** `Sale.gstRegistrationNumber` is written at completion from the salon's setting (only while GST is enabled), via additive migration `20261019120000_sale_gst_registration_number`. A reprint after the salon edits its number keeps the registration that applied at the till. Pre-snapshot sales with tax fall back to the salon's current number; zero-tax sales print none.
+  - **Email e-receipt.** `POST /api/sales/:id/receipt/email` builds HTML + text from the stored `SaleDetail` (never a fresh pricing pass) and sends it with nodemailer. `200 {sent,to,messageId}`; 409 `SALE_NOT_COMPLETED` for a held cart; 503 `EMAIL_SEND_FAILED` / `EMAIL_NOT_CONFIGURED`; 422 on a malformed address; session + `sales` module + writable tenant + 30/15min limiter. SMTP config is `SMTP_*` + `MAIL_FROM`; development/test use nodemailer's JSON transport (no network), production refuses to send when SMTP is unset.
+  - **Till UI.** "Email receipt" beside Print; dialog prefills the customer's saved address, validates with the shared schema, and keeps the destination on screen after sending. Printing remains the existing browser print dialog with `print:hidden` chrome.
+- Not done: **WhatsApp delivery**. No provider is chosen or onboarded (same decision carried by TK2610-0021), so there is no transport, template or consent record. Email is sent synchronously per request; no outbox/retry.
+- Verification: migration applied to local `glampro_suite` (`prisma migrate deploy`); API typecheck, scoped ESLint and Prettier clean; API 322/322 (5 new route, 5 new service tests) and web 387/387 pass. Production build not run. Changes uncommitted.
+- Next: decide the WhatsApp provider or accept email-only scope for P0-02, then UAT.
 
 ### TK2610-0011 — P0-04 Local payment methods
 

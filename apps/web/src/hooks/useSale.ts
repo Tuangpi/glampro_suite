@@ -36,6 +36,7 @@ import {
   type SaleItemSearchResult,
   type SaleLineInput,
   type SaleList,
+  type SaleReceiptEmailResult,
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
@@ -578,5 +579,20 @@ export function useVoidSale() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.products.list() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.products.count() });
     },
+  });
+}
+
+/**
+ * Emails a copy of a receipt: `POST /api/sales/:id/receipt/email` (TK2610-0010).
+ *
+ * A send is a side effect, not a change to the sale, so nothing is invalidated: the
+ * receipt on screen is already the server's row and the answer only says where the copy
+ * went. The server reads that receipt again under this tenant, so the email carries the
+ * same lines and the same GST number the screen is showing.
+ */
+export function useEmailSaleReceipt() {
+  return useMutation({
+    mutationFn: ({ saleId, email }: { saleId: string; email: string }) =>
+      post<SaleReceiptEmailResult>(`/sales/${saleId}/receipt/email`, { email }),
   });
 }
