@@ -4,14 +4,20 @@
  * Three inputs are decided **here** rather than by the person filling the form
  * (`docs/mvp.md` → M2):
  *
- * 1. *Duration* comes from the service — the form shows the end time the server
- *    will compute (`startsAt + Service.durationMinutes`) but posts neither it
- *    nor the duration, so a two-hour block cannot be put on a one-hour service.
- * 2. *Who may perform it* is filtered to the service's department
+ * 1. *Duration* comes from each service — the form shows the end time the server
+ *    will compute (the summed `Service.durationMinutes` of the chain, starting
+ *    at the chosen instant) but posts neither it nor the durations, so a
+ *    two-hour block cannot be put on a one-hour service.
+ * 2. *Who may perform a line* is filtered to **that line's** service department
  *    (`User.departments` ∩ `Service.departmentId`), the booking twin of M1's
  *    till picker — and the API refuses the rest anyway (ADR 0013).
  * 3. *The end time* on screen is a **preview**: the receipt of truth is the
  *    `endsAt` the create/update response returns.
+ *
+ * A booking is a chain of service lines (TK2610-0020 phase B): the rows are
+ * submitted in order, line 1 starting where line 0 ends. A single row is the
+ * single-service booking the salon mostly takes, and it is what the drawer opens
+ * with.
  *
  * The three lists (services, customers, staff) are read once per open with a
  * large page rather than searched: a day-desk form picks from the salon's
@@ -39,18 +45,53 @@ import { performerOptions } from "@/lib/performer-options";
 
 const LIST_PAGE_SIZE = 200;
 
-interface FormState {
+/** One service on the form, with the performer chosen for it. */
+interface ServiceLineForm {
   serviceId: string;
-  customerId: string;
   staffId: string;
+}
+
+interface FormState {
+  /** Ordered chain of services; index 0 is the booking's primary service. */
+  services: ServiceLineForm[];
+  customerId: string;
   /** `datetime-local` value: `YYYY-MM-DDTHH:mm` in the salon's timezone. */
   startsAt: string;
   comment: string;
 }
 
-/** The empty booking: no customer, no performer, the moment the form opened. */
+/** The empty booking: one blank service line, no customer, the moment it opened. */
 function emptyForm(defaultStartsAt: string): FormState {
-  return { serviceId: "", customerId: "", staffId: "", startsAt: defaultStartsAt, comment: "" };
+  return {
+    services: [{ serviceId: "", staffId: "" }],
+    customerId: "",
+    startsAt: defaultStartsAt,
+    comment: "",
+  };
+}
+
+/**
+ * The booking's own chain, or the single service it implies.
+ *
+ * A row written before service lines existed has no lines and no chain to show,
+ * so it falls back to the flat columns — the same rule the API applies when it
+ * reads one.
+ */
+function formFromAppointment(appointment: AppointmentDetail, timeZone: string): FormState {
+  const services =
+    appointment.services.length > 0
+      ? appointment.services.map((line) => ({
+          serviceId: line.serviceId,
+          staffId: line.staffId ?? "",
+        }))
+      : [{ serviceId: appointment.serviceId ?? "", staffId: appointment.staffId ?? "" }];
+
+  return {
+    services,
+    customerId: appointment.customerId ?? "",
+    startsAt: toSalonInputValue(appointment.startsAt, timeZone),
+    comment: appointment.comment ?? "",
+  };
 }
 
 /** ISO instant → the salon-local value `<input type="datetime-local">` reads and writes. */
@@ -98,13 +139,7 @@ export default function AppointmentFormDrawer({
   // would render the form twice on every open.
   const [form, setForm] = useState<FormState>(() =>
     appointment
-      ? {
-          serviceId: appointment.serviceId ?? "",
-          customerId: appointment.customerId ?? "",
-          staffId: appointment.staffId ?? "",
-          startsAt: toSalonInputValue(appointment.startsAt, timeZone),
-          comment: appointment.comment ?? "",
-        }
+      ? formFromAppointment(appointment, timeZone)
       : emptyForm(toSalonInputValue(defaultStartsAt, timeZone)),
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
@@ -122,64 +157,114 @@ export default function AppointmentFormDrawer({
   const customerRows = useMemo(() => customers.data?.data ?? [], [customers.data]);
   const staffRows = useMemo(() => staff.data?.data ?? [], [staff.data]);
 
-  const selectedService = serviceRows.find((service) => service.id === form.serviceId);
-
   /**
-   * The booking's eligible performers: everyone when the salon has not tied the
-   * service to a branch, otherwise the staff whose branches include it. This is
-   * a convenience over ADR 0013 — the API refuses the rest regardless.
+   * The eligible performers for one line: everyone when the salon has not tied
+   * that line's service to a branch, otherwise the staff whose branches include
+   * it. A convenience over ADR 0013 — the API refuses the rest regardless.
    */
-  const eligibleStaff = useMemo(() => {
-    if (!selectedService || selectedService.departmentId === null) return staffRows;
-    return staffRows.filter((person: StaffSummary) =>
-      person.departments.some((link) => link.id === selectedService.departmentId),
+  function eligibleStaffFor(serviceId: string): StaffSummary[] {
+    const service = serviceRows.find((entry) => entry.id === serviceId);
+    if (!service || service.departmentId === null) return staffRows;
+    return staffRows.filter((person) =>
+      person.departments.some((link) => link.id === service.departmentId),
     );
-  }, [staffRows, selectedService]);
+  }
 
   /** The end time the server will compute — shown, never posted. */
   const previewEndsAt = useMemo(() => {
-    if (!selectedService || form.startsAt === "") return null;
+    if (form.startsAt === "") return null;
     const start = toSalonInstant(form.startsAt, timeZone);
     if (!start) return null;
-    const minutes = selectedService.durationMinutes ?? 60;
-    const end = new Date(start.getTime() + minutes * 60_000);
-    const endSalon = toSalonDate(end, timeZone);
+
+    // The chain is summed in the order it will be performed, which is the order
+    // the rows are in: line 1 starts where line 0 ends and so on.
+    const chosen = form.services.filter((line) => line.serviceId !== "");
+    const minutes = chosen.reduce((total, line) => {
+      const service = serviceRows.find((entry) => entry.id === line.serviceId);
+      return total + (service?.durationMinutes ?? 60);
+    }, 0);
+    if (chosen.length === 0) return null;
+
+    const endSalon = toSalonDate(new Date(start.getTime() + minutes * 60_000), timeZone);
     if (!endSalon) return null;
     const pad = (value: number) => String(value).padStart(2, "0");
     const time = `${pad(endSalon.getHours())}:${pad(endSalon.getMinutes())}`;
-    return { time, minutes };
-  }, [selectedService, form.startsAt, timeZone]);
+    return { time, minutes, count: chosen.length };
+  }, [form.services, form.startsAt, serviceRows, timeZone]);
 
   function setField<K extends keyof FormState>(field: K, value: FormState[K]) {
+    setForm((previous) => ({ ...previous, [field]: value }));
+  }
+
+  /**
+   * Sets one service line's field.
+   *
+   * Switching to a service whose branch the line's performer does not work in
+   * must not leave a selection the API will refuse — clearing it here is the
+   * same rule the server enforces, applied where the user can see it.
+   */
+  function setLine(index: number, field: keyof ServiceLineForm, value: string) {
     setForm((previous) => {
-      const next = { ...previous, [field]: value };
-      // Switching to a service whose branch the chosen performer does not work
-      // in must not leave a selection the API will refuse — clearing it here is
-      // the same rule the server enforces, applied where the user can see it.
-      if (field === "serviceId" && next.staffId !== "") {
-        const service = serviceRows.find((entry) => entry.id === value);
-        const person = staffRows.find((entry) => entry.id === next.staffId);
-        const stillEligible =
-          service?.departmentId === null ||
-          service?.departmentId === undefined ||
-          person?.departments.some((link) => link.id === service.departmentId);
-        if (!stillEligible) next.staffId = "";
-      }
-      return next;
+      const services = previous.services.map((line, position) => {
+        if (position !== index) return line;
+        const next = { ...line, [field]: value };
+        if (field === "serviceId" && next.staffId !== "") {
+          const eligible = eligibleStaffFor(value);
+          if (!eligible.some((person) => person.id === next.staffId)) next.staffId = "";
+        }
+        return next;
+      });
+      return { ...previous, services };
     });
+  }
+
+  function addLine() {
+    setForm((previous) => ({
+      ...previous,
+      services: [...previous.services, { serviceId: "", staffId: "" }],
+    }));
+  }
+
+  function removeLine(index: number) {
+    setForm((previous) => ({
+      ...previous,
+      services: previous.services.filter((_line, position) => position !== index),
+    }));
   }
 
   /** The API prefixes paths with the request part; a form only knows field names. */
   const fieldError = (field: string): string | undefined =>
     fieldErrors[field] ?? fieldErrors[`body.${field}`];
 
+  const servicesError = fieldErrors["services"] ?? fieldErrors["body.services"];
+  const staffError = fieldError("staffId");
+  /**
+   * With one line the performer error belongs on its own control. With a chain
+   * the API's `staffId` path cannot say *which* line was refused, so it is shown
+   * once for the section rather than guessed onto the wrong performer.
+   */
+  const chainError = form.services.length === 1 ? undefined : staffError;
+
+  /**
+   * Which lines go to the API: blanks are an unfinished thought, not a service.
+   *
+   * A line with no performer is sent without `staffId`, which is how the API
+   * spells "unassigned" — the same value the single-service form always sent.
+   */
+  function chosenLines(): { serviceId: string; staffId?: string }[] {
+    return form.services
+      .filter((line) => line.serviceId !== "")
+      .map((line) => (line.staffId === "" ? { serviceId: line.serviceId } : line));
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setFieldErrors({});
     setFormError(null);
 
+    const lines = chosenLines();
     const localErrors: Record<string, string> = {};
-    if (form.serviceId === "") localErrors["serviceId"] = "Service is required";
+    if (lines.length === 0) localErrors["services"] = "Pick at least one service";
     const start = toSalonInstant(form.startsAt, timeZone);
     if (form.startsAt === "" || !start) {
       localErrors["startsAt"] = "Start time is required";
@@ -190,7 +275,6 @@ export default function AppointmentFormDrawer({
     }
 
     const startsAt = start!.toISOString();
-    const staffId = form.staffId === "" ? undefined : form.staffId;
     const customerId = form.customerId === "" ? undefined : form.customerId;
     const comment = form.comment.trim() === "" ? undefined : form.comment.trim();
 
@@ -199,11 +283,12 @@ export default function AppointmentFormDrawer({
         await updateAppointment.mutateAsync({
           id: appointment.id,
           input: {
-            serviceId: form.serviceId,
+            // The chain replaces the booking's lines outright, the same way any
+            // other PATCH field replaces its value.
+            services: lines,
             startsAt,
             // Sent even when empty: on update the booking *replaces* the link,
-            // so an empty value is how a performer or customer is cleared.
-            staffId: form.staffId === "" ? null : form.staffId,
+            // so an empty value is how a customer is cleared.
             customerId: form.customerId === "" ? null : form.customerId,
             comment: comment ?? null,
           },
@@ -211,9 +296,8 @@ export default function AppointmentFormDrawer({
         showToast("success", "Appointment updated.");
       } else {
         await createAppointment.mutateAsync({
-          serviceId: form.serviceId,
+          services: lines,
           startsAt,
-          ...(staffId ? { staffId } : {}),
           ...(customerId ? { customerId } : {}),
           ...(comment ? { comment } : {}),
         });
@@ -238,8 +322,8 @@ export default function AppointmentFormDrawer({
       title={isEditing ? "Edit appointment" : "Book appointment"}
       description={
         isEditing
-          ? "Change the service, time or performer. The end time follows the service."
-          : "Pick the service first — its length and the staff who may perform it come from it."
+          ? "Change the services, time or performers. The end time follows the services."
+          : "Pick the services first — their lengths and the staff who may perform them come from them."
       }
       widthClassName="max-w-xl"
       footer={
@@ -265,25 +349,85 @@ export default function AppointmentFormDrawer({
           </p>
         ) : null}
 
-        <Select
-          label="Service"
-          required
-          value={form.serviceId}
-          onChange={(event) => setField("serviceId", event.target.value)}
-          error={fieldError("serviceId")}
-          hint={
-            previewEndsAt
-              ? `${previewEndsAt.minutes} minutes — ends around ${previewEndsAt.time}.`
-              : "The service decides how long the booking runs."
-          }
-          options={serviceRows.map((service) => ({
-            value: service.id,
-            label: service.durationMinutes
-              ? `${service.name} (${service.durationMinutes} min)`
-              : service.name,
-          }))}
-          disabled={services.isPending}
-        />
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-bold text-ink">Services</p>
+            <Button size="sm" variant="secondary" onClick={addLine}>
+              Add service
+            </Button>
+          </div>
+
+          {form.services.map((line, index) => {
+            const position = index + 1;
+            // The first line keeps the bare label: one service is still the
+            // common case, and its control should read exactly as it always did.
+            const suffix = index === 0 ? "" : ` ${position}`;
+            return (
+              <div
+                key={index}
+                className="flex flex-col gap-2 rounded-md border border-line bg-surface-2/40 p-3"
+              >
+                <Select
+                  label={`Service${suffix}`}
+                  required
+                  value={line.serviceId}
+                  onChange={(event) => setLine(index, "serviceId", event.target.value)}
+                  options={serviceRows.map((service) => ({
+                    value: service.id,
+                    label: service.durationMinutes
+                      ? `${service.name} (${service.durationMinutes} min)`
+                      : service.name,
+                  }))}
+                  disabled={services.isPending}
+                />
+
+                <Select
+                  label={`Performer${suffix}`}
+                  value={line.staffId}
+                  onChange={(event) => setLine(index, "staffId", event.target.value)}
+                  error={index === 0 ? staffError : undefined}
+                  hint={
+                    form.services.length === 1 && index === 0
+                      ? "Who performs the service. Leave as Unassigned if nobody has claimed it yet."
+                      : undefined
+                  }
+                  options={performerOptions(eligibleStaffFor(line.serviceId))}
+                  disabled={staff.isPending}
+                />
+
+                {form.services.length > 1 ? (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    aria-label={`Remove service ${position}`}
+                    onClick={() => removeLine(index)}
+                  >
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+            );
+          })}
+
+          {servicesError ? (
+            <p role="alert" className="text-sm text-danger">
+              {servicesError}
+            </p>
+          ) : null}
+          {chainError ? (
+            <p role="alert" className="text-sm text-danger">
+              {chainError}
+            </p>
+          ) : null}
+
+          <p className="text-sm text-ink-muted">
+            {previewEndsAt
+              ? `${previewEndsAt.count} service${previewEndsAt.count === 1 ? "" : "s"} · ${
+                  previewEndsAt.minutes
+                } minutes — ends around ${previewEndsAt.time}.`
+              : "Each service's length decides how long the booking runs."}
+          </p>
+        </div>
 
         <Input
           label="Starts at"
@@ -305,20 +449,6 @@ export default function AppointmentFormDrawer({
             label: customer.memberId ? `${customer.name} (member)` : customer.name,
           }))}
           disabled={customers.isPending}
-        />
-
-        <Select
-          label="Performer"
-          value={form.staffId}
-          onChange={(event) => setField("staffId", event.target.value)}
-          error={fieldError("staffId")}
-          hint={
-            selectedService?.departmentId
-              ? "Only staff in the service's department are offered."
-              : "Who performs the service. Leave as Unassigned if nobody has claimed it yet."
-          }
-          options={performerOptions(eligibleStaff)}
-          disabled={staff.isPending}
         />
 
         <Input

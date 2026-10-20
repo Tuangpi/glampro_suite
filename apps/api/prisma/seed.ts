@@ -622,6 +622,21 @@ async function seedAppointments(tenantId: string, now: Date): Promise<void> {
     const duration = service.durationMinutes ?? FALLBACK_DURATION_MINUTES;
     const { startsAt, endsAt } = appointmentWindow(appointment, duration, now);
 
+    // Every booking is one service line (TK2610-0020 phase B). Writing it here
+    // keeps demo data the same shape the API writes, so the drawer opens a
+    // seeded booking with the chain it expects rather than falling back to the
+    // flat columns. The update replaces the chain, so a re-seed cannot stack a
+    // second copy of the same line.
+    const line = {
+      tenantId,
+      serviceId: service.id,
+      staffId,
+      position: 0,
+      startsAt,
+      endsAt,
+      durationMinutes: duration,
+    };
+
     await prisma.appointment.upsert({
       where: { id: appointment.id },
       create: {
@@ -636,6 +651,7 @@ async function seedAppointments(tenantId: string, now: Date): Promise<void> {
         durationMinutes: duration,
         comment: appointment.comment ?? null,
         ...(appointment.status === "COMPLETED" ? { finishedAt: endsAt } : {}),
+        lines: { create: [line] },
       },
       update: {
         customerId,
@@ -647,6 +663,7 @@ async function seedAppointments(tenantId: string, now: Date): Promise<void> {
         durationMinutes: duration,
         comment: appointment.comment ?? null,
         finishedAt: appointment.status === "COMPLETED" ? endsAt : null,
+        lines: { deleteMany: {}, create: [line] },
       },
     });
   }
@@ -772,8 +789,8 @@ async function seedSales(tenantId: string, now: Date): Promise<void> {
       if (toCents(receipt.totalAmount) !== expectedTotal || toCents(receipt.paidAmount) !== paid) {
         throw new Error(
           `Demo sale ${sale.key}: the server priced the cart ${receipt.totalAmount} ` +
-          `(paid ${receipt.paidAmount}) but the dataset says ${centsToMoney(expectedTotal)} ` +
-          `(paid ${centsToMoney(paid)}).`,
+            `(paid ${receipt.paidAmount}) but the dataset says ${centsToMoney(expectedTotal)} ` +
+            `(paid ${centsToMoney(paid)}).`,
         );
       }
     }
@@ -790,7 +807,7 @@ async function seedSales(tenantId: string, now: Date): Promise<void> {
 
   console.log(
     `  ✔ ${DEMO_SALES.length} sale(s) ring through createSale ${replayed === 0 ? "freshly" : "again"} ` +
-    `(${replayed} replayed on re-seed)`,
+      `(${replayed} replayed on re-seed)`,
   );
 }
 
@@ -855,11 +872,11 @@ async function main(): Promise<void> {
       SEED_MODE === "production"
         ? [resolveAdmin()]
         : DEMO_STAFF.map((row) => ({
-          email: row.email,
-          name: row.name,
-          password: row.password,
-          globalRole: row.globalRole,
-        }));
+            email: row.email,
+            name: row.name,
+            password: row.password,
+            globalRole: row.globalRole,
+          }));
 
     console.log(`Seeding ${crew.length} user(s) in ${SEED_MODE} mode…`);
 

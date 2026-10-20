@@ -31,6 +31,13 @@ interface AppointmentBody {
   customerName: string | null;
   staffName: string | null;
   serviceName: string | null;
+  services: {
+    serviceName: string | null;
+    staffName: string | null;
+    startsAt: string;
+    endsAt: string;
+    durationMinutes: number;
+  }[];
   finishedAt?: string | null;
 }
 
@@ -129,6 +136,19 @@ async function seed(): Promise<void> {
     });
     const customer = await prisma.customer.create({
       data: { id: "appointments-rt-customer", tenantId: TENANT_A, name: "Casey Client" },
+    });
+    // A second service in the same branch, so a booking can be a chain of two
+    // lengths rather than the same one twice.
+    await prisma.service.create({
+      data: {
+        id: "appointments-rt-manicure",
+        tenantId: TENANT_A,
+        departmentId: department.id,
+        name: "Manicure",
+        memberPrice: "25.00",
+        nonmemberPrice: "28.00",
+        durationMinutes: 30,
+      },
     });
 
     await prisma.appointment.create({
@@ -267,6 +287,52 @@ describe(
       assert.equal(completedResponse.status, 200);
       assert.equal(completed.status, "COMPLETED");
       assert.equal(typeof completed.finishedAt, "string");
+    });
+
+    it("books several services as one chained booking and refuses the ambiguous shapes", async () => {
+      const response = await request("POST", "/api/appointments", token, {
+        customerId: "appointments-rt-customer",
+        staffId: "appointments-rt-stylist",
+        startsAt: "2026-10-09T13:00:00.000Z",
+        services: [
+          { serviceId: "appointments-rt-manicure" },
+          { serviceId: "appointments-rt-service" },
+        ],
+      });
+      const created = await dataOf<AppointmentBody>(response);
+
+      assert.equal(response.status, 201);
+      assert.equal(created.durationMinutes, 75, "30 + 45 minutes");
+      assert.equal(created.endsAt, "2026-10-09T14:15:00.000Z");
+      // The flat columns are line 0, so a single-service reader is still right.
+      assert.equal(created.serviceName, "Manicure");
+      assert.deepEqual(
+        created.services.map((line) => [line.serviceName, line.startsAt, line.endsAt]),
+        [
+          ["Manicure", "2026-10-09T13:00:00.000Z", "2026-10-09T13:30:00.000Z"],
+          ["Cut and finish", "2026-10-09T13:30:00.000Z", "2026-10-09T14:15:00.000Z"],
+        ],
+      );
+
+      // The contract refuses a body that names its services twice, so the server
+      // never has to guess which of the two the booking is.
+      const both = await request("POST", "/api/appointments", token, {
+        serviceId: "appointments-rt-service",
+        services: [{ serviceId: "appointments-rt-service" }],
+        startsAt: "2026-10-09T16:00:00.000Z",
+      });
+      assert.equal(both.status, 422);
+      assert.deepEqual(
+        ((await both.json()) as { details?: { path?: string }[] }).details?.map(
+          (detail) => detail.path,
+        ),
+        ["body.services"],
+      );
+
+      const neither = await request("POST", "/api/appointments", token, {
+        startsAt: "2026-10-09T16:00:00.000Z",
+      });
+      assert.equal(neither.status, 422);
     });
 
     it("keeps suspended salons read-only", async () => {

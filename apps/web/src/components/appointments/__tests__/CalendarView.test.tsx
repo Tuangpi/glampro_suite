@@ -32,6 +32,7 @@ function booking(overrides: Partial<AppointmentSummary> = {}): AppointmentSummar
     serviceId: "service-1",
     serviceName: "Signature cut",
     serviceDepartmentId: null,
+    services: [],
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
     ...overrides,

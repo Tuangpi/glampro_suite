@@ -51,6 +51,9 @@ export const TENANT_SCOPED_MODELS = [
   "ValuePackageService",
   "GiftCard",
   "Appointment",
+  // A booking's service lines. Scoped in their own right because the overlap rule
+  // queries them directly by performer and window (TK2610-0020 phase B).
+  "AppointmentLine",
   "EmployeeCommission",
   "EmployeePerformance",
   "EmployeeLeave",

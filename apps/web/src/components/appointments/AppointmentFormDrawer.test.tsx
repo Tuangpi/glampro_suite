@@ -13,7 +13,12 @@ vi.mock("@/hooks/useCustomers", () => ({
 }));
 vi.mock("@/hooks/useServices", () => ({
   useServiceList: () => ({
-    data: { data: [{ id: "hair", name: "Cut", departmentId: "hair", durationMinutes: 30 }] },
+    data: {
+      data: [
+        { id: "hair", name: "Cut", departmentId: "hair", durationMinutes: 30 },
+        { id: "nails", name: "Manicure", departmentId: "nails", durationMinutes: 45 },
+      ],
+    },
     isPending: false,
   }),
 }));
@@ -66,7 +71,44 @@ it("offers distinct eligible performer identities and submits the selected accou
   await user.click(screen.getByRole("button", { name: "Book appointment" }));
   await waitFor(() =>
     expect(create).toHaveBeenCalledWith(
-      expect.objectContaining({ serviceId: "hair", staffId: "b" }),
+      expect.objectContaining({ services: [{ serviceId: "hair", staffId: "b" }] }),
+    ),
+  );
+});
+
+it("adds a second service as a line and submits the chain in order", async () => {
+  const user = userEvent.setup();
+  render(
+    <AppointmentFormDrawer
+      open
+      appointment={null}
+      defaultStartsAt="2026-10-20T10:00:00Z"
+      onClose={vi.fn()}
+    />,
+  );
+
+  await user.selectOptions(screen.getByRole("combobox", { name: "Service" }), "hair");
+  await user.selectOptions(screen.getByRole("combobox", { name: "Performer" }), "b");
+  await user.click(screen.getByRole("button", { name: "Add service" }));
+
+  await user.selectOptions(screen.getByRole("combobox", { name: "Service 2" }), "nails");
+  const second = screen.getByRole("combobox", { name: "Performer 2" });
+  // The second line's performers follow the *second* service's branch, so the
+  // hair stylist is not offered for the manicure.
+  expect(within(second).queryByRole("option", { name: /a@example/ })).not.toBeInTheDocument();
+  await user.selectOptions(second, "nails");
+
+  expect(screen.getByText(/2 services · 75 minutes/)).toBeInTheDocument();
+
+  await user.click(screen.getByRole("button", { name: "Book appointment" }));
+  await waitFor(() =>
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        services: [
+          { serviceId: "hair", staffId: "b" },
+          { serviceId: "nails", staffId: "nails" },
+        ],
+      }),
     ),
   );
 });

@@ -211,6 +211,8 @@ model User {
   departments  StaffDepartment[]
   /// A user with no appointments yet still appears in pickers.
   appointments Appointment[]
+  /// The individual services this user performs on a multi-service booking.
+  appointmentLines AppointmentLine[]
   commissions  EmployeeCommission[]
   /// Sales this user rang up, and the lines credited to them. Per-line credit is
   /// the redesign's model — legacy had four fixed `sold_by_one..four` slots on the
@@ -358,6 +360,7 @@ model Tenant {
   valuePackageServices ValuePackageService[]
   giftCards           GiftCard[]
   appointments        Appointment[]
+  appointmentLines    AppointmentLine[]
   employeeCommissions EmployeeCommission[]
   sales               Sale[]
   saleLines           SaleLine[]
@@ -591,6 +594,7 @@ model Service {
   tenant             Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   department         Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   appointments       Appointment[]
+  appointmentLines   AppointmentLine[]
   packageItems       PackageService[]
   valuePackageItems  ValuePackageService[]
 
@@ -965,13 +969,21 @@ model Appointment {
   id          String            @id @default(cuid())
   tenantId    String
   customerId  String?
+  /// The **primary** performer: the one on the first service line. The truth for
+  /// a multi-service booking is `AppointmentLine.staffId`, one performer per
+  /// line; this column is kept in step with line 0 so the day view, the calendar
+  /// tint and the message payloads have a single name to read.
   staffId     String?
+  /// The **primary** service: the one on the first service line. Absent only for
+  /// rows written before every booking had a service, which cannot gain a line.
   serviceId   String?
   startsAt    DateTime
+  /// The end of the **last** line. Kept as a column, not derived, because the
+  /// list, the calendar grid and the clash fallback all read it directly.
   endsAt      DateTime
   status      AppointmentStatus @default(SCHEDULED)
-  /// Minutes, copied from the service at booking time so a later catalogue edit
-  /// does not silently move an existing appointment.
+  /// Minutes, the sum of the line durations, copied the same way so a later
+  /// catalogue edit does not silently move an existing appointment.
   durationMinutes Int?
   comment     String?
   /// Set by `appointmentFinish`, alongside `finishedAt`. Legacy `signature` was
@@ -985,10 +997,50 @@ model Appointment {
   customer Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
   staff    User?     @relation(fields: [staffId], references: [id], onDelete: Cascade)
   service  Service?  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  /// The services booked, in the order they happen. A single-service booking has
+  /// exactly one line, so nothing downstream needs a second shape to read.
+  lines    AppointmentLine[]
 
   @@index([tenantId, startsAt])
   @@index([staffId, startsAt])
   @@map("appointments")
+}
+
+/// One service on a booking, in the order it is performed.
+///
+/// A multi-service booking is a chain: line `position: 0` starts at
+/// `Appointment.startsAt`, and each following line starts where the previous one
+/// ended. The chain is materialised into `startsAt`/`endsAt` columns rather than
+/// derived at read time for two reasons — the overlap rule can then ask Postgres
+/// which line collides without replaying durations in JavaScript, and a line
+/// keeps its own window if a later line is removed or reordered.
+///
+/// `durationMinutes` is snapshotted from the service for the same reason
+/// `Appointment.durationMinutes` is: editing the catalogue must not move a
+/// booking that has already been taken.
+model AppointmentLine {
+  id              String   @id @default(cuid())
+  tenantId        String
+  appointmentId   String
+  serviceId       String
+  /// Who performs this line. Null = nobody assigned to it; the booking-level
+  /// `staffId` mirrors line 0 when that line has a performer.
+  staffId         String?
+  /// 0-based order of the chain.
+  position        Int
+  startsAt        DateTime
+  endsAt          DateTime
+  durationMinutes Int
+
+  tenant      Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  service     Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  staff       User?       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([appointmentId, position])
+  /// The performer-overlap query filters by tenant, performer and window.
+  @@index([tenantId, staffId, startsAt])
+  @@map("appointment_lines")
 }
 
 /// A staff member's cut of a sale. Legacy `employee_comissions`, whose

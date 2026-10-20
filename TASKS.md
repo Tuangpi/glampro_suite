@@ -462,7 +462,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0020 — P1-02 Multi-service & recurring bookings, rooms/equipment
 
-- Status: IN PROGRESS — Phase A (booking lifecycle) implemented; multi-service, recurring and resources not started
+- Status: IN PROGRESS — Phases A (booking lifecycle) and B (multi-service bookings) implemented; recurring series and rooms/equipment not started
 - Expected result: Multi-service bookings, recurring bookings, rooms/equipment resources
 - Carried-forward finding (ADRs 0013/0014): cover cancelled-target handling and
   status-only reactivation, not only existing cancelled blockers. Check duration
@@ -471,10 +471,10 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Assessment (October 20, 2026), verified in code:
   | Capability                  | State                                                                  |
   | --------------------------- | ---------------------------------------------------------------------- |
-  | Multi-service booking       | Absent. `Appointment` holds one `serviceId`; `endsAt` derives from it. |
+  | Multi-service booking       | Implemented (Phase B): `AppointmentLine` chain, summed duration.       |
   | Recurring booking           | Absent. No series/recurrence model, no series API or UI.               |
-  | Rooms / equipment           | Absent. No resource model; only `staffId` occupancy is checked.        |
-  | Lifecycle defects (Phase A) | Fixed below, with regression tests.                                    |
+  | Rooms / equipment           | Absent. No resource model; only per-line `staffId` occupancy checked.  |
+  | Lifecycle defects (Phase A) | Fixed, with regression tests.                                          |
 - Phase A — implemented October 20, 2026 (`appointment.service.ts`, `lib/salon-clock.ts`):
   - Booking creates only on an `ACTIVE` service (`SERVICE_INACTIVE`, `details[0].path = "serviceId"`). PATCH requires active only when `serviceId` actually changes, so deactivating a service never freezes existing bookings. Deliberate semantics recorded in the service docstring and ADR 0013.
   - A row created already `CANCELLED` now skips roster and clash gates, matching PATCH and ADR 0014 §3 ("cancelled holds no slot").
@@ -482,9 +482,19 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   - `STAFF_DISABLED` and `STAFF_NOT_IN_DEPARTMENT` now carry `details: [{ path: "staffId" }]`, so the drawer marks Performer instead of the form banner.
   - Prior `191a1e3` fixes (duration snapshot on reschedule, service-only resize clash, status-reactivation clash) were undocumented and untested; regression cases added now.
 - Phase A verification: API appointment suites 24/24 on disposable PostgreSQL (`glampro_tk0020_a`), web drawer suite 2/2, API/web typecheck and Prettier clean. Full-suite counts recorded in `PROGRESS.md`.
-- Remaining (not approved, not started): Phase B multi-service lines; Phase C recurring series; Phase D rooms/equipment with resource conflict checks. Concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); the pre-write read is unchanged.
+- Phase B — implemented October 20, 2026 (multi-service bookings):
+  - Schema: new `AppointmentLine` (`appointment_lines`) — `appointmentId`, `serviceId`, `staffId`, `position`, `startsAt`/`endsAt`, snapshotted `durationMinutes`, own `tenantId`; unique `(appointmentId, position)`, index `(tenantId, staffId, startsAt)`, check `endsAt > startsAt`.
+  - Migration `20261020155000_appointment_lines`: creates the table and backfills one line per existing booking from its own service/window; verified against a legacy row (duration derived from the window when `durationMinutes` was null) and idempotent in shape.
+  - `Appointment.serviceId`/`staffId`/`durationMinutes` are now **line 0 mirrors**; `endsAt` is the last line's end. Readers that only know the single-service shape (list, calendar, messages) stay correct.
+  - Contract: `services: [{ serviceId, staffId? }]` on create (1–`MAX_APPOINTMENT_SERVICES`, default 10) and on PATCH (replaces the chain); `serviceId` remains the single-service spelling; sending both (or neither) is a 422 naming `body.services`. Bookings expose `services[]` with per-line name, performer and window.
+  - Rules: lines chain from `startsAt`; duration/`endsAt` are summed, never posted; performer eligibility is checked against **that line's** service; roster and overlap checks run **per line** (a stylist is busy only for the line they perform); services already on the booking stay usable after retirement, new ones must be active; `staffId` on PATCH moves line 0 only.
+  - Compatibility: a booking with no lines (pre-migration rows written straight to the table, or an old seed) still reads through its flat columns, is still judged as a whole-window slot by the overlap fallback, and gains a line on its next patch. `prisma/seed.ts` now writes the line with each demo booking.
+  - UI: the drawer edits an ordered list of service lines ("Add service"/"Remove"), filters performers per line, and previews the summed end time; the first row keeps the `Service`/`Performer` labels.
+  - Tests: `appointment.service.test.ts` 22/22 (chain shape, per-line clash, per-line eligibility, chain replacement without duplication, line-0-only performer move, legacy row), `appointments.routes.test.ts` 9/9 (chain envelope, 422 for both/neither spelling), tenant-isolation now covers `AppointmentLine`.
+- Phase B verification: full API 429/429 and web 461/461 on disposable PostgreSQL `glampro_tk0020_b`; API/web typecheck and lint clean; touched files Prettier-clean; `prisma migrate deploy` replayed from empty, `prisma migrate diff` empty, `prisma db seed` twice produced 13 appointments / 13 lines / 0 without lines. Application DB untouched.
+- Remaining (not approved, not started): Phase C recurring series; Phase D rooms/equipment with resource conflict checks. Concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); the pre-write read is unchanged.
 - Completion check / dependencies: Verify multi-service/recurring/resource conflicts and booking lifecycle. Resolve duration snapshots, department/active-staff eligibility, service-only resizing bypasses and concurrent overlap protection (ADRs 0013/0014).
-- Next: user decision on Phases B–D scope. No commit, migration or deployment performed.
+- Next: user decision on Phases C–D scope. No commit and no deployment performed; the migration exists but has not been applied to the application database.
 
 ### TK2610-0022 — P1-03 Online booking page + deposits / no-show fee
 

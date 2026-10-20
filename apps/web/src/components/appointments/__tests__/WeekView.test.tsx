@@ -38,6 +38,7 @@ function booking(overrides: Partial<AppointmentSummary> = {}): AppointmentSummar
     serviceId: "service-1",
     serviceName: "Signature cut",
     serviceDepartmentId: null,
+    services: [],
     createdAt: at(1, 9).toISOString(),
     updatedAt: at(1, 9).toISOString(),
     ...overrides,

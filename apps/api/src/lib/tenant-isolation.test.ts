@@ -78,6 +78,19 @@ async function seed(): Promise<void> {
           serviceId: service.id,
           startsAt: new Date("2026-05-01T10:00:00Z"),
           endsAt: new Date("2026-05-01T10:45:00Z"),
+          lines: {
+            create: [
+              {
+                tenantId: id,
+                serviceId: service.id,
+                staffId: owner.id,
+                position: 0,
+                startsAt: new Date("2026-05-01T10:00:00Z"),
+                endsAt: new Date("2026-05-01T10:45:00Z"),
+                durationMinutes: 45,
+              },
+            ],
+          },
         },
       });
 
@@ -228,6 +241,9 @@ describe("tenant isolation", { skip: databaseUrl ? false : "DATABASE_URL is not 
       services: await prisma.service.findMany({ select: { tenantId: true } }),
       departments: await prisma.department.findMany({ select: { tenantId: true } }),
       appointments: await prisma.appointment.findMany({ select: { tenantId: true } }),
+      // A booking's service lines are scoped in their own right, because the
+      // overlap rule queries them directly rather than through the booking.
+      appointmentLines: await prisma.appointmentLine.findMany({ select: { tenantId: true } }),
       // `User` is tenant-scoped because staff are user rows (Q4).
       users: await prisma.user.findMany({ select: { tenantId: true } }),
     }));

@@ -27,6 +27,13 @@
  *    `ACTIVE` service, and a patch may move a booking *onto* one. A booking
  *    already on a service that was later deactivated stays editable — retiring
  *    a service must not freeze the history hanging on it.
+ * 5. **A booking is a chain of service lines.** One `AppointmentLine` per
+ *    service, in the order performed, each with its own performer and window:
+ *    line 0 starts at `startsAt` and every next line starts where the previous
+ *    ended (TK2610-0020 phase B). `Appointment.serviceId`/`staffId` mirror line
+ *    0 so readers that only know the single-service shape stay correct, while
+ *    the overlap and roster rules judge every line — a stylist booked on line 2
+ *    is busy for line 2's window, not for the whole booking.
  */
 import type { PaginatedResponse } from "@glampro_suite/shared";
 import {
@@ -49,8 +56,9 @@ import { queueAppointmentMessages, tenantId } from "./messaging.service.js";
 
 /**
  * A booking with everything the day view draws. The three relations come along
- * denormalised so the list renders without three joins, and `service` carries
- * its own columns because that is where duration and eligibility come from.
+ * denormalised so the list renders without three joins, `service` carries its
+ * own columns because that is where duration and eligibility come from, and
+ * `lines` is the chain of services the booking actually consists of.
  */
 const APPOINTMENT_SELECT = {
   id: true,
@@ -71,6 +79,18 @@ const APPOINTMENT_SELECT = {
   service: {
     select: { id: true, name: true, departmentId: true, durationMinutes: true },
   },
+  lines: {
+    orderBy: { position: "asc" },
+    select: {
+      serviceId: true,
+      staffId: true,
+      startsAt: true,
+      endsAt: true,
+      durationMinutes: true,
+      service: { select: { id: true, name: true, departmentId: true } },
+      staff: { select: { id: true, name: true } },
+    },
+  },
 } as const;
 
 function findRow(id: string) {
@@ -80,6 +100,21 @@ function findRow(id: string) {
 type AppointmentRow = NonNullable<Awaited<ReturnType<typeof findRow>>>;
 
 function toSummary(row: AppointmentRow): AppointmentSummary {
+  const services = row.lines.map((line) => ({
+    serviceId: line.service.id,
+    serviceName: line.service.name,
+    serviceDepartmentId: line.service.departmentId,
+    staffId: line.staff?.id ?? null,
+    staffName: line.staff?.name ?? null,
+    startsAt: line.startsAt.toISOString(),
+    endsAt: line.endsAt.toISOString(),
+    durationMinutes: line.durationMinutes,
+  }));
+
+  // A row written before service lines existed has none, so its own columns are
+  // still the answer — that is the one case the mirror is not already the truth.
+  const primary = services[0];
+
   return appointmentSummarySchema.parse({
     id: row.id,
     startsAt: row.startsAt.toISOString(),
@@ -89,11 +124,14 @@ function toSummary(row: AppointmentRow): AppointmentSummary {
     comment: row.comment,
     customerId: row.customer?.id ?? null,
     customerName: row.customer?.name ?? null,
-    staffId: row.staff?.id ?? null,
-    staffName: row.staff?.name ?? null,
-    serviceId: row.service?.id ?? null,
-    serviceName: row.service?.name ?? null,
-    serviceDepartmentId: row.service?.departmentId ?? null,
+    staffId: primary ? primary.staffId : (row.staff?.id ?? null),
+    staffName: primary ? primary.staffName : (row.staff?.name ?? null),
+    serviceId: primary ? primary.serviceId : (row.service?.id ?? null),
+    serviceName: primary ? primary.serviceName : (row.service?.name ?? null),
+    serviceDepartmentId: primary
+      ? primary.serviceDepartmentId
+      : (row.service?.departmentId ?? null),
+    services,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   });
@@ -109,11 +147,13 @@ function toDetail(row: AppointmentRow): AppointmentDetail {
 
 /**
  * The slot length a booking takes: the service's own minutes, or an hour when
- * the salon has not set one. The fallback exists because `Service.durationMinutes`
- * is nullable in the schema; an appointment still has to end somewhere, and an
- * invented 60 minutes is at least visible as the default rather than a
- * zero-length block the clash detection of full-phase booking would walk
- * straight through.
+ * the salon has not set one. The fallback exists because
+ * `Service.durationMinutes` is nullable in the schema; an appointment still has
+ * to end somewhere, and an invented 60 minutes is at least visible as the
+ * default rather than a zero-length block the clash detection of full-phase
+ * booking would walk straight through. A non-positive duration (a row written
+ * straight to the table) takes the same fallback, because a zero-length line
+ * would now fail the `appointment_lines` check constraint rather than book.
  */
 const FALLBACK_DURATION_MINUTES = 60;
 
@@ -151,8 +191,94 @@ async function resolveService(
   return {
     id: service.id,
     departmentId: service.departmentId,
-    durationMinutes: service.durationMinutes ?? FALLBACK_DURATION_MINUTES,
+    durationMinutes:
+      service.durationMinutes !== null && service.durationMinutes > 0
+        ? service.durationMinutes
+        : FALLBACK_DURATION_MINUTES,
   };
+}
+
+/** One service chosen for a booking, before the chain's times are worked out. */
+interface LineSelection {
+  serviceId: string;
+  /**
+   * `undefined` = use the booking's performer; `null` = explicitly nobody on
+   * this line. The difference matters on PATCH, where the booking's performer
+   * may have just been cleared.
+   */
+  staffId?: string | null;
+  /** A line the booking already has keeps the duration it was booked with. */
+  durationMinutes?: number;
+}
+
+/** A service placed on the clock: what will be written as an `AppointmentLine`. */
+interface PlannedLine {
+  serviceId: string;
+  staffId: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  durationMinutes: number;
+}
+
+/**
+ * Turns an ordered list of services into the chain they will occupy.
+ *
+ * Line 0 starts at the booking's start and every next line begins where the
+ * previous ended, so the booking's length is the sum of its services and no
+ * client-supplied end time is involved. Each line's performer is checked against
+ * **that line's** service (ADR 0013), which is what lets a cut by one stylist and
+ * a manicure by another be one booking.
+ */
+async function planLines(
+  startsAt: Date,
+  selections: LineSelection[],
+  defaultStaffId: string | null,
+  options: { requireActiveFor: (serviceId: string) => boolean },
+): Promise<PlannedLine[]> {
+  const planned: PlannedLine[] = [];
+  let cursor = startsAt;
+
+  for (const selection of selections) {
+    const service = await resolveService(selection.serviceId, {
+      requireActive: options.requireActiveFor(selection.serviceId),
+    });
+    const staffId = selection.staffId === undefined ? defaultStaffId : selection.staffId;
+    if (staffId) await assertPerformerEligible(staffId, service);
+
+    const durationMinutes = selection.durationMinutes ?? service.durationMinutes;
+    const endsAt = new Date(cursor.getTime() + durationMinutes * 60_000);
+    planned.push({
+      serviceId: service.id,
+      staffId,
+      startsAt: cursor,
+      endsAt,
+      durationMinutes,
+    });
+    cursor = endsAt;
+  }
+
+  return planned;
+}
+
+/** The booking's length: the sum of its lines. */
+function totalMinutes(lines: PlannedLine[]): number {
+  return lines.reduce((total, line) => total + line.durationMinutes, 0);
+}
+
+/** Two chains are the same booking when every line matches on service, person and window. */
+function sameLines(current: AppointmentRow["lines"], planned: PlannedLine[]): boolean {
+  if (current.length !== planned.length) return false;
+  return planned.every((line, index) => {
+    const existing = current[index];
+    return (
+      existing !== undefined &&
+      existing.serviceId === line.serviceId &&
+      existing.staffId === line.staffId &&
+      existing.startsAt.getTime() === line.startsAt.getTime() &&
+      existing.endsAt.getTime() === line.endsAt.getTime() &&
+      existing.durationMinutes === line.durationMinutes
+    );
+  });
 }
 
 /**
@@ -216,13 +342,29 @@ const OCCUPYING_APPOINTMENT_STATUSES = APPOINTMENT_STATUSES.filter(
 );
 
 /**
+ * The roster check, once per line.
+ *
+ * A stylist only occupies the line they perform, so a break at 11:00 blocks the
+ * line that falls in it and leaves the rest of somebody else's chain alone.
+ */
+async function assertStaffFree(lines: PlannedLine[]): Promise<void> {
+  for (const line of lines) {
+    if (!line.staffId) continue;
+    await assertStaffAvailable(line.staffId, line.startsAt, line.endsAt);
+  }
+}
+
+/**
  * Refuses a booking that overlaps an active one for the same performer (ADR 0014).
  *
- * Three things make this a rule rather than a filter: it is **half-open** (a
- * block ending at 10:00 and one starting at 10:00 are back-to-back, which is
- * the normal day), it **excludes the row's own id** so rescheduling a booking
- * into the window it already occupies is a no-op, and it is **skipped for an
- * unassigned booking**, because nobody named is nobody double-booked.
+ * Judged **per line**: a stylist is busy for the window they actually perform,
+ * so the second service of a chain may go to somebody else without a false
+ * conflict. Three things make this a rule rather than a filter: it is
+ * **half-open** (a line ending at 10:00 and one starting at 10:00 are
+ * back-to-back, which is the normal day), it **excludes the booking's own id**
+ * so rescheduling into the window it already occupies is a no-op, and it is
+ * **skipped for an unassigned line**, because nobody named is nobody
+ * double-booked.
  *
  * It runs *before* the write and is not one atomic statement with it, so two
  * concurrent requests can both pass and both write. That residual is inherent
@@ -231,32 +373,60 @@ const OCCUPYING_APPOINTMENT_STATUSES = APPOINTMENT_STATUSES.filter(
  * every tenant's `appointments` (see the ADR). It is documented rather than
  * hidden so nobody mistakes the check for a guarantee.
  */
-async function assertNoClash(
-  staffId: string | null,
-  startsAt: Date,
-  endsAt: Date,
-  excludeId?: string,
-): Promise<void> {
-  if (!staffId) return;
+async function assertNoClash(lines: PlannedLine[], excludeId?: string): Promise<void> {
+  const slots = lines.filter(
+    (line): line is PlannedLine & { staffId: string } => line.staffId !== null,
+  );
+  if (slots.length === 0) return;
 
-  const clash = await prisma.appointment.findFirst({
-    where: {
-      staffId,
-      status: { in: [...OCCUPYING_APPOINTMENT_STATUSES] },
-      // Half-open overlap: touching edges are neighbours, not a clash.
-      startsAt: { lt: endsAt },
-      endsAt: { gt: startsAt },
-      ...(excludeId ? { id: { not: excludeId } } : {}),
-    },
-    select: {
-      startsAt: true,
-      endsAt: true,
-      customer: { select: { name: true } },
-    },
-    orderBy: { startsAt: "asc" },
-  });
+  const overlap = slots.map((slot) => ({
+    staffId: slot.staffId,
+    // Half-open overlap: touching edges are neighbours, not a clash.
+    startsAt: { lt: slot.endsAt },
+    endsAt: { gt: slot.startsAt },
+  }));
+  const appointmentFilter = {
+    status: { in: [...OCCUPYING_APPOINTMENT_STATUSES] },
+    ...(excludeId ? { id: { not: excludeId } } : {}),
+  };
 
-  if (!clash) return;
+  const [bookedLine, legacyRow] = await Promise.all([
+    prisma.appointmentLine.findFirst({
+      where: { OR: overlap, appointment: appointmentFilter },
+      select: {
+        startsAt: true,
+        endsAt: true,
+        appointment: { select: { customer: { select: { name: true } } } },
+      },
+      orderBy: { startsAt: "asc" },
+    }),
+    // A booking with no lines predates service lines (or was written straight to
+    // the table): its own window still holds the slot, so it is judged as it
+    // always was.
+    prisma.appointment.findFirst({
+      where: {
+        OR: overlap.map((slot) => ({ ...slot, lines: { none: {} } })),
+        ...appointmentFilter,
+      },
+      select: { startsAt: true, endsAt: true, customer: { select: { name: true } } },
+      orderBy: { startsAt: "asc" },
+    }),
+  ]);
+
+  const clashes: ({ startsAt: Date; endsAt: Date; customer: { name: string } | null } | null)[] = [
+    bookedLine && {
+      startsAt: bookedLine.startsAt,
+      endsAt: bookedLine.endsAt,
+      customer: bookedLine.appointment.customer,
+    },
+    legacyRow,
+  ];
+  const blocking = clashes
+    .filter((row): row is NonNullable<(typeof clashes)[number]> => row !== null)
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  if (blocking.length === 0) return;
+
+  const clash = blocking[0]!;
 
   // The clash is a fact about the salon's day, so it is quoted in the salon's
   // zone. Formatting in the server's zone reads as an hour nobody booked.
@@ -338,27 +508,46 @@ export async function getAppointment(id: string): Promise<AppointmentDetail> {
   return toDetail(row);
 }
 /**
- * Books. `endsAt` and `durationMinutes` are computed, the eligible performer is
- * checked, and `finishedAt` is stamped when the booking is created already
- * completed (a re-seed replaying history, or a desk that forgot to mark it).
+ * Books. Every end time and duration is computed from the services, each line's
+ * performer is checked against that line's service, and `finishedAt` is stamped
+ * when the booking is created already completed (a re-seed replaying history, or
+ * a desk that forgot to mark it).
  *
  * Only an active service may be booked, and a row created already cancelled is
  * neither availability- nor clash-checked: it holds no slot (ADR 0014 §3), and
  * PATCH treats it the same way, so the two paths agree.
+ *
+ * `serviceId` and `services` are two spellings of the same thing — one service,
+ * or an ordered chain — and the contract refuses a request that sends both.
  */
 export async function createAppointment(input: CreateAppointmentInput): Promise<AppointmentDetail> {
-  const service = await resolveService(input.serviceId, { requireActive: true });
-  if (input.staffId) await assertPerformerEligible(input.staffId, service);
-  if (input.customerId) await assertCustomerExists(input.customerId);
+  const selections: LineSelection[] = input.services
+    ? input.services.map((line) => ({ serviceId: line.serviceId, staffId: line.staffId }))
+    : input.serviceId
+      ? [{ serviceId: input.serviceId }]
+      : [];
+  if (selections.length === 0) {
+    throw badRequest(
+      "A booking needs at least one service.",
+      [{ path: "services", message: "Pick at least one service." }],
+      "APPOINTMENT_NO_SERVICE",
+    );
+  }
 
   const startsAt = new Date(input.startsAt);
-  const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
   const status = input.status ?? "SCHEDULED";
+  const lines = await planLines(startsAt, selections, input.staffId ?? null, {
+    requireActiveFor: () => true,
+  });
+  if (input.customerId) await assertCustomerExists(input.customerId);
 
   if (status !== "CANCELLED") {
-    await assertStaffAvailable(input.staffId ?? null, startsAt, endsAt);
-    await assertNoClash(input.staffId ?? null, startsAt, endsAt);
+    await assertStaffFree(lines);
+    await assertNoClash(lines);
   }
+
+  const primary = lines[0]!;
+  const endsAt = lines[lines.length - 1]!.endsAt;
 
   const created = await prisma.$transaction(async (tx) => {
     const created = await tx.appointment.create({
@@ -366,16 +555,30 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
         // Placeholder: `scopeCreateData` overwrites it with the scope's tenant.
         tenantId: "",
         customerId: input.customerId ?? null,
-        staffId: input.staffId ?? null,
-        serviceId: service.id,
+        // The booking-level pair mirrors line 0; the lines are the truth.
+        staffId: primary.staffId,
+        serviceId: primary.serviceId,
         startsAt,
         endsAt,
         status,
-        durationMinutes: service.durationMinutes,
+        durationMinutes: totalMinutes(lines),
         comment: input.comment ?? null,
         ...(status === "COMPLETED" ? { finishedAt: new Date() } : {}),
       },
       select: { id: true },
+    });
+    await tx.appointmentLine.createMany({
+      data: lines.map((line, position) => ({
+        // Placeholder, as above: `scopeCreateManyData` stamps the tenant.
+        tenantId: "",
+        appointmentId: created.id,
+        serviceId: line.serviceId,
+        staffId: line.staffId,
+        position,
+        startsAt: line.startsAt,
+        endsAt: line.endsAt,
+        durationMinutes: line.durationMinutes,
+      })),
     });
     await queueAppointmentMessages(tx, created.id);
     return created;
@@ -387,10 +590,10 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
  * Applies a partial update.
  *
  * Every field is optional and absent means unchanged; `null` clears (the same
- * PATCH rule the customer and staff editors keep). The two derived columns are
- * re-derived from the **merged** state: a new service resizes the slot, a new
- * start moves it, and either way `endsAt = startsAt + duration` is recomputed
- * so the two can never drift apart through a half-applied edit.
+ * PATCH rule the customer and staff editors keep). The derived columns are
+ * re-derived from the **merged** state: a new service re-chains the slot, a new
+ * start moves it, and either way the lines — and therefore `endsAt` — are
+ * recomputed so the two can never drift apart through a half-applied edit.
  */
 export async function updateAppointment(
   id: string,
@@ -399,39 +602,81 @@ export async function updateAppointment(
   const existing = await findRow(id);
   if (!existing) throw notFound("That appointment does not exist.", "APPOINTMENT_NOT_FOUND");
 
-  const service = await resolveService(input.serviceId ?? existing.serviceId ?? "", {
-    // Only a *new* choice has to be active; keeping the service a booking
-    // already has must survive that service being retired.
-    requireActive: input.serviceId !== undefined && input.serviceId !== existing.serviceId,
-  });
-  const staffId = input.staffId === undefined ? existing.staffId : input.staffId;
   const customerId = input.customerId === undefined ? existing.customerId : input.customerId;
-
-  if (staffId) await assertPerformerEligible(staffId, service);
   if (customerId) await assertCustomerExists(customerId);
 
   const startsAt = input.startsAt ? new Date(input.startsAt) : existing.startsAt;
-  // Preserve the booking snapshot unless the service itself changes.
-  const durationMinutes =
-    input.serviceId !== undefined && input.serviceId !== existing.serviceId
-      ? service.durationMinutes
-      : (existing.durationMinutes ??
-        Math.round((existing.endsAt.getTime() - existing.startsAt.getTime()) / 60_000));
-  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
+  // The booking's performer, as the request leaves it. It is the default for a
+  // line that does not name its own, and on a patch that only moves the booking
+  // it moves line 0 — the performer the day view and the messages name.
+  const staffId =
+    input.staffId === undefined ? (existing.lines[0]?.staffId ?? existing.staffId) : input.staffId;
 
-  // A move is what can clash, so the check re-runs when either half of the
-  // slot changed — a new time under the same stylist, or the same time onto a
-  // new one. Both are judged on the **merged** performer, and the row's own id
-  // is excluded so a patch that changes nothing else is not a conflict.
+  const existingServiceIds = new Set(existing.lines.map((line) => line.serviceId));
+  const selections: LineSelection[] = input.services
+    ? input.services.map((line) => ({ serviceId: line.serviceId, staffId: line.staffId }))
+    : input.serviceId !== undefined
+      ? [{ serviceId: input.serviceId, staffId }]
+      : existing.lines.length > 0
+        ? existing.lines.map((line, index) => ({
+            serviceId: line.serviceId,
+            // Only the first line follows a change of the booking's performer;
+            // the rest keep the people they were booked with.
+            staffId: index === 0 && input.staffId !== undefined ? staffId : line.staffId,
+            durationMinutes: line.durationMinutes,
+          }))
+        : existing.serviceId
+          ? // A row from before service lines: give it the one line it implies.
+            [
+              {
+                serviceId: existing.serviceId,
+                staffId,
+                durationMinutes:
+                  existing.durationMinutes !== null && existing.durationMinutes > 0
+                    ? existing.durationMinutes
+                    : Math.max(
+                        1,
+                        Math.round(
+                          (existing.endsAt.getTime() - existing.startsAt.getTime()) / 60_000,
+                        ),
+                      ),
+              },
+            ]
+          : [];
+
+  if (selections.length === 0) {
+    throw badRequest(
+      "This booking has no service to reschedule.",
+      [{ path: "services", message: "Pick at least one service." }],
+      "APPOINTMENT_NO_SERVICE",
+    );
+  }
+
+  const lines = await planLines(startsAt, selections, staffId, {
+    // Only a *new* choice has to be active; keeping a service the booking
+    // already has must survive that service being retired.
+    requireActiveFor: (serviceId) => !existingServiceIds.has(serviceId),
+  });
+
+  const primary = lines[0]!;
+  const endsAt = lines[lines.length - 1]!.endsAt;
+  const durationMinutes = totalMinutes(lines);
+  const linesChanged = !sameLines(existing.lines, lines);
+
+  // A move is what can clash, so the check re-runs when any part of the chain
+  // changed — a new time under the same stylist, the same time onto a new one,
+  // or a service added to the end. The booking's own id is excluded so a patch
+  // that changes nothing else is not a conflict.
   if (
     (input.status ?? existing.status) !== "CANCELLED" &&
     (input.startsAt !== undefined ||
       input.staffId !== undefined ||
       input.serviceId !== undefined ||
+      input.services !== undefined ||
       input.status !== undefined)
   ) {
-    await assertStaffAvailable(staffId ?? null, startsAt, endsAt);
-    await assertNoClash(staffId ?? null, startsAt, endsAt, id);
+    await assertStaffFree(lines);
+    await assertNoClash(lines, id);
   }
 
   const status = input.status ?? existing.status;
@@ -446,17 +691,38 @@ export async function updateAppointment(
       throw conflict("Booking changed. Reload before editing.", "APPOINTMENT_CHANGED");
     const relevant =
       current.customerId !== customerId ||
-      current.staffId !== staffId ||
-      current.serviceId !== service.id ||
+      current.staffId !== primary.staffId ||
+      current.serviceId !== primary.serviceId ||
       current.startsAt.getTime() !== startsAt.getTime() ||
       current.endsAt.getTime() !== endsAt.getTime() ||
-      current.status !== status;
+      current.status !== status ||
+      linesChanged;
+
+    if (linesChanged) {
+      // The chain is rewritten rather than diffed: lines are cheap, ordered, and
+      // a stale row left behind by a partial update is exactly the kind of ghost
+      // the overlap rule would then trip over.
+      await tx.appointmentLine.deleteMany({ where: { appointmentId: id } });
+      await tx.appointmentLine.createMany({
+        data: lines.map((line, position) => ({
+          tenantId: "",
+          appointmentId: id,
+          serviceId: line.serviceId,
+          staffId: line.staffId,
+          position,
+          startsAt: line.startsAt,
+          endsAt: line.endsAt,
+          durationMinutes: line.durationMinutes,
+        })),
+      });
+    }
+
     await tx.appointment.update({
       where: { id },
       data: {
         customerId: customerId ?? null,
-        staffId: staffId ?? null,
-        serviceId: service.id,
+        staffId: primary.staffId,
+        serviceId: primary.serviceId,
         startsAt,
         endsAt,
         status,

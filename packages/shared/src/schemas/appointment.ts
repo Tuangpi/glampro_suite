@@ -63,13 +63,48 @@ const appointmentPeople = {
   customerId: z.string().nullable(),
   /** `null` is a walk-in with no record — the same rule the till's chip keeps. */
   customerName: z.string().nullable(),
+  /**
+   * The **primary** performer — the one on the first service line. A
+   * multi-service booking may have a different performer per line; read
+   * `services` when the distinction matters.
+   */
   staffId: z.string().nullable(),
   staffName: z.string().nullable(),
+  /** The **primary** service — the first of `services`. */
   serviceId: z.string().nullable(),
   serviceName: z.string().nullable(),
   /** The service's branch at read time, so the day view can tint without a join. */
   serviceDepartmentId: z.string().nullable(),
 };
+
+/**
+ * One booked service, in the order it is performed.
+ *
+ * A single-service booking has exactly one line, so a caller that does not care
+ * about multi-service can keep reading the flat `serviceName`/`staffName` above
+ * and be right. `startsAt`/`endsAt` are the line's own window: lines are a chain
+ * from the booking's start, each beginning where the previous one ended.
+ */
+export const appointmentServiceLineSchema = z.object({
+  serviceId: z.string(),
+  serviceName: z.string().nullable(),
+  serviceDepartmentId: z.string().nullable(),
+  /** Null = nobody assigned to this line yet. */
+  staffId: z.string().nullable(),
+  staffName: z.string().nullable(),
+  startsAt: z.string(),
+  endsAt: z.string(),
+  durationMinutes: z.number().int(),
+});
+
+export type AppointmentServiceLine = z.infer<typeof appointmentServiceLineSchema>;
+
+/**
+ * The most services one booking may hold. A salon sells two or three together
+ * (cut + colour + blow-dry); ten is a guard against a client loop, not a
+ * business limit anyone is expected to reach.
+ */
+export const MAX_APPOINTMENT_SERVICES = 10;
 
 /** A row in the day list. */
 export const appointmentSummarySchema = z.object({
@@ -80,6 +115,8 @@ export const appointmentSummarySchema = z.object({
   durationMinutes: z.number().int().nullable(),
   comment: z.string().nullable(),
   ...appointmentPeople,
+  /** The booking's services, in order. Always at least one. */
+  services: z.array(appointmentServiceLineSchema),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -98,26 +135,73 @@ export const appointmentDetailSchema = appointmentSummarySchema.extend({
 export type AppointmentDetail = z.infer<typeof appointmentDetailSchema>;
 
 /**
+ * One service chosen while booking.
+ *
+ * `staffId` overrides the booking-level performer for this line only — a cut by
+ * one stylist and a manicure by another is the case multi-service exists for.
+ * Absent or `null` means "whoever the booking names", and if the booking names
+ * nobody the line is simply unassigned.
+ */
+export const appointmentServiceLineInputSchema = z.object({
+  serviceId: z.string().min(1).max(64),
+  staffId: z.string().min(1).max(64).nullable().optional(),
+});
+
+export type AppointmentServiceLineInput = z.infer<typeof appointmentServiceLineInputSchema>;
+
+/**
  * Creating a booking.
  *
- * `serviceId` is **required**: duration and the eligibility of a performer both
- * come from the service, so a booking with no service would have to invent them.
- * The server derives `endsAt` and `durationMinutes`, and refuses a `staffId`
- * outside the service's department (ADR 0013).
+ * A booking names its services one of two ways, never both:
+ *
+ * - `serviceId` — one service, the shape every screen and test used before
+ *   multi-service existed; or
+ * - `services` — an ordered chain of one to `MAX_APPOINTMENT_SERVICES`. Line 0
+ *   starts at `startsAt`, each next line starts where the previous ended, and the
+ *   booking's `endsAt` is the end of the last one.
+ *
+ * Either way the server derives every end time and duration, and refuses a
+ * performer outside the department of the service **on that line** (ADR 0013).
  *
  * There is deliberately no `tenantId` field — the tenant comes from the
  * verified JWT (`AGENTS.md` rule 1).
  */
-export const createAppointmentSchema = z.object({
-  /** Absent = a walk-in with no customer row, exactly as the till draws it. */
-  customerId: z.string().min(1).max(64).optional(),
-  /** Absent = unassigned. A service whose department has nobody stays bookable. */
-  staffId: z.string().min(1).max(64).optional(),
-  serviceId: z.string().min(1).max(64),
-  startsAt: isoInstantSchema,
-  status: appointmentStatusSchema.optional(),
-  comment: z.string().trim().max(2000).optional(),
-});
+export const createAppointmentSchema = z
+  .object({
+    /** Absent = a walk-in with no customer row, exactly as the till draws it. */
+    customerId: z.string().min(1).max(64).optional(),
+    /**
+     * The performer for the booking. With `services` it is the default for every
+     * line that does not name its own; with `serviceId` it is the booking's
+     * performer, as before. Absent = unassigned.
+     */
+    staffId: z.string().min(1).max(64).optional(),
+    serviceId: z.string().min(1).max(64).optional(),
+    services: z
+      .array(appointmentServiceLineInputSchema)
+      .min(1)
+      .max(MAX_APPOINTMENT_SERVICES)
+      .optional(),
+    startsAt: isoInstantSchema,
+    status: appointmentStatusSchema.optional(),
+    comment: z.string().trim().max(2000).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.serviceId !== undefined && value.services !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["services"],
+        message: "Send either serviceId or services, not both",
+      });
+    }
+    if (value.serviceId === undefined && value.services === undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["services"],
+        message: "A booking needs at least one service",
+      });
+    }
+  });
 
 export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
 
@@ -128,14 +212,33 @@ export type CreateAppointmentInput = z.infer<typeof createAppointmentSchema>;
  * nulled — the same PATCH rule the customer and staff editors keep, so a form
  * that omits a control cannot clear it. `status: COMPLETED` is how the day view
  * finishes a booking; the server sets `finishedAt` alongside it.
+ *
+ * `services` **replaces** the whole chain, like every other PATCH field replaces
+ * its value; `serviceId` is the single-service form of the same move and keeps
+ * the performer the booking already had. Sending both is refused.
  */
-export const updateAppointmentSchema = z.object({
-  customerId: z.string().min(1).max(64).nullable().optional(),
-  staffId: z.string().min(1).max(64).nullable().optional(),
-  serviceId: z.string().min(1).max(64).optional(),
-  startsAt: isoInstantSchema.optional(),
-  status: appointmentStatusSchema.optional(),
-  comment: z.string().trim().max(2000).nullable().optional(),
-});
+export const updateAppointmentSchema = z
+  .object({
+    customerId: z.string().min(1).max(64).nullable().optional(),
+    staffId: z.string().min(1).max(64).nullable().optional(),
+    serviceId: z.string().min(1).max(64).optional(),
+    services: z
+      .array(appointmentServiceLineInputSchema)
+      .min(1)
+      .max(MAX_APPOINTMENT_SERVICES)
+      .optional(),
+    startsAt: isoInstantSchema.optional(),
+    status: appointmentStatusSchema.optional(),
+    comment: z.string().trim().max(2000).nullable().optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.serviceId !== undefined && value.services !== undefined) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["services"],
+        message: "Send either serviceId or services, not both",
+      });
+    }
+  });
 
 export type UpdateAppointmentInput = z.infer<typeof updateAppointmentSchema>;

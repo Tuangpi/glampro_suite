@@ -116,6 +116,7 @@ const ROW = {
   staffName: "Stella Stylist",
   serviceId: "service-1",
   serviceName: "Signature cut",
+  services: [],
   comment: null,
   finishedAt: null,
 };

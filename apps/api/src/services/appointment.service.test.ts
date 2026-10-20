@@ -20,7 +20,7 @@ import { after, before, describe, it } from "node:test";
 import { HttpError } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
-import { createAppointment, updateAppointment } from "./appointment.service.js";
+import { createAppointment, getAppointment, updateAppointment } from "./appointment.service.js";
 
 const databaseUrl = process.env["DATABASE_URL"];
 
@@ -54,6 +54,10 @@ interface Seeded {
   outsiderId: string;
   /** `Dee` — a tenant-A user the salon has disabled. */
   disabledStaffId: string;
+  /** `Mia` — a nails stylist, so a second line can have a different performer. */
+  miaId: string;
+  /** A 30-minute service in the nails branch, so a chain has two lengths. */
+  manicureId: string;
 }
 
 let seeded: Seeded | undefined;
@@ -150,6 +154,32 @@ async function seed(): Promise<void> {
       },
     });
 
+    // A second branch with its own stylist and its own length: a multi-service
+    // booking exists so line 1 can be somebody else's job, and that needs two
+    // departments to be a real case.
+    const nails = await prisma.department.create({ data: { tenantId: TENANT_A, name: "Nails" } });
+    const mia = await prisma.user.create({
+      data: {
+        tenantId: TENANT_A,
+        email: "mia@appointment-clash.test",
+        name: "Mia Moss",
+        passwordHash: "not-a-real-hash",
+      },
+    });
+    await prisma.staffDepartment.create({
+      data: { tenantId: TENANT_A, userId: mia.id, departmentId: nails.id },
+    });
+    const manicure = await prisma.service.create({
+      data: {
+        tenantId: TENANT_A,
+        departmentId: nails.id,
+        name: "Manicure",
+        memberPrice: "25.00",
+        nonmemberPrice: "28.00",
+        durationMinutes: 30,
+      },
+    });
+
     const outsider = await prisma.user.create({
       data: {
         tenantId: TENANT_A,
@@ -236,6 +266,8 @@ async function seed(): Promise<void> {
       longServiceId: longService.id,
       outsiderId: outsider.id,
       disabledStaffId: disabledStaff.id,
+      miaId: mia.id,
+      manicureId: manicure.id,
     };
   });
 }
@@ -725,6 +757,210 @@ describe(
           ]);
           return true;
         },
+      );
+    });
+
+    it("chains several services end to end, each with its own performer", async () => {
+      const s = requireSeeded();
+
+      const created = await asTenantA(() =>
+        createAppointment({
+          customerId: s.customerId,
+          startsAt: at(13, 45).toISOString(),
+          services: [
+            { serviceId: s.manicureId, staffId: s.miaId },
+            { serviceId: s.serviceId, staffId: s.kanaId },
+          ],
+        }),
+      );
+
+      assert.equal(created.startsAt, at(13, 45).toISOString());
+      assert.equal(created.endsAt, at(15).toISOString(), "30 + 45 minutes, chained");
+      assert.equal(created.durationMinutes, 75);
+      assert.deepEqual(
+        created.services.map((line) => [
+          line.serviceName,
+          line.staffName,
+          line.startsAt,
+          line.endsAt,
+          line.durationMinutes,
+        ]),
+        [
+          ["Manicure", "Mia Moss", at(13, 45).toISOString(), at(14, 15).toISOString(), 30],
+          ["Cut and finish", "Kana Kelsey", at(14, 15).toISOString(), at(15).toISOString(), 45],
+        ],
+      );
+
+      // The flat columns mirror line 0, so a reader written before lines existed
+      // (the day list, the receipt, the message payload) is still correct.
+      assert.equal(created.serviceName, "Manicure");
+      assert.equal(created.staffName, "Mia Moss");
+      assert.equal(created.serviceDepartmentId, created.services[0]!.serviceDepartmentId);
+    });
+
+    it("judges a clash per line, not across the whole booking", async () => {
+      const s = requireSeeded();
+
+      // Kana holds 19:00–19:45 (made here). The chain starts at 18:45 and puts
+      // her on the *second* line, so the clash is line 1's window and nothing
+      // else — the manicure before it is Mia's and is free.
+      await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(19).toISOString(),
+        }),
+      );
+
+      await assert.rejects(
+        asTenantA(() =>
+          createAppointment({
+            startsAt: at(18, 45).toISOString(),
+            services: [
+              { serviceId: s.manicureId, staffId: s.miaId },
+              { serviceId: s.serviceId, staffId: s.kanaId },
+            ],
+          }),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof HttpError);
+          assert.equal(error.statusCode, 409);
+          assert.equal(error.code, "APPOINTMENT_CLASH");
+          return true;
+        },
+      );
+    });
+
+    it("checks each line's performer against that line's service", async () => {
+      const s = requireSeeded();
+
+      // Kana is a hair stylist: fine on line 0, refused on the manicure line.
+      await assert.rejects(
+        asTenantA(() =>
+          createAppointment({
+            startsAt: at(23).toISOString(),
+            services: [
+              { serviceId: s.serviceId, staffId: s.kanaId },
+              { serviceId: s.manicureId, staffId: s.kanaId },
+            ],
+          }),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof HttpError);
+          assert.equal(error.statusCode, 400);
+          assert.equal(error.code, "STAFF_NOT_IN_DEPARTMENT");
+          assert.deepEqual(error.details, [
+            {
+              path: "staffId",
+              message: "That staff member is not in the service's department.",
+            },
+          ]);
+          return true;
+        },
+      );
+    });
+    it("replaces the whole chain on a patch and re-chains the slot", async () => {
+      const s = requireSeeded();
+
+      const booking = await asTenantA(() =>
+        createAppointment({
+          staffId: s.miaId,
+          serviceId: s.manicureId,
+          startsAt: at(23).toISOString(),
+        }),
+      );
+      assert.equal(booking.endsAt, at(23, 30).toISOString());
+
+      const patched = await asTenantA(() =>
+        updateAppointment(booking.id, {
+          services: [
+            { serviceId: s.manicureId, staffId: s.miaId },
+            { serviceId: s.serviceId, staffId: s.kanaId },
+          ],
+        }),
+      );
+
+      assert.equal(patched.endsAt, at(24, 15).toISOString());
+      assert.equal(patched.durationMinutes, 75);
+      assert.deepEqual(
+        patched.services.map((line) => [line.serviceName, line.staffName]),
+        [
+          ["Manicure", "Mia Moss"],
+          ["Cut and finish", "Kana Kelsey"],
+        ],
+      );
+
+      // A patch that touches nothing in the chain must not append a second copy
+      // of it — the rewrite is a replace, not an insert.
+      await asTenantA(() => updateAppointment(booking.id, { comment: "Noted." }));
+      const rows = await runAsPlatform(() =>
+        prisma.appointmentLine.findMany({
+          where: { appointmentId: booking.id },
+          select: { position: true },
+          orderBy: { position: "asc" },
+        }),
+      );
+      assert.deepEqual(
+        rows.map((row) => row.position),
+        [0, 1],
+        "the chain is rewritten, never appended to",
+      );
+    });
+
+    it("moves only the first line when the patch changes the booking's performer", async () => {
+      const s = requireSeeded();
+
+      const booking = await asTenantA(() =>
+        createAppointment({
+          startsAt: at(16, 45).toISOString(),
+          services: [
+            { serviceId: s.serviceId, staffId: s.ryoId },
+            { serviceId: s.manicureId, staffId: s.miaId },
+          ],
+        }),
+      );
+
+      const moved = await asTenantA(() => updateAppointment(booking.id, { staffId: null }));
+
+      assert.equal(moved.staffId, null, "the booking-level performer is line 0's");
+      assert.deepEqual(
+        moved.services.map((line) => line.staffId),
+        [null, s.miaId],
+        "line 1 keeps the person it was booked with",
+      );
+      assert.equal(moved.endsAt, booking.endsAt);
+    });
+
+    it("reads a booking written before service lines existed, and gives it one on the next patch", async () => {
+      const s = requireSeeded();
+
+      // A row from the pre-phase-B shape: a service and a window, no lines.
+      const legacy = await runAsPlatform(() =>
+        prisma.appointment.create({
+          data: {
+            tenantId: TENANT_A,
+            staffId: s.ryoId,
+            serviceId: s.serviceId,
+            startsAt: at(6),
+            endsAt: at(6, 45),
+          },
+          select: { id: true },
+        }),
+      );
+
+      const read = await asTenantA(() => getAppointment(legacy.id));
+      assert.deepEqual(read.services, [], "no lines yet");
+      assert.equal(read.serviceName, "Cut and finish");
+      assert.equal(read.staffName, "Ryo Rivas");
+
+      const patched = await asTenantA(() =>
+        updateAppointment(legacy.id, { comment: "Imported booking." }),
+      );
+      assert.equal(patched.services.length, 1);
+      assert.deepEqual(
+        [patched.services[0]!.startsAt, patched.services[0]!.endsAt],
+        [at(6).toISOString(), at(6, 45).toISOString()],
+        "the line takes the window the row already held",
       );
     });
   },
