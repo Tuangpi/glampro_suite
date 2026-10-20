@@ -31,8 +31,7 @@ export interface AppointmentBlockProps {
   /** A suspended salon may look but not open the editor. */
   isReadOnly?: boolean;
   /**
-   * Opt-in, because only the day grid can move a block: the week is read-only and the
-   * month draws chips (ADR 0018, decision 5). A grid that passes nothing gets a block
+   * Opt-in for writable day/week tracks. A grid that passes nothing gets a block
    * with no drag handle rather than one that grabs and then drops nothing.
    */
   draggable?: boolean;

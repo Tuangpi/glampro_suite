@@ -1,21 +1,9 @@
-/**
- * The month calendar — handoff screen 06's Month toggle, drawn as a chip grid.
- *
- * A month is not a scaled day: at seven columns and up to six rows there is no room for a
- * time gutter, and a block scaled to a 40px cell would say less than the two facts a chip
- * carries. So each day is a cell with up to `MAX_CHIPS_PER_DAY` chips — a time and a name —
- * and a `+N more` line, which is the same information the day grid gives, read a month at a
- * time.
- *
- * The grid is whole Monday-first weeks (`monthGridDays`), padded with the neighbouring
- * months' days as empty paper, while the **read** is the calendar month alone (ADR 0018,
- * decision 6): a chip in a padded cell would be a booking from a window nobody loaded, so
- * the padding shows dates and nothing else.
- *
- * Like the week, this view is read-only (ADR 0018, decision 5) — a chip has nowhere to be
- * dropped — and clicking one still opens the same drawer.
+/** Month calendar: occupied dates, expandable booking chips and date-only dragging.
+ * A drop preserves salon-local start time and staff. Padding is not a drop target.
  */
 import type { AppointmentSummary } from "@glampro_suite/shared";
+import { useState } from "react";
+import type { RescheduleInput } from "./CalendarView";
 
 import { Calendar } from "@/components/icons";
 import Button from "@/components/ui/Button";
@@ -32,7 +20,14 @@ import {
 import { cn } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { toSalonDate } from "@/lib/salon-time";
-import { bookingsByDay, dayKey, isSameDay, monthGridDays, startOfMonth } from "./calendar-geometry";
+import {
+  bookingsOnDays,
+  monthRescheduleFields,
+  dayKey,
+  isSameDay,
+  monthGridDays,
+  startOfMonth,
+} from "./calendar-geometry";
 
 /**
  * Chips a cell draws before it counts the rest. Three fits a 96px cell with the date, and
@@ -52,6 +47,7 @@ export interface MonthViewProps {
   /** A suspended salon may look but not open the editor. */
   isReadOnly?: boolean;
   onEdit: (appointment: AppointmentSummary) => void;
+  onReschedule?: (id: string, input: RescheduleInput) => void;
   onRetry?: () => void;
 }
 
@@ -63,6 +59,7 @@ export default function MonthView({
   errorMessage,
   isReadOnly = false,
   onEdit,
+  onReschedule,
   onRetry,
 }: MonthViewProps) {
   const { timeZone, formatTime } = useSalonFormatting();
@@ -99,7 +96,7 @@ export default function MonthView({
 
   const first = startOfMonth(salonDay);
   const cells = monthGridDays(salonDay);
-  const byDay = bookingsByDay(appointments, timeZone);
+  const byDay = bookingsOnDays(appointments, cells, timeZone);
 
   if (appointments.length === 0) {
     return (
@@ -143,6 +140,9 @@ export default function MonthView({
               isToday={isSameDay(cell, salonToday)}
               isReadOnly={isReadOnly}
               onEdit={onEdit}
+              onReschedule={onReschedule}
+              allAppointments={appointments}
+              timeZone={timeZone}
               formatTime={formatTime}
             />
           );
@@ -167,6 +167,9 @@ function DayCell({
   isToday,
   isReadOnly,
   onEdit,
+  onReschedule,
+  allAppointments,
+  timeZone,
   formatTime,
 }: {
   day: Date;
@@ -175,15 +178,32 @@ function DayCell({
   isToday: boolean;
   isReadOnly: boolean;
   onEdit: (appointment: AppointmentSummary) => void;
+  onReschedule?: (id: string, input: RescheduleInput) => void;
+  allAppointments: AppointmentSummary[];
+  timeZone: string;
   formatTime: (value: string | Date | null | undefined) => string;
 }) {
-  const shown = appointments.slice(0, MAX_CHIPS_PER_DAY);
+  const [expanded, setExpanded] = useState(false);
+  const shown = expanded ? appointments : appointments.slice(0, MAX_CHIPS_PER_DAY);
   const hidden = appointments.length - shown.length;
 
   return (
     <div
       data-day={dayKey(day)}
       data-outside={inMonth ? undefined : "true"}
+      onDragOver={
+        !inMonth || isReadOnly || !onReschedule ? undefined : (event) => event.preventDefault()
+      }
+      onDrop={(event) => {
+        if (!inMonth || isReadOnly || !onReschedule) return;
+        event.preventDefault();
+        const booking = allAppointments.find(
+          (row) => row.id === event.dataTransfer.getData("text/plain"),
+        );
+        if (!booking) return;
+        const input = monthRescheduleFields(booking, day, timeZone);
+        if (Object.keys(input).length) onReschedule(booking.id, input);
+      }}
       className={cn(
         "min-h-24 border-r border-b border-line-soft p-1.5",
         inMonth ? "bg-surface" : "bg-surface-2/40",
@@ -215,6 +235,15 @@ function DayCell({
               aria-label={label}
               disabled={isReadOnly}
               onClick={() => onEdit(booking)}
+              draggable={!isReadOnly && Boolean(onReschedule)}
+              onDragStart={(event) => {
+                if (isReadOnly || !onReschedule) {
+                  event.preventDefault();
+                  return;
+                }
+                event.dataTransfer.setData("text/plain", booking.id);
+                event.dataTransfer.effectAllowed = "move";
+              }}
               className={cn(
                 "truncate rounded-sm border-l-[3px] px-1.5 py-0.5 text-left text-2xs font-semibold transition",
                 "hover:brightness-[0.97] disabled:cursor-default disabled:hover:brightness-100",
@@ -229,7 +258,13 @@ function DayCell({
         })}
 
         {hidden > 0 ? (
-          <span className="px-1.5 text-2xs font-semibold text-ink-muted">+{hidden} more</span>
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="px-1.5 text-left text-2xs font-semibold text-ink-muted"
+          >
+            +{hidden} more
+          </button>
         ) : null}
       </div>
     </div>

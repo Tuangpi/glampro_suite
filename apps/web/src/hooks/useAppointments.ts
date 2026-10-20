@@ -14,6 +14,7 @@ import type {
   AppointmentDetail,
   AppointmentListQuery,
   AppointmentSummary,
+  StaffSummary,
   CreateAppointmentInput,
   PaginatedResponse,
   UpdateAppointmentInput,
@@ -23,16 +24,7 @@ import type { RescheduleInput } from "@/components/appointments/CalendarView";
 import { queryKeys } from "@/constants/queryKeys";
 import { get, getPaginated, patch, post } from "@/lib/api";
 
-/**
- * The calendar reads the whole day in one page. `MAX_PAGE_SIZE` is 200 in the
- * contract, so this is the server's own ceiling rather than a magic number —
- * a salon would need 200 bookings in a day before it spills, and paging a
- * calendar is a grid that silently hides blocks.
- *
- * Exported because the page names the ceiling when it has to disclose one: a
- * month that holds more than a page says "at most 200 at a time" rather than
- * describing its own truncation in numbers nobody can check.
- */
+/** Per-request ceiling. Calendar and roster loaders consume every page. */
 export const CALENDAR_PAGE_SIZE = 200;
 
 export interface AppointmentListFilters {
@@ -88,19 +80,41 @@ export function useAppointment(id: string | null) {
  * entry. Both are invalidated together on a write (see `invalidateAppointments`)
  * because a booking moves every window, not just the paged one.
  */
+export async function loadCalendarPages<T>(
+  url: string,
+  filters: { from?: string; to?: string; overlap?: string; status?: string },
+): Promise<PaginatedResponse<T>> {
+  const first = await getPaginated<T>(url, { ...filters, page: 1, pageSize: CALENDAR_PAGE_SIZE });
+  const data = [...first.data];
+  for (let page = 2; data.length < first.total; page += 1) {
+    const next = await getPaginated<T>(url, { ...filters, page, pageSize: CALENDAR_PAGE_SIZE });
+    if (next.data.length === 0 || next.total !== first.total)
+      throw new Error("The calendar changed while loading. Please try again.");
+    data.push(...next.data);
+  }
+  return { ...first, data };
+}
+
+export function useCalendarStaff(enabled = true) {
+  return useQuery({
+    queryKey: [...queryKeys.staff.list(), "calendar"],
+    queryFn: () => loadCalendarPages<StaffSummary>("/staff", { status: "active" }),
+    enabled,
+  });
+}
+
 export function useCalendarAppointments(range: { from: string; to: string }, enabled = true) {
   return useQuery({
     queryKey: queryKeys.appointments.calendar(range.from, range.to),
     queryFn: () =>
-      getPaginated<AppointmentSummary>("/appointments", {
+      loadCalendarPages<AppointmentSummary>("/appointments", {
         from: range.from,
         to: range.to,
-        pageSize: CALENDAR_PAGE_SIZE,
+        overlap: "true",
       }),
     // The grid stays dormant until it is shown: the day list must not pay for
     // the calendar's whole-day read just because the screen also offers it.
     enabled,
-    placeholderData: (previous) => previous,
   });
 }
 
@@ -164,7 +178,16 @@ export function useRescheduleAppointment() {
                   booking.id === id
                     ? {
                         ...booking,
-                        ...(input.startsAt !== undefined ? { startsAt: input.startsAt } : {}),
+                        ...(input.startsAt !== undefined
+                          ? {
+                              startsAt: input.startsAt,
+                              endsAt: new Date(
+                                new Date(input.startsAt).getTime() +
+                                  new Date(booking.endsAt).getTime() -
+                                  new Date(booking.startsAt).getTime(),
+                              ).toISOString(),
+                            }
+                          : {}),
                         ...(input.staffId !== undefined ? { staffId: input.staffId } : {}),
                       }
                     : booking,
@@ -176,12 +199,11 @@ export function useRescheduleAppointment() {
       return { previous };
     },
 
-    onError: (error, _variables, context) => {
+    onError: (_error, _variables, context) => {
       // Roll every calendar entry back to what it was before the drop.
       for (const [key, data] of context?.previous ?? []) {
         queryClient.setQueryData(key, data);
       }
-      throw error;
     },
 
     onSettled: () => {

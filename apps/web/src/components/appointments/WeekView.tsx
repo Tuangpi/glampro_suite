@@ -1,27 +1,10 @@
-/**
- * The week calendar — handoff screen 06's Week toggle: seven day columns on the day
- * grid's own scale.
- *
- * The day grid draws **who**; the week draws **when**. Each column is a day and every
- * booking is placed by its real times through the same `blockBox(booking, day)` the day
- * view uses, so a 10:00 booking is the same block in both — and a booking that is not on a
- * given day is not drawn on it at all (ADR 0018, decision 2: a booking belongs to the day
- * it starts on, and one crossing midnight is on neither day).
- *
- * A block says who is performing here, because a day column carries no staff name to read
- * it off — which is the one thing the day grid's columns already answer.
- *
- * **This view is read-only** (ADR 0018, decision 5). Dragging a block *down* is the day
- * grid's gesture, where one gutter and one snapped slot make "which minute" unambiguous;
- * across seven columns it would turn a nudge into a week-long move, and the lanes below
- * make "which column, which minute" ambiguous when two blocks share a column. Clicking a
- * block still opens the same drawer, so nothing is unreachable — and the page says so.
- *
- * Overlapping bookings divide their column into **lanes** (`packLanes`) instead of
- * stacking, so a pair the 6b rule could not prevent — two unassigned bookings at 09:00, or
- * a legacy row — is drawn twice over rather than hidden once.
+/** Week calendar: Monday-first day/staff tracks with quarter-hour drag targets.
+ * Shared geometry clips overnight occupancy to each visible 08:00–20:00 span.
+ * Overlapping blocks use lanes; all writes remain server-authorized.
  */
 import type { AppointmentSummary } from "@glampro_suite/shared";
+import type { RescheduleInput } from "./CalendarView";
+import type { CalendarColumn } from "./calendar-geometry";
 
 import { Calendar } from "@/components/icons";
 import Button from "@/components/ui/Button";
@@ -40,12 +23,14 @@ import {
   TRACK_HEIGHT,
   blockBox,
   blockMinutes,
-  bookingsByDay,
+  bookingsOnDays,
   dayKey,
   gridTemplate,
   isSameDay,
   nowLineTop,
   packLanes,
+  rescheduleFields,
+  PX_PER_MINUTE,
   weekDays,
 } from "./calendar-geometry";
 
@@ -54,6 +39,8 @@ export interface WeekViewProps {
   day: Date;
   /** Already loaded for the week — the component owns no query of its own. */
   appointments: AppointmentSummary[];
+  columns?: CalendarColumn[];
+  onReschedule?: (id: string, input: RescheduleInput) => void;
   isPending?: boolean;
   isError?: boolean;
   errorMessage?: string;
@@ -66,6 +53,8 @@ export interface WeekViewProps {
 export default function WeekView({
   day,
   appointments,
+  columns,
+  onReschedule,
   isPending = false,
   isError = false,
   errorMessage,
@@ -107,7 +96,11 @@ export default function WeekView({
   const salonToday = toSalonDate(new Date(), timeZone) ?? new Date();
 
   const days = weekDays(salonDay);
-  const byDay = bookingsByDay(appointments, timeZone);
+  const byDay = bookingsOnDays(appointments, days, timeZone);
+  const staffColumns = columns ?? [{ id: null, name: "All staff" }];
+  const tracks = days.flatMap((date, index) =>
+    staffColumns.map((staff) => ({ date, index, staff })),
+  );
 
   if (appointments.length === 0) {
     return (
@@ -122,69 +115,77 @@ export default function WeekView({
   }
 
   return (
-    <div className="rounded-card overflow-hidden border border-line bg-surface">
-      {/* Day heads — a second grid with the same template, so a head always sits exactly
+    <div className="rounded-card overflow-auto border border-line bg-surface">
+      <div style={{ minWidth: 68 + tracks.length * 140 }}>
+        {/* Day heads — a second grid with the same template, so a head always sits exactly
           above its own column. `CALENDAR_WEEKDAY_LABELS` is Monday-first, the same first
           day `weekDays` returns. */}
-      <div
-        className="grid border-b border-line-soft"
-        style={{ gridTemplateColumns: gridTemplate(days.length) }}
-      >
-        <div className="border-r border-line-soft" />
-        {days.map((column, index) => (
-          <div
-            key={dayKey(column)}
-            className="flex flex-col items-center gap-1 border-r border-line-soft px-2 py-2.5"
-          >
-            <span className="text-2xs font-bold tracking-wide text-ink-muted uppercase">
-              {CALENDAR_WEEKDAY_LABELS[index]}
-            </span>
-            <span
-              aria-hidden
-              className={cn(
-                "flex size-6 items-center justify-center rounded-pill text-xs font-extrabold",
-                isSameDay(column, salonToday) ? "bg-purple text-white" : "text-ink",
-              )}
-            >
-              {column.getDate()}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="max-h-[70vh] overflow-auto">
         <div
-          className="grid"
-          style={{ gridTemplateColumns: gridTemplate(days.length) }}
-          aria-label={`Week of ${days[0]?.toDateString() ?? ""}`}
+          className="grid border-b border-line-soft"
+          style={{ gridTemplateColumns: gridTemplate(tracks.length) }}
         >
-          {/* Time gutter: hour labels, each centred on its own hour line. */}
-          <div className="relative border-r border-line-soft" style={{ height: TRACK_HEIGHT }}>
-            {DAY_HOURS.map((hour) => (
-              <span
-                key={hour}
-                className="absolute inset-x-0 pr-2 text-right text-2xs font-bold text-ink-faint"
-                style={{
-                  top: (hour - DAY_START_HOUR) * HOUR_HEIGHT,
-                  transform: "translateY(-50%)",
-                }}
-              >
-                {`${String(hour).padStart(2, "0")}:00`}
+          <div className="border-r border-line-soft" />
+          {tracks.map(({ date: column, index, staff }) => (
+            <div
+              key={`${dayKey(column)}:${staff.id}`}
+              className="flex flex-col items-center gap-1 border-r border-line-soft px-2 py-2.5"
+            >
+              <span className="text-2xs font-bold tracking-wide text-ink-muted uppercase">
+                {CALENDAR_WEEKDAY_LABELS[index]}
               </span>
+              <span
+                aria-hidden
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-pill text-xs font-extrabold",
+                  isSameDay(column, salonToday) ? "bg-purple text-white" : "text-ink",
+                )}
+              >
+                {column.getDate()}
+              </span>
+              <span className="text-xs font-semibold">{staff.name}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="max-h-[70vh] overflow-auto">
+          <div
+            className="grid"
+            style={{ gridTemplateColumns: gridTemplate(tracks.length) }}
+            aria-label={`Week of ${days[0]?.toDateString() ?? ""}`}
+          >
+            {/* Time gutter: hour labels, each centred on its own hour line. */}
+            <div className="relative border-r border-line-soft" style={{ height: TRACK_HEIGHT }}>
+              {DAY_HOURS.map((hour) => (
+                <span
+                  key={hour}
+                  className="absolute inset-x-0 pr-2 text-right text-2xs font-bold text-ink-faint"
+                  style={{
+                    top: (hour - DAY_START_HOUR) * HOUR_HEIGHT,
+                    transform: "translateY(-50%)",
+                  }}
+                >
+                  {`${String(hour).padStart(2, "0")}:00`}
+                </span>
+              ))}
+            </div>
+
+            {tracks.map(({ date: column, staff }) => (
+              <DayTrack
+                key={`${dayKey(column)}:${staff.id}`}
+                day={column}
+                staffId={staff.id}
+                appointments={(byDay.get(dayKey(column)) ?? []).filter(
+                  (booking) => !columns || booking.staffId === staff.id,
+                )}
+                allAppointments={appointments}
+                onReschedule={onReschedule}
+                showingToday={isSameDay(column, salonToday)}
+                isReadOnly={isReadOnly}
+                timeZone={timeZone}
+                onEdit={onEdit}
+              />
             ))}
           </div>
-
-          {days.map((column) => (
-            <DayTrack
-              key={dayKey(column)}
-              day={column}
-              appointments={byDay.get(dayKey(column)) ?? []}
-              showingToday={isSameDay(column, salonToday)}
-              isReadOnly={isReadOnly}
-              timeZone={timeZone}
-              onEdit={onEdit}
-            />
-          ))}
         </div>
       </div>
     </div>
@@ -195,11 +196,13 @@ export default function WeekView({
  * One day column: the hour lines, that day's blocks in their lanes, and the now-indicator
  * when the column is today.
  *
- * There is no drop handler here and there should not be one — the week is read-only
- * (ADR 0018, decision 5), so a block is only ever a link to the drawer.
+ * A writable track accepts a date/time/staff drop; the API checks eligibility and clashes.
  */
 function DayTrack({
   day,
+  staffId,
+  allAppointments,
+  onReschedule,
   appointments,
   showingToday,
   isReadOnly,
@@ -207,6 +210,9 @@ function DayTrack({
   timeZone,
 }: {
   day: Date;
+  staffId: string | null;
+  allAppointments: AppointmentSummary[];
+  onReschedule?: (id: string, input: RescheduleInput) => void;
   appointments: AppointmentSummary[];
   showingToday: boolean;
   isReadOnly: boolean;
@@ -232,6 +238,27 @@ function DayTrack({
       // Exposed so a test can assert a block rendered in its own day's column, not merely
       // that a block exists somewhere on the grid.
       data-day={dayKey(day)}
+      data-column={staffId ?? "unassigned"}
+      onDragOver={isReadOnly || !onReschedule ? undefined : (event) => event.preventDefault()}
+      onDrop={(event) => {
+        if (isReadOnly || !onReschedule) return;
+        event.preventDefault();
+        const booking = allAppointments.find(
+          (row) => row.id === event.dataTransfer.getData("text/plain"),
+        );
+        if (!booking) return;
+        const input = rescheduleFields(
+          booking,
+          {
+            day,
+            staffId,
+            offsetMinutes:
+              (event.clientY - event.currentTarget.getBoundingClientRect().top) / PX_PER_MINUTE,
+          },
+          timeZone,
+        );
+        if (Object.keys(input).length) onReschedule(booking.id, input);
+      }}
       className="relative border-r border-line-soft"
       style={{ height: TRACK_HEIGHT, backgroundImage: HOUR_LINES }}
     >
@@ -243,6 +270,7 @@ function DayTrack({
           height={box.height}
           lane={lanes.get(booking.id)}
           showStaff
+          draggable={Boolean(onReschedule)}
           isReadOnly={isReadOnly}
           onEdit={onEdit}
         />

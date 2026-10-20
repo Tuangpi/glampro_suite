@@ -278,5 +278,110 @@ describe(
       assert.equal(response.status, 403);
       assert.equal(((await response.json()) as ErrorEnvelope).code, "TENANT_SUSPENDED");
     });
+
+    it("includes overnight occupancy only for overlap reads and excludes exact end boundaries", async () => {
+      await runAsPlatform(() =>
+        prisma.appointment.create({
+          data: {
+            id: "appointments-rt-overnight",
+            tenantId: TENANT_A,
+            startsAt: new Date("2026-10-08T15:00:00.000Z"),
+            endsAt: new Date("2026-10-09T01:00:00.000Z"),
+          },
+        }),
+      );
+      const range = "from=2026-10-08T16:00:00.000Z&to=2026-10-09T15:59:59.999Z";
+      const read = async (suffix: string) =>
+        dataOf<{ data: AppointmentBody[] }>(
+          await request("GET", `/api/appointments?${suffix}`, token),
+        );
+      assert.equal(
+        (await read(range)).data.some((row) => row.id === "appointments-rt-overnight"),
+        false,
+      );
+      assert.equal(
+        (await read(`${range}&overlap=true`)).data.some(
+          (row) => row.id === "appointments-rt-overnight",
+        ),
+        true,
+      );
+      assert.equal(
+        (await read("from=2026-10-09T01:00:00.000Z&overlap=true")).data.some(
+          (row) => row.id === "appointments-rt-overnight",
+        ),
+        false,
+      );
+    });
+
+    it("preserves duration snapshots on reschedule and rejects clashes and foreign writes", async () => {
+      await runAsPlatform(() =>
+        prisma.service.update({
+          where: { id: "appointments-rt-service" },
+          data: { durationMinutes: 90 },
+        }),
+      );
+      const moved = await request("PATCH", "/api/appointments/appointments-rt-existing", token, {
+        startsAt: "2026-10-10T01:00:00.000Z",
+      });
+      const row = await dataOf<AppointmentBody>(moved);
+      assert.equal(moved.status, 200);
+      assert.equal(row.durationMinutes, 45);
+      assert.equal(row.endsAt, "2026-10-10T01:45:00.000Z");
+      const clash = await request("POST", "/api/appointments", token, {
+        startsAt: "2026-10-10T01:15:00.000Z",
+        staffId: "appointments-rt-stylist",
+        serviceId: "appointments-rt-service",
+      });
+      assert.equal(clash.status, 409);
+      assert.equal(
+        (
+          await request("PATCH", "/api/appointments/appointments-rt-foreign", token, {
+            startsAt: row.startsAt,
+          })
+        ).status,
+        404,
+      );
+      assert.equal(
+        (
+          await request("PATCH", "/api/appointments/appointments-rt-existing", suspendedToken, {
+            startsAt: row.startsAt,
+          })
+        ).status,
+        403,
+      );
+      await runAsPlatform(() =>
+        prisma.service.update({
+          where: { id: "appointments-rt-service" },
+          data: { durationMinutes: 45 },
+        }),
+      );
+    });
+
+    it("pages a calendar window beyond 200 rows without tenant leakage", async () => {
+      await runAsPlatform(() =>
+        prisma.appointment.createMany({
+          data: Array.from({ length: 205 }, (_, index) => ({
+            id: `appointments-rt-page-${index}`,
+            tenantId: TENANT_A,
+            startsAt: new Date("2026-11-01T01:00:00.000Z"),
+            endsAt: new Date("2026-11-01T02:00:00.000Z"),
+          })),
+        }),
+      );
+      const read = async (page: number) =>
+        dataOf<{ data: AppointmentBody[]; total: number }>(
+          await request(
+            "GET",
+            `/api/appointments?overlap=true&from=2026-11-01T00:00:00.000Z&to=2026-11-01T23:59:59.999Z&pageSize=200&page=${page}`,
+            token,
+          ),
+        );
+      const first = await read(1);
+      const second = await read(2);
+      assert.equal(first.total, 205);
+      assert.equal(first.data.length, 200);
+      assert.equal(second.data.length, 5);
+      assert.equal(new Set([...first.data, ...second.data].map((row) => row.id)).size, 205);
+    });
   },
 );

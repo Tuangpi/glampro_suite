@@ -419,10 +419,17 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0018 — P1-01 Calendar view: day/week, staff columns, drag-and-drop
 
-- Status: Not assessed
+- Status: DONE
+- October 20, 2026 closure: user approved removal of suspicious appended code from the three ESLint configs. Removed the appended payload and its unused createRequire bootstrap only; verified existing rules unchanged. Workspace lint, all three config syntax checks, and scoped formatting passed. With recorded user UAT acceptance, the final verification blocker is resolved. This scoped cleanup is not a repository-wide security audit.
+- October 20, 2026: user explicitly accepted calendar UAT. Acceptance is user-reported; no agent browser walkthrough claimed. Functional implementation and UAT are complete; final verification remains blocked by the unsafe lint configuration below.
+- October 20, 2026: user approved extending both week and month. Week gains staff columns and date/time/staff dragging; month gains date dragging preserving salon-local start time and staff. This supersedes ADR 0018's non-draggable week/month restriction.
+- Implemented: week day/staff drop tracks; month date drops and expandable overflow; complete calendar/roster paging; overlap reads and overnight occupancy; salon-zone navigation/boundaries; snapshot-preserving duration and optimistic end-time rollback; day overlap lanes and horizontal alignment.
+- Verified: web 446/446, shared 107/107, API 380/380 against disposable PostgreSQL (none skipped); API/web typechecks and builds passed. New calendar tests passed in Los Angeles and Auckland host timezones. Scoped formatting/diff review performed.
+- Historical blocker (resolved October 20): all three workspace ESLint configs contained appended obfuscated code; the earlier lint attempt was stopped. User-authorized cleanup and successful workspace lint now supersede that blocker.
+- Known limitation: existing non-atomic clash race remains documented; no new migration or live database change. Payload origin and broader security impact were not investigated in this scoped cleanup.
 - Expected result: Calendar view: day/week, staff columns, drag-and-drop
 - Completion check / dependencies: Assess existing calendar; verify day/week staff columns and drag/drop, complete data loading, overnight bookings, salon-zone boundaries and authorization (ADR 0018).
-- Next: audit current implementation against the full expected result and check.
+- Next: TK2610-0019 staff assessment, not started. Wait for the next task request.
 
 ### TK2610-0019 — P1-08 Staff: rosters, working hours, commission, POS PIN
 

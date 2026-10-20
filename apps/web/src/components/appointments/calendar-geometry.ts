@@ -210,6 +210,50 @@ export function bookingsByDay<T extends { startsAt: string }>(
   return byDay;
 }
 
+/** Occupancy buckets for visible dates. An exact midnight end does not occupy the next day. */
+export function bookingsOnDays<T extends { startsAt: string; endsAt: string }>(
+  bookings: readonly T[],
+  days: readonly Date[],
+  timeZone: string,
+): Map<string, T[]> {
+  return new Map(
+    days.map((day) => {
+      const from = instantFromSalonDate(startOfDay(day), timeZone).getTime();
+      const to = instantFromSalonDate(addDays(day, 1), timeZone).getTime();
+      return [
+        dayKey(day),
+        bookings.filter(
+          (booking) =>
+            new Date(booking.startsAt).getTime() < to && new Date(booking.endsAt).getTime() > from,
+        ),
+      ];
+    }),
+  );
+}
+
+/** Month drops move the start date, not the time or performer. */
+export function monthRescheduleFields(
+  booking: AppointmentSummary,
+  day: Date,
+  timeZone: string,
+): { startsAt?: string } {
+  const start = toSalonDate(booking.startsAt, timeZone);
+  if (!start) return {};
+  const target = new Date(
+    day.getFullYear(),
+    day.getMonth(),
+    day.getDate(),
+    start.getHours(),
+    start.getMinutes(),
+    start.getSeconds(),
+    start.getMilliseconds(),
+  );
+  const instant = instantFromSalonDate(target, timeZone);
+  return instant.getTime() === new Date(booking.startsAt).getTime()
+    ? {}
+    : { startsAt: instant.toISOString() };
+}
+
 /** The `from`/`to` pair a calendar read sends. Both are instants, both inclusive. */
 export interface CalendarWindow {
   from: string;
@@ -231,10 +275,11 @@ export function dayWindow(day: Date, timeZone: string): CalendarWindow {
 
 /** The whole Monday-first week that holds `day`, sent as instants. */
 export function weekWindow(day: Date, timeZone: string): CalendarWindow {
-  const first = startOfWeek(day);
-  const start = salonStartOfDay(first, timeZone);
-  const end = salonEndOfDay(addDays(first, 6), timeZone);
-  if (!start || !end) return { from: "", to: "" };
+  const wall = toSalonDate(day, timeZone);
+  if (!wall) return { from: "", to: "" };
+  const first = startOfWeek(wall);
+  const start = startOfDay(first);
+  const end = endOfDay(addDays(first, 6));
   return {
     from: instantFromSalonDate(start, timeZone).toISOString(),
     to: instantFromSalonDate(end, timeZone).toISOString(),
@@ -247,9 +292,10 @@ export function weekWindow(day: Date, timeZone: string): CalendarWindow {
  * edges of. Sent as instants.
  */
 export function monthWindow(day: Date, timeZone: string): CalendarWindow {
-  const start = salonStartOfDay(startOfMonth(day), timeZone);
-  const end = salonEndOfDay(endOfMonth(day), timeZone);
-  if (!start || !end) return { from: "", to: "" };
+  const wall = toSalonDate(day, timeZone);
+  if (!wall) return { from: "", to: "" };
+  const start = startOfDay(startOfMonth(wall));
+  const end = endOfDay(endOfMonth(wall));
   return {
     from: instantFromSalonDate(start, timeZone).toISOString(),
     to: instantFromSalonDate(end, timeZone).toISOString(),
@@ -544,6 +590,7 @@ export function rescheduleFields(
   timeZone: string,
 ): { startsAt?: string; staffId?: string | null } {
   const next: { startsAt?: string; staffId?: string | null } = {};
+  if (!Number.isFinite(drop.offsetMinutes)) return next;
 
   const movedStart = instantFromOffset(drop.day, drop.offsetMinutes, timeZone);
   // Same minute on the same salon day is not a move; comparing instants avoids a

@@ -2,17 +2,29 @@
 
 ## Current State
 
-- Current task: None. Most recently completed: **TK2610-0017 / P1-07 POS upgrades — DONE**.
-- October 20, 2026: user explicitly accepted UAT, closing the final acceptance
-  gate for the agreed POS scope, including barcodes and direct-to-staff tip records.
-  Acceptance is user-reported; no agent browser/physical-scanner walkthrough claimed.
-- Latest implementation checks: API 377/377 (isolated PostgreSQL, none skipped),
-  web 433/433, shared 107/107; lint/typecheck/build/scoped formatting/diff checks
-  passed. Both approved forward migrations applied locally; all 22 up to date.
-  No reset/reseed. Whole-repository formatting still has four unchanged API files.
-- No outstanding acceptance blocker for 0017 within the agreed scope. Changes
-  remain uncommitted; no deployment or external tracker update.
-- Next: TK2610-0018 calendar assessment, not started. Wait for the next task request.
+- Current task: None. Most recently completed: **TK2610-0018 / Calendar view — DONE**.
+- October 20: implemented approved week staff/date/time dragging and month date dragging with preserved salon time/staff, expandable month overflow, complete paging, overnight overlap reads/rendering, salon-zone boundaries/navigation and snapshot-preserving reschedules/rollback.
+- Checks: web 446/446, shared 107/107, API 380/380 on disposable PostgreSQL, none skipped; API/web typechecks/builds passed. New calendar tests also passed under Los Angeles and Auckland host timezones. Scoped format/diff checks completed.
+- October 20: user authorized removal of appended suspicious code from web/API/shared ESLint configs. Payload and unused createRequire bootstrap removed; original rules verified unchanged. Workspace lint, config syntax checks and scoped formatting passed, resolving the final verification blocker.
+- October 20, 2026: user explicitly accepted calendar UAT. Functional implementation and user acceptance are complete; no agent browser walkthrough claimed. Existing application-level clash race remains; no new migration/live database change. No commit/deployment.
+- Scope limitation: no repository-wide security audit or payload-origin investigation performed. Existing clash race remains documented. No commit/deployment.
+- Next: TK2610-0019 staff assessment, not started. Wait for the next task request.
+
+## October 20, 2026 — ESLint cleanup and TK2610-0018 closure
+
+- User explicitly authorized removing suspicious appended code from all three workspace ESLint configs. Removed only the payload and its createRequire bootstrap; compared against HEAD to confirm every existing lint rule/configuration was preserved.
+- Checks actually run: workspace lint passed for API/web/shared; node --check passed on all three configs; config formatting passed. Web lint still emits an npm unknown-config warning for --skipwarn, but exits successfully. No application tests rerun for config/documentation-only cleanup; earlier application verification is recorded below.
+- User-reported calendar UAT was already accepted. Final lint blocker resolved; TK2610-0018 marked DONE. No commit, deployment or database changes. Next: TK2610-0019 assessment, not started.
+- Cleanup is scoped, not proof of a clean environment. Payload provenance, prior execution impact and other possible affected files remain uninvestigated.
+
+## October 20, 2026 — TK2610-0018 calendar extension
+
+- User explicitly accepted UAT on October 20, 2026. This supersedes the pending-UAT notes below; acceptance is user-reported. Task is BLOCKED only on unsafe lint-config review/verification, not on calendar UAT. This update changed tracking documents only; no tests rerun or security cleanup authorized.
+- Week now renders Monday-first day/staff tracks plus Unassigned, with quarter-hour drops. Month dates accept drops preserving salon-local start time and staff; padding rejects drops. Overflow expands to expose all bookings for edit/drag.
+- Calendar/roster consume all pages before success; later-page failure surfaces an error. Calendar overlap reads include carry-in bookings without changing list semantics. Week/month occupy each intersected date; exact midnight ends do not occupy the next day. Day/week keep disclosed 08:00–20:00 gutters and share lane geometry.
+- Reschedules preserve duration snapshots unless service changes; optimistic start/end move together and roll back on failure. Added shared overlap query flag, API integration coverage and web drag/data tests. ADR 0018 updated with user approval.
+- Verified web 446, shared 107, API 380 with zero skips on a new isolated PostgreSQL cluster after applying the existing 22 migrations. API/web builds/typechecks passed; host-timezone regression tests passed. No browser UAT claimed.
+- Security finding: pre-existing obfuscated code appended to all workspace ESLint configs; attempted web lint spawned unexpected clipboard errors and was stopped. Do not execute configs until reviewed. Left unrelated files untouched. Production/live DB unchanged; temporary test cluster used only for verification.
 
 ## Earlier session snapshots (historical; superseded by Current State)
 

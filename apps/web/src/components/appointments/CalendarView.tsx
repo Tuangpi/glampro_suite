@@ -17,7 +17,7 @@
  * The colour, the frame and the block itself are shared with the other two
  * views: the palette is in `constants/appointments.ts`, the gutter and the hour
  * lines are in `calendar-geometry.ts`, and the block is `AppointmentBlock`.
- * Those views are `WeekView.tsx` (seven day columns, read-only) and
+ * Those views are `WeekView.tsx` (day/staff tracks with dragging) and
  * `MonthView.tsx` (a chip grid) — see ADR 0018 for why each is what it is.
  *
  * The colours are the handoff's own (a purple block, an amber in-progress
@@ -43,6 +43,8 @@ import {
   PX_PER_MINUTE,
   TRACK_HEIGHT,
   blockBox,
+  blockMinutes,
+  packLanes,
   dayKey,
   type CalendarColumn,
   gridTemplate,
@@ -153,74 +155,78 @@ export default function CalendarView({
   }
 
   return (
-    <div className="rounded-card overflow-hidden border border-line bg-surface">
-      {/* Staff header — a second grid with the same template, so a column head
+    <div className="rounded-card overflow-auto border border-line bg-surface">
+      <div style={{ minWidth: 68 + columns.length * 140 }}>
+        {/* Staff header — a second grid with the same template, so a column head
           always sits exactly above its own track. */}
-      <div
-        className="grid border-b border-line-soft"
-        style={{ gridTemplateColumns: gridTemplate(columns.length) }}
-      >
-        <div className="border-r border-line-soft" />
-        {columns.map((column) => (
-          <div
-            key={column.id ?? "unassigned"}
-            className="flex items-center gap-2.5 border-r border-line-soft px-3 py-3.5"
-          >
-            <span
-              aria-hidden
-              className={cn(
-                "flex size-7.5 shrink-0 items-center justify-center rounded-pill text-2xs font-extrabold",
-                column.id === null ? "bg-surface-2 text-ink-muted" : "bg-navy text-white",
-              )}
-            >
-              {column.id === null ? "?" : getInitials(column.name)}
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-extrabold text-ink">{column.name}</span>
-              {column.role ? (
-                <span className="block truncate text-2xs text-ink-muted">{column.role}</span>
-              ) : null}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      <div className="max-h-[70vh] overflow-auto">
         <div
-          className="grid"
+          className="grid border-b border-line-soft"
           style={{ gridTemplateColumns: gridTemplate(columns.length) }}
-          aria-label={`Calendar for ${day.toDateString()}`}
         >
-          {/* Time gutter: hour labels, each centred on its own hour line. */}
-          <div className="relative border-r border-line-soft" style={{ height: TRACK_HEIGHT }}>
-            {DAY_HOURS.map((hour) => (
+          <div className="border-r border-line-soft" />
+          {columns.map((column) => (
+            <div
+              key={column.id ?? "unassigned"}
+              className="flex items-center gap-2.5 border-r border-line-soft px-3 py-3.5"
+            >
               <span
-                key={hour}
-                className="absolute inset-x-0 pr-2 text-right text-2xs font-bold text-ink-faint"
-                style={{
-                  top: (hour - DAY_START_HOUR) * HOUR_HEIGHT,
-                  transform: "translateY(-50%)",
-                }}
+                aria-hidden
+                className={cn(
+                  "flex size-7.5 shrink-0 items-center justify-center rounded-pill text-2xs font-extrabold",
+                  column.id === null ? "bg-surface-2 text-ink-muted" : "bg-navy text-white",
+                )}
               >
-                {`${String(hour).padStart(2, "0")}:00`}
+                {column.id === null ? "?" : getInitials(column.name)}
               </span>
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-extrabold text-ink">
+                  {column.name}
+                </span>
+                {column.role ? (
+                  <span className="block truncate text-2xs text-ink-muted">{column.role}</span>
+                ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <div className="max-h-[70vh] overflow-auto">
+          <div
+            className="grid"
+            style={{ gridTemplateColumns: gridTemplate(columns.length) }}
+            aria-label={`Calendar for ${day.toDateString()}`}
+          >
+            {/* Time gutter: hour labels, each centred on its own hour line. */}
+            <div className="relative border-r border-line-soft" style={{ height: TRACK_HEIGHT }}>
+              {DAY_HOURS.map((hour) => (
+                <span
+                  key={hour}
+                  className="absolute inset-x-0 pr-2 text-right text-2xs font-bold text-ink-faint"
+                  style={{
+                    top: (hour - DAY_START_HOUR) * HOUR_HEIGHT,
+                    transform: "translateY(-50%)",
+                  }}
+                >
+                  {`${String(hour).padStart(2, "0")}:00`}
+                </span>
+              ))}
+            </div>
+
+            {columns.map((column) => (
+              <StaffTrack
+                key={column.id ?? "unassigned"}
+                column={column}
+                day={salonDay}
+                appointments={byColumn.get(column.id) ?? []}
+                allAppointments={appointments}
+                showingToday={showingToday}
+                isReadOnly={isReadOnly}
+                timeZone={timeZone}
+                onEdit={onEdit}
+                onReschedule={onReschedule}
+              />
             ))}
           </div>
-
-          {columns.map((column) => (
-            <StaffTrack
-              key={column.id ?? "unassigned"}
-              column={column}
-              day={salonDay}
-              appointments={byColumn.get(column.id) ?? []}
-              allAppointments={appointments}
-              showingToday={showingToday}
-              isReadOnly={isReadOnly}
-              timeZone={timeZone}
-              onEdit={onEdit}
-              onReschedule={onReschedule}
-            />
-          ))}
         </div>
       </div>
     </div>
@@ -270,6 +276,12 @@ function StaffTrack({
       (entry): entry is { booking: AppointmentSummary; box: { top: number; height: number } } =>
         entry.box !== null,
     );
+  const lanes = packLanes(
+    placed.flatMap(({ booking }) => {
+      const span = blockMinutes(booking, day, timeZone);
+      return span ? [{ id: booking.id, start: span.start, end: span.end }] : [];
+    }),
+  );
 
   function handleDrop(event: DragEvent<HTMLDivElement>) {
     if (isReadOnly || !onReschedule) return;
@@ -303,6 +315,7 @@ function StaffTrack({
           booking={booking}
           top={box.top}
           height={box.height}
+          lane={lanes.get(booking.id)}
           isReadOnly={isReadOnly}
           draggable
           onEdit={onEdit}

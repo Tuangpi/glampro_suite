@@ -24,10 +24,11 @@ const {
   mutateAsync: vi.fn(),
   get: vi.fn(),
 }));
-const { useStaffList } = vi.hoisted(() => ({ useStaffList: vi.fn() }));
+const { useCalendarStaff } = vi.hoisted(() => ({ useCalendarStaff: vi.fn() }));
 const readOnly = vi.hoisted(() => ({ value: false }));
 
 vi.mock("@/hooks/useAppointments", () => ({
+  useCalendarStaff,
   useAppointmentList,
   useUpdateAppointment,
   useCalendarAppointments,
@@ -36,7 +37,6 @@ vi.mock("@/hooks/useAppointments", () => ({
   // module's own constant rather than a second guess at it.
   CALENDAR_PAGE_SIZE: 200,
 }));
-vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ isReadOnly: readOnly.value }) }));
 vi.mock("@/lib/api", () => ({
   get,
@@ -128,7 +128,7 @@ beforeEach(() => {
   useUpdateAppointment.mockReturnValue({ mutateAsync, isPending: false });
   useRescheduleAppointment.mockReturnValue({ mutate: vi.fn(), isPending: false });
   useCalendarAppointments.mockReturnValue(calendarPage([ROW]));
-  useStaffList.mockReturnValue({
+  useCalendarStaff.mockReturnValue({
     data: { data: [{ id: "staff-1", name: "Stella Stylist", position: "Stylist" }], total: 1 },
     isPending: false,
     isError: false,
@@ -190,14 +190,14 @@ describe("Appointments", () => {
     // On the list view the grid's whole-day read and the roster stay dormant,
     // so opening /appointments does not pay for a view nobody asked for.
     expect(enabledWindows()).toHaveLength(0);
-    expect(useStaffList.mock.calls.at(-1)?.[1]).toBe(false);
+    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(false);
 
     await user.click(screen.getByRole("button", { name: "Day" }));
 
     // The grid is now live — the only one of the three windows — and it draws the
     // roster's columns: "Unassigned" is a column head only the grid has, never the list.
     expect(enabledWindows()).toHaveLength(1);
-    expect(useStaffList.mock.calls.at(-1)?.[1]).toBe(true);
+    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(true);
     expect(screen.getByText("Unassigned")).toBeInTheDocument();
     expect(screen.getByText("Mina Customer")).toBeInTheDocument();
   });
@@ -234,8 +234,8 @@ describe("Appointments", () => {
     expect(Math.round((Number(weekTo) - Number(weekFrom) + 1) / 86_400_000)).toBe(7);
     // The day on screen is inside the week being read, whatever day of the week it is.
     expect(Number(weekFrom) <= Date.now() && Date.now() <= Number(weekTo)).toBe(true);
-    // The week writes the performer on each block, so it needs no roster.
-    expect(useStaffList.mock.calls.at(-1)?.[1]).toBe(false);
+    // Week staff columns need the complete roster, just like the day grid.
+    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(true);
 
     await user.click(screen.getByRole("button", { name: "Month" }));
     expect(enabledWindows()).toHaveLength(1);
@@ -249,7 +249,7 @@ describe("Appointments", () => {
       new Date(monthFrom.getFullYear(), monthFrom.getMonth() + 1, 0).getDate(),
     );
     expect(monthTo.getHours()).toBe(23);
-    expect(useStaffList.mock.calls.at(-1)?.[1]).toBe(false);
+    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(false);
 
     // And the day grid still asks for the same anchor day: nothing on the way moved it.
     await user.click(screen.getByRole("button", { name: "Day" }));
@@ -319,13 +319,12 @@ describe("Appointments", () => {
     expect(screen.getByText(/480 appointments this week/)).toBeInTheDocument();
   });
 
-  it("tells the desk the week and the month cannot move a booking", async () => {
+  it("explains week and month dragging", async () => {
     const user = userEvent.setup();
     render(<Appointments />);
 
     await user.click(screen.getByRole("button", { name: "Week" }));
-    expect(screen.getByText(/Read-only view/)).toBeInTheDocument();
-    expect(screen.getByText(/drag its block in the day grid/)).toBeInTheDocument();
+    expect(screen.getByText(/between day and staff columns/)).toBeInTheDocument();
 
     // The day grid is where a booking moves, so it carries no such notice — and the list
     // never did.
@@ -333,6 +332,6 @@ describe("Appointments", () => {
     expect(screen.queryByText(/Read-only view/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Month" }));
-    expect(screen.getByText(/Read-only view/)).toBeInTheDocument();
+    expect(screen.getByText(/keep its salon-local time and staff/)).toBeInTheDocument();
   });
 });

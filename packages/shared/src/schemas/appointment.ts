@@ -50,6 +50,8 @@ export const isoInstantSchema = z.iso.datetime({ offset: true });
 export const appointmentListQuerySchema = paginationQuerySchema.extend({
   from: isoInstantSchema.optional(),
   to: isoInstantSchema.optional(),
+  /** Calendar occupancy reads include bookings which began before the window. */
+  overlap: z.enum(["true", "false"]).optional(),
   status: appointmentStatusSchema.optional(),
   search: z.string().trim().max(200).optional(),
 });

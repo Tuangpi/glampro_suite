@@ -77,8 +77,7 @@ not establish full roadmap compliance. Consult the decision sections and task fi
   upper-cased with leading zeroes retained; keyboard-wedge scanner/manual code +
   Enter resolves an exact active product. No camera/global listener or scan queue.
   Pending lookups are discarded when their draft context changes. Barcode migration
-  is isolated-test verified and applied locally; user accepted 0017 UAT October 20,
-  2026. Tip policy was separately approved as direct-to-staff recording only.
+  is isolated-test verified and applied locally; user accepted 0017 UAT October 20, 2026. Tip policy was separately approved as direct-to-staff recording only.
 - Brand: Glampro Suite. Web branding was accepted on October 15, 2026; this does not
   establish trademark or domain clearance.
 - Repository rename was recorded complete on October 15, 2026. Historical evidence
@@ -544,6 +543,27 @@ sales contracts, useSale, CartLine, money, ReceiptView and migration
 `20261014044809_sale_line_discount`.
 
 ### ADR 0018
+
+**October 20, 2026 — TK2610-0018 extension approved by the user.** This supersedes
+the historical week/month non-dragging and single-page decisions below. Week now
+has Monday-first day/staff tracks (including Unassigned), quarter-hour date/time/staff
+drops and overlap lanes. Month supports date drops preserving salon-local start time
+and performer; padded dates remain outside the loaded month and are not drop targets.
+Month overflow expands to expose every chip. Both retain click-to-edit for keyboard use
+and enforce suspended-tenant read-only behavior. Calendar and active-roster reads fetch
+all pages, with failures surfaced instead of a partial grid; calendar reads opt into
+overlap selection while the list retains starts-within semantics. Occupied dates include
+overnight carry-in, excluding exact end boundaries. Time grids retain 08:00–20:00 and
+disclose that limit; Month exposes off-hours bookings. Salon-zone week/month boundaries
+and navigation are independent of the browser timezone. Rescheduling preserves saved
+duration unless service changes, updates optimistic start/end together, and rolls back
+failed writes. Existing application-level clash checks are still not atomic under
+concurrent writes; no database constraint/migration was added. User explicitly accepted
+calendar UAT on October 20, 2026 (user-reported, not an agent browser walkthrough).
+October 20: user separately authorized cleanup of the three unsafe ESLint configs;
+appended code and its createRequire bootstrap were removed without changing lint rules.
+Workspace lint and config syntax/format checks passed, resolving the final verification
+blocker; TK2610-0018 is DONE. This cleanup is not a repository-wide security audit.
 
 **Accepted October 14, 2026 — shared geometry supports day/week/month views.**
 Reuse existing appointment read endpoint, start-day bucketing, Monday-first weeks

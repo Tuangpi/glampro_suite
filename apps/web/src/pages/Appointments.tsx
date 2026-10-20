@@ -1,27 +1,6 @@
-/**
- * Appointments — handoff screens 03 and 06: the book as a list, a **day** grid, a
- * **week** grid and a **month** of chips.
- *
- * **MVP slice M2** (`docs/mvp.md`) shipped the list; **Phase 6** added the calendar grid
- * and its drag, plus the server-side clash refusal both surfaces (ADR 0014). **Slice 6d**
- * added the Week and Month views, which is what makes the handoff's own `Day · Week ·
- * Month` switch the real control it drew (ADR 0018). All four views are one fact asked
- * twice: the same `AppointmentSummary` rows, the same drawer for the write, the same
- * refusal — each asking the endpoint for a different *window* of the same book.
- *
- * Two of them carry a caveat the desk can see rather than discover. The week and the month
- * are **read-only** — the day grid is the only place a block can be dragged, because one
- * gutter and one snapped slot are what make "which minute" unambiguous — so the month and
- * the week say so. And a calendar read is one page, so when a window holds more than a
- * page the view names what it is not drawing instead of drawing a confident month with a
- * hole in it. Shifts/leave, the skill matrix and reminders are still not stubbed here: an
- * absent capability is absent, not faked.
- *
- * Each window is computed from the **salon's** day, week and month (its saved
- * timezone) and sent as instants, the same edges the dashboard's tiles count, so
- * "3 appointments today" and the three rows below are one fact asked twice.
- * "Today" is the salon's day because the salon's day is local to its clock
- * (see `schemas/settings.ts`).
+/** Appointments: paged list and complete day/week/month occupancy reads.
+ * Day/week drops change date, time and staff; month drops preserve time/staff.
+ * Every write uses the shared editor or server-authorized appointment PATCH.
  */
 import { useState } from "react";
 
@@ -62,10 +41,10 @@ import {
   CALENDAR_PAGE_SIZE,
   useAppointmentList,
   useCalendarAppointments,
+  useCalendarStaff,
   useRescheduleAppointment,
   useUpdateAppointment,
 } from "@/hooks/useAppointments";
-import { useStaffList } from "@/hooks/useStaff";
 import { get, getErrorMessage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { instantFromSalonDate, toSalonDate } from "@/lib/salon-time";
@@ -207,11 +186,10 @@ export default function Appointments() {
   const calendar = showMonth ? monthCalendar : showWeek ? weekCalendar : dayCalendar;
   const calendarRows = calendar.data?.data ?? [];
 
-  // The roster is the day grid's alone: the week writes the performer on each block and
-  // the month draws chips, so neither has a staff column for a roster to fill.
-  const staff = useStaffList({ page: 1, pageSize: 200, status: "active" }, showDay);
+  // Day and week share the complete active roster, plus booked archived staff.
+  const staff = useCalendarStaff(showDay || showWeek);
   const gridColumns: CalendarColumn[] = buildCalendarColumns(
-    dayCalendar.data?.data ?? [],
+    calendarRows,
     (staff.data?.data ?? []).map((member) => ({
       id: member.id,
       name: member.name,
@@ -223,10 +201,7 @@ export default function Appointments() {
   const reschedule = useRescheduleAppointment();
   const rows = data?.data ?? [];
   const showingToday = isToday(day, timeZone);
-  // A calendar read is one page (`CALENDAR_PAGE_SIZE`), and a month can hold more. The
-  // envelope carries the total, so the page **says** what it is not drawing rather than
-  // drawing a confident month with holes in it (ADR 0018, decision 7). Only ever true off
-  // the list, whose own page size is smaller but whose paging is visible.
+  // Defensive disclosure: normal calendar reads load every page before succeeding.
   const truncated = !showList && (calendar.data?.total ?? 0) > calendarRows.length;
 
   /**
@@ -238,8 +213,12 @@ export default function Appointments() {
     // February, not 3 March) and `addDays` builds from calendar fields, so neither a short
     // month nor a DST night can walk the anchor somewhere the desk did not ask for.
     setDay((current) => {
-      if (showMonth) return shiftMonth(current, direction);
-      return addDays(current, showWeek ? 7 * direction : direction);
+      const wall = toSalonDate(current, timeZone) ?? current;
+      const next = showMonth
+        ? shiftMonth(wall, direction)
+        : addDays(wall, showWeek ? 7 * direction : direction);
+      next.setHours(12);
+      return instantFromSalonDate(next, timeZone);
     });
   }
 
@@ -444,12 +423,20 @@ export default function Appointments() {
         </p>
       ) : null}
 
-      {/* The week and the month cannot move a booking (ADR 0018, decision 5), and that is a
-          limitation the desk should read rather than discover by dragging nothing. */}
+      {/* Each calendar explains its drag semantics and retains click-to-edit. */}
       {showWeek || showMonth ? (
         <p className="text-sm text-ink-muted">
-          Read-only view. To move a booking, drag its block in the day grid — or open it here to
-          change anything else.
+          {isReadOnly
+            ? "Read-only salon. Bookings cannot be changed."
+            : showMonth
+              ? "Drag a booking to another date to keep its salon-local time and staff. Open it to change the time or staff."
+              : "Drag a booking between day and staff columns to change its date, time or staff. Open it for keyboard editing."}
+        </p>
+      ) : null}
+      {showDay || showWeek ? (
+        <p className="text-sm text-ink-muted">
+          Time grids show 08:00–20:00 salon time. Use Month to see bookings outside these hours, or
+          open a booking to edit it without dragging.
         </p>
       ) : null}
 
@@ -531,31 +518,48 @@ export default function Appointments() {
           errorMessage={calendar.error ? getErrorMessage(calendar.error) : undefined}
           isReadOnly={isReadOnly}
           onEdit={openEdit}
+          onReschedule={handleReschedule}
           onRetry={() => void calendar.refetch()}
         />
       ) : showWeek ? (
         <WeekView
           day={day}
+          columns={gridColumns}
           appointments={calendarRows}
-          isPending={calendar.isPending}
-          isError={calendar.isError}
-          errorMessage={calendar.error ? getErrorMessage(calendar.error) : undefined}
+          isPending={calendar.isPending || staff.isPending}
+          isError={calendar.isError || staff.isError}
+          errorMessage={
+            calendar.error || staff.error
+              ? getErrorMessage(calendar.error || staff.error)
+              : undefined
+          }
           isReadOnly={isReadOnly}
           onEdit={openEdit}
-          onRetry={() => void calendar.refetch()}
+          onReschedule={handleReschedule}
+          onRetry={() => {
+            void calendar.refetch();
+            void staff.refetch();
+          }}
         />
       ) : (
         <CalendarView
           day={day}
           appointments={calendarRows}
           columns={gridColumns}
-          isPending={calendar.isPending}
-          isError={calendar.isError}
-          errorMessage={calendar.error ? getErrorMessage(calendar.error) : undefined}
+          isPending={calendar.isPending || staff.isPending}
+          isError={calendar.isError || staff.isError}
+          errorMessage={
+            calendar.error || staff.error
+              ? getErrorMessage(calendar.error || staff.error)
+              : undefined
+          }
           isReadOnly={isReadOnly}
           onEdit={openEdit}
           onReschedule={handleReschedule}
-          onRetry={() => void calendar.refetch()}
+          onRetry={() => {
+            void calendar.refetch();
+            void staff.refetch();
+          }}
         />
       )}
 

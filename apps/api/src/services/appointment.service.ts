@@ -252,10 +252,17 @@ export async function listAppointments(
   const where = {
     ...(query.from || query.to
       ? {
-          startsAt: {
-            ...(query.from ? { gte: new Date(query.from) } : {}),
-            ...(query.to ? { lte: new Date(query.to) } : {}),
-          },
+          ...(query.overlap === "true"
+            ? {
+                ...(query.from ? { endsAt: { gt: new Date(query.from) } } : {}),
+                ...(query.to ? { startsAt: { lte: new Date(query.to) } } : {}),
+              }
+            : {
+                startsAt: {
+                  ...(query.from ? { gte: new Date(query.from) } : {}),
+                  ...(query.to ? { lte: new Date(query.to) } : {}),
+                },
+              }),
         }
       : {}),
     ...(query.status ? { status: query.status } : {}),
@@ -349,13 +356,25 @@ export async function updateAppointment(
   if (customerId) await assertCustomerExists(customerId);
 
   const startsAt = input.startsAt ? new Date(input.startsAt) : existing.startsAt;
-  const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
+  // Preserve the booking snapshot unless the service itself changes.
+  const durationMinutes =
+    input.serviceId !== undefined && input.serviceId !== existing.serviceId
+      ? service.durationMinutes
+      : (existing.durationMinutes ??
+        Math.round((existing.endsAt.getTime() - existing.startsAt.getTime()) / 60_000));
+  const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
 
   // A move is what can clash, so the check re-runs when either half of the
   // slot changed — a new time under the same stylist, or the same time onto a
   // new one. Both are judged on the **merged** performer, and the row's own id
   // is excluded so a patch that changes nothing else is not a conflict.
-  if (input.startsAt !== undefined || input.staffId !== undefined) {
+  if (
+    (input.status ?? existing.status) !== "CANCELLED" &&
+    (input.startsAt !== undefined ||
+      input.staffId !== undefined ||
+      input.serviceId !== undefined ||
+      input.status !== undefined)
+  ) {
     await assertNoClash(staffId ?? null, startsAt, endsAt, id);
   }
 
@@ -373,7 +392,7 @@ export async function updateAppointment(
       startsAt,
       endsAt,
       status,
-      durationMinutes: service.durationMinutes,
+      durationMinutes,
       finishedAt,
       ...(input.comment !== undefined ? { comment: input.comment } : {}),
     },
