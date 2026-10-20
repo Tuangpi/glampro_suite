@@ -32,7 +32,7 @@ export const DEMO_DEPARTMENTS: readonly string[] = ["Hair", "Nails", "Beauty"];
  * perform services, so they must not appear as performers.
  */
 export const STAFF_DEPARTMENTS: Record<string, readonly string[]> = {
-  "manager@glampro.test": ["Hair", "Nails", "Beauty"],
+  "admin@gmail.com": ["Hair", "Nails", "Beauty"],
   "stylist@glampro.test": ["Hair"],
   "nailtech@glampro.test": ["Nails"],
   "therapist@glampro.test": ["Beauty"],
@@ -69,18 +69,18 @@ export interface SeedStaffUser {
 
 export const DEMO_STAFF: SeedStaffUser[] = [
   {
-    email: "admin@glampro.test",
+    email: "superadmin@gmail.com",
     name: "Glampro Administrator",
     globalRole: "SUPER_ADMIN",
     // Matches `resolveAdmin()`'s default; that function overwrites this row's
     // password again a few lines later (or with `ADMIN_PASSWORD` if set).
-    password: "ChangeMe123!",
+    password: "superadmin12345",
   },
   {
-    email: "manager@glampro.test",
+    email: "admin@gmail.com",
     name: "Maya Manager",
     globalRole: "MANAGER",
-    password: "Manager123!",
+    password: "admin12345",
   },
   {
     email: "stylist@glampro.test",
@@ -858,7 +858,7 @@ export const DEMO_SALES: readonly SeedSale[] = [
     dayOffset: -2,
     time: "11:30",
     customerEmail: "hannah.kim@example.test",
-    rangUpByEmail: "manager@glampro.test",
+    rangUpByEmail: "admin@gmail.com",
     lines: [{ kind: "PACKAGE", name: "Hair Care Package", quantity: 1 }],
     tenders: [{ method: "CARD" }],
   },
@@ -913,7 +913,7 @@ export const DEMO_SALES: readonly SeedSale[] = [
     dayOffset: 0,
     offsetMinutes: -45,
     customerEmail: "priya.menon@example.test",
-    rangUpByEmail: "manager@glampro.test",
+    rangUpByEmail: "admin@gmail.com",
     lines: [
       { kind: "SERVICE", name: "Women's Haircut", quantity: 1, staffEmail: "stylist@glampro.test" },
       {

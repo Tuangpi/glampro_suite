@@ -357,6 +357,38 @@ describe(
       );
     });
 
+    it("refuses booking an inactive service and names the service field", async () => {
+      await runAsPlatform(() =>
+        prisma.service.update({
+          where: { id: "appointments-rt-service" },
+          data: { status: "INACTIVE" },
+        }),
+      );
+      try {
+        const response = await request("POST", "/api/appointments", token, {
+          serviceId: "appointments-rt-service",
+          startsAt: "2026-10-11T09:00:00.000Z",
+        });
+        const body = (await response.json()) as ErrorEnvelope & {
+          details?: { path: string; message: string }[];
+        };
+
+        assert.equal(response.status, 400);
+        assert.equal(body.code, "SERVICE_INACTIVE");
+        assert.deepEqual(
+          body.details?.map((detail) => detail.path),
+          ["serviceId"],
+        );
+      } finally {
+        await runAsPlatform(() =>
+          prisma.service.update({
+            where: { id: "appointments-rt-service" },
+            data: { status: "ACTIVE" },
+          }),
+        );
+      }
+    });
+
     it("pages a calendar window beyond 200 rows without tenant leakage", async () => {
       await runAsPlatform(() =>
         prisma.appointment.createMany({

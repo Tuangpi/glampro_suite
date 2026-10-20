@@ -48,6 +48,12 @@ interface Seeded {
   foreignStaffId: string;
   /** Tenant B's own service, so a foreign booking has a service to hang on. */
   foreignServiceId: string;
+  /** A 90-minute service, so a resize can reach into the next block. */
+  longServiceId: string;
+  /** `Ola` — a tenant-A user in no branch, so the eligibility rule must refuse her. */
+  outsiderId: string;
+  /** `Dee` — a tenant-A user the salon has disabled. */
+  disabledStaffId: string;
 }
 
 let seeded: Seeded | undefined;
@@ -80,7 +86,14 @@ async function seed(): Promise<void> {
 
   await runAsPlatform(async () => {
     await prisma.tenant.create({
-      data: { id: TENANT_A, name: `Salon ${TENANT_A}`, slug: TENANT_A },
+      data: {
+        id: TENANT_A,
+        name: `Salon ${TENANT_A}`,
+        slug: TENANT_A,
+        // Deliberately not the host's zone: a message formatted in the server's
+        // clock cannot satisfy an assertion written against this one.
+        timeZone: "America/Los_Angeles",
+      },
     });
     await prisma.tenant.create({
       data: { id: TENANT_B, name: `Salon ${TENANT_B}`, slug: TENANT_B },
@@ -120,6 +133,38 @@ async function seed(): Promise<void> {
         memberPrice: "35.00",
         nonmemberPrice: "40.00",
         durationMinutes: 45,
+      },
+    });
+
+    // A second, longer service in the same branch: moving a booking onto it is
+    // the "resize" half of the clash rule, and the first block below must reach
+    // into the second when it grows.
+    const longService = await prisma.service.create({
+      data: {
+        tenantId: TENANT_A,
+        departmentId: branch.id,
+        name: "Colour and gloss",
+        memberPrice: "60.00",
+        nonmemberPrice: "70.00",
+        durationMinutes: 90,
+      },
+    });
+
+    const outsider = await prisma.user.create({
+      data: {
+        tenantId: TENANT_A,
+        email: "outsider@appointment-clash.test",
+        name: "Ola Outsider",
+        passwordHash: "not-a-real-hash",
+      },
+    });
+    const disabledStaff = await prisma.user.create({
+      data: {
+        tenantId: TENANT_A,
+        email: "disabled@appointment-clash.test",
+        name: "Dee Disabled",
+        passwordHash: "not-a-real-hash",
+        disabled: true,
       },
     });
 
@@ -188,6 +233,9 @@ async function seed(): Promise<void> {
       ryoSlotId: ryoSlot.id,
       foreignStaffId: foreignStaff.id,
       foreignServiceId: foreignService.id,
+      longServiceId: longService.id,
+      outsiderId: outsider.id,
+      disabledStaffId: disabledStaff.id,
     };
   });
 }
@@ -215,7 +263,7 @@ describe(
       return runAsPlatform(() =>
         prisma.appointment.findUniqueOrThrow({
           where: { id },
-          select: { id: true, staffId: true, startsAt: true, endsAt: true },
+          select: { id: true, staffId: true, startsAt: true, endsAt: true, status: true },
         }),
       );
     }
@@ -432,6 +480,252 @@ describe(
       assert.equal(moved.staffId, s.kanaId);
       assert.equal(moved.startsAt, at(21).toISOString());
       assert.equal(moved.endsAt, at(21, 45).toISOString(), "the slot resizes from the service");
+    });
+
+    it("refuses booking an inactive service but keeps its existing bookings editable", async () => {
+      const s = requireSeeded();
+
+      // A booking on the long service, made while both services are live, is the
+      // row whose service is about to be retired underneath it.
+      const booking = await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.longServiceId,
+          startsAt: at(6).toISOString(),
+        }),
+      );
+
+      await runAsPlatform(() =>
+        prisma.service.update({ where: { id: s.serviceId }, data: { status: "INACTIVE" } }),
+      );
+      try {
+        // Choosing it for a new booking is refused, and the refusal names the
+        // control the drawer has to mark.
+        await assert.rejects(
+          asTenantA(() =>
+            createAppointment({
+              staffId: s.kanaId,
+              serviceId: s.serviceId,
+              startsAt: at(7).toISOString(),
+            }),
+          ),
+          (error: unknown) => {
+            assert.ok(error instanceof HttpError, "expected an HttpError");
+            assert.equal(error.statusCode, 400);
+            assert.equal(error.code, "SERVICE_INACTIVE");
+            assert.deepEqual(error.details, [
+              { path: "serviceId", message: "That service is not active." },
+            ]);
+            return true;
+          },
+        );
+
+        // Editing the booking already on the retired service is still allowed:
+        // the service is not re-chosen, so retirement cannot freeze it.
+        const edited = await asTenantA(() =>
+          updateAppointment(booking.id, { comment: "Kept after retirement." }),
+        );
+        assert.equal(edited.comment, "Kept after retirement.");
+
+        // Moving a booking *onto* the inactive service is a new choice, refused.
+        await assert.rejects(
+          asTenantA(() => updateAppointment(booking.id, { serviceId: s.serviceId })),
+          (error: unknown) => {
+            assert.ok(error instanceof HttpError);
+            assert.equal(error.code, "SERVICE_INACTIVE");
+            return true;
+          },
+        );
+
+        const untouched = await readUnscoped(booking.id);
+        assert.equal(untouched.endsAt.toISOString(), at(7, 30).toISOString());
+      } finally {
+        await runAsPlatform(() =>
+          prisma.service.update({ where: { id: s.serviceId }, data: { status: "ACTIVE" } }),
+        );
+      }
+    });
+
+    it("accepts a booking created cancelled even where a live one already sits", async () => {
+      const s = requireSeeded();
+
+      const occupant = await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(17).toISOString(),
+        }),
+      );
+
+      // A row created already cancelled holds no slot (ADR 0014 §3), so it may
+      // be recorded in a window somebody else occupies — the same rule PATCH
+      // applies when a booking is cancelled after the fact.
+      const cancelled = await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(17).toISOString(),
+          status: "CANCELLED",
+        }),
+      );
+
+      assert.equal(cancelled.status, "CANCELLED");
+      assert.equal(cancelled.startsAt, occupant.startsAt);
+      assert.equal(cancelled.endsAt, occupant.endsAt);
+    });
+
+    it("judges a reactivated booking against the slot it is asking for back", async () => {
+      const s = requireSeeded();
+
+      const cancelled = await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(18).toISOString(),
+          status: "CANCELLED",
+        }),
+      );
+      // The freed slot is given away while the cancelled row still remembers it.
+      await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(18).toISOString(),
+        }),
+      );
+
+      await assert.rejects(
+        asTenantA(() => updateAppointment(cancelled.id, { status: "SCHEDULED" })),
+        (error: unknown) => {
+          assert.ok(error instanceof HttpError);
+          assert.equal(error.statusCode, 409);
+          assert.equal(error.code, "APPOINTMENT_CLASH");
+          return true;
+        },
+      );
+
+      const untouched = await readUnscoped(cancelled.id);
+      assert.equal(untouched.status, "CANCELLED", "the refused reactivation wrote nothing");
+
+      // The same move onto a free window still works, so the rule refuses the
+      // occupancy and not reactivation itself.
+      const free = await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(22).toISOString(),
+          status: "CANCELLED",
+        }),
+      );
+      const revived = await asTenantA(() => updateAppointment(free.id, { status: "SCHEDULED" }));
+      assert.equal(revived.status, "SCHEDULED");
+    });
+
+    it("refuses a service change that would grow the block into the next booking", async () => {
+      const s = requireSeeded();
+
+      const first = await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(15).toISOString(),
+        }),
+      );
+      await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(15, 45).toISOString(),
+        }),
+      );
+
+      // The start does not move; the 90-minute service would end at 16:30 and
+      // run through the block at 15:45, so the resize is what clashes.
+      await assert.rejects(
+        asTenantA(() => updateAppointment(first.id, { serviceId: s.longServiceId })),
+        (error: unknown) => {
+          assert.ok(error instanceof HttpError);
+          assert.equal(error.statusCode, 409);
+          assert.equal(error.code, "APPOINTMENT_CLASH");
+          return true;
+        },
+      );
+
+      const untouched = await readUnscoped(first.id);
+      assert.equal(untouched.endsAt.toISOString(), at(15, 45).toISOString());
+    });
+
+    it("quotes the clashing window in the salon's zone, not the server's", async () => {
+      const s = requireSeeded();
+
+      await asTenantA(() =>
+        createAppointment({
+          staffId: s.kanaId,
+          serviceId: s.serviceId,
+          startsAt: at(12).toISOString(),
+        }),
+      );
+
+      await assert.rejects(
+        asTenantA(() =>
+          createAppointment({
+            staffId: s.kanaId,
+            serviceId: s.serviceId,
+            startsAt: at(12, 15).toISOString(),
+          }),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof HttpError);
+          // 2026-10-14 is PDT (UTC−7): 12:00Z–12:45Z is 05:00–05:45 in the salon.
+          assert.match(error.message, /05:00–05:45/);
+          return true;
+        },
+      );
+    });
+
+    it("names the performer field when the chosen staff is disabled or out of the branch", async () => {
+      const s = requireSeeded();
+
+      await assert.rejects(
+        asTenantA(() =>
+          createAppointment({
+            staffId: s.disabledStaffId,
+            serviceId: s.serviceId,
+            startsAt: at(19).toISOString(),
+          }),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof HttpError);
+          assert.equal(error.statusCode, 400);
+          assert.equal(error.code, "STAFF_DISABLED");
+          assert.deepEqual(error.details, [
+            { path: "staffId", message: "That staff member is disabled." },
+          ]);
+          return true;
+        },
+      );
+
+      await assert.rejects(
+        asTenantA(() =>
+          createAppointment({
+            staffId: s.outsiderId,
+            serviceId: s.serviceId,
+            startsAt: at(19, 30).toISOString(),
+          }),
+        ),
+        (error: unknown) => {
+          assert.ok(error instanceof HttpError);
+          assert.equal(error.statusCode, 400);
+          assert.equal(error.code, "STAFF_NOT_IN_DEPARTMENT");
+          assert.deepEqual(error.details, [
+            {
+              path: "staffId",
+              message: "That staff member is not in the service's department.",
+            },
+          ]);
+          return true;
+        },
+      );
     });
   },
 );

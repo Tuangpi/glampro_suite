@@ -23,6 +23,10 @@
  *    overlaps an active booking for the same performer is refused with `409`
  *    (ADR 0014). The calendar grid is the surface that makes the gap visible,
  *    so the rule lives here rather than in the browser that drew it.
+ * 4. **Only a live service can be chosen.** A booking may be created on an
+ *    `ACTIVE` service, and a patch may move a booking *onto* one. A booking
+ *    already on a service that was later deactivated stays editable — retiring
+ *    a service must not freeze the history hanging on it.
  */
 import type { PaginatedResponse } from "@glampro_suite/shared";
 import {
@@ -38,6 +42,7 @@ import {
 
 import { badRequest, conflict, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
+import { salonTimeZone } from "../lib/salon-clock.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertStaffAvailable } from "./staff-availability.service.js";
 import { queueAppointmentMessages, tenantId } from "./messaging.service.js";
@@ -118,13 +123,30 @@ interface ResolvedService {
   durationMinutes: number;
 }
 
-/** Loads the service a booking hangs on, or 404s. */
-async function resolveService(serviceId: string): Promise<ResolvedService> {
+/**
+ * Loads the service a booking hangs on, or 404s.
+ *
+ * `requireActive` is set by the requests that *choose* a service — a creation,
+ * or a patch that changes which service is booked. A patch keeping the service
+ * it already has stays allowed even if that service was since deactivated, so
+ * deactivating a service cannot freeze every booking on it.
+ */
+async function resolveService(
+  serviceId: string,
+  options: { requireActive?: boolean } = {},
+): Promise<ResolvedService> {
   const service = await prisma.service.findFirst({
     where: { id: serviceId },
-    select: { id: true, departmentId: true, durationMinutes: true },
+    select: { id: true, departmentId: true, durationMinutes: true, status: true },
   });
   if (!service) throw notFound("That service does not exist.", "SERVICE_NOT_FOUND");
+  if (options.requireActive && service.status !== "ACTIVE") {
+    throw badRequest(
+      "That service is not active. Pick another service.",
+      [{ path: "serviceId", message: "That service is not active." }],
+      "SERVICE_INACTIVE",
+    );
+  }
 
   return {
     id: service.id,
@@ -148,7 +170,11 @@ async function assertPerformerEligible(staffId: string, service: ResolvedService
   });
   if (!staff) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
   if (staff.disabled)
-    throw badRequest("That staff member is disabled.", undefined, "STAFF_DISABLED");
+    throw badRequest(
+      "That staff member is disabled.",
+      [{ path: "staffId", message: "That staff member is disabled." }],
+      "STAFF_DISABLED",
+    );
 
   if (service.departmentId === null) return;
 
@@ -156,7 +182,12 @@ async function assertPerformerEligible(staffId: string, service: ResolvedService
   if (!inDepartment) {
     throw badRequest(
       "That staff member is not in the service's department.",
-      undefined,
+      [
+        {
+          path: "staffId",
+          message: "That staff member is not in the service's department.",
+        },
+      ],
       "STAFF_NOT_IN_DEPARTMENT",
     );
   }
@@ -227,14 +258,18 @@ async function assertNoClash(
 
   if (!clash) return;
 
+  // The clash is a fact about the salon's day, so it is quoted in the salon's
+  // zone. Formatting in the server's zone reads as an hour nobody booked.
+  const zone = await salonTimeZone();
+  const timeInSalon = (instant: Date) =>
+    instant.toLocaleTimeString("en-GB", {
+      timeZone: zone,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
   const who = clash.customer?.name ?? "another appointment";
-  const window = `${clash.startsAt.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}–${clash.endsAt.toLocaleTimeString("en-GB", {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
+  const window = `${timeInSalon(clash.startsAt)}–${timeInSalon(clash.endsAt)}`;
 
   throw conflict(
     `That time is already taken: ${who} is booked ${window}. Pick another time or another stylist.`,
@@ -306,9 +341,13 @@ export async function getAppointment(id: string): Promise<AppointmentDetail> {
  * Books. `endsAt` and `durationMinutes` are computed, the eligible performer is
  * checked, and `finishedAt` is stamped when the booking is created already
  * completed (a re-seed replaying history, or a desk that forgot to mark it).
+ *
+ * Only an active service may be booked, and a row created already cancelled is
+ * neither availability- nor clash-checked: it holds no slot (ADR 0014 §3), and
+ * PATCH treats it the same way, so the two paths agree.
  */
 export async function createAppointment(input: CreateAppointmentInput): Promise<AppointmentDetail> {
-  const service = await resolveService(input.serviceId);
+  const service = await resolveService(input.serviceId, { requireActive: true });
   if (input.staffId) await assertPerformerEligible(input.staffId, service);
   if (input.customerId) await assertCustomerExists(input.customerId);
 
@@ -316,8 +355,10 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
   const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
   const status = input.status ?? "SCHEDULED";
 
-  if (status !== "CANCELLED") await assertStaffAvailable(input.staffId ?? null, startsAt, endsAt);
-  await assertNoClash(input.staffId ?? null, startsAt, endsAt);
+  if (status !== "CANCELLED") {
+    await assertStaffAvailable(input.staffId ?? null, startsAt, endsAt);
+    await assertNoClash(input.staffId ?? null, startsAt, endsAt);
+  }
 
   const created = await prisma.$transaction(async (tx) => {
     const created = await tx.appointment.create({
@@ -358,7 +399,11 @@ export async function updateAppointment(
   const existing = await findRow(id);
   if (!existing) throw notFound("That appointment does not exist.", "APPOINTMENT_NOT_FOUND");
 
-  const service = await resolveService(input.serviceId ?? existing.serviceId ?? "");
+  const service = await resolveService(input.serviceId ?? existing.serviceId ?? "", {
+    // Only a *new* choice has to be active; keeping the service a booking
+    // already has must survive that service being retired.
+    requireActive: input.serviceId !== undefined && input.serviceId !== existing.serviceId,
+  });
   const staffId = input.staffId === undefined ? existing.staffId : input.staffId;
   const customerId = input.customerId === undefined ? existing.customerId : input.customerId;
 

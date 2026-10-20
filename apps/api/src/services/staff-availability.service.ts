@@ -1,6 +1,6 @@
 import { conflict } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
-import { currentScope } from "../lib/tenant-context.js";
+import { salonTimeZone } from "../lib/salon-clock.js";
 import { wallClockAt } from "../lib/wall-clock.js";
 
 /** Enforce configured recurring hours in the salon's zone, never the host zone. */
@@ -12,13 +12,7 @@ export async function assertStaffAvailable(
   if (!staffId) return;
   const rows = await prisma.staffShift.findMany({ where: { userId: staffId } });
   if (rows.length === 0) return;
-  const scope = currentScope();
-  if (scope?.kind !== "tenant") throw new Error("Availability requires a tenant scope.");
-  const tenant = await prisma.tenant.findUniqueOrThrow({
-    where: { id: scope.tenantId },
-    select: { timeZone: true },
-  });
-  const zone = tenant.timeZone;
+  const zone = await salonTimeZone();
   const dateAt = (instant: Date) => {
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: zone,

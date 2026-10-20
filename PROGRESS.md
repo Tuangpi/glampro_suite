@@ -2,15 +2,26 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **TK2610-0021 — code/documentation DONE; live integration unverified**.
-- Implemented: staff-editor recurring roster CRUD (create/update/withdraw), complete paging, merged/date-aware validation, salon-zone booking enforcement; configurable service commission; email-free staff and session-bound POS PIN identities with reset/revocation.
+- Current task: **TK2610-0020 — IN PROGRESS**. Phase A (booking lifecycle) done; Phases B–D (multi-service, recurring, rooms/equipment) not started and not approved.
+- Phase A implemented (October 20, 2026): booking creation requires an `ACTIVE` service (`SERVICE_INACTIVE`, `details[0].path = "serviceId"`); PATCH requires active only when `serviceId` actually changes, so retired services stay editable; a row created already `CANCELLED` skips roster and clash gates; clash messages quote the tenant zone through new `apps/api/src/lib/salon-clock.ts` (also reused by staff availability); `STAFF_DISABLED`/`STAFF_NOT_IN_DEPARTMENT` carry `details: [{ path: "staffId" }]`. Multi-service, recurring series and resource booking remain absent.
+- Phase A verified: appointment suites 24/24 on disposable PostgreSQL `glampro_tk0020_a`; full API 422/422 (second run); web 460/460; API/web typecheck, workspace lint, Prettier and `prisma validate` passed. No schema change, no application-DB migration, no commit.
+- Observed once: `sale.service.test.ts` "credits a customer for a package" failed on the first full run (2 holdings vs 1) and passed in isolation (54/54) and on the full rerun. Cause is test-side `customerIdOf` using `findMany` with no `orderBy`; unrelated to Phase A and not fixed.
+- Implemented earlier: staff-editor recurring roster CRUD (create/update/withdraw), complete paging, merged/date-aware validation, salon-zone booking enforcement; configurable service commission; email-free staff and session-bound POS PIN identities with reset/revocation.
 - Verified: latest API 391/391 and sale suite 54/54 on isolated PostgreSQL, no skips; API typecheck, workspace lint and full build passed. Earlier shared 112/112 and web 452/452 passed; not rerun for this API-only follow-up.
 - User accepted staff UAT on October 20, 2026. Both staff migrations applied to local development application database; Prisma status and read-only schema/history checks passed. No reset/reseed or production rollout.
 - Paid commission survives void unchanged except reconciliation flag; unpaid commission is deleted. Reports count paid reconciliation on void date, exclude it from earned commission. Refund behavior retained.
 - Limitations: existing booking/rota concurrency races; process-local/IP-based PIN throttling; no attendance/payroll/payout engine. Prior security cleanup was not a repository-wide audit.
 - Messaging verification: API 415/415 on disposable PostgreSQL (no skips), web 459/459, shared 116/116; typecheck/lint/build passed. Migration replay/status/schema diff verified only on disposable DB. Application DB unchanged.
 - User accepted messaging UAT on October 20, 2026 (user-reported; no agent-observed browser/live-provider verification).
-- Next: TK2610-0020 assessment; not started. Application migration and live activation require separate authorization. No paid sends, commit or deployment. External task tracker unchanged; TK2610-0021 is ready to mark complete for approved code/documentation scope, not production delivery. Audit reports 12 dependency findings (2 critical/8 high/2 moderate); unrelated upgrades not applied.
+- Next: TK2610-0020 Phases B–D need a scope decision (multi-service lines, recurring series, rooms/equipment); nothing beyond Phase A is implemented. Messaging application migration and live activation still require separate authorization. No paid sends, commit or deployment. External task tracker unchanged.
+
+## October 20, 2026 — TK2610-0020 Phase A booking lifecycle
+
+- Assessed before editing: multi-service, recurring series and rooms/equipment do not exist (one `Appointment.serviceId`, no series or resource model). Phase A therefore fixed lifecycle defects only and did not invent schema.
+- Fixed: creating on an inactive service returns `SERVICE_INACTIVE` naming `serviceId`; PATCH keeps retired services editable because active status is required only when `serviceId` changes; rows created already `CANCELLED` skip roster and clash checks (parity with PATCH, ADR 0014 §3); clash messages quote the tenant's zone via new `lib/salon-clock.ts`, reused by staff availability; performer refusals carry `details[0].path = "staffId"` so the drawer marks Performer.
+- Undocumented `191a1e3` behaviour (duration snapshot on reschedule, resize clash, status-reactivation clash) is now covered by regression cases, plus cancelled-create parity, salon-zone message, performer details and the route's inactive-service envelope.
+- Checks: appointment service+routes 24/24, sale suite 54/54 alone, full API 422/422 on rerun (one unrelated sale flake on the first), web 460/460, typecheck/lint/Prettier/`prisma validate` clean. Disposable `glampro_tk0020_a`; application DB untouched.
+- Not done: Phases B–D, Postgres exclusion constraint, commit, deployment.
 
 ## October 20, 2026 — TK2610-0021 code handoff
 

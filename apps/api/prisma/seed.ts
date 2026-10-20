@@ -79,9 +79,9 @@ const BCRYPT_ROUNDS = 10;
 
 function resolveAdmin(): SeedUser {
   return {
-    email: process.env.ADMIN_EMAIL ?? "admin@glampro.test",
+    email: process.env.ADMIN_EMAIL ?? "superadmin@gmail.com",
     name: process.env.ADMIN_NAME ?? "Glampro Administrator",
-    password: process.env.ADMIN_PASSWORD ?? "ChangeMe123!",
+    password: process.env.ADMIN_PASSWORD ?? "admin12345",
     globalRole: "SUPER_ADMIN",
   };
 }
@@ -772,8 +772,8 @@ async function seedSales(tenantId: string, now: Date): Promise<void> {
       if (toCents(receipt.totalAmount) !== expectedTotal || toCents(receipt.paidAmount) !== paid) {
         throw new Error(
           `Demo sale ${sale.key}: the server priced the cart ${receipt.totalAmount} ` +
-            `(paid ${receipt.paidAmount}) but the dataset says ${centsToMoney(expectedTotal)} ` +
-            `(paid ${centsToMoney(paid)}).`,
+          `(paid ${receipt.paidAmount}) but the dataset says ${centsToMoney(expectedTotal)} ` +
+          `(paid ${centsToMoney(paid)}).`,
         );
       }
     }
@@ -790,7 +790,7 @@ async function seedSales(tenantId: string, now: Date): Promise<void> {
 
   console.log(
     `  ✔ ${DEMO_SALES.length} sale(s) ring through createSale ${replayed === 0 ? "freshly" : "again"} ` +
-      `(${replayed} replayed on re-seed)`,
+    `(${replayed} replayed on re-seed)`,
   );
 }
 
@@ -855,11 +855,11 @@ async function main(): Promise<void> {
       SEED_MODE === "production"
         ? [resolveAdmin()]
         : DEMO_STAFF.map((row) => ({
-            email: row.email,
-            name: row.name,
-            password: row.password,
-            globalRole: row.globalRole,
-          }));
+          email: row.email,
+          name: row.name,
+          password: row.password,
+          globalRole: row.globalRole,
+        }));
 
     console.log(`Seeding ${crew.length} user(s) in ${SEED_MODE} mode…`);
 
