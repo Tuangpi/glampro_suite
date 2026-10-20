@@ -21,6 +21,7 @@
 import { useState } from "react";
 import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
 import MessagingCard from "@/components/settings/MessagingCard";
+import ResourcesCard from "@/components/settings/ResourcesCard";
 
 import { Link } from "react-router";
 
@@ -74,6 +75,9 @@ export default function Settings() {
       <ProfileCard canEdit={canEdit} />
       <ModulesCard modules={modules.data} isPending={modules.isPending} isError={modules.isError} />
       <OperatingHoursCard canEdit={canEdit} />
+      {/* Rooms and equipment sit beside the hours: both describe the salon's
+          physical capacity rather than a feature it has bought. */}
+      <ResourcesCard canEdit={canEdit} />
       <PrivacyNoticeCard canEdit={canEdit} />
       <MessagingCard canEdit={canEdit} />
       <TeamCard

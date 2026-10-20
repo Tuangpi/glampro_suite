@@ -85,6 +85,10 @@ const SERIES_OCCURRENCE = {
       serviceDepartmentId: "hair",
       staffId: "b",
       staffName: "Sam",
+      // The room the booking holds (phase D). Read-only on the form: the server
+      // picks a free one on every write.
+      resourceId: "room-1",
+      resourceName: "Room 1",
       startsAt: "2030-03-06T18:00:00.000Z",
       endsAt: "2030-03-06T18:30:00.000Z",
       durationMinutes: 30,
@@ -319,4 +323,20 @@ it("shows the occurrence's place in its series and can stop the rest of it", asy
   await user.click(screen.getByRole("button", { name: "Cancel the rest of the series" }));
 
   await waitFor(() => expect(cancelSeries).toHaveBeenCalledWith("series-1"));
+});
+
+it("names the room the booking holds without offering to change it", async () => {
+  render(
+    <AppointmentFormDrawer
+      open
+      appointment={SERIES_OCCURRENCE}
+      defaultStartsAt="2030-03-06T18:00:00Z"
+      onClose={vi.fn()}
+    />,
+  );
+
+  // A statement about the booking, not a control: the room is chosen from what is
+  // free when the booking is written, so there is no room picker to find.
+  expect(screen.getByText("Booked in Room 1.")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: /room/i })).not.toBeInTheDocument();
 });

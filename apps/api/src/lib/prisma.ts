@@ -57,6 +57,10 @@ export const TENANT_SCOPED_MODELS = [
   // A repeating booking's rule (phase C). Carries its own `tenantId`, so a series
   // id from another salon cannot even be looked up.
   "AppointmentSeries",
+  // Rooms and equipment (phase D). Both carry the tenant themselves: a resource is
+  // listed on its own and the eligibility join is replaced service by service.
+  "Resource",
+  "ServiceResource",
   "EmployeeCommission",
   "EmployeePerformance",
   "EmployeeLeave",

@@ -462,19 +462,19 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0020 — P1-02 Multi-service & recurring bookings, rooms/equipment
 
-- Status: IN PROGRESS — Phases A (booking lifecycle), B (multi-service bookings) and C (recurring series) implemented; rooms/equipment not started
+- Status: IN PROGRESS — Phases A–D implemented and tested; awaiting UAT/application migration, with concurrent overlap protection still unresolved
 - Expected result: Multi-service bookings, recurring bookings, rooms/equipment resources
 - Carried-forward finding (ADRs 0013/0014): cover cancelled-target handling and
   status-only reactivation, not only existing cancelled blockers. Check duration
   snapshots, resize-triggered clashes, active-status parity, field-level errors and
   salon-zone clash messages. Do not claim concurrent exclusion from pre-write reads.
 - Assessment (October 20, 2026), verified in code:
-  | Capability                  | State                                                                  |
-  | --------------------------- | ---------------------------------------------------------------------- |
-  | Multi-service booking       | Implemented (Phase B): `AppointmentLine` chain, summed duration.       |
-  | Recurring booking           | Implemented (Phase C): weekly/N-weekly series, skip-and-report.        |
-  | Rooms / equipment           | Absent. No resource model; only per-line `staffId` occupancy checked.  |
-  | Lifecycle defects (Phase A) | Fixed, with regression tests.                                          |
+  | Capability                  | State                                                                      |
+  | --------------------------- | -------------------------------------------------------------------------- |
+  | Multi-service booking       | Implemented (Phase B): `AppointmentLine` chain, summed duration.           |
+  | Recurring booking           | Implemented (Phase C): weekly/N-weekly series, skip-and-report.            |
+  | Rooms / equipment           | Implemented (Phase D): tenant resources, eligibility, per-line assignment. |
+  | Lifecycle defects (Phase A) | Fixed, with regression tests.                                              |
 - Phase A — implemented October 20, 2026 (`appointment.service.ts`, `lib/salon-clock.ts`):
   - Booking creates only on an `ACTIVE` service (`SERVICE_INACTIVE`, `details[0].path = "serviceId"`). PATCH requires active only when `serviceId` actually changes, so deactivating a service never freezes existing bookings. Deliberate semantics recorded in the service docstring and ADR 0013.
   - A row created already `CANCELLED` now skips roster and clash gates, matching PATCH and ADR 0014 §3 ("cancelled holds no slot").
@@ -502,9 +502,15 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   - UI: drawer Repeat fieldset on create (weekly / 2 / 4 weeks, 2–26 bookings), an `info` toast naming skipped dates, and a series note + "Cancel the rest of the series" on an occurrence.
   - Tests: `appointment-series.test.ts` 6/6 (weekly chain with DST, skipped clash, refused anchor writes no rule, rota skip, cancel-rest + cross-tenant 404), `appointments.routes.test.ts` +2, `wall-clock.test.ts` +5, tenant isolation now covers `AppointmentSeries`, shared contract tests 6/6, web drawer +4.
 - Phase C verification: full API 440/441, web 465/465, shared 122/122 on disposable PostgreSQL `glampro_tk0020_c` (fresh `migrate deploy`, `migrate diff` empty, seed → 13 bookings / 13 lines); API/web typecheck, workspace lint, touched-file Prettier, `prisma validate` and `git diff --check` clean. The one API failure is the pre-existing quiet-hours/time-of-day flake in `messaging.service.test.ts` (salon daytime passes; see `PROGRESS.md`). Also repaired two `calendar-geometry.test.ts` fixtures a Phase B change had left missing `services`.
-- Remaining (not approved, not started): Phase D rooms/equipment with resource conflict checks. Concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); the pre-write read is unchanged. A series cannot be edited as a whole, has no excluded dates, and is weeks-only.
+- Phase D — user approved **A — full slice**, implemented October 20, 2026:
+  - Migration `20261020200000_resources` adds tenant-scoped `Resource` (ROOM/EQUIPMENT, ACTIVE/INACTIVE, unique tenant/name), `ServiceResource` eligibility rows, and nullable `AppointmentLine.resourceId` with `ON DELETE SET NULL`. One physical item per resource row.
+  - Eligibility is an **either/or set**, not simultaneous requirements. Each occupying line takes one free active resource in name/id order; no links means no resource required. Half-open overlaps and every non-cancelled status occupy. Create, reschedule/reactivation and each series occurrence check resources; later unavailable occurrences skip/report `RESOURCE_UNAVAILABLE`.
+  - `/api/resources` GET list/detail and POST/PATCH: reads for members, writes for SUPER_ADMIN/MANAGER with writable-tenant guard and appointments entitlement. Archive through status; no DELETE. `serviceIds` on resource writes replaces eligibility; no separate `/api/services/:id/resources` endpoint. Foreign service references are refused.
+  - Settings card creates/edits resources and eligibility, loads all catalogue pages including retired services, and blocks editing on incomplete/failed catalogue reads. Drawer displays each assigned resource without a manual picker. Notes-only and cancellation updates retain existing resource history; reschedule/reactivation reassign/check occupancy.
+  - Verification: focused resource service/routes/tenant isolation **35/35**, full API **463/464** (only known messaging quiet-hours flake), web **474/474**, shared **130/130**. Workspace typechecks/lint, build, touched-file Prettier, Prisma validation and diff whitespace checks pass. Fresh disposable migration replay has zero schema drift; seed twice leaves 13 appointments / 13 lines / 0 missing lines. No application database migration, commit or deployment.
+- Remaining: UAT and separately authorized application migration. Concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); pre-write reads do not prevent simultaneous requests from double-booking. A series cannot be edited as a whole, has no excluded dates, and is weeks-only.
 - Completion check / dependencies: Verify multi-service/recurring/resource conflicts and booking lifecycle. Resolve duration snapshots, department/active-staff eligibility, service-only resizing bypasses and concurrent overlap protection (ADRs 0013/0014).
-- Next: user decision on Phase D scope. No commit and no deployment performed; the Phase B and C migrations exist but have not been applied to the application database.
+- Next: user UAT for Phases B–D and explicit migration authorization. Resolve the concurrent-exclusion completion criterion before marking the entire task DONE. No commit or deployment; Phase B–D migrations remain unapplied to the application database.
 
 ### TK2610-0022 — P1-03 Online booking page + deposits / no-show fee
 

@@ -26,6 +26,10 @@ async function purge(): Promise<void> {
     await prisma.appointmentSeries.deleteMany({
       where: { tenantId: { in: [TENANT_A, TENANT_B] } },
     });
+    // Phase D: the eligibility join goes before the rooms and the catalogue it
+    // points at.
+    await prisma.serviceResource.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
+    await prisma.resource.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
     await prisma.customer.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
     await prisma.service.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
     await prisma.department.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
@@ -73,6 +77,15 @@ async function seed(): Promise<void> {
         data: { tenantId: id, name: `Customer ${id}`, email: `${id}@customer.test` },
       });
 
+      // A room, and the service that may use it (phase D). Both are tenant-scoped
+      // rows in their own right, so both are asserted below.
+      const room = await prisma.resource.create({
+        data: { tenantId: id, name: `Room ${id}`, kind: "ROOM" },
+      });
+      await prisma.serviceResource.create({
+        data: { tenantId: id, serviceId: service.id, resourceId: room.id },
+      });
+
       await prisma.appointment.create({
         data: {
           tenantId: id,
@@ -87,6 +100,7 @@ async function seed(): Promise<void> {
                 tenantId: id,
                 serviceId: service.id,
                 staffId: owner.id,
+                resourceId: room.id,
                 position: 0,
                 startsAt: new Date("2026-05-01T10:00:00Z"),
                 endsAt: new Date("2026-05-01T10:45:00Z"),
@@ -255,6 +269,9 @@ describe("tenant isolation", { skip: databaseUrl ? false : "DATABASE_URL is not 
       appointmentLines: await prisma.appointmentLine.findMany({ select: { tenantId: true } }),
       // So is a repeating booking's rule (phase C).
       appointmentSeries: await prisma.appointmentSeries.findMany({ select: { tenantId: true } }),
+      // And the rooms, plus which services may use them (phase D).
+      resources: await prisma.resource.findMany({ select: { tenantId: true } }),
+      serviceResources: await prisma.serviceResource.findMany({ select: { tenantId: true } }),
       // `User` is tenant-scoped because staff are user rows (Q4).
       users: await prisma.user.findMany({ select: { tenantId: true } }),
     }));
@@ -278,6 +295,75 @@ describe("tenant isolation", { skip: databaseUrl ? false : "DATABASE_URL is not 
     );
 
     assert.equal(seenFromA, null);
+  });
+
+  it("cannot read or change another tenant's resources or eligibility rows", async () => {
+    const foreign = await runAsPlatform(async () => ({
+      resource: await prisma.resource.findFirstOrThrow({ where: { tenantId: TENANT_B } }),
+      link: await prisma.serviceResource.findFirstOrThrow({ where: { tenantId: TENANT_B } }),
+    }));
+
+    await runAsTenant(TENANT_A, async () => {
+      assert.equal(await prisma.resource.findUnique({ where: { id: foreign.resource.id } }), null);
+      assert.equal(
+        await prisma.serviceResource.findUnique({ where: { id: foreign.link.id } }),
+        null,
+      );
+      await assert.rejects(() =>
+        prisma.resource.update({
+          where: { id: foreign.resource.id },
+          data: { status: "INACTIVE" },
+        }),
+      );
+      assert.equal(
+        (await prisma.resource.deleteMany({ where: { id: foreign.resource.id } })).count,
+        0,
+      );
+      assert.equal(
+        (
+          await prisma.serviceResource.updateMany({
+            where: { id: foreign.link.id },
+            data: { tenantId: TENANT_A },
+          })
+        ).count,
+        0,
+      );
+      assert.equal(
+        (await prisma.serviceResource.deleteMany({ where: { id: foreign.link.id } })).count,
+        0,
+      );
+    });
+
+    await runAsPlatform(async () => {
+      assert.equal(
+        (await prisma.resource.findUniqueOrThrow({ where: { id: foreign.resource.id } })).status,
+        "ACTIVE",
+      );
+      assert.equal(
+        (await prisma.serviceResource.findUniqueOrThrow({ where: { id: foreign.link.id } }))
+          .tenantId,
+        TENANT_B,
+      );
+    });
+  });
+
+  it("stamps the caller's tenant on resources and eligibility rows", async () => {
+    await runAsTenant(TENANT_A, async () => {
+      const service = await prisma.service.findFirstOrThrow();
+      const resource = await prisma.resource.create({
+        data: { tenantId: TENANT_B, name: "Tenant-stamped equipment", kind: "EQUIPMENT" },
+      });
+      try {
+        const link = await prisma.serviceResource.create({
+          data: { tenantId: TENANT_B, serviceId: service.id, resourceId: resource.id },
+        });
+        assert.equal(resource.tenantId, TENANT_A);
+        assert.equal(link.tenantId, TENANT_A);
+      } finally {
+        await prisma.serviceResource.deleteMany({ where: { resourceId: resource.id } });
+        await prisma.resource.delete({ where: { id: resource.id } });
+      }
+    });
   });
 
   it("stamps the caller's tenant when a customer is created", async () => {

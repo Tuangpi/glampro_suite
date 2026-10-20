@@ -92,6 +92,13 @@ export const appointmentServiceLineSchema = z.object({
   /** Null = nobody assigned to this line yet. */
   staffId: z.string().nullable(),
   staffName: z.string().nullable(),
+  /**
+   * The room or equipment this line occupies (TK2610-0020 phase D). Chosen by
+   * the server from the service's eligible resources, or `null` when the service
+   * requires none — the browser never sends one.
+   */
+  resourceId: z.string().nullable(),
+  resourceName: z.string().nullable(),
   startsAt: z.string(),
   endsAt: z.string(),
   durationMinutes: z.number().int(),

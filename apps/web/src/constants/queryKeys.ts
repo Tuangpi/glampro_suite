@@ -102,6 +102,15 @@ export const queryKeys = {
   },
 
   /**
+   * Rooms and equipment (TK2610-0020 phase D). One key: the list is short, not
+   * paginated, and every caller — the settings card and the booking form's
+   * summary — wants the same whole set.
+   */
+  resources: {
+    list: () => ["resources", "list"] as const,
+  },
+
+  /**
    * Screen 08's third and fourth tabs.
    *
    * There is no `count` key for either, and that is deliberate: `packages` and

@@ -39,6 +39,12 @@
  *    salon's wall clock so a weekly 10:00 stays 10:00 across a DST change. The
  *    anchor must be bookable; a later occurrence that clashes is skipped and
  *    reported rather than failing the request (TK2610-0020 phase C).
+ * 7. **A line also occupies a room or a machine.** A service may be linked to the
+ *    resources it *may* use (phase D), and the server gives each line one of them
+ *    that is free for that line's window — one room cannot hold two bookings, the
+ *    same half-open overlap rule ADR 0014 applies to people. The browser never
+ *    sends a resource id, so a desk cannot pin two bookings into one room, and a
+ *    service with no linked resources books exactly as it did before.
  */
 import type { PaginatedResponse } from "@glampro_suite/shared";
 import {
@@ -92,11 +98,13 @@ const APPOINTMENT_SELECT = {
     select: {
       serviceId: true,
       staffId: true,
+      resourceId: true,
       startsAt: true,
       endsAt: true,
       durationMinutes: true,
       service: { select: { id: true, name: true, departmentId: true } },
       staff: { select: { id: true, name: true } },
+      resource: { select: { id: true, name: true } },
     },
   },
   /// The repeating rule, when this row is one occurrence of a series. Two columns
@@ -118,6 +126,10 @@ function toSummary(row: AppointmentRow): AppointmentSummary {
     serviceDepartmentId: line.service.departmentId,
     staffId: line.staff?.id ?? null,
     staffName: line.staff?.name ?? null,
+    // The room or machine this line holds. Read from the relation, not the raw
+    // column, so an archived room still shows the name it was booked under.
+    resourceId: line.resource?.id ?? null,
+    resourceName: line.resource?.name ?? null,
     startsAt: line.startsAt.toISOString(),
     endsAt: line.endsAt.toISOString(),
     durationMinutes: line.durationMinutes,
@@ -237,6 +249,12 @@ interface LineSelection {
 interface PlannedLine {
   serviceId: string;
   staffId: string | null;
+  /**
+   * The room or equipment this line will hold. `null` while the chain is being
+   * planned — the resource is picked per occurrence, because the same weekly slot
+   * may be free in Room 1 this week and only in Room 2 the next.
+   */
+  resourceId: string | null;
   startsAt: Date;
   endsAt: Date;
   durationMinutes: number;
@@ -272,6 +290,8 @@ async function planLines(
     planned.push({
       serviceId: service.id,
       staffId,
+      // Picked later by `assignResources`, once the window is known.
+      resourceId: null,
       startsAt: cursor,
       endsAt,
       durationMinutes,
@@ -470,6 +490,142 @@ async function assertNoClash(lines: PlannedLine[], excludeId?: string): Promise<
 }
 
 /**
+ * Gives every line the room or equipment it holds (TK2610-0020 phase D).
+ *
+ * A service's linked resources are an **eligibility set**, not a list of
+ * simultaneous needs: the line takes the first one that is free for its window,
+ * in name order, exactly as a performer is one person from the service's
+ * department. That is why "Wash chair 1, Wash chair 2" on a shampoo service means
+ * "either chair", while a service that genuinely needs two rooms is two lines.
+ *
+ * Three details make it a rule rather than a preference:
+ *
+ * - it is **half-open**, like the performer check: a booking ending at 10:00 does
+ *   not stop one starting at 10:00;
+ * - it **excludes the booking being edited**, so rescheduling into the window it
+ *   already holds does not report the room as busy with itself;
+ * - it runs **per occurrence** for a repeating booking, because a resource that is
+ *   free this Wednesday may be taken the next.
+ *
+ * When the service's resources are all busy — or all inactive, which is a
+ * configuration mistake worth saying out loud — the answer is `409
+ * RESOURCE_UNAVAILABLE`. Like the performer check this is not atomic with the
+ * write; the concurrent case is the same documented residual (ADR 0014).
+ */
+async function assignResources(
+  lines: PlannedLine[],
+  excludeAppointmentId?: string,
+): Promise<PlannedLine[]> {
+  const serviceIds = [...new Set(lines.map((line) => line.serviceId))];
+  if (serviceIds.length === 0) return lines;
+
+  const links = await prisma.serviceResource.findMany({
+    where: { serviceId: { in: serviceIds } },
+    select: {
+      serviceId: true,
+      resource: { select: { id: true, name: true, kind: true, status: true } },
+    },
+    orderBy: [{ resource: { name: "asc" } }, { resourceId: "asc" }],
+  });
+  if (links.length === 0) return lines.map((line) => ({ ...line, resourceId: null }));
+
+  const linked = new Map<string, { id: string; name: string; kind: string; active: boolean }[]>();
+  for (const link of links) {
+    const set = linked.get(link.serviceId) ?? [];
+    set.push({
+      id: link.resource.id,
+      name: link.resource.name,
+      kind: link.resource.kind,
+      active: link.resource.status === "ACTIVE",
+    });
+    linked.set(link.serviceId, set);
+  }
+
+  const appointmentFilter = {
+    status: { in: [...OCCUPYING_APPOINTMENT_STATUSES] },
+    ...(excludeAppointmentId ? { id: { not: excludeAppointmentId } } : {}),
+  };
+
+  const zone = await salonTimeZone();
+  const timeInSalon = (instant: Date) =>
+    instant.toLocaleTimeString("en-GB", {
+      timeZone: zone,
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+  const assigned: PlannedLine[] = [];
+
+  for (const line of lines) {
+    const candidates = linked.get(line.serviceId) ?? [];
+    // A service the salon has not tied to anything books as it always did.
+    if (candidates.length === 0) {
+      assigned.push({ ...line, resourceId: null });
+      continue;
+    }
+
+    const active = candidates.filter((candidate) => candidate.active);
+    if (active.length === 0) {
+      throw conflict(
+        "Every room or equipment this service uses is inactive. Reactivate one or add another before booking it.",
+        "RESOURCE_UNAVAILABLE",
+      );
+    }
+
+    const taken = await prisma.appointmentLine.findMany({
+      where: {
+        resourceId: { in: active.map((candidate) => candidate.id) },
+        startsAt: { lt: line.endsAt },
+        endsAt: { gt: line.startsAt },
+        appointment: appointmentFilter,
+      },
+      select: { resourceId: true },
+    });
+    const busy = new Set(taken.map((row) => row.resourceId));
+    const free = active.find((candidate) => !busy.has(candidate.id));
+
+    if (!free) {
+      const window = `${timeInSalon(line.startsAt)}–${timeInSalon(line.endsAt)}`;
+      // Said in the salon's own words: "every room" reads better than "every
+      // resource", and the message is the only place the kind is visible.
+      const kinds = new Set(active.map((candidate) => candidate.kind));
+      const what =
+        kinds.size === 1
+          ? active[0]!.kind === "ROOM"
+            ? "room"
+            : "equipment"
+          : "room or equipment";
+      throw conflict(
+        `That time is already taken: every ${what} this service can use is busy ${window}. Pick another time.`,
+        "RESOURCE_UNAVAILABLE",
+      );
+    }
+
+    assigned.push({ ...line, resourceId: free.id });
+  }
+
+  return assigned;
+}
+
+/**
+ * Everything a booking has to win before it may be written: the performer's rota,
+ * the performer's other bookings, and a room or machine for every line.
+ *
+ * One helper rather than three calls at each site, so the one-off, the anchor, a
+ * later occurrence and a reschedule can never check two of the three. The staff
+ * checks run first on purpose: "Mira is already with someone" is a fact about a
+ * person the desk can name, which is a better first answer than "no room".
+ */
+async function reserve(
+  lines: PlannedLine[],
+  excludeAppointmentId?: string,
+): Promise<PlannedLine[]> {
+  await assertStaffFree(lines);
+  await assertNoClash(lines, excludeAppointmentId);
+  return assignResources(lines, excludeAppointmentId);
+}
+
+/**
  * One page of bookings in a window, soonest first.
  *
  * The window is optional and expressed as instants (see the contract): a day
@@ -581,6 +737,7 @@ async function writeBooking(
       appointmentId: created.id,
       serviceId: line.serviceId,
       staffId: line.staffId,
+      resourceId: line.resourceId,
       position,
       startsAt: line.startsAt,
       endsAt: line.endsAt,
@@ -602,16 +759,19 @@ function shiftLines(lines: PlannedLine[], deltaMs: number): PlannedLine[] {
 }
 
 /**
- * The two refusals a *later* occurrence may earn without failing the request:
- * the performer is busy (`APPOINTMENT_CLASH`) or is not on the rota then
- * (`STAFF_UNAVAILABLE`). Both are facts about that date alone, which is exactly
- * why the series skips it and carries on. Anything else is re-thrown.
+ * The refusals a *later* occurrence may earn without failing the request: the
+ * performer is busy (`APPOINTMENT_CLASH`), is not on the rota then
+ * (`STAFF_UNAVAILABLE`), or every room/equipment the service can use is taken
+ * (`RESOURCE_UNAVAILABLE`). All three are facts about that date alone, which is
+ * exactly why the series skips it and carries on. Anything else is re-thrown.
  */
 function isSkippableOccurrence(error: unknown): error is HttpError {
   return (
     error instanceof HttpError &&
     error.statusCode === 409 &&
-    (error.code === "APPOINTMENT_CLASH" || error.code === "STAFF_UNAVAILABLE")
+    (error.code === "APPOINTMENT_CLASH" ||
+      error.code === "STAFF_UNAVAILABLE" ||
+      error.code === "RESOURCE_UNAVAILABLE")
   );
 }
 
@@ -671,30 +831,27 @@ export async function createAppointment(
   const holds = status !== "CANCELLED";
 
   if (!input.repeat) {
-    if (holds) {
-      await assertStaffFree(lines);
-      await assertNoClash(lines);
-    }
-    const id = await prisma.$transaction((tx) => writeBooking(tx, plan));
+    const booked = holds ? await reserve(lines) : lines;
+    const id = await prisma.$transaction((tx) => writeBooking(tx, { ...plan, lines: booked }));
     return { appointment: await getAppointment(id), series: null };
   }
 
-  // The anchor is the booking the desk asked for, so a busy time is refused as it
-  // always was rather than quietly producing a series with nothing in it.
-  if (holds) {
-    await assertStaffFree(lines);
-    await assertNoClash(lines);
-  }
+  // The anchor is the booking the desk asked for, so a busy time — or a service
+  // whose rooms are all taken — is refused as it always was rather than quietly
+  // producing a series with nothing in it.
+  const anchorLines = holds ? await reserve(lines) : lines;
 
   const { intervalWeeks, occurrences } = input.repeat;
   const zone = await salonTimeZone();
   const skipped: AppointmentSeriesReport["skipped"] = [];
-  const planned: { index: number; lines: PlannedLine[] }[] = [{ index: 0, lines }];
+  const planned: { index: number; lines: PlannedLine[] }[] = [{ index: 0, lines: anchorLines }];
 
   for (let index = 1; index < occurrences; index += 1) {
     // "The same booking every N weeks" is a statement about the salon's wall
     // clock, so the step is taken in the salon's zone, not by adding fixed hours.
     const occurrenceStart = addWeeksInZone(startsAt, index * intervalWeeks, zone);
+    // Shifted from the *unassigned* chain: the room is picked again below, because
+    // the same slot may be free in Room 1 this week and only in Room 2 the next.
     const occurrenceLines = shiftLines(lines, occurrenceStart.getTime() - startsAt.getTime());
 
     if (!holds) {
@@ -703,9 +860,7 @@ export async function createAppointment(
     }
 
     try {
-      await assertStaffFree(occurrenceLines);
-      await assertNoClash(occurrenceLines);
-      planned.push({ index, lines: occurrenceLines });
+      planned.push({ index, lines: await reserve(occurrenceLines) });
     } catch (error) {
       // One busy fortnight is not a reason to throw away the other bookings. Any
       // other refusal — an ineligible performer, a dead service — is a real error
@@ -825,18 +980,25 @@ export async function updateAppointment(
   // A move is what can clash, so the check re-runs when any part of the chain
   // changed — a new time under the same stylist, the same time onto a new one,
   // or a service added to the end. The booking's own id is excluded so a patch
-  // that changes nothing else is not a conflict.
-  if (
+  // that changes nothing else is not a conflict, and the resource is re-picked
+  // under the same exclusion: the room this booking already holds is not "busy".
+  const mustCheck =
     (input.status ?? existing.status) !== "CANCELLED" &&
     (input.startsAt !== undefined ||
       input.staffId !== undefined ||
       input.serviceId !== undefined ||
       input.services !== undefined ||
-      input.status !== undefined)
-  ) {
-    await assertStaffFree(lines);
-    await assertNoClash(lines, id);
-  }
+      input.status !== undefined);
+
+  // The chain as it will be written. Re-picking a resource can move a line from
+  // Room 1 to Room 2, which is exactly why the rewrite below uses this rather
+  // than the freshly planned chain.
+  const booked = mustCheck ? await reserve(lines, id) : lines;
+  // A room that changed hands is a line that changed, even when its service, its
+  // performer and its window did not — so the rewrite has to happen then too.
+  const resourcesChanged =
+    mustCheck &&
+    booked.some((line, index) => (existing.lines[index]?.resourceId ?? null) !== line.resourceId);
 
   const status = input.status ?? existing.status;
   // Leaving COMPLETED clears the stamp: a booking that is no longer done must
@@ -857,17 +1019,18 @@ export async function updateAppointment(
       current.status !== status ||
       linesChanged;
 
-    if (linesChanged) {
+    if (linesChanged || resourcesChanged) {
       // The chain is rewritten rather than diffed: lines are cheap, ordered, and
       // a stale row left behind by a partial update is exactly the kind of ghost
       // the overlap rule would then trip over.
       await tx.appointmentLine.deleteMany({ where: { appointmentId: id } });
       await tx.appointmentLine.createMany({
-        data: lines.map((line, position) => ({
+        data: booked.map((line, position) => ({
           tenantId: "",
           appointmentId: id,
           serviceId: line.serviceId,
           staffId: line.staffId,
+          resourceId: line.resourceId,
           position,
           startsAt: line.startsAt,
           endsAt: line.endsAt,

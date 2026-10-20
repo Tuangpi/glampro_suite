@@ -4,7 +4,11 @@ import helmet from "helmet";
 import { API_PREFIX } from "@glampro_suite/shared";
 
 import { env } from "./lib/env.js";
-import { messagingRouter, messagingWebhooksRouter, publicMessagingRouter } from "./routes/messaging.routes.js";
+import {
+  messagingRouter,
+  messagingWebhooksRouter,
+  publicMessagingRouter,
+} from "./routes/messaging.routes.js";
 import { appointmentsRouter } from "./routes/appointments.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { customersRouter } from "./routes/customers.routes.js";
@@ -14,6 +18,7 @@ import { healthRouter, readiness } from "./routes/health.routes.js";
 import { packagesRouter } from "./routes/packages.routes.js";
 import { productsRouter } from "./routes/products.routes.js";
 import { reportsRouter } from "./routes/reports.routes.js";
+import { resourcesRouter } from "./routes/resources.routes.js";
 import { salesRouter } from "./routes/sales.routes.js";
 import { servicesRouter } from "./routes/services.routes.js";
 import { settingsRouter } from "./routes/settings.routes.js";
@@ -105,6 +110,10 @@ export function createApp(): Express {
   // the service (M2), so this mount is the boundary that refuses them rather
   // than trusting the list the form sent (ADR 0013).
   app.use(`${API_PREFIX}/appointments`, appointmentsRouter);
+  // Rooms and equipment (phase D). Mounted beside appointments because a booking
+  // is what occupies them: the same entitlement guards both, and the writes inside
+  // are manager-only in the same way the staff screen's are.
+  app.use(`${API_PREFIX}/resources`, resourcesRouter);
   // The rota screens 06 and 09 draw. Mounted beside appointments because the
   // calendar is its main reader, but guarded by `staff`: a shift is a fact about
   // who works when, and a stylist may read their own hours while only a manager

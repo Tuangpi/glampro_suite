@@ -9,6 +9,17 @@ vi.mock("@/components/settings/PrivacyNoticeCard", () => ({
 vi.mock("@/components/settings/MessagingCard", () => ({
   default: () => <div>WhatsApp and SMS settings</div>,
 }));
+// The rooms card reads two lists of its own (phase D). Mocked at the hook level so
+// this suite keeps testing the page's own wiring rather than the card's queries.
+vi.mock("@/hooks/useResources", () => ({
+  useResourceList: () => ({ data: [], isPending: false, isError: false }),
+  useResourceServices: () => ({ data: { data: [] }, isPending: false, isError: false }),
+  useCreateResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+vi.mock("@/hooks/useServices", () => ({
+  useServiceList: () => ({ data: { data: [], total: 0 }, isPending: false }),
+}));
 
 const {
   useModules,

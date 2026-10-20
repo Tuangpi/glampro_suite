@@ -87,6 +87,17 @@ enum CatalogStatus {
   INACTIVE
 }
 
+/// What a booking occupies besides a person (TK2610-0020 phase D).
+///
+/// `ROOM` and `EQUIPMENT` share one table because the booking rule is identical:
+/// one party holds it for one window. A salon with three identical chairs simply
+/// has three rows, so no capacity column is needed — which is also why the two
+/// kinds do not get a model each.
+enum ResourceKind {
+  ROOM
+  EQUIPMENT
+}
+
 /// The booking lifecycle. The legacy system stored a two-state flag and used
 /// `finish_time` for completion — see legacy/LEGACY-MAP.md §6 Q8 for the mapping.
 enum AppointmentStatus {
@@ -353,6 +364,9 @@ model Tenant {
   customers           Customer[]
   customerDepartments CustomerDepartment[]
   services            Service[]
+  /// Rooms and equipment (phase D), plus which services may use each.
+  resources            Resource[]
+  serviceResources     ServiceResource[]
   products            Product[]
   packages            Package[]
   packageServices     PackageService[]
@@ -596,12 +610,67 @@ model Service {
   department         Department?            @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   appointments       Appointment[]
   appointmentLines   AppointmentLine[]
+  /// The rooms/equipment this service may occupy (phase D). Empty = the service
+  /// needs none, which is the common case for a service that is performed at a
+  /// chair the stylist already holds.
+  resourceLinks     ServiceResource[]
   packageItems       PackageService[]
   valuePackageItems  ValuePackageService[]
 
   @@index([tenantId])
   @@index([departmentId])
   @@map("services")
+}
+
+/// A room, a piece of equipment, or anything else a booking occupies (TK2610-0020
+/// phase D).
+///
+/// One row per physical thing: three identical wash chairs are three rows, which
+/// is what makes "is one free at 10:00" a plain overlap question instead of a
+/// capacity arithmetic the calendar would then have to draw. `status` is the
+/// archive — retiring a room never deletes the bookings that were taken in it,
+/// the same rule services and staff keep.
+model Resource {
+  id        String        @id @default(cuid())
+  tenantId  String
+  name      String
+  kind      ResourceKind  @default(ROOM)
+  status    CatalogStatus @default(ACTIVE)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Which services may use it. This is an **eligibility list**, not a list of
+  /// simultaneous needs: a line takes one resource from its service's set, the
+  /// same way a performer is one person from the service's department (ADR 0013).
+  services ServiceResource[]
+  lines    AppointmentLine[]
+
+  /// Two rooms called "Room 1" would make the desk's picker ambiguous; the same
+  /// name in another salon is a different room and stays allowed.
+  @@unique([tenantId, name])
+  @@index([tenantId, kind])
+  @@map("resources")
+}
+
+/// A service's eligible resources (phase D).
+///
+/// Modelled like `StaffDepartment`: the join says *may*, and the booking picks
+/// one member of the set that is free for the line's window. A service with no
+/// rows here is booked without a resource check at all.
+model ServiceResource {
+  id         String @id @default(cuid())
+  tenantId   String
+  serviceId  String
+  resourceId String
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  resource Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, resourceId])
+  @@index([tenantId, resourceId])
+  @@map("service_resources")
 }
 
 /// A stock item. Legacy `products`.
@@ -626,13 +695,13 @@ model Product {
   tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
-  @@index([tenantId])
-  @@index([departmentId])
   /// A barcode identifies one product within one salon. The same barcode may
   /// exist in another salon, so the tenant is part of the key. Postgres treats
   /// NULLs as distinct in a unique index, so products without a barcode are
   /// unconstrained.
   @@unique([tenantId, barcode], map: "products_tenantId_barcode_key")
+  @@index([tenantId])
+  @@index([departmentId])
   @@map("products")
 }
 
@@ -754,6 +823,7 @@ model MessagingSettings {
   serviceConsentText String @default("")
   marketingConsentText String @default("")
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@map("messaging_settings")
 }
 
@@ -768,6 +838,7 @@ model ChannelConsent {
   preferred Boolean @default(false)
   revision Int @default(0)
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@unique([tenantId, customerId, channel])
   @@map("channel_consents")
 }
@@ -788,6 +859,7 @@ model ChannelConsentEvent {
   actorId String
   createdAt DateTime @default(now())
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([tenantId, customerId, createdAt])
   @@map("channel_consent_events")
 }
@@ -811,6 +883,7 @@ model MessageJob {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([status, dueAt])
   @@index([tenantId, createdAt])
   @@map("message_jobs")
@@ -827,6 +900,7 @@ model PublicLink {
   revokedAt DateTime?
   createdAt DateTime @default(now())
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([tenantId, kind, targetId])
   @@map("public_links")
 }
@@ -899,6 +973,7 @@ model CustomerPhoto {
   createdById String
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
   @@index([tenantId, customerId, createdAt])
   @@map("customer_photos")
 }
@@ -914,6 +989,7 @@ model PrivacyNotice {
   createdById String
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   events CustomerConsentEvent[]
+
   @@unique([tenantId, version])
   @@index([tenantId, createdAt])
   @@map("privacy_notices")
@@ -933,6 +1009,7 @@ model CustomerConsentEvent {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   notice PrivacyNotice? @relation(fields: [noticeId], references: [id], onDelete: Restrict)
+
   @@unique([customerId, revision])
   @@index([tenantId, customerId])
   @@map("customer_consent_events")
@@ -1058,6 +1135,11 @@ model AppointmentLine {
   /// Who performs this line. Null = nobody assigned to it; the booking-level
   /// `staffId` mirrors line 0 when that line has a performer.
   staffId         String?
+  /// The room or equipment this line occupies (phase D). Null = the line holds
+  /// none, either because its service requires none or because the row predates
+  /// resources. Chosen from the service's eligible set by the server, never sent
+  /// by the browser, so a desk cannot pin two bookings into one room.
+  resourceId      String?
   /// 0-based order of the chain.
   position        Int
   startsAt        DateTime
@@ -1068,10 +1150,15 @@ model AppointmentLine {
   appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
   service     Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   staff       User?       @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  /// `SetNull`, not `Cascade`: deleting a room must not delete the bookings that
+  /// were taken in it. The line simply stops naming one.
+  resource    Resource?   @relation(fields: [resourceId], references: [id], onDelete: SetNull)
 
   @@unique([appointmentId, position])
   /// The performer-overlap query filters by tenant, performer and window.
   @@index([tenantId, staffId, startsAt])
+  /// The resource-overlap query filters by tenant, resource and window.
+  @@index([tenantId, resourceId, startsAt])
   @@map("appointment_lines")
 }
 
@@ -1102,6 +1189,7 @@ model EmployeeCommission {
   @@index([userId])
   @@map("employee_commissions")
 }
+
 /// A sale.
 ///
 /// Four deliberate departures from legacy `sales`, each recorded in
@@ -1351,6 +1439,7 @@ model SaleLine {
   @@index([tenantId, itemType])
   @@map("sale_lines")
 }
+
 /// Sessions a customer bought and has not yet spent. Legacy `customer_packages`.
 ///
 /// The three holding tables stay three rather than collapsing into one because
@@ -1460,6 +1549,7 @@ model CustomerPoint {
   @@index([tenantId, customerId])
   @@map("customer_points")
 }
+
 /// What a customer still owes on a sale. Legacy `customer_outstandings`.
 model CustomerOutstanding {
   id         String  @id @default(cuid())
@@ -1559,6 +1649,7 @@ model CustomerRedemption {
   @@index([tenantId, holdingId])
   @@map("customer_redemptions")
 }
+
 /// A manager-created promotion the till can apply to one sale (ADR 0020).
 ///
 /// A voucher is **not** a tender and **not** a manual line discount. It is a
@@ -1653,6 +1744,7 @@ model DirectStaffTip {
   returnReason String?
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, saleId, recordedAt])
   @@map("direct_staff_tips")

@@ -60,6 +60,12 @@ const LIST_PAGE_SIZE = 200;
 interface ServiceLineForm {
   serviceId: string;
   staffId: string;
+  /**
+   * The room or equipment the booking already holds for this line (phase D).
+   * Shown, never sent: the server re-picks a free one on every write, so a value
+   * here is a statement about the booking as it stands rather than a choice.
+   */
+  resourceName?: string | null;
 }
 
 interface FormState {
@@ -110,6 +116,7 @@ function formFromAppointment(appointment: AppointmentDetail, timeZone: string): 
       ? appointment.services.map((line) => ({
           serviceId: line.serviceId,
           staffId: line.staffId ?? "",
+          resourceName: line.resourceName,
         }))
       : [{ serviceId: appointment.serviceId ?? "", staffId: appointment.staffId ?? "" }];
 
@@ -239,10 +246,15 @@ export default function AppointmentFormDrawer({
     setForm((previous) => {
       const services = previous.services.map((line, position) => {
         if (position !== index) return line;
-        const next = { ...line, [field]: value };
-        if (field === "serviceId" && next.staffId !== "") {
-          const eligible = eligibleStaffFor(value);
-          if (!eligible.some((person) => person.id === next.staffId)) next.staffId = "";
+        // A different service may use a different room, so the one the booking
+        // holds now is no longer a fact about this line — the server picks again.
+        const next: ServiceLineForm = { ...line, [field]: value };
+        if (field === "serviceId") {
+          next.resourceName = null;
+          if (next.staffId !== "") {
+            const eligible = eligibleStaffFor(value);
+            if (!eligible.some((person) => person.id === next.staffId)) next.staffId = "";
+          }
         }
         return next;
       });
@@ -294,7 +306,13 @@ export default function AppointmentFormDrawer({
   function chosenLines(): { serviceId: string; staffId?: string }[] {
     return form.services
       .filter((line) => line.serviceId !== "")
-      .map((line) => (line.staffId === "" ? { serviceId: line.serviceId } : line));
+      .map((line) =>
+        // Only the two fields the contract has: `resourceName` is a read-out, and
+        // sending it would suggest the browser chooses rooms.
+        line.staffId === ""
+          ? { serviceId: line.serviceId }
+          : { serviceId: line.serviceId, staffId: line.staffId },
+      );
   }
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -489,6 +507,12 @@ export default function AppointmentFormDrawer({
                   options={performerOptions(eligibleStaffFor(line.serviceId))}
                   disabled={staff.isPending}
                 />
+
+                {line.resourceName ? (
+                  // Read-only: the server picks the room from what is free, so
+                  // this is where the booking sits now, not a control.
+                  <p className="text-xs text-ink-muted">Booked in {line.resourceName}.</p>
+                ) : null}
 
                 {form.services.length > 1 ? (
                   <Button
