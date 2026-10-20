@@ -92,6 +92,7 @@ export type AppointmentSummary = z.infer<typeof appointmentSummarySchema>;
  */
 export const appointmentDetailSchema = appointmentSummarySchema.extend({
   finishedAt: z.string().nullable(),
+  customerConfirmedAt: z.string().nullable().optional(),
 });
 
 export type AppointmentDetail = z.infer<typeof appointmentDetailSchema>;

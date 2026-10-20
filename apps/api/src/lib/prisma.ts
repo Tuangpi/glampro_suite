@@ -26,6 +26,11 @@ const adapter = new PrismaPg({ connectionString });
  * are deliberately absent: they are not tenant-scoped.
  */
 export const TENANT_SCOPED_MODELS = [
+  "MessagingSettings",
+  "ChannelConsent",
+  "ChannelConsentEvent",
+  "MessageJob",
+  "PublicLink",
   "TenantModule",
   "Subscription",
   "Payment",

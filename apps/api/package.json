@@ -2,11 +2,13 @@
   "name": "@glampro_suite/api",
   "version": "0.1.0",
   "private": true,
-  "description": "Glampro Suite REST API \u2014 Express 5 + Prisma + PostgreSQL.",
+  "description": "Glampro Suite REST API — Express 5 + Prisma + PostgreSQL.",
   "license": "UNLICENSED",
   "type": "module",
   "main": "dist/src/index.js",
   "scripts": {
+    "worker:messaging": "node --import tsx src/message-worker.ts",
+    "worker:messaging:prod": "node dist/src/message-worker.js",
     "dev": "nodemon",
     "prebuild": "npm run build --workspace @glampro_suite/shared",
     "build": "tsc -p tsconfig.json",
@@ -41,6 +43,7 @@
     "nodemailer": "^10.1.7",
     "pg": "^8.22.0",
     "qrcode": "^1.5.4",
+    "twilio": "^6.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

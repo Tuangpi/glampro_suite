@@ -31,6 +31,8 @@ import { paginated, parsePagination } from "../utils/pagination.js";
 // The branch check is shared with the catalogue and staff services rather than
 // copied: the rule is one rule, and it was about to grow four copies.
 import { assertDepartmentsExist } from "./department.service.js";
+import { withdrawMessagingChoices } from "./messaging-consent.js";
+import { currentScope } from "../lib/tenant-context.js";
 
 /**
  * Columns the screen needs. `passwordHash`, `otpHash` and `otpExpiresAt` are
@@ -275,6 +277,7 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
 export async function updateCustomer(
   id: string,
   input: UpdateCustomerInput,
+  actorId = "customer-update",
 ): Promise<CustomerDetail> {
   const { departmentIds, dateOfBirth, ...fields } = input;
   if (fields.email !== undefined) fields.email = fields.email?.trim().toLowerCase() || null;
@@ -284,12 +287,23 @@ export async function updateCustomer(
   const existing = await prisma.customer.findFirst({ where: { id }, select: { id: true } });
   if (!existing) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
 
-  await prisma.customer.update({
-    where: { id },
-    data: {
-      ...fields,
-      ...(dateOfBirth !== undefined ? { dateOfBirth: fromIsoDate(dateOfBirth) } : {}),
-    },
+  await prisma.$transaction(async (tx) => {
+    // The update takes a customer row lock, shared by dispatch and consent writes.
+    const scope = currentScope();
+    if (scope?.kind !== "tenant") throw new Error("Customer update requires tenant scope.");
+    await tx.$queryRaw`SELECT id FROM customers WHERE id = ${id} AND "tenantId" = ${scope.tenantId} FOR UPDATE`;
+    const before = await tx.customer.findFirstOrThrow({ where: { id } });
+    await tx.customer.update({
+      where: { id },
+      data: {
+        ...fields,
+        ...(dateOfBirth !== undefined ? { dateOfBirth: fromIsoDate(dateOfBirth) } : {}),
+      },
+    });
+    const phone = (value: string | null) => value?.replace(/[\s().-]/g, "") ?? "";
+    if (fields.phone !== undefined && phone(fields.phone) !== phone(before.phone)) {
+      await withdrawMessagingChoices(tx, id, actorId, "PHONE_CHANGED");
+    }
   });
 
   if (departmentIds !== undefined) {

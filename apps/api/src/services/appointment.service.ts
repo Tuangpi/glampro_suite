@@ -40,6 +40,7 @@ import { badRequest, conflict, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertStaffAvailable } from "./staff-availability.service.js";
+import { queueAppointmentMessages, tenantId } from "./messaging.service.js";
 
 /**
  * A booking with everything the day view draws. The three relations come along
@@ -59,6 +60,7 @@ const APPOINTMENT_SELECT = {
   createdAt: true,
   updatedAt: true,
   finishedAt: true,
+  customerConfirmedAt: true,
   customer: { select: { id: true, name: true } },
   staff: { select: { id: true, name: true } },
   service: {
@@ -96,6 +98,7 @@ function toDetail(row: AppointmentRow): AppointmentDetail {
   return appointmentDetailSchema.parse({
     ...toSummary(row),
     finishedAt: row.finishedAt?.toISOString() ?? null,
+    customerConfirmedAt: row.customerConfirmedAt?.toISOString() ?? null,
   });
 }
 
@@ -316,23 +319,26 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
   if (status !== "CANCELLED") await assertStaffAvailable(input.staffId ?? null, startsAt, endsAt);
   await assertNoClash(input.staffId ?? null, startsAt, endsAt);
 
-  const created = await prisma.appointment.create({
-    data: {
-      // Placeholder: `scopeCreateData` overwrites it with the scope's tenant.
-      tenantId: "",
-      customerId: input.customerId ?? null,
-      staffId: input.staffId ?? null,
-      serviceId: service.id,
-      startsAt,
-      endsAt,
-      status,
-      durationMinutes: service.durationMinutes,
-      comment: input.comment ?? null,
-      ...(status === "COMPLETED" ? { finishedAt: new Date() } : {}),
-    },
-    select: { id: true },
+  const created = await prisma.$transaction(async (tx) => {
+    const created = await tx.appointment.create({
+      data: {
+        // Placeholder: `scopeCreateData` overwrites it with the scope's tenant.
+        tenantId: "",
+        customerId: input.customerId ?? null,
+        staffId: input.staffId ?? null,
+        serviceId: service.id,
+        startsAt,
+        endsAt,
+        status,
+        durationMinutes: service.durationMinutes,
+        comment: input.comment ?? null,
+        ...(status === "COMPLETED" ? { finishedAt: new Date() } : {}),
+      },
+      select: { id: true },
+    });
+    await queueAppointmentMessages(tx, created.id);
+    return created;
   });
-
   return getAppointment(created.id);
 }
 
@@ -388,19 +394,34 @@ export async function updateAppointment(
   // not keep the time it was done at, or the day's history reads as two truths.
   const finishedAt = status === "COMPLETED" ? (existing.finishedAt ?? new Date()) : null;
 
-  await prisma.appointment.update({
-    where: { id },
-    data: {
-      customerId: customerId ?? null,
-      staffId: staffId ?? null,
-      serviceId: service.id,
-      startsAt,
-      endsAt,
-      status,
-      durationMinutes,
-      finishedAt,
-      ...(input.comment !== undefined ? { comment: input.comment } : {}),
-    },
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${id} AND "tenantId" = ${tenantId()} FOR UPDATE`;
+    const current = await tx.appointment.findFirstOrThrow({ where: { id } });
+    if (current.updatedAt.getTime() !== existing.updatedAt.getTime())
+      throw conflict("Booking changed. Reload before editing.", "APPOINTMENT_CHANGED");
+    const relevant =
+      current.customerId !== customerId ||
+      current.staffId !== staffId ||
+      current.serviceId !== service.id ||
+      current.startsAt.getTime() !== startsAt.getTime() ||
+      current.endsAt.getTime() !== endsAt.getTime() ||
+      current.status !== status;
+    await tx.appointment.update({
+      where: { id },
+      data: {
+        customerId: customerId ?? null,
+        staffId: staffId ?? null,
+        serviceId: service.id,
+        startsAt,
+        endsAt,
+        status,
+        durationMinutes,
+        finishedAt,
+        ...(input.comment !== undefined ? { comment: input.comment } : {}),
+        ...(relevant ? { messageRevision: { increment: 1 }, customerConfirmedAt: null } : {}),
+      },
+    });
+    if (relevant) await queueAppointmentMessages(tx, id);
   });
 
   return getAppointment(id);

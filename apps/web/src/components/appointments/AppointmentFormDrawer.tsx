@@ -19,6 +19,7 @@
  * screen the handoff drew as dropdowns does not need.
  */
 import { useMemo, useState } from "react";
+import SecureLinkActions from "@/components/ui/SecureLinkActions";
 
 import type { AppointmentDetail, StaffSummary } from "@glampro_suite/shared";
 
@@ -329,6 +330,14 @@ export default function AppointmentFormDrawer({
           maxLength={2000}
         />
       </form>
+      {appointment ? (
+        <>
+          <p>
+            Customer attendance: {appointment.customerConfirmedAt ? "Confirmed" : "Not confirmed"}
+          </p>
+          <SecureLinkActions key={appointment.id} resource="appointments" id={appointment.id} />
+        </>
+      ) : null}
     </Drawer>
   );
 }

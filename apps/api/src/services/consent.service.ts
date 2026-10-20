@@ -7,6 +7,8 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { conflict, forbidden, notFound } from "../lib/http-error.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import { withdrawMessagingChoices } from "./messaging-consent.js";
+import { currentScope } from "../lib/tenant-context.js";
 
 function serializeNotice(row: NonNullable<Awaited<ReturnType<typeof currentNotice>>>) {
   return privacyNoticeSchema.parse({
@@ -87,6 +89,9 @@ export async function recordCustomerConsent(
   actorId: string,
 ) {
   await prisma.$transaction(async (tx) => {
+    const scope = currentScope();
+    if (scope?.kind !== "tenant") throw forbidden();
+    await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customerId} AND "tenantId" = ${scope.tenantId} FOR UPDATE`;
     const customer = await tx.customer.findFirst({ where: { id: customerId } });
     if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
     if (customer.consentRevision !== input.expectedRevision) {
@@ -134,6 +139,15 @@ export async function recordCustomerConsent(
         noticeId: notice?.id === input.noticeId ? notice.id : null,
       },
     });
+    if (!input.pdpaConsent || !input.marketingOptIn) {
+      await withdrawMessagingChoices(
+        tx,
+        customerId,
+        actorId,
+        !input.pdpaConsent ? "DATA_CONSENT_WITHDRAWN" : "MARKETING_WITHDRAWN",
+        input.pdpaConsent,
+      );
+    }
   });
   return getCustomerConsent(customerId);
 }

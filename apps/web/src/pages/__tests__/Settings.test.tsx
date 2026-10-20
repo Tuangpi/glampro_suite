@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/settings/PrivacyNoticeCard", () => ({
   default: () => <div>Privacy notice settings</div>,
 }));
+vi.mock("@/components/settings/MessagingCard", () => ({
+  default: () => <div>WhatsApp and SMS settings</div>,
+}));
 
 const {
   useModules,

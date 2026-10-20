@@ -4,6 +4,7 @@ import helmet from "helmet";
 import { API_PREFIX } from "@glampro_suite/shared";
 
 import { env } from "./lib/env.js";
+import { messagingRouter, messagingWebhooksRouter, publicMessagingRouter } from "./routes/messaging.routes.js";
 import { appointmentsRouter } from "./routes/appointments.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { customersRouter } from "./routes/customers.routes.js";
@@ -75,6 +76,9 @@ export function createApp(): Express {
 
   // Feature routes. Each phase mounts its router here.
   app.use(`${API_PREFIX}/auth`, authRouter);
+  app.use(`${API_PREFIX}/messaging/webhooks`, messagingWebhooksRouter);
+  app.use(`${API_PREFIX}/public/messages`, publicMessagingRouter);
+  app.use(`${API_PREFIX}/messaging`, messagingRouter);
   app.use(`${API_PREFIX}/customers`, customersRouter);
   // Screen 08 is one screen with two tabs, so it is two mounts: products and
   // services are separate resources that share the `catalogue` entitlement.

@@ -258,7 +258,7 @@ customersRouter.patch(
 
       const { id } = validated<{ id: string }>(req, "params");
       const input = validated<UpdateCustomerInput>(req, "body");
-      res.status(200).json({ data: await updateCustomer(id, input) });
+      res.status(200).json({ data: await updateCustomer(id, input, req.user!.id) });
     } catch (error) {
       next(error);
     }

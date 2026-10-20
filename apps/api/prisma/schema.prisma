@@ -285,6 +285,11 @@ model PlatformAdmin {
 /// the legacy database keeps its owner's legacy `users.id` verbatim, so every
 /// `company_id` is already a valid `tenantId` — see ADR 0002.
 model Tenant {
+  messagingSettings MessagingSettings?
+  channelConsents ChannelConsent[]
+  channelConsentEvents ChannelConsentEvent[]
+  messageJobs MessageJob[]
+  publicLinks PublicLink[]
   id      String       @id @default(cuid())
   name    String
   slug    String       @unique
@@ -730,6 +735,97 @@ model GiftCard {
 /// now per tenant (ADR 0003). And `customer_id` was a second identifier the code had
 /// to keep in sync with `id`; it becomes `code`, a nullable human-readable label
 /// rather than an alternative key.
+model MessagingSettings {
+  id String @id @default(cuid())
+  tenantId String @unique
+  whatsappEnabled Boolean @default(false)
+  smsEnabled Boolean @default(false)
+  reminderHours Int @default(24)
+  rebookingDays Int @default(28)
+  quietStart Int @default(20)
+  quietEnd Int @default(9)
+  cancellationHours Int @default(2)
+  consentVersion String @default("")
+  serviceConsentText String @default("")
+  marketingConsentText String @default("")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@map("messaging_settings")
+}
+
+model ChannelConsent {
+  id String @id @default(cuid())
+  tenantId String
+  customerId String
+  channel String
+  destination String
+  service Boolean @default(false)
+  marketing Boolean @default(false)
+  preferred Boolean @default(false)
+  revision Int @default(0)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, customerId, channel])
+  @@map("channel_consents")
+}
+
+model ChannelConsentEvent {
+  id String @id @default(cuid())
+  tenantId String
+  customerId String
+  channel String
+  destination String
+  service Boolean
+  marketing Boolean
+  preferred Boolean
+  revision Int
+  noticeVersion String
+  serviceText String
+  marketingText String
+  actorId String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, customerId, createdAt])
+  @@map("channel_consent_events")
+}
+
+model MessageJob {
+  id String @id @default(cuid())
+  tenantId String
+  customerId String?
+  appointmentId String?
+  saleId String?
+  revision Int @default(0)
+  kind String
+  channel String?
+  destination String?
+  status String @default("PENDING")
+  dueAt DateTime
+  attempts Int @default(0)
+  leaseUntil DateTime?
+  providerSid String? @unique
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([status, dueAt])
+  @@index([tenantId, createdAt])
+  @@map("message_jobs")
+}
+
+model PublicLink {
+  id String @id @default(cuid())
+  tenantId String
+  tokenHash String @unique
+  kind String
+  targetId String
+  revision Int @default(0)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, kind, targetId])
+  @@map("public_links")
+}
+
 model Customer {
   id       String @id @default(cuid())
   tenantId String
@@ -864,6 +960,8 @@ model CustomerDepartment {
 /// (`0` booked, `1` started) while completion was recorded by setting `finish_time`
 /// (Q8). Both halves of that are now one column, and `finishedAt` keeps the moment.
 model Appointment {
+  messageRevision Int @default(0)
+  customerConfirmedAt DateTime?
   id          String            @id @default(cuid())
   tenantId    String
   customerId  String?

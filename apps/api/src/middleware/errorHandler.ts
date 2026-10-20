@@ -55,13 +55,18 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
 
   logger.error("Unhandled request error", {
     method: req.method,
-    path: req.path,
-    error,
+    path: req.path.startsWith("/api/public/messages/")
+      ? "/api/public/messages/[redacted]"
+      : req.path,
+    error: req.path.startsWith("/api/public/messages/") ? "Public link request failed" : error,
   });
 
   res.status(500).json({
     statusCode: 500,
-    message: isProduction ? "Internal server error" : String(error),
+    message:
+      isProduction || req.path.startsWith("/api/public/messages/")
+        ? "Internal server error"
+        : String(error),
     code: "INTERNAL_ERROR",
   });
 };

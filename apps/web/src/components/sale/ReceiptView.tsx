@@ -20,6 +20,7 @@
  * receipt, and it has to say what it now is (ADR 0016).
  */
 import { useState } from "react";
+import SecureLinkActions from "@/components/ui/SecureLinkActions";
 
 import type { SaleDetail } from "@glampro_suite/shared";
 
@@ -134,6 +135,7 @@ export default function ReceiptView({
         }
         footer={
           <div className="flex items-center justify-between gap-4">
+            <SecureLinkActions key={sale.id} resource="sales" id={sale.id} receipt />
             <Button variant="secondary" className="print:hidden" onClick={onNewSale}>
               {returnLabel}
             </Button>

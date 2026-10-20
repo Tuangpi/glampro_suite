@@ -17,4 +17,5 @@ export * from "./schemas/appointment.js";
 export * from "./schemas/report.js";
 export * from "./schemas/settings.js";
 export * from "./schemas/consent.js";
+export * from "./schemas/messaging.js";
 export * from "./schemas/tips.js";

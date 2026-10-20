@@ -11,6 +11,7 @@
  */
 import { useState } from "react";
 import CustomerConsentPanel from "@/components/customers/CustomerConsentPanel";
+import ChannelConsentPanel from "@/components/customers/ChannelConsentPanel";
 
 import type { CustomerDetail, GenderValue } from "@glampro_suite/shared";
 
@@ -283,7 +284,10 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
           maxLength={2000}
         />
         {customer ? (
-          <CustomerConsentPanel customerId={customer.id} />
+          <>
+            <CustomerConsentPanel customerId={customer.id} />
+            <ChannelConsentPanel customerId={customer.id} />
+          </>
         ) : (
           <p className="text-sm text-ink-muted">
             Save the customer first, then edit their record to capture privacy and marketing

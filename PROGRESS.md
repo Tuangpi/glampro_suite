@@ -2,13 +2,25 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **TK2610-0019 / Staff — DONE**.
+- Current task: **None**. Most recently completed: **TK2610-0021 — code/documentation DONE; live integration unverified**.
 - Implemented: staff-editor recurring roster CRUD (create/update/withdraw), complete paging, merged/date-aware validation, salon-zone booking enforcement; configurable service commission; email-free staff and session-bound POS PIN identities with reset/revocation.
 - Verified: latest API 391/391 and sale suite 54/54 on isolated PostgreSQL, no skips; API typecheck, workspace lint and full build passed. Earlier shared 112/112 and web 452/452 passed; not rerun for this API-only follow-up.
 - User accepted staff UAT on October 20, 2026. Both staff migrations applied to local development application database; Prisma status and read-only schema/history checks passed. No reset/reseed or production rollout.
 - Paid commission survives void unchanged except reconciliation flag; unpaid commission is deleted. Reports count paid reconciliation on void date, exclude it from earned commission. Refund behavior retained.
 - Limitations: existing booking/rota concurrency races; process-local/IP-based PIN throttling; no attendance/payroll/payout engine. Prior security cleanup was not a repository-wide audit.
-- Next: TK2610-0021 assessment (provider/consent decisions needed); not started. No commit or application deployment. External task tracker not updated.
+- Messaging verification: API 415/415 on disposable PostgreSQL (no skips), web 459/459, shared 116/116; typecheck/lint/build passed. Migration replay/status/schema diff verified only on disposable DB. Application DB unchanged.
+- User accepted messaging UAT on October 20, 2026 (user-reported; no agent-observed browser/live-provider verification).
+- Next: TK2610-0020 assessment; not started. Application migration and live activation require separate authorization. No paid sends, commit or deployment. External task tracker unchanged; TK2610-0021 is ready to mark complete for approved code/documentation scope, not production delivery. Audit reports 12 dependency findings (2 critical/8 high/2 moderate); unrelated upgrades not applied.
+
+## October 20, 2026 — TK2610-0021 code handoff
+
+- User accepted UAT on October 20, 2026 for approved code/documentation scope. This is user-reported acceptance, not agent-observed UAT or verified live delivery. No application migration or activation authorized or performed by this acceptance.
+- Implemented WhatsApp/SMS settings and channel consent UI, immutable channel evidence, one explicit preferred automatic channel and withdrawal propagation on phone/data/marketing changes. Twilio credentials stay operator-managed, never frontend settings.
+- Added durable transactional booking jobs, independent worker with conditional claims and customer/booking locks, dispatch-time eligibility checks, stale-link/job invalidation, bounded rate-limit retries, uncertain-send/restart handling and monotonic signed callbacks. Explicit receipt channel selection is deduplicated; existing email receipt behavior unchanged.
+- Added hashed expiring secure receipt and action links with revocation, attendance confirmation separate from lifecycle, customer cancellation confirmation/cutoff, minimal no-store/no-referrer public HTML, signed STOP and secure one-way-SMS unsubscribe links. Uncertain sends retain committed usable links.
+- Added `docs/whatsapp-sms-integration.md`: secrets, origin/proxy/log redaction, salon-owned senders, WhatsApp sandbox/onboarding/template mappings, Singapore SMS registration, worker commands, consent/retention limitations, troubleshooting and explicit real-device activation checklist. Both channels and global worker disabled by default.
+- Checks: 24 focused messaging tests; full API 415/415 no skips; web 459/459; shared 116/116. Workspace typecheck, lint and full build exit 0. All 25 migrations replayed to disposable PostgreSQL at port 55461, current status and empty DB/schema diff; built disabled-worker smoke check passed. API emits existing pg concurrency deprecation warnings. No application migration, real provider calls, browser/manual UAT or production verification.
+- Remaining operations: authorized credential/sender/template setup, approved consent/retention policy, HTTPS/proxy redaction and test-handset live checklist. No automated retention purge or provider exactly-once promise. npm audit reports 12 findings (2 critical, 8 high, 2 moderate); Twilio and xmlbuilder are the only lockfile additions and are not among reported affected packages. No audit fix, commit, deploy or external tracking update.
 
 ## October 20, 2026 — TK2610-0019 closure
 

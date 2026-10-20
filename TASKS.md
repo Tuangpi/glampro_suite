@@ -449,10 +449,16 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0021 — P1-04 WhatsApp/SMS reminders, confirmations, rebooking
 
-- Status: Not assessed
+- Status: DONE — approved code/documentation scope; live integration unverified
+- Acceptance (October 20, 2026): user accepted UAT for the approved code/documentation scope. Acceptance is user-reported, not agent-observed browser or live-provider verification. Application DB migration and live activation remain pending and are not authorized by this acceptance.
+- October 20, 2026: user approved WhatsApp and SMS code plus integration documentation, not live activation. Twilio; independent channels, no automatic fallback; explicit channel/purpose consent; secure receipt links; customer confirm/cancel actions. Proposed defaults accepted with implementation plan: 24-hour reminder, 28-day rebooking, 20:00–09:00 quiet hours, two-hour cancellation cutoff, 30-day receipt links. Code verification and live-provider verification must be reported separately.
 - Expected result: WhatsApp/SMS reminders, confirmations, rebooking prompts
 - Completion check / dependencies: Choose provider and consent policy; verify scheduling, confirmation/rebooking delivery, retries and duplicate prevention. Depends on booking events and consent.
-- Next: audit current implementation against the full expected result and check.
+- Implemented: per-salon settings, exact destination/channel/purpose consent and immutable evidence, phone/data/marketing withdrawal propagation, preferred-channel dispatch, transactional booking job writes, independent worker and Twilio adapter, signed monotonic status callbacks and inbound STOP; manager history/definite-failure retry. Secure hashed expiring receipt/action links, attendance confirmation separate from lifecycle, confirmed cancellation with cutoff, revocation, read-only receipt allowlist and one-way-SMS unsubscribe pages. Existing email receipts preserved.
+- Verified October 20: API 415/415 (none skipped) on disposable PostgreSQL, web 459/459, shared 116/116; workspace typecheck/lint/build passed. All 25 migrations replayed on a fresh disposable DB; migration status current and DB/schema diff empty. Disabled built-worker smoke check passed. Changed-source formatting and git diff whitespace checked.
+- Not performed by agent: application DB migration, browser/real-handset UAT, account/sender registration, approved templates, paid/live delivery, production deployment or external tracker changes. The original live-delivery completion check remains outstanding operational work, excluded from the user's approved code-only activation boundary. Do not mark production delivery verified.
+- Limitations: jobs retain destination/evidence until tenant deletion; no retention purge. Public pages English; no online reschedule/deposit flow. Provider exactly-once delivery is not guaranteed; ambiguous sends require operator reconciliation. Dependency audit reports 12 findings (2 critical, 8 high, 2 moderate) outside the added Twilio/xmlbuilder delta; no unrelated automatic upgrades applied.
+- Next: application migration and activation require separate authorization; activate only through `docs/whatsapp-sms-integration.md` with authorized credentials and test handsets. Next independent ready task: TK2610-0020 assessment; not started.
 
 ### TK2610-0020 — P1-02 Multi-service & recurring bookings, rooms/equipment
 
