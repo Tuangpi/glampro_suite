@@ -2,19 +2,63 @@
 
 ## Current State
 
-- Current task: **TK2610-0020 — IN PROGRESS**. Phases A (booking lifecycle) and B (multi-service bookings) done; Phases C–D (recurring series, rooms/equipment) not started and not approved.
+- Current task: **TK2610-0020 — IN PROGRESS**. Phases A (booking lifecycle), B (multi-service bookings) and C (recurring series) are done; Phase D (rooms/equipment) is not started and not approved.
 - Phase A implemented (October 20, 2026): booking creation requires an `ACTIVE` service (`SERVICE_INACTIVE`, `details[0].path = "serviceId"`); PATCH requires active only when `serviceId` actually changes, so retired services stay editable; a row created already `CANCELLED` skips roster and clash gates; clash messages quote the tenant zone through new `apps/api/src/lib/salon-clock.ts` (also reused by staff availability); `STAFF_DISABLED`/`STAFF_NOT_IN_DEPARTMENT` carry `details: [{ path: "staffId" }]`.
-- Phase B implemented (October 20, 2026): bookings are a chain of `AppointmentLine` rows (service, performer, position, own window, snapshotted duration), created by migration `20261020155000_appointment_lines` which backfills one line per existing booking. `Appointment.serviceId`/`staffId`/`durationMinutes` mirror line 0 and `endsAt` is the last line's end, so old readers stay correct. The API accepts `services[]` on create/PATCH (single `serviceId` still supported, both refused), sums the duration, checks performer eligibility against each line's service, and judges roster + overlap per line. The drawer edits the ordered list. Recurring series and rooms/equipment remain absent.
-- Phase A+B verified: full API 429/429 and web 461/461 on disposable PostgreSQL `glampro_tk0020_b` (fresh `migrate deploy`, `migrate diff` empty, seed run twice → 13 bookings / 13 lines); API/web typecheck and lint passed; touched files Prettier-clean. `npx prettier --check .` still flags four untouched files (`app.ts`, `auth.routes.ts`, `catalogue.routes.test.ts`, `settings.service.ts`) — pre-existing, unrelated to this work. No application-DB migration, no commit, no deployment.
-- Observed once: `sale.service.test.ts` "credits a customer for a package" failed on the first full Phase A run (2 holdings vs 1) and passed later including the Phase B full run. Cause is test-side `customerIdOf` using `findMany` with no `orderBy`; unrelated and not fixed.
+- Phase B implemented (October 20, 2026): bookings are a chain of `AppointmentLine` rows (service, performer, position, own window, snapshotted duration), created by migration `20261020155000_appointment_lines` which backfills one line per existing booking. `Appointment.serviceId`/`staffId`/`durationMinutes` mirror line 0 and `endsAt` is the last line's end, so old readers stay correct. The API accepts `services[]` on create/PATCH (single `serviceId` still supported, both refused), sums the duration, checks performer eligibility against each line's service, and judges roster + overlap per line. The drawer edits the ordered list.
+- Phase C implemented (October 20, 2026): a booking may repeat. Migration `20261020190000_appointment_series` adds the `AppointmentSeries` rule row (`intervalWeeks` 1–8, `occurrences` 2–52, check constraint) and `Appointment.seriesId`/`seriesIndex` (`ON DELETE SET NULL`). `POST /api/appointments` accepts `repeat` (`intervalWeeks` defaults to 1) and writes the whole series in one transaction — one ordinary booking per occurrence, each with its own service line. The **anchor must be bookable** (a clash is a `409` and writes no rule row); a later occurrence that clashes or falls outside the performer's rota is **skipped and reported** in the response's `series` block (`created`, `skipped[]` with the date and the server's own reason). Steps are taken in the salon's wall clock via new `addWeeksInZone` (`wall-clock.ts`), so a weekly 10:00 stays 10:00 across DST. `POST /api/appointments/series/:id/cancel` cancels future `SCHEDULED` occurrences only and returns the count; `PATCH` refuses `repeat` (`422`). The detail carries `series: { id, intervalWeeks, occurrences, index } | null`, and the drawer has a Repeat fieldset plus a "Cancel the rest of the series" action for an occurrence.
+- Phase A+B+C verified: full API 440/441 and web 465/465, shared 122/122 on disposable PostgreSQL `glampro_tk0020_c` (fresh `migrate deploy`, `migrate diff` empty, seed → 13 bookings / 13 lines); API/web typecheck, workspace lint and touched-file Prettier passed; `prisma validate` clean; `git diff --check` clean. `npx prettier --check .` still flags four untouched files (`app.ts`, `auth.routes.ts`, `catalogue.routes.test.ts`, `settings.service.ts`) — pre-existing, unrelated. No application-DB migration, no commit, no deployment.
+- The single API failure is the pre-existing **time-of-day flake** in `messaging.service.test.ts` ("suppresses rebooking after a new booking…"): its tenant defaults to `Asia/Singapore` with quiet hours 20:00–09:00 and the suite ran at 20:46 local, so the worker correctly defers the first-attempt `REBOOKING` job to 09:00 next morning (`outsideQuietHours` returned `2026-10-21T01:00Z`) and left it `PENDING`. It passes during salon daytime; unrelated to phase C and not fixed.
+- Observed once: `sale.service.test.ts` "credits a customer for a package" failed on the first full Phase A run (2 holdings vs 1) and passed later. Cause is test-side `customerIdOf` using `findMany` with no `orderBy`; unrelated and not fixed.
 - Implemented earlier: staff-editor recurring roster CRUD (create/update/withdraw), complete paging, merged/date-aware validation, salon-zone booking enforcement; configurable service commission; email-free staff and session-bound POS PIN identities with reset/revocation.
-- Verified: latest API 391/391 and sale suite 54/54 on isolated PostgreSQL, no skips; API typecheck, workspace lint and full build passed. Earlier shared 112/112 and web 452/452 passed; not rerun for this API-only follow-up.
 - User accepted staff UAT on October 20, 2026. Both staff migrations applied to local development application database; Prisma status and read-only schema/history checks passed. No reset/reseed or production rollout.
 - Paid commission survives void unchanged except reconciliation flag; unpaid commission is deleted. Reports count paid reconciliation on void date, exclude it from earned commission. Refund behavior retained.
-- Limitations: existing booking/rota concurrency races; process-local/IP-based PIN throttling; no attendance/payroll/payout engine. Prior security cleanup was not a repository-wide audit.
+- Limitations: existing booking/rota concurrency races (no Postgres `EXCLUDE` yet); process-local/IP-based PIN throttling; no attendance/payroll/payout engine. Prior security cleanup was not a repository-wide audit. A series cannot be edited as a whole (only one occurrence at a time) and has no excluded dates; each occurrence queues its own message jobs.
 - Messaging verification: API 415/415 on disposable PostgreSQL (no skips), web 459/459, shared 116/116; typecheck/lint/build passed. Migration replay/status/schema diff verified only on disposable DB. Application DB unchanged.
 - User accepted messaging UAT on October 20, 2026 (user-reported; no agent-observed browser/live-provider verification).
-- Next: TK2610-0020 Phases C–D need a scope decision (recurring series, rooms/equipment); nothing beyond Phase B is implemented. The Phase B migration exists but has not been applied to the application database. Messaging application migration and live activation still require separate authorization. No paid sends, commit or deployment. External task tracker unchanged.
+- Next: TK2610-0020 Phase D (rooms/equipment resources) needs a scope decision before editing. The Phase B and C migrations exist but have not been applied to the application database. Messaging application migration and live activation still require separate authorization. No paid sends, commit or deployment. External task tracker unchanged.
+
+## October 20, 2026 — TK2610-0020 Phase C recurring series
+
+- Scope chosen by the user: Phase C first, then Phase D in the same session only
+  if C landed clean. C landed; D was not started because it is a separate
+  greenfield resource model and was not part of that authorization.
+- Model: a series is the **rule only** — `AppointmentSeries` holds `intervalWeeks`
+  (1–8) and `occurrences` (2–52); each occurrence is a normal `appointment` row
+  carrying `seriesId` + `seriesIndex`, with its own lines, so every existing
+  reader and the per-line clash rule work unchanged. The FK is `SET NULL` on
+  delete: retiring a rule must never delete the bookings it produced.
+- Step: `addWeeksInZone` moves the anchor by whole weeks and then corrects by how
+  far the zone's own offset moved the wall clock (folded modulo a day, so a shift
+  across local midnight is not read as a 23-hour error). Unit-tested in
+  `wall-clock.test.ts` for both DST directions and the midnight case.
+- Create semantics: the anchor is booked normally (a clash is a `409`, and a
+  refused anchor writes no rule row); later occurrences are skipped, not fatal,
+  on `APPOINTMENT_CLASH`/`STAFF_UNAVAILABLE`, and the response's `series` block
+  reports `created` + `skipped[{ startsAt, reason }]`. Everything is written in a
+  single transaction. `data` in the response is still the anchor booking, so no
+  existing client changed shape.
+- Exit: `POST /api/appointments/series/:id/cancel` cancels future `SCHEDULED`
+  occurrences only (completed and no-show history is never rewritten) and returns
+  `{ cancelled }`; a second call is a `0` no-op. Tenant scoping makes another
+  salon's series a `404`.
+- UI: the drawer gains a Repeat fieldset on create (weekly / 2 / 4 weeks, 2–26
+  bookings), an "info" toast naming the dates it had to skip, and — on an
+  occurrence — a "Part of a repeating series — every N weeks, booking X of Y"
+  note with "Cancel the rest of the series".
+- Also fixed (Phase B omission found by the full typecheck): two
+  `calendar-geometry.test.ts` fixtures were missing the now-required `services`
+  array.
+- Verified on disposable PostgreSQL `glampro_tk0020_c` (dropped afterwards):
+  migrations from empty, `migrate diff` empty, seed → 13 bookings / 13 lines;
+  API 440/441 (the one failure is the quiet-hours/time-of-day flake above), web
+  465/465, shared 122/122; API/web typecheck, workspace lint, touched-file
+  Prettier, `prisma validate` and `git diff --check` clean.
+- Known limits: a series is not editable as a whole (edit one occurrence, or stop
+  the future ones); no "skip this date" exclusions; recurrence is weeks-only (no
+  monthly/two-weekly-with-skip rules); each occurrence queues its own message
+  jobs, so a long series queues many; the concurrent-overlap race and the missing
+  Postgres `EXCLUDE` constraint are unchanged (ADR 0014); application DB not
+  migrated, no commit, no deployment.
 
 ## October 20, 2026 — TK2610-0020 Phase B multi-service bookings
 

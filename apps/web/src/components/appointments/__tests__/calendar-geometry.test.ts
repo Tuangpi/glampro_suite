@@ -440,6 +440,8 @@ describe("buildCalendarColumns", () => {
     serviceId: null,
     serviceName: null,
     serviceDepartmentId: null,
+    // Geometry only reads the window and the performer; the chain is empty here.
+    services: [],
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
   };
@@ -484,6 +486,8 @@ describe("rescheduleFields", () => {
     serviceId: null,
     serviceName: null,
     serviceDepartmentId: null,
+    // A drag reads the window and the performer; the chain is not consulted.
+    services: [],
     createdAt: "2026-10-01T00:00:00.000Z",
     updatedAt: "2026-10-01T00:00:00.000Z",
   };

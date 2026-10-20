@@ -14,6 +14,7 @@ import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
 import {
+  cancelAppointmentSeries,
   createAppointment,
   getAppointment,
   listAppointments,
@@ -80,7 +81,40 @@ appointmentsRouter.post(
       if (!req.user) throw unauthorized();
 
       const input = validated<CreateAppointmentInput>(req, "body");
-      res.status(201).json({ data: await createAppointment(input) });
+      const created = await createAppointment(input);
+      // `data` stays the booking, exactly as before, so every existing reader is
+      // untouched; a repeat adds the `series` report beside it (how many were
+      // written, and which dates were skipped). The envelope carries the extra
+      // block rather than the row, because the row's own shape is the contract.
+      res.status(201).json({
+        data: created.appointment,
+        ...(created.series ? { series: created.series } : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Cancels what is left of a repeating series.
+ *
+ * A `POST` rather than a `DELETE`: every occurrence is a real booking with its
+ * own history, so the series is *stopped*, not erased — future `SCHEDULED`
+ * occurrences become `CANCELLED` and the past keeps its status.
+ */
+appointmentsRouter.post(
+  "/series/:id/cancel",
+  auth,
+  requireModule("appointments"),
+  requireWritableTenant(),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+
+      const { id } = validated<{ id: string }>(req, "params");
+      res.status(200).json({ data: await cancelAppointmentSeries(id) });
     } catch (error) {
       next(error);
     }

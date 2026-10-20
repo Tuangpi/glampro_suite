@@ -22,6 +22,17 @@ import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
 import { createAppointment, getAppointment, updateAppointment } from "./appointment.service.js";
 
+/**
+ * A one-off booking's row.
+ *
+ * `createAppointment` answers `{ appointment, series }` because a create may be a
+ * whole repeating series (phase C). These suites book single bookings, so they
+ * unwrap the anchor and keep reading the row they always read.
+ */
+async function book(input: Parameters<typeof createAppointment>[0]) {
+  return (await createAppointment(input)).appointment;
+}
+
 const databaseUrl = process.env["DATABASE_URL"];
 
 const TENANT_A = "appointment-clash-a";
@@ -306,7 +317,7 @@ describe(
       // Kana's 09:00 is free in tenant A — Fenn's identical window belongs to
       // tenant B — so the blocker this case judges is booked right here.
       await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(9).toISOString(),
@@ -315,7 +326,7 @@ describe(
 
       await assert.rejects(
         asTenantA(() =>
-          createAppointment({
+          book({
             customerId: s.customerId,
             staffId: s.kanaId,
             serviceId: s.serviceId,
@@ -338,7 +349,7 @@ describe(
 
       // 09:45 is the instant Kana's first block ends, not an overlap of it.
       const created = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(9, 45).toISOString(),
@@ -378,7 +389,7 @@ describe(
       // the time does — so what is judged is Ryo clashing with Ryo, and the
       // self-exclusion in `assertNoClash` must not be loose enough to hide it.
       await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.ryoId,
           serviceId: s.serviceId,
           startsAt: at(16).toISOString(),
@@ -403,7 +414,7 @@ describe(
       const s = requireSeeded();
 
       const blocker = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(11).toISOString(),
@@ -412,7 +423,7 @@ describe(
       await asTenantA(() => updateAppointment(blocker.id, { status: "CANCELLED" }));
 
       const created = await asTenantA(() =>
-        createAppointment({
+        book({
           customerId: s.customerId,
           staffId: s.kanaId,
           serviceId: s.serviceId,
@@ -427,7 +438,7 @@ describe(
       const s = requireSeeded();
 
       const blocker = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(13).toISOString(),
@@ -437,7 +448,7 @@ describe(
 
       await assert.rejects(
         asTenantA(() =>
-          createAppointment({
+          book({
             staffId: s.kanaId,
             serviceId: s.serviceId,
             startsAt: at(13).toISOString(),
@@ -455,7 +466,7 @@ describe(
       const s = requireSeeded();
 
       const walkIn = await asTenantA(() =>
-        createAppointment({
+        book({
           customerId: s.customerId,
           serviceId: s.serviceId,
           startsAt: at(16).toISOString(),
@@ -465,7 +476,7 @@ describe(
 
       // A second booking at the very same instant, still unassigned, is fine.
       const second = await asTenantA(() =>
-        createAppointment({
+        book({
           serviceId: s.serviceId,
           startsAt: at(16).toISOString(),
         }),
@@ -491,7 +502,7 @@ describe(
       // window, and the assertion is that the other salon's booking is invisible
       // to her — the scope, not the clock, is what decides.
       const created = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(20).toISOString(),
@@ -520,7 +531,7 @@ describe(
       // A booking on the long service, made while both services are live, is the
       // row whose service is about to be retired underneath it.
       const booking = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.longServiceId,
           startsAt: at(6).toISOString(),
@@ -535,7 +546,7 @@ describe(
         // control the drawer has to mark.
         await assert.rejects(
           asTenantA(() =>
-            createAppointment({
+            book({
               staffId: s.kanaId,
               serviceId: s.serviceId,
               startsAt: at(7).toISOString(),
@@ -582,7 +593,7 @@ describe(
       const s = requireSeeded();
 
       const occupant = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(17).toISOString(),
@@ -593,7 +604,7 @@ describe(
       // be recorded in a window somebody else occupies — the same rule PATCH
       // applies when a booking is cancelled after the fact.
       const cancelled = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(17).toISOString(),
@@ -610,7 +621,7 @@ describe(
       const s = requireSeeded();
 
       const cancelled = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(18).toISOString(),
@@ -619,7 +630,7 @@ describe(
       );
       // The freed slot is given away while the cancelled row still remembers it.
       await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(18).toISOString(),
@@ -642,7 +653,7 @@ describe(
       // The same move onto a free window still works, so the rule refuses the
       // occupancy and not reactivation itself.
       const free = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(22).toISOString(),
@@ -657,14 +668,14 @@ describe(
       const s = requireSeeded();
 
       const first = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(15).toISOString(),
         }),
       );
       await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(15, 45).toISOString(),
@@ -691,7 +702,7 @@ describe(
       const s = requireSeeded();
 
       await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(12).toISOString(),
@@ -700,7 +711,7 @@ describe(
 
       await assert.rejects(
         asTenantA(() =>
-          createAppointment({
+          book({
             staffId: s.kanaId,
             serviceId: s.serviceId,
             startsAt: at(12, 15).toISOString(),
@@ -720,7 +731,7 @@ describe(
 
       await assert.rejects(
         asTenantA(() =>
-          createAppointment({
+          book({
             staffId: s.disabledStaffId,
             serviceId: s.serviceId,
             startsAt: at(19).toISOString(),
@@ -739,7 +750,7 @@ describe(
 
       await assert.rejects(
         asTenantA(() =>
-          createAppointment({
+          book({
             staffId: s.outsiderId,
             serviceId: s.serviceId,
             startsAt: at(19, 30).toISOString(),
@@ -764,7 +775,7 @@ describe(
       const s = requireSeeded();
 
       const created = await asTenantA(() =>
-        createAppointment({
+        book({
           customerId: s.customerId,
           startsAt: at(13, 45).toISOString(),
           services: [
@@ -805,7 +816,7 @@ describe(
       // her on the *second* line, so the clash is line 1's window and nothing
       // else — the manicure before it is Mia's and is free.
       await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.kanaId,
           serviceId: s.serviceId,
           startsAt: at(19).toISOString(),
@@ -814,7 +825,7 @@ describe(
 
       await assert.rejects(
         asTenantA(() =>
-          createAppointment({
+          book({
             startsAt: at(18, 45).toISOString(),
             services: [
               { serviceId: s.manicureId, staffId: s.miaId },
@@ -837,7 +848,7 @@ describe(
       // Kana is a hair stylist: fine on line 0, refused on the manicure line.
       await assert.rejects(
         asTenantA(() =>
-          createAppointment({
+          book({
             startsAt: at(23).toISOString(),
             services: [
               { serviceId: s.serviceId, staffId: s.kanaId },
@@ -863,7 +874,7 @@ describe(
       const s = requireSeeded();
 
       const booking = await asTenantA(() =>
-        createAppointment({
+        book({
           staffId: s.miaId,
           serviceId: s.manicureId,
           startsAt: at(23).toISOString(),
@@ -911,7 +922,7 @@ describe(
       const s = requireSeeded();
 
       const booking = await asTenantA(() =>
-        createAppointment({
+        book({
           startsAt: at(16, 45).toISOString(),
           services: [
             { serviceId: s.serviceId, staffId: s.ryoId },

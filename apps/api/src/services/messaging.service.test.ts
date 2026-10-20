@@ -28,6 +28,14 @@ import {
 } from "./message-worker.js";
 import { verifyWebhook, type ProviderInput } from "../lib/messaging-provider.js";
 import { createApp } from "../app.js";
+
+/**
+ * A one-off booking's row: the create answers `{ appointment, series }` now that a
+ * request may repeat (phase C), and these checks all book a single booking.
+ */
+async function book(input: Parameters<typeof createAppointment>[0]) {
+  return (await createAppointment(input)).appointment;
+}
 import { updateCustomer } from "./customer.service.js";
 import { recordCustomerConsent } from "./consent.service.js";
 import type { Server } from "node:http";
@@ -60,7 +68,7 @@ const bookingInput = () => ({
   startsAt: new Date(Date.now() + 72 * 3600000).toISOString(),
 });
 async function newDueJob() {
-  const booking = await inA(() => createAppointment(bookingInput()));
+  const booking = await inA(() => book(bookingInput()));
   return inA(() =>
     prisma.messageJob.findFirstOrThrow({
       where: { appointmentId: booking.id, kind: "CONFIRMATION" },
@@ -160,7 +168,7 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
     });
   });
   it("atomically queues create and replaces obsolete schedules only on relevant edits", async () => {
-    const booking = await inA(() => createAppointment(bookingInput()));
+    const booking = await inA(() => book(bookingInput()));
     assert.equal(
       await inA(() => prisma.messageJob.count({ where: { appointmentId: booking.id } })),
       2,
@@ -183,7 +191,7 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
   });
   it("does not queue an extra reminder for a short-notice booking", async () => {
     const booking = await inA(() =>
-      createAppointment({
+      book({
         ...bookingInput(),
         startsAt: new Date(Date.now() + 4 * 3600000).toISOString(),
       }),
@@ -272,15 +280,13 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
     });
   });
   it("suppresses rebooking after a new booking and never sends marketing without current opt-in", async () => {
-    const completed = await inA(() =>
-      createAppointment({ ...bookingInput(), status: "COMPLETED" }),
-    );
+    const completed = await inA(() => book({ ...bookingInput(), status: "COMPLETED" }));
     await inA(async () => {
       await prisma.messageJob.updateMany({
         where: { appointmentId: completed.id },
         data: { dueAt: new Date(Date.now() - 60000) },
       });
-      await createAppointment(bookingInput());
+      await book(bookingInput());
     });
     await runMessageBatch(async () => "SMfuturebooking");
     const job = await inA(() =>
@@ -345,7 +351,7 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
     );
   });
   it("public GET is inert, confirmation is separate, cancellation revokes stale links", async () => {
-    const booking = await inA(() => createAppointment(bookingInput()));
+    const booking = await inA(() => book(bookingInput()));
     const link = await inA(() => issueLink("BOOKING", booking.id));
     const token = link.url.split("/").pop()!;
     const response = await fetch(`${base}/api/public/messages/${token}`);
@@ -380,7 +386,7 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
   });
   it("rejects self-cancellation inside cutoff and invalidates action links on reschedule", async () => {
     const booking = await inA(() =>
-      createAppointment({
+      book({
         ...bookingInput(),
         startsAt: new Date(Date.now() + 3600000).toISOString(),
       }),
@@ -545,7 +551,7 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
         quietEnd: (localHour + 3) % 24,
       });
     });
-    const booking = await inA(() => createAppointment({ ...bookingInput(), status: "COMPLETED" }));
+    const booking = await inA(() => book({ ...bookingInput(), status: "COMPLETED" }));
     await inA(() =>
       prisma.messageJob.updateMany({
         where: { appointmentId: booking.id },

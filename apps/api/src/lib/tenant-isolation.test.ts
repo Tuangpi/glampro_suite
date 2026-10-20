@@ -23,6 +23,9 @@ const TENANT_B = "test-tenant-b";
 async function purge(): Promise<void> {
   await runAsPlatform(async () => {
     await prisma.appointment.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
+    await prisma.appointmentSeries.deleteMany({
+      where: { tenantId: { in: [TENANT_A, TENANT_B] } },
+    });
     await prisma.customer.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
     await prisma.service.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
     await prisma.department.deleteMany({ where: { tenantId: { in: [TENANT_A, TENANT_B] } } });
@@ -92,6 +95,12 @@ async function seed(): Promise<void> {
             ],
           },
         },
+      });
+
+      // A repeating rule is its own tenant-scoped row (phase C), so it is checked
+      // like one rather than reached only through its bookings.
+      await prisma.appointmentSeries.create({
+        data: { tenantId: id, intervalWeeks: 1, occurrences: 2 },
       });
 
       await prisma.subscription.create({
@@ -244,6 +253,8 @@ describe("tenant isolation", { skip: databaseUrl ? false : "DATABASE_URL is not 
       // A booking's service lines are scoped in their own right, because the
       // overlap rule queries them directly rather than through the booking.
       appointmentLines: await prisma.appointmentLine.findMany({ select: { tenantId: true } }),
+      // So is a repeating booking's rule (phase C).
+      appointmentSeries: await prisma.appointmentSeries.findMany({ select: { tenantId: true } }),
       // `User` is tenant-scoped because staff are user rows (Q4).
       users: await prisma.user.findMany({ select: { tenantId: true } }),
     }));

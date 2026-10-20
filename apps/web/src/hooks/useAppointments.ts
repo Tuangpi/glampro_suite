@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   AppointmentDetail,
   AppointmentListQuery,
+  AppointmentSeriesReport,
   AppointmentSummary,
   StaffSummary,
   CreateAppointmentInput,
@@ -22,7 +23,7 @@ import type {
 
 import type { RescheduleInput } from "@/components/appointments/CalendarView";
 import { queryKeys } from "@/constants/queryKeys";
-import { get, getPaginated, patch, post } from "@/lib/api";
+import { get, getPaginated, patch, post, postWithSeries } from "@/lib/api";
 
 /** Per-request ceiling. Calendar and roster loaders consume every page. */
 export const CALENDAR_PAGE_SIZE = 200;
@@ -118,11 +119,37 @@ export function useCalendarAppointments(range: { from: string; to: string }, ena
   });
 }
 
+/**
+ * Books. A request may repeat (phase C), so the answer is the anchor booking plus
+ * the series' report — `series` is `null` for a one-off, which is the common case
+ * and the one every caller already handled.
+ */
 export function useCreateAppointment() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (input: CreateAppointmentInput) => post<AppointmentDetail>("/appointments", input),
+    mutationFn: (input: CreateAppointmentInput) =>
+      postWithSeries<AppointmentDetail, AppointmentSeriesReport>("/appointments", input),
+    onSuccess: () => {
+      invalidateAppointments(queryClient);
+    },
+  });
+}
+
+/**
+ * Stops what is left of a repeating series.
+ *
+ * Only future `SCHEDULED` occurrences are cancelled — the server decides that, so
+ * the client cannot ask for the past to be rewritten — and the count comes back
+ * for the toast. Every occurrence is an appointment, so the usual invalidation
+ * refreshes the day the user is looking at.
+ */
+export function useCancelAppointmentSeries() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (seriesId: string) =>
+      post<{ cancelled: number }>(`/appointments/series/${seriesId}/cancel`),
     onSuccess: () => {
       invalidateAppointments(queryClient);
     },

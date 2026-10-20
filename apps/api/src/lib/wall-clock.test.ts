@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { formatMinuteOfDay, formatShiftTime, salonDayBounds, wallClockAt } from "./wall-clock.js";
+import {
+  addWeeksInZone,
+  formatMinuteOfDay,
+  formatShiftTime,
+  salonDayBounds,
+  wallClockAt,
+} from "./wall-clock.js";
 
 /**
  * The bridge between a shift (minutes past local midnight) and a booking (a UTC
@@ -92,6 +98,51 @@ describe("salonDayBounds", () => {
       from: new Date("2026-12-31T00:00:00.000Z"),
       to: new Date("2027-01-01T00:00:00.000Z"),
     });
+  });
+});
+
+describe("addWeeksInZone", () => {
+  it("moves a normal week by exactly 168 hours when the offset does not change", () => {
+    const start = new Date("2026-10-14T17:00:00.000Z"); // 10:00 in Los Angeles
+    const next = addWeeksInZone(start, 1, "America/Los_Angeles");
+
+    assert.equal(next.toISOString(), "2026-10-21T17:00:00.000Z");
+  });
+
+  it("keeps the wall-clock time across spring forward instead of drifting an hour", () => {
+    // 10:00 PST on 2026-03-04; a naive +168h lands at 11:00 PDT on 2026-03-11.
+    const start = new Date("2026-03-04T18:00:00.000Z");
+    const next = addWeeksInZone(start, 1, "America/Los_Angeles");
+
+    assert.equal(wallClockAt(next, "America/Los_Angeles").minutes, 10 * 60);
+    assert.equal(next.toISOString(), "2026-03-11T17:00:00.000Z");
+  });
+
+  it("keeps the wall-clock time across fall back too", () => {
+    // 10:00 PDT on 2026-10-28; a naive +168h lands at 09:00 PST on 2026-11-04.
+    const start = new Date("2026-10-28T17:00:00.000Z");
+    const next = addWeeksInZone(start, 1, "America/Los_Angeles");
+
+    assert.equal(wallClockAt(next, "America/Los_Angeles").minutes, 10 * 60);
+    assert.equal(next.toISOString(), "2026-11-04T18:00:00.000Z");
+  });
+
+  it("reads a shift that crosses local midnight as an offset, not as a lost day", () => {
+    // 23:30 PDT on 2026-10-28; across the fall back the wall clock reads 22:30, so
+    // the correction is +60 minutes — the naive `00:30 − 23:30` would be −23h.
+    const start = new Date("2026-10-29T06:30:00.000Z");
+    const next = addWeeksInZone(start, 1, "America/Los_Angeles");
+
+    assert.equal(wallClockAt(next, "America/Los_Angeles").minutes, 23 * 60 + 30);
+    assert.equal(next.toISOString(), "2026-11-05T07:30:00.000Z");
+  });
+
+  it("steps several weeks at once, and returns the same instant for zero", () => {
+    const start = new Date("2026-03-04T18:00:00.000Z");
+    const fortnight = addWeeksInZone(start, 2, "America/Los_Angeles");
+
+    assert.equal(fortnight.toISOString(), "2026-03-18T17:00:00.000Z");
+    assert.equal(addWeeksInZone(start, 0, "America/Los_Angeles"), start);
   });
 });
 

@@ -124,12 +124,61 @@ export const appointmentSummarySchema = z.object({
 export type AppointmentSummary = z.infer<typeof appointmentSummarySchema>;
 
 /**
+ * The series a booking belongs to (TK2610-0020 phase C).
+ *
+ * `intervalWeeks` and `occurrences` are the rule the series was created with;
+ * `index` is this booking's 0-based place in it. Nothing else about the series
+ * is a property of one booking, so nothing else travels with it.
+ */
+export const appointmentSeriesSummarySchema = z.object({
+  id: z.string(),
+  intervalWeeks: z.number().int().min(1),
+  occurrences: z.number().int().min(2),
+  index: z.number().int().min(0),
+});
+
+export type AppointmentSeriesSummary = z.infer<typeof appointmentSeriesSummarySchema>;
+
+/**
+ * What a repeating create actually did.
+ *
+ * A series is created *optimistically*: the anchor is the booking the desk asked
+ * for, and a later occurrence that clashes with the existing book (or falls
+ * outside a performer's rota) is **skipped** rather than failing the request —
+ * a salon would rather have nine of ten bookings than none. The skips are
+ * returned so the desk is told exactly which dates it has to place by hand.
+ */
+export const appointmentSeriesReportSchema = z.object({
+  id: z.string(),
+  intervalWeeks: z.number().int(),
+  occurrences: z.number().int(),
+  /** How many bookings this request actually wrote, the anchor included. */
+  created: z.number().int(),
+  skipped: z.array(
+    z.object({
+      startsAt: z.string(),
+      /** The server's own refusal, already quoted in the salon's words. */
+      reason: z.string(),
+    }),
+  ),
+});
+
+export type AppointmentSeriesReport = z.infer<typeof appointmentSeriesReportSchema>;
+
+/**
  * A single booking. The editor needs no columns the list does not have, so this
  * is the summary plus the two columns only a completed booking carries.
  */
 export const appointmentDetailSchema = appointmentSummarySchema.extend({
   finishedAt: z.string().nullable(),
   customerConfirmedAt: z.string().nullable().optional(),
+  /**
+   * The repeating series this booking belongs to, or `null` for a one-off.
+   * `index` is this booking's 0-based place in it, so "3 of 6" needs no second
+   * request. Only the editor reads it, which is why it sits on the detail rather
+   * than on every row of the day list.
+   */
+  series: appointmentSeriesSummarySchema.nullable(),
 });
 
 export type AppointmentDetail = z.infer<typeof appointmentDetailSchema>;
@@ -148,6 +197,30 @@ export const appointmentServiceLineInputSchema = z.object({
 });
 
 export type AppointmentServiceLineInput = z.infer<typeof appointmentServiceLineInputSchema>;
+
+/**
+ * A booking that repeats (TK2610-0020 phase C).
+ *
+ * The rule is the one a salon actually sells: **the same booking every N weeks**.
+ * The anchor booking carries the time, the services and the performers, so a
+ * series only has to remember the step and how many bookings were asked for. A
+ * general RFC 5545 rule — monthly-by-weekday, per-date exceptions, a series that
+ * is edited as a whole — is deliberately not modelled; an occurrence that needs
+ * to differ is edited on its own.
+ */
+export const MAX_APPOINTMENT_INTERVAL_WEEKS = 8;
+
+/** A year of weeklies. The guard is against a client loop, not a business limit. */
+export const MAX_APPOINTMENT_OCCURRENCES = 52;
+
+export const appointmentRepeatInputSchema = z.object({
+  /** Weeks between occurrences: 1 = weekly, 2 = fortnightly. */
+  intervalWeeks: z.number().int().min(1).max(MAX_APPOINTMENT_INTERVAL_WEEKS).default(1),
+  /** Total bookings in the series, **including** the one being created. */
+  occurrences: z.number().int().min(2).max(MAX_APPOINTMENT_OCCURRENCES),
+});
+
+export type AppointmentRepeatInput = z.infer<typeof appointmentRepeatInputSchema>;
 
 /**
  * Creating a booking.
@@ -185,6 +258,13 @@ export const createAppointmentSchema = z
     startsAt: isoInstantSchema,
     status: appointmentStatusSchema.optional(),
     comment: z.string().trim().max(2000).optional(),
+    /**
+     * Repeat this booking every `intervalWeeks` for `occurrences` bookings.
+     * Absent = a one-off. The anchor always has to be bookable; a later
+     * occurrence that clashes is skipped and reported rather than failing the
+     * whole request, and the response's `series` block says which.
+     */
+    repeat: appointmentRepeatInputSchema.optional(),
   })
   .superRefine((value, ctx) => {
     if (value.serviceId !== undefined && value.services !== undefined) {
@@ -230,6 +310,13 @@ export const updateAppointmentSchema = z
     startsAt: isoInstantSchema.optional(),
     status: appointmentStatusSchema.optional(),
     comment: z.string().trim().max(2000).nullable().optional(),
+    /**
+     * A series is a **creation-time** rule: this PATCH edits one booking and
+     * leaves the rest of its series where they are. Sending `repeat` here is
+     * refused rather than quietly ignored, so a client cannot believe it changed
+     * a pattern the server never honoured.
+     */
+    repeat: z.never().optional(),
   })
   .superRefine((value, ctx) => {
     if (value.serviceId !== undefined && value.services !== undefined) {

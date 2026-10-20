@@ -39,6 +39,22 @@ interface AppointmentBody {
     durationMinutes: number;
   }[];
   finishedAt?: string | null;
+  /** Present on the detail: the rule and this booking's place in it. */
+  series?: {
+    id: string;
+    intervalWeeks: number;
+    occurrences: number;
+    index: number;
+  } | null;
+}
+
+/** The recurring create's extra envelope block. */
+interface SeriesReportBody {
+  id: string;
+  intervalWeeks: number;
+  occurrences: number;
+  created: number;
+  skipped: { startsAt: string; reason: string }[];
 }
 
 interface ErrorEnvelope {
@@ -333,6 +349,95 @@ describe(
         startsAt: "2026-10-09T16:00:00.000Z",
       });
       assert.equal(neither.status, 422);
+    });
+
+    it("books a repeating series and names the date it had to skip", async () => {
+      // Hold the second week for the same stylist, so the case judges the skip
+      // rather than a clean run.
+      const blocker = await request("POST", "/api/appointments", token, {
+        staffId: "appointments-rt-stylist",
+        serviceId: "appointments-rt-service",
+        startsAt: "2030-12-11T01:00:00.000Z",
+      });
+      assert.equal(blocker.status, 201);
+
+      const response = await request("POST", "/api/appointments", token, {
+        customerId: "appointments-rt-customer",
+        staffId: "appointments-rt-stylist",
+        serviceId: "appointments-rt-service",
+        startsAt: "2030-12-04T01:00:00.000Z",
+        repeat: { intervalWeeks: 1, occurrences: 3 },
+      });
+      const body = (await response.json()) as { data: AppointmentBody; series: SeriesReportBody };
+
+      assert.equal(response.status, 201);
+      assert.equal(body.data.startsAt, "2030-12-04T01:00:00.000Z", "`data` stays the anchor");
+      assert.deepEqual(body.data.series, {
+        id: body.series.id,
+        intervalWeeks: 1,
+        occurrences: 3,
+        index: 0,
+      });
+      assert.equal(body.series.created, 2);
+      assert.equal(body.series.occurrences, 3);
+      assert.deepEqual(
+        body.series.skipped.map((skip) => skip.startsAt),
+        ["2030-12-11T01:00:00.000Z"],
+      );
+      assert.match(body.series.skipped[0]!.reason, /already taken/i);
+
+      const page = await dataOf<{ data: AppointmentBody[] }>(
+        await request(
+          "GET",
+          "/api/appointments?from=2030-12-01T00:00:00.000Z&to=2030-12-31T00:00:00.000Z",
+          token,
+        ),
+      );
+      assert.deepEqual(
+        page.data.map((row) => row.startsAt),
+        ["2030-12-04T01:00:00.000Z", "2030-12-11T01:00:00.000Z", "2030-12-18T01:00:00.000Z"],
+        "the two written occurrences and the blocker are the whole month",
+      );
+
+      // A series is a creation-time rule: a PATCH carrying one is refused rather
+      // than silently behaving like a one-off.
+      const patch = await request("PATCH", `/api/appointments/${body.data.id}`, token, {
+        repeat: { intervalWeeks: 2, occurrences: 4 },
+      });
+      assert.equal(patch.status, 422);
+    });
+
+    it("cancels the rest of a series through its own endpoint", async () => {
+      const created = await request("POST", "/api/appointments", token, {
+        customerId: "appointments-rt-customer",
+        staffId: "appointments-rt-stylist",
+        serviceId: "appointments-rt-service",
+        startsAt: "2031-01-08T01:00:00.000Z",
+        repeat: { intervalWeeks: 1, occurrences: 3 },
+      });
+      const { series } = (await created.json()) as { series: SeriesReportBody };
+      assert.equal(created.status, 201);
+
+      const cancelled = await request(
+        "POST",
+        `/api/appointments/series/${series.id}/cancel`,
+        token,
+      );
+      assert.equal(cancelled.status, 200);
+      assert.deepEqual(await dataOf<{ cancelled: number }>(cancelled), { cancelled: 3 });
+
+      // Nothing left to stop: the same call is a no-op, not an error.
+      const again = await request("POST", `/api/appointments/series/${series.id}/cancel`, token);
+      assert.deepEqual(await dataOf<{ cancelled: number }>(again), { cancelled: 0 });
+
+      // A salon that may not write cannot stop it either.
+      const suspended = await request(
+        "POST",
+        `/api/appointments/series/${series.id}/cancel`,
+        suspendedToken,
+      );
+      assert.equal(suspended.status, 403);
+      assert.equal(((await suspended.json()) as ErrorEnvelope).code, "TENANT_SUSPENDED");
     });
 
     it("keeps suspended salons read-only", async () => {

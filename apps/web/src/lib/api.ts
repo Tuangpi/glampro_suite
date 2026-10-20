@@ -224,6 +224,23 @@ export async function post<T>(url: string, data?: unknown): Promise<T> {
   return extractData<T>(response.data);
 }
 
+/**
+ * POST whose envelope carries a second block beside `data`.
+ *
+ * Recurring creates answer `{ data: booking, series: report }`: `data` stays the
+ * booking every existing reader expects, and the report says how many
+ * occurrences were written and which dates were skipped. `post` would throw the
+ * report away, so this reads the envelope itself.
+ */
+export async function postWithSeries<T, S>(
+  url: string,
+  data?: unknown,
+): Promise<{ data: T; series: S | null }> {
+  const response = await api.post<(ApiResponse<T> & { series?: S }) | T>(url, data);
+  const body = response.data as ApiResponse<T> & { series?: S };
+  return { data: extractData<T>(body), series: body.series ?? null };
+}
+
 export async function put<T>(url: string, data?: unknown): Promise<T> {
   const response = await api.put<ApiResponse<T> | T>(url, data);
   return extractData<T>(response.data);

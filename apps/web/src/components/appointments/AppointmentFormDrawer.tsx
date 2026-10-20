@@ -19,6 +19,13 @@
  * single-service booking the salon mostly takes, and it is what the drawer opens
  * with.
  *
+ * A **new** booking can also repeat (phase C): the desk picks a step and a count,
+ * and the API writes the whole series in one request. The answer reports what it
+ * managed, so a date that was already taken is named in the toast instead of
+ * quietly missing from the book. Editing one occurrence edits that booking alone —
+ * a series is a creation-time rule — while "Cancel the rest of the series" stops
+ * the future ones.
+ *
  * The three lists (services, customers, staff) are read once per open with a
  * large page rather than searched: a day-desk form picks from the salon's
  * whole book, and a second search box per select would be three requests a
@@ -35,7 +42,11 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import { showToast } from "@/components/ui/toast-store";
 import { useCustomerList } from "@/hooks/useCustomers";
-import { useCreateAppointment, useUpdateAppointment } from "@/hooks/useAppointments";
+import {
+  useCreateAppointment,
+  useUpdateAppointment,
+  useCancelAppointmentSeries,
+} from "@/hooks/useAppointments";
 import { useServiceList } from "@/hooks/useServices";
 import { useStaffList } from "@/hooks/useStaff";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
@@ -58,6 +69,12 @@ interface FormState {
   /** `datetime-local` value: `YYYY-MM-DDTHH:mm` in the salon's timezone. */
   startsAt: string;
   comment: string;
+  /** Repeat this booking (creation only — an existing booking is edited alone). */
+  repeat: boolean;
+  /** Weeks between occurrences, as the select's string value. */
+  intervalWeeks: string;
+  /** Total bookings, this one included, as the number input's string value. */
+  occurrences: string;
 }
 
 /** The empty booking: one blank service line, no customer, the moment it opened. */
@@ -67,7 +84,17 @@ function emptyForm(defaultStartsAt: string): FormState {
     customerId: "",
     startsAt: defaultStartsAt,
     comment: "",
+    repeat: false,
+    intervalWeeks: "1",
+    // Four is the fortnightly-regular shape the salon mostly sells, and it keeps
+    // an accidental tick from writing a year of bookings.
+    occurrences: "4",
   };
+}
+
+/** "every week" / "every 2 weeks" — the phrase both the toast and the note use. */
+function repeatLabel(intervalWeeks: number): string {
+  return intervalWeeks === 1 ? "every week" : `every ${intervalWeeks} weeks`;
 }
 
 /**
@@ -91,6 +118,10 @@ function formFromAppointment(appointment: AppointmentDetail, timeZone: string): 
     customerId: appointment.customerId ?? "",
     startsAt: toSalonInputValue(appointment.startsAt, timeZone),
     comment: appointment.comment ?? "",
+    // A series is not edited from one occurrence, so these stay at "off".
+    repeat: false,
+    intervalWeeks: "1",
+    occurrences: "4",
   };
 }
 
@@ -132,7 +163,7 @@ export default function AppointmentFormDrawer({
   // Seeded once at mount; the page keys this component on record + open state,
   // so a cancelled edit cannot leak into the next one without an effect that
   // would render the form twice on every open.
-  const { timeZone } = useSalonFormatting();
+  const { timeZone, formatDateTime } = useSalonFormatting();
 
   // Seeded once at mount; the page keys this component on record + open state,
   // so a cancelled edit cannot leak into the next one without an effect that
@@ -150,6 +181,7 @@ export default function AppointmentFormDrawer({
   const staff = useStaffList({ page: 1, pageSize: LIST_PAGE_SIZE, status: "active" });
   const createAppointment = useCreateAppointment();
   const updateAppointment = useUpdateAppointment();
+  const cancelSeries = useCancelAppointmentSeries();
   const isSaving = createAppointment.isPending || updateAppointment.isPending;
   const isEditing = appointment !== null;
 
@@ -239,6 +271,14 @@ export default function AppointmentFormDrawer({
   const servicesError = fieldErrors["services"] ?? fieldErrors["body.services"];
   const staffError = fieldError("staffId");
   /**
+   * The repeat rule's fields are nested in the contract (`repeat.occurrences`), so
+   * the server's path arrives with a dot; the form shows it once, under the count.
+   */
+  const repeatError =
+    fieldErrors["repeat"] ??
+    fieldErrors["repeat.occurrences"] ??
+    fieldErrors["body.repeat.occurrences"];
+  /**
    * With one line the performer error belongs on its own control. With a chain
    * the API's `staffId` path cannot say *which* line was refused, so it is shown
    * once for the section rather than guessed onto the wrong performer.
@@ -269,6 +309,12 @@ export default function AppointmentFormDrawer({
     if (form.startsAt === "" || !start) {
       localErrors["startsAt"] = "Start time is required";
     }
+    // The API holds the real bounds (2–52 bookings, 1–8 weeks); the form only
+    // refuses what a desk could never have meant, so the round trip is spared.
+    const occurrences = Number(form.occurrences);
+    if (form.repeat && (!Number.isInteger(occurrences) || occurrences < 2 || occurrences > 26)) {
+      localErrors["repeat"] = "Repeat between 2 and 26 bookings";
+    }
     if (Object.keys(localErrors).length > 0) {
       setFieldErrors(localErrors);
       return;
@@ -295,13 +341,39 @@ export default function AppointmentFormDrawer({
         });
         showToast("success", "Appointment updated.");
       } else {
-        await createAppointment.mutateAsync({
+        const created = await createAppointment.mutateAsync({
           services: lines,
           startsAt,
           ...(customerId ? { customerId } : {}),
           ...(comment ? { comment } : {}),
+          ...(form.repeat
+            ? {
+                repeat: {
+                  intervalWeeks: Number(form.intervalWeeks),
+                  occurrences,
+                },
+              }
+            : {}),
         });
-        showToast("success", "Appointment booked.");
+
+        // A series is booked optimistically, so the answer says what it managed.
+        // Saying "booked" while three of ten dates were refused would be a lie the
+        // desk only discovers on the day.
+        const series = created.series;
+        if (!series) {
+          showToast("success", "Appointment booked.");
+        } else if (series.skipped.length === 0) {
+          showToast(
+            "success",
+            `Booked ${series.created} appointments, ${repeatLabel(series.intervalWeeks)}.`,
+          );
+        } else {
+          const dates = series.skipped.map((skip) => formatDateTime(skip.startsAt)).join(", ");
+          showToast(
+            "info",
+            `Booked ${series.created} of ${series.occurrences}. Skipped ${dates} — book those by hand.`,
+          );
+        }
       }
 
       onClose();
@@ -311,6 +383,29 @@ export default function AppointmentFormDrawer({
         setFieldErrors(details);
         return;
       }
+      setFormError(getErrorMessage(error));
+    }
+  }
+
+  /**
+   * Stops the series this booking belongs to.
+   *
+   * The server cancels only what has not happened yet, so this cannot rewrite a
+   * completed visit; the count it returns is what the desk is told.
+   */
+  async function handleCancelSeries() {
+    if (!appointment?.series) return;
+    setFormError(null);
+    try {
+      const { cancelled } = await cancelSeries.mutateAsync(appointment.series.id);
+      showToast(
+        cancelled > 0 ? "success" : "info",
+        cancelled > 0
+          ? `Cancelled ${cancelled} upcoming booking${cancelled === 1 ? "" : "s"}.`
+          : "Nothing left to cancel in this series.",
+      );
+      onClose();
+    } catch (error) {
       setFormError(getErrorMessage(error));
     }
   }
@@ -459,12 +554,67 @@ export default function AppointmentFormDrawer({
           hint="Anything the desk should know — preferences, patch tests, the usual."
           maxLength={2000}
         />
+
+        {!isEditing ? (
+          <fieldset className="flex flex-col gap-3 rounded-md border border-line p-3">
+            <legend className="px-1 text-sm font-bold text-ink">Repeat</legend>
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={form.repeat}
+                onChange={(event) => setField("repeat", event.target.checked)}
+              />
+              Book this more than once
+            </label>
+
+            {form.repeat ? (
+              <>
+                <Select
+                  label="Repeat every"
+                  value={form.intervalWeeks}
+                  onChange={(event) => setField("intervalWeeks", event.target.value)}
+                  options={[
+                    { value: "1", label: "Week" },
+                    { value: "2", label: "2 weeks" },
+                    { value: "4", label: "4 weeks" },
+                  ]}
+                />
+                <Input
+                  label="Number of bookings"
+                  type="number"
+                  min={2}
+                  max={26}
+                  value={form.occurrences}
+                  onChange={(event) => setField("occurrences", event.target.value)}
+                  error={repeatError}
+                  hint="This booking included. A date that clashes with the book is skipped and reported rather than failing the rest."
+                />
+              </>
+            ) : null}
+          </fieldset>
+        ) : null}
       </form>
       {appointment ? (
         <>
           <p>
             Customer attendance: {appointment.customerConfirmedAt ? "Confirmed" : "Not confirmed"}
           </p>
+          {appointment.series ? (
+            <div className="flex flex-col gap-2 rounded-md border border-line bg-surface-2/40 p-3 text-sm text-ink-muted">
+              <p>
+                Part of a repeating series — {repeatLabel(appointment.series.intervalWeeks)},
+                booking {appointment.series.index + 1} of {appointment.series.occurrences}.
+              </p>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => void handleCancelSeries()}
+                loading={cancelSeries.isPending}
+              >
+                Cancel the rest of the series
+              </Button>
+            </div>
+          ) : null}
           <SecureLinkActions key={appointment.id} resource="appointments" id={appointment.id} />
         </>
       ) : null}

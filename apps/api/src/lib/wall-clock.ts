@@ -137,6 +137,36 @@ function zoneOffsetMs(instant: Date, timeZone: string): number {
   return asUtc - Math.floor(instant.getTime() / 1000) * 1000;
 }
 
+/**
+ * The same wall-clock moment, `weeks` later in `timeZone`.
+ *
+ * A weekly booking means "10:00 next Wednesday", not "10:00 + 168 hours". Across
+ * a DST change those are an hour apart, and the naive addition silently walks a
+ * 10:00 regular to 09:00 (or 11:00) after the clocks move. So the instant is
+ * moved by whole weeks first and then **corrected by however far the zone's own
+ * offset moved the wall clock** — the same "read the zone's rules at the instant"
+ * technique `salonDayBounds` uses, rather than assuming a fixed offset.
+ *
+ * The correction is read modulo a day, because a shift that crosses local
+ * midnight comes out with a wall clock on the neighbouring date: 23:30 stepping
+ * back an hour reads as 00:30, which is +60 minutes of offset, not −1380.
+ */
+export function addWeeksInZone(instant: Date, weeks: number, timeZone: string): Date {
+  if (weeks === 0) return instant;
+
+  const wallClock = wallClockAt(instant, timeZone).minutes;
+  const shifted = new Date(instant.getTime() + weeks * 7 * 24 * 60 * 60 * 1000);
+  const drift = minutesWithinHalfDay(wallClockAt(shifted, timeZone).minutes - wallClock);
+
+  return new Date(shifted.getTime() - drift * 60_000);
+}
+
+/** A minute difference folded into (-720, 720], so a day boundary reads as ±1h. */
+function minutesWithinHalfDay(delta: number): number {
+  const day = 24 * 60;
+  return ((((delta + day / 2) % day) + day) % day) - day / 2;
+}
+
 /** `"09:00"` → `540`. The rota editor's inputs and the shift chip both read these. */
 export function formatMinuteOfDay(minutes: number): string {
   const hours = Math.floor(minutes / 60);

@@ -462,7 +462,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0020 — P1-02 Multi-service & recurring bookings, rooms/equipment
 
-- Status: IN PROGRESS — Phases A (booking lifecycle) and B (multi-service bookings) implemented; recurring series and rooms/equipment not started
+- Status: IN PROGRESS — Phases A (booking lifecycle), B (multi-service bookings) and C (recurring series) implemented; rooms/equipment not started
 - Expected result: Multi-service bookings, recurring bookings, rooms/equipment resources
 - Carried-forward finding (ADRs 0013/0014): cover cancelled-target handling and
   status-only reactivation, not only existing cancelled blockers. Check duration
@@ -472,7 +472,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   | Capability                  | State                                                                  |
   | --------------------------- | ---------------------------------------------------------------------- |
   | Multi-service booking       | Implemented (Phase B): `AppointmentLine` chain, summed duration.       |
-  | Recurring booking           | Absent. No series/recurrence model, no series API or UI.               |
+  | Recurring booking           | Implemented (Phase C): weekly/N-weekly series, skip-and-report.        |
   | Rooms / equipment           | Absent. No resource model; only per-line `staffId` occupancy checked.  |
   | Lifecycle defects (Phase A) | Fixed, with regression tests.                                          |
 - Phase A — implemented October 20, 2026 (`appointment.service.ts`, `lib/salon-clock.ts`):
@@ -492,9 +492,19 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   - UI: the drawer edits an ordered list of service lines ("Add service"/"Remove"), filters performers per line, and previews the summed end time; the first row keeps the `Service`/`Performer` labels.
   - Tests: `appointment.service.test.ts` 22/22 (chain shape, per-line clash, per-line eligibility, chain replacement without duplication, line-0-only performer move, legacy row), `appointments.routes.test.ts` 9/9 (chain envelope, 422 for both/neither spelling), tenant-isolation now covers `AppointmentLine`.
 - Phase B verification: full API 429/429 and web 461/461 on disposable PostgreSQL `glampro_tk0020_b`; API/web typecheck and lint clean; touched files Prettier-clean; `prisma migrate deploy` replayed from empty, `prisma migrate diff` empty, `prisma db seed` twice produced 13 appointments / 13 lines / 0 without lines. Application DB untouched.
-- Remaining (not approved, not started): Phase C recurring series; Phase D rooms/equipment with resource conflict checks. Concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); the pre-write read is unchanged.
+- Phase C — implemented October 20, 2026 (recurring series):
+  - Schema: new `AppointmentSeries` (`appointment_series`) — `intervalWeeks` (1–8), `occurrences` (2–52), own `tenantId`, check constraint on both bounds; `Appointment.seriesId` + `seriesIndex`, FK `ON DELETE SET NULL` (retiring a rule never deletes the bookings it produced), indexes `(tenantId, createdAt)` and `(seriesId, seriesIndex)`.
+  - Migration `20261020190000_appointment_series`: creates the rule table and the two nullable columns; existing rows stay one-offs, which is the truth. Applied from empty on a disposable database, `prisma migrate diff` empty.
+  - Step: new `addWeeksInZone` in `lib/wall-clock.ts` moves the anchor by whole weeks and corrects by the zone's own offset change, folded modulo a day — a weekly 10:00 stays 10:00 across DST and a shift over local midnight is not read as a 23-hour error. Unit-tested for both DST directions, the midnight case and `weeks = 0`.
+  - Contract: `repeat: { intervalWeeks? (default 1), occurrences }` on **create only**; `PATCH` refuses `repeat` with a 422 rather than silently editing one occurrence. Detail gains `series: { id, intervalWeeks, occurrences, index } | null`.
+  - Service: the anchor is booked normally (clash → 409, no rule row written); occurrences 1..n-1 are shifted, roster/clash checked, and **skipped** on `APPOINTMENT_CLASH`/`STAFF_UNAVAILABLE`; the whole series is written in one transaction. The create's `data` is still the anchor booking and the envelope carries `series: { id, intervalWeeks, occurrences, created, skipped[{ startsAt, reason }] }`.
+  - Exit: `POST /api/appointments/series/:id/cancel` cancels future `SCHEDULED` occurrences only (completed/no-show history untouched) and returns `{ cancelled }`; repeat calls are a `0` no-op, another salon's series is a 404.
+  - UI: drawer Repeat fieldset on create (weekly / 2 / 4 weeks, 2–26 bookings), an `info` toast naming skipped dates, and a series note + "Cancel the rest of the series" on an occurrence.
+  - Tests: `appointment-series.test.ts` 6/6 (weekly chain with DST, skipped clash, refused anchor writes no rule, rota skip, cancel-rest + cross-tenant 404), `appointments.routes.test.ts` +2, `wall-clock.test.ts` +5, tenant isolation now covers `AppointmentSeries`, shared contract tests 6/6, web drawer +4.
+- Phase C verification: full API 440/441, web 465/465, shared 122/122 on disposable PostgreSQL `glampro_tk0020_c` (fresh `migrate deploy`, `migrate diff` empty, seed → 13 bookings / 13 lines); API/web typecheck, workspace lint, touched-file Prettier, `prisma validate` and `git diff --check` clean. The one API failure is the pre-existing quiet-hours/time-of-day flake in `messaging.service.test.ts` (salon daytime passes; see `PROGRESS.md`). Also repaired two `calendar-geometry.test.ts` fixtures a Phase B change had left missing `services`.
+- Remaining (not approved, not started): Phase D rooms/equipment with resource conflict checks. Concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); the pre-write read is unchanged. A series cannot be edited as a whole, has no excluded dates, and is weeks-only.
 - Completion check / dependencies: Verify multi-service/recurring/resource conflicts and booking lifecycle. Resolve duration snapshots, department/active-staff eligibility, service-only resizing bypasses and concurrent overlap protection (ADRs 0013/0014).
-- Next: user decision on Phases C–D scope. No commit and no deployment performed; the migration exists but has not been applied to the application database.
+- Next: user decision on Phase D scope. No commit and no deployment performed; the Phase B and C migrations exist but have not been applied to the application database.
 
 ### TK2610-0022 — P1-03 Online booking page + deposits / no-show fee
 

@@ -34,25 +34,33 @@
  *    0 so readers that only know the single-service shape stay correct, while
  *    the overlap and roster rules judge every line — a stylist booked on line 2
  *    is busy for line 2's window, not for the whole booking.
+ * 6. **A booking can repeat.** `repeat` writes the same chain every N weeks, as
+ *    a series row plus one ordinary booking per occurrence, stepped in the
+ *    salon's wall clock so a weekly 10:00 stays 10:00 across a DST change. The
+ *    anchor must be bookable; a later occurrence that clashes is skipped and
+ *    reported rather than failing the request (TK2610-0020 phase C).
  */
 import type { PaginatedResponse } from "@glampro_suite/shared";
 import {
   appointmentDetailSchema,
+  appointmentSeriesReportSchema,
   appointmentSummarySchema,
   APPOINTMENT_STATUSES,
   type AppointmentDetail,
   type AppointmentListQuery,
+  type AppointmentSeriesReport,
   type AppointmentSummary,
   type CreateAppointmentInput,
   type UpdateAppointmentInput,
 } from "@glampro_suite/shared";
 
-import { badRequest, conflict, notFound } from "../lib/http-error.js";
+import { badRequest, conflict, HttpError, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { salonTimeZone } from "../lib/salon-clock.js";
+import { addWeeksInZone } from "../lib/wall-clock.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertStaffAvailable } from "./staff-availability.service.js";
-import { queueAppointmentMessages, tenantId } from "./messaging.service.js";
+import { queueAppointmentMessages, tenantId, type Tx } from "./messaging.service.js";
 
 /**
  * A booking with everything the day view draws. The three relations come along
@@ -91,6 +99,10 @@ const APPOINTMENT_SELECT = {
       staff: { select: { id: true, name: true } },
     },
   },
+  /// The repeating rule, when this row is one occurrence of a series. Two columns
+  /// rather than a third read: the editor shows "3 of 6" from the row itself.
+  seriesIndex: true,
+  series: { select: { id: true, intervalWeeks: true, occurrences: true } },
 } as const;
 
 function findRow(id: string) {
@@ -142,6 +154,16 @@ function toDetail(row: AppointmentRow): AppointmentDetail {
     ...toSummary(row),
     finishedAt: row.finishedAt?.toISOString() ?? null,
     customerConfirmedAt: row.customerConfirmedAt?.toISOString() ?? null,
+    // A one-off has no rule to show; an occurrence reports the rule and its place
+    // in it, so the editor never has to count siblings itself.
+    series: row.series
+      ? {
+          id: row.series.id,
+          intervalWeeks: row.series.intervalWeeks,
+          occurrences: row.series.occurrences,
+          index: row.seriesIndex ?? 0,
+        }
+      : null,
   });
 }
 
@@ -507,6 +529,92 @@ export async function getAppointment(id: string): Promise<AppointmentDetail> {
   if (!row) throw notFound("That appointment does not exist.", "APPOINTMENT_NOT_FOUND");
   return toDetail(row);
 }
+/** What a create wrote: the anchor booking, plus the series report for a repeat. */
+export interface CreatedAppointment {
+  /** The booking the desk asked for — occurrence 0 of a series. */
+  appointment: AppointmentDetail;
+  /** `null` for a one-off booking. */
+  series: AppointmentSeriesReport | null;
+}
+
+/** Everything one occurrence needs, before it is multiplied into a series. */
+interface BookingPlan {
+  customerId: string | null;
+  status: (typeof APPOINTMENT_STATUSES)[number];
+  comment: string | null;
+  lines: PlannedLine[];
+}
+
+/**
+ * Writes one booking and its chain inside `tx`.
+ *
+ * Shared by the one-off and the repeating path so the two can never drift: the
+ * flat columns mirror line 0, `endsAt` is the last line's end, and the same
+ * message queueing follows every write. The blank `tenantId` is the established
+ * convention here — the scope extension stamps the caller's salon (rule 1).
+ */
+async function writeBooking(
+  tx: Tx,
+  plan: BookingPlan & { series?: { id: string; index: number } },
+): Promise<string> {
+  const primary = plan.lines[0]!;
+  const created = await tx.appointment.create({
+    data: {
+      tenantId: "",
+      customerId: plan.customerId,
+      staffId: primary.staffId,
+      serviceId: primary.serviceId,
+      startsAt: primary.startsAt,
+      endsAt: plan.lines[plan.lines.length - 1]!.endsAt,
+      status: plan.status,
+      durationMinutes: totalMinutes(plan.lines),
+      comment: plan.comment,
+      ...(plan.series ? { seriesId: plan.series.id, seriesIndex: plan.series.index } : {}),
+      ...(plan.status === "COMPLETED" ? { finishedAt: new Date() } : {}),
+    },
+    select: { id: true },
+  });
+
+  await tx.appointmentLine.createMany({
+    data: plan.lines.map((line, position) => ({
+      tenantId: "",
+      appointmentId: created.id,
+      serviceId: line.serviceId,
+      staffId: line.staffId,
+      position,
+      startsAt: line.startsAt,
+      endsAt: line.endsAt,
+      durationMinutes: line.durationMinutes,
+    })),
+  });
+
+  await queueAppointmentMessages(tx, created.id);
+  return created.id;
+}
+
+/** The same chain, moved by `deltaMs` — an occurrence two weeks after the last. */
+function shiftLines(lines: PlannedLine[], deltaMs: number): PlannedLine[] {
+  return lines.map((line) => ({
+    ...line,
+    startsAt: new Date(line.startsAt.getTime() + deltaMs),
+    endsAt: new Date(line.endsAt.getTime() + deltaMs),
+  }));
+}
+
+/**
+ * The two refusals a *later* occurrence may earn without failing the request:
+ * the performer is busy (`APPOINTMENT_CLASH`) or is not on the rota then
+ * (`STAFF_UNAVAILABLE`). Both are facts about that date alone, which is exactly
+ * why the series skips it and carries on. Anything else is re-thrown.
+ */
+function isSkippableOccurrence(error: unknown): error is HttpError {
+  return (
+    error instanceof HttpError &&
+    error.statusCode === 409 &&
+    (error.code === "APPOINTMENT_CLASH" || error.code === "STAFF_UNAVAILABLE")
+  );
+}
+
 /**
  * Books. Every end time and duration is computed from the services, each line's
  * performer is checked against that line's service, and `finishedAt` is stamped
@@ -519,8 +627,18 @@ export async function getAppointment(id: string): Promise<AppointmentDetail> {
  *
  * `serviceId` and `services` are two spellings of the same thing — one service,
  * or an ordered chain — and the contract refuses a request that sends both.
+ *
+ * `repeat` turns the booking into a series (phase C): the same chain every
+ * `intervalWeeks` for `occurrences` bookings. The **anchor must be bookable** —
+ * a desk that picked a busy time is told so — while a later occurrence that
+ * clashes or falls outside the performer's rota is skipped and reported, so ten
+ * booked Wednesdays are not lost to the eleventh. The whole set is written in one
+ * transaction: either the series and its report are consistent, or nothing was
+ * written.
  */
-export async function createAppointment(input: CreateAppointmentInput): Promise<AppointmentDetail> {
+export async function createAppointment(
+  input: CreateAppointmentInput,
+): Promise<CreatedAppointment> {
   const selections: LineSelection[] = input.services
     ? input.services.map((line) => ({ serviceId: line.serviceId, staffId: line.staffId }))
     : input.serviceId
@@ -541,49 +659,90 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
   });
   if (input.customerId) await assertCustomerExists(input.customerId);
 
-  if (status !== "CANCELLED") {
+  const plan: BookingPlan = {
+    customerId: input.customerId ?? null,
+    status,
+    comment: input.comment ?? null,
+    lines,
+  };
+
+  // A row created already cancelled holds no slot, so neither it nor its repeats
+  // are availability- or clash-checked (ADR 0014 §3, as PATCH treats it).
+  const holds = status !== "CANCELLED";
+
+  if (!input.repeat) {
+    if (holds) {
+      await assertStaffFree(lines);
+      await assertNoClash(lines);
+    }
+    const id = await prisma.$transaction((tx) => writeBooking(tx, plan));
+    return { appointment: await getAppointment(id), series: null };
+  }
+
+  // The anchor is the booking the desk asked for, so a busy time is refused as it
+  // always was rather than quietly producing a series with nothing in it.
+  if (holds) {
     await assertStaffFree(lines);
     await assertNoClash(lines);
   }
 
-  const primary = lines[0]!;
-  const endsAt = lines[lines.length - 1]!.endsAt;
+  const { intervalWeeks, occurrences } = input.repeat;
+  const zone = await salonTimeZone();
+  const skipped: AppointmentSeriesReport["skipped"] = [];
+  const planned: { index: number; lines: PlannedLine[] }[] = [{ index: 0, lines }];
 
-  const created = await prisma.$transaction(async (tx) => {
-    const created = await tx.appointment.create({
-      data: {
-        // Placeholder: `scopeCreateData` overwrites it with the scope's tenant.
-        tenantId: "",
-        customerId: input.customerId ?? null,
-        // The booking-level pair mirrors line 0; the lines are the truth.
-        staffId: primary.staffId,
-        serviceId: primary.serviceId,
-        startsAt,
-        endsAt,
-        status,
-        durationMinutes: totalMinutes(lines),
-        comment: input.comment ?? null,
-        ...(status === "COMPLETED" ? { finishedAt: new Date() } : {}),
-      },
+  for (let index = 1; index < occurrences; index += 1) {
+    // "The same booking every N weeks" is a statement about the salon's wall
+    // clock, so the step is taken in the salon's zone, not by adding fixed hours.
+    const occurrenceStart = addWeeksInZone(startsAt, index * intervalWeeks, zone);
+    const occurrenceLines = shiftLines(lines, occurrenceStart.getTime() - startsAt.getTime());
+
+    if (!holds) {
+      planned.push({ index, lines: occurrenceLines });
+      continue;
+    }
+
+    try {
+      await assertStaffFree(occurrenceLines);
+      await assertNoClash(occurrenceLines);
+      planned.push({ index, lines: occurrenceLines });
+    } catch (error) {
+      // One busy fortnight is not a reason to throw away the other bookings. Any
+      // other refusal — an ineligible performer, a dead service — is a real error
+      // and is re-thrown, because it would have failed the anchor too.
+      if (!isSkippableOccurrence(error)) throw error;
+      skipped.push({ startsAt: occurrenceStart.toISOString(), reason: error.message });
+    }
+  }
+
+  const written = await prisma.$transaction(async (tx) => {
+    const series = await tx.appointmentSeries.create({
+      // Placeholder: `scopeCreateData` stamps the caller's tenant.
+      data: { tenantId: "", intervalWeeks, occurrences },
       select: { id: true },
     });
-    await tx.appointmentLine.createMany({
-      data: lines.map((line, position) => ({
-        // Placeholder, as above: `scopeCreateManyData` stamps the tenant.
-        tenantId: "",
-        appointmentId: created.id,
-        serviceId: line.serviceId,
-        staffId: line.staffId,
-        position,
-        startsAt: line.startsAt,
-        endsAt: line.endsAt,
-        durationMinutes: line.durationMinutes,
-      })),
-    });
-    await queueAppointmentMessages(tx, created.id);
-    return created;
+
+    let anchorId = "";
+    for (const occurrence of planned) {
+      const id = await writeBooking(tx, {
+        ...plan,
+        lines: occurrence.lines,
+        series: { id: series.id, index: occurrence.index },
+      });
+      if (occurrence.index === 0) anchorId = id;
+    }
+    return { seriesId: series.id, anchorId };
   });
-  return getAppointment(created.id);
+
+  const report = appointmentSeriesReportSchema.parse({
+    id: written.seriesId,
+    intervalWeeks,
+    occurrences,
+    created: planned.length,
+    skipped,
+  });
+
+  return { appointment: await getAppointment(written.anchorId), series: report };
 }
 
 /**
@@ -736,4 +895,42 @@ export async function updateAppointment(
   });
 
   return getAppointment(id);
+}
+
+/**
+ * Cancels what is **left** of a repeating series.
+ *
+ * "Left" is deliberate: only future `SCHEDULED` occurrences are cancelled. An
+ * occurrence already completed keeps its status, because cancelling it would
+ * rewrite the day's history (and, once commission is paid, the money it earned);
+ * a no-show stays a no-show for the same reason. A one-off booking that never
+ * joined a series is untouched — this is the series' own exit, not a bulk edit.
+ */
+export async function cancelAppointmentSeries(seriesId: string): Promise<{ cancelled: number }> {
+  const series = await prisma.appointmentSeries.findFirst({
+    where: { id: seriesId },
+    select: { id: true },
+  });
+  if (!series) {
+    throw notFound("That repeating booking does not exist.", "APPOINTMENT_SERIES_NOT_FOUND");
+  }
+
+  const rows = await prisma.appointment.findMany({
+    where: { seriesId, status: "SCHEDULED", startsAt: { gt: new Date() } },
+    select: { id: true },
+    orderBy: { startsAt: "asc" },
+  });
+  if (rows.length === 0) return { cancelled: 0 };
+
+  await prisma.$transaction(async (tx) => {
+    await tx.appointment.updateMany({
+      where: { id: { in: rows.map((row) => row.id) } },
+      data: { status: "CANCELLED" },
+    });
+    // Each cancelled slot is a message the customer should hear about, and the
+    // queue is per booking — the same call the single-booking path makes.
+    for (const row of rows) await queueAppointmentMessages(tx, row.id);
+  });
+
+  return { cancelled: rows.length };
 }

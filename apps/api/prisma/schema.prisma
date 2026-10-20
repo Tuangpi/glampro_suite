@@ -361,6 +361,7 @@ model Tenant {
   giftCards           GiftCard[]
   appointments        Appointment[]
   appointmentLines    AppointmentLine[]
+  appointmentSeries   AppointmentSeries[]
   employeeCommissions EmployeeCommission[]
   sales               Sale[]
   saleLines           SaleLine[]
@@ -1000,10 +1001,41 @@ model Appointment {
   /// The services booked, in the order they happen. A single-service booking has
   /// exactly one line, so nothing downstream needs a second shape to read.
   lines    AppointmentLine[]
+  /// Set when this booking is one occurrence of a repeating series (phase C).
+  seriesId String?
+  /// This booking's 0-based place in `seriesId`, copied when it was written so
+  /// "3 of 6" never has to count siblings.
+  seriesIndex Int?
+  series AppointmentSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
 
   @@index([tenantId, startsAt])
   @@index([staffId, startsAt])
+  @@index([seriesId, seriesIndex])
   @@map("appointments")
+}
+
+/// A repeating booking (TK2610-0020 phase C).
+///
+/// The rule is the one a salon actually sells: "the same booking every N weeks,
+/// M times". The anchor booking carries the time, the services and the
+/// performers, so the series row only has to remember the step and the length —
+/// nothing here duplicates a booking, and an occurrence edited on its own stays
+/// edited.
+model AppointmentSeries {
+  id            String   @id @default(cuid())
+  tenantId      String
+  /// Weeks between occurrences: 1 = weekly, 2 = fortnightly.
+  intervalWeeks Int
+  /// Bookings the series intends, the anchor included.
+  occurrences   Int
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+
+  @@index([tenantId, createdAt])
+  @@map("appointment_series")
 }
 
 /// One service on a booking, in the order it is performed.
