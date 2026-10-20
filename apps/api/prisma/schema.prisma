@@ -167,9 +167,12 @@ model User {
   /// The isolation boundary. Staff are `User` rows (Q4 in legacy/LEGACY-MAP.md §6),
   /// so this column is what makes a staff member tenant-scoped.
   tenantId     String
-  email        String     @unique
+  email        String?    @unique
   name         String
   passwordHash String
+  /// PIN-only staff cannot create web sessions. Hashes never leave the API.
+  posPinHash String?
+  posPinVersion Int @default(0)
   globalRole   GlobalRole @default(STAFF)
   phone        String?
   avatar       String?
@@ -188,6 +191,8 @@ model User {
   endDate   DateTime?
   /// `users.position` — the free-text job title shown in booking.
   position String?
+  /// Percentage of net, tax-exclusive service revenue, snapshotted on completion.
+  commissionRate Decimal @default(0) @db.Decimal(5, 2)
   /// Calendar colour, from `users.color`. Booking uses it to tint an appointment.
   color        String?
   /// Google Calendar sync fields (`2026_03_16` migration). Stored, not yet acted on.

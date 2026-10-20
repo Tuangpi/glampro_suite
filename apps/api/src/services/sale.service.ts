@@ -1709,6 +1709,22 @@ async function fillLedgers(
   // is on the line, so the reduction can be seen and added up (ADR 0017 §6).
   const attributed = priced.filter((line) => line.input.staffId !== undefined);
   if (attributed.length > 0) {
+    // Tender does not change service revenue: package/credit-paid service lines
+    // earn identically to cash-paid lines. Package purchase lines never qualify.
+    const staff = await tx.user.findMany({
+      where: { id: { in: attributed.map((line) => line.input.staffId as string) } },
+      select: { id: true, commissionRate: true },
+    });
+    const rates = new Map(staff.map((person) => [person.id, person.commissionRate]));
+    const commissions = attributed.flatMap((line) => {
+      const rate = rates.get(line.input.staffId as string);
+      if (line.item.itemType !== "SERVICE" || !rate || rate.isZero()) return [];
+      const amount = line.netLineTotal.minus(line.taxAmount).mul(rate).div(100).toDecimalPlaces(2);
+      if (amount.isZero()) return [];
+      return [{ tenantId, userId: line.input.staffId as string, saleId, rate, amount }];
+    });
+    if (commissions.length > 0) await tx.employeeCommission.createMany({ data: commissions });
+
     await tx.employeePerformance.createMany({
       data: attributed.map((line) => ({
         tenantId,
@@ -2441,9 +2457,10 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
  *   is stamped `revertedAt` rather than deleted — the legacy `unuse_time` this column
  *   already documents. A voided sale therefore refunds the package session, not just
  *   the money.
- * - **Holdings, the outstanding, performance and commission** are deleted. Nothing has
+ * - **Holdings, the outstanding, performance and unpaid commission** are deleted. Nothing has
  *   been spent (see `assertVoidable`) and a voided sale earned nobody anything; what the
- *   lines recorded survives on `SaleLine`, which stays.
+ *   lines recorded survives on `SaleLine`, which stays. Paid commissions remain flagged
+ *   for reconciliation because a void cannot undo money already paid to staff.
  */
 async function reverseForVoid(
   tx: SaleTransaction,
@@ -2538,7 +2555,11 @@ async function reverseForVoid(
 
   await tx.customerOutstanding.deleteMany({ where: { saleId: sale.id } });
   await tx.employeePerformance.deleteMany({ where: { saleId: sale.id } });
-  await tx.employeeCommission.deleteMany({ where: { saleId: sale.id } });
+  await tx.employeeCommission.updateMany({
+    where: { saleId: sale.id, paidAt: { not: null } },
+    data: { reconciliationRequired: true },
+  });
+  await tx.employeeCommission.deleteMany({ where: { saleId: sale.id, paidAt: null } });
 }
 
 /**

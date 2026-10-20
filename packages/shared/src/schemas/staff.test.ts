@@ -22,6 +22,19 @@ describe("staffListQuerySchema", () => {
 });
 
 describe("createStaffSchema", () => {
+  it("accepts PIN-only staff without email and prevents management roles", () => {
+    assert.equal(createStaffSchema.safeParse({ name: "Ava", posPin: "123456" }).success, true);
+    assert.equal(createStaffSchema.safeParse({ name: "Ava", posPin: "12345" }).success, false);
+    assert.equal(
+      createStaffSchema.safeParse({ name: "Ava", posPin: "123456", globalRole: "MANAGER" }).success,
+      false,
+    );
+  });
+  it("limits commission percentages to cent precision and the full revenue", () => {
+    for (const commissionRate of [-1, 100.01, 1.234])
+      assert.equal(updateStaffSchema.safeParse({ commissionRate }).success, false);
+    assert.equal(updateStaffSchema.safeParse({ commissionRate: 12.5 }).success, true);
+  });
   it("requires a login, because a staff member is a User row", () => {
     assert.equal(createStaffSchema.safeParse({ name: "Ava", email: "a@b.test" }).success, false);
     assert.equal(

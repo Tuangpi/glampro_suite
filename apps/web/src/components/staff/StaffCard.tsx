@@ -14,7 +14,7 @@ import { getInitials } from "@/lib/utils";
 
 export interface StaffCardProps {
   name: string;
-  email: string;
+  email: string | null;
 }
 
 export default function StaffCard({ name, email }: StaffCardProps) {
@@ -28,7 +28,7 @@ export default function StaffCard({ name, email }: StaffCardProps) {
       </span>
       <div className="min-w-0">
         <p className="truncate font-bold text-ink">{name}</p>
-        <p className="truncate text-xs text-ink-muted">{email}</p>
+        <p className="truncate text-xs text-ink-muted">{email ?? "POS PIN only"}</p>
       </div>
     </div>
   );

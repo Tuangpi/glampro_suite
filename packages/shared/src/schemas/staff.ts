@@ -7,10 +7,8 @@
  * employee_id` was a foreign key onto `users.id`. Staff is therefore a role plus
  * a profile on the same row, and this screen reads `User` directly.
  *
- * That has a consequence the legacy system never had to face: **creating staff
- * creates a login.** `email` and `password` are required here for the same reason
- * they are on the sign-up form, and the API never accepts a tenant id — the new
- * user is created inside the caller's tenant by the Prisma extension.
+ * Staff can have an email/password login or a POS-only PIN without email.
+ * The API never accepts a tenant id; the Prisma extension scopes creation.
  */
 import { z } from "zod";
 
@@ -31,16 +29,19 @@ export const staffListQuerySchema = paginationQuerySchema.extend({
   status: z.enum(["all", "active", "disabled"]).default("all"),
 });
 
+const commissionRateSchema = z.coerce.number().min(0).max(100).multipleOf(0.01);
+
 export type StaffListQuery = z.infer<typeof staffListQuerySchema>;
 
 /** A row in the screen-09 list. Never carries `passwordHash` or token material. */
 export const staffSummarySchema = z.object({
   id: z.string(),
   name: z.string(),
-  email: z.string(),
+  email: z.string().nullable(),
   globalRole: globalRoleSchema,
   phone: z.string().nullable(),
   position: z.string().nullable(),
+  commissionRate: z.string().optional(),
   color: z.string().nullable(),
   avatar: z.string().nullable(),
   /** Legacy `users.start_date` / `end_date`. */
@@ -71,21 +72,53 @@ export type StaffDetail = z.infer<typeof staffDetailSchema>;
  * `globalRole` defaults to `STAFF`, the least privileged role, so a client that
  * forgets the field cannot accidentally mint an owner.
  */
-export const createStaffSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(200),
-  email: emailSchema,
-  password: z.string().min(PASSWORD_MIN_LENGTH, "Password is too short").max(200),
-  globalRole: globalRoleSchema.optional(),
-  phone: z.string().trim().max(64).optional(),
-  /** Legacy `users.position` — the free-text job title shown in booking. */
-  position: z.string().trim().max(120).optional(),
-  /** Calendar colour used to tint that person's appointments. */
-  color: z.string().trim().max(32).optional(),
-  avatar: z.string().trim().max(500).optional(),
-  startDate: z.iso.date().optional(),
-  endDate: z.iso.date().optional(),
-  departmentIds: z.array(z.string().min(1)).max(50).optional(),
-});
+export const createStaffSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required").max(200),
+    email: emailSchema.optional(),
+    password: z.string().min(PASSWORD_MIN_LENGTH, "Password is too short").max(200).optional(),
+    posPin: z
+      .string()
+      .regex(/^\d{6}$/, "Use a six-digit PIN.")
+      .optional(),
+    globalRole: globalRoleSchema.optional(),
+    phone: z.string().trim().max(64).optional(),
+    /** Legacy `users.position` — the free-text job title shown in booking. */
+    position: z.string().trim().max(120).optional(),
+    commissionRate: commissionRateSchema.optional(),
+    /** Calendar colour used to tint that person's appointments. */
+    color: z.string().trim().max(32).optional(),
+    avatar: z.string().trim().max(500).optional(),
+    startDate: z.iso.date().optional(),
+    endDate: z.iso.date().optional(),
+    departmentIds: z.array(z.string().min(1)).max(50).optional(),
+  })
+  .superRefine((staff, context) => {
+    if (!staff.email && !staff.posPin)
+      context.addIssue({
+        code: "custom",
+        path: ["posPin"],
+        message: "An email login or POS PIN is required.",
+      });
+    if (staff.email && !staff.password)
+      context.addIssue({
+        code: "custom",
+        path: ["password"],
+        message: "An email login requires a password.",
+      });
+    if (!staff.email && staff.password)
+      context.addIssue({
+        code: "custom",
+        path: ["email"],
+        message: "A password requires an email login.",
+      });
+    if (!staff.email && staff.globalRole && !["STAFF", "CASHIER"].includes(staff.globalRole))
+      context.addIssue({
+        code: "custom",
+        path: ["globalRole"],
+        message: "PIN-only staff cannot have a management role.",
+      });
+  });
 
 export type CreateStaffInput = z.infer<typeof createStaffSchema>;
 
@@ -103,10 +136,16 @@ export type CreateStaffInput = z.infer<typeof createStaffSchema>;
  * appointments and their commission history.
  */
 export const updateStaffSchema = z.object({
+  posPin: z
+    .string()
+    .regex(/^\d{6}$/, "Use a six-digit PIN.")
+    .nullable()
+    .optional(),
   name: z.string().trim().min(1, "Name is required").max(200).optional(),
   globalRole: globalRoleSchema.optional(),
   phone: z.string().trim().max(64).nullable().optional(),
   position: z.string().trim().max(120).nullable().optional(),
+  commissionRate: commissionRateSchema.optional(),
   color: z.string().trim().max(32).nullable().optional(),
   avatar: z.string().trim().max(500).nullable().optional(),
   startDate: z.iso.date().nullable().optional(),

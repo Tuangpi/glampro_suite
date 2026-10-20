@@ -1,9 +1,8 @@
 /**
  * Create and edit a staff member — the form half of handoff screen 09.
  *
- * **Creating a person creates a login.** A staff member *is* a `User` row (see
- * `packages/shared/src/schemas/staff.ts`): there is no second table, and no way to add
- * someone who cannot sign in. That is also why a duplicate address is a 409 —
+ * Staff remain User rows. Creation supports either an email/password login or
+ * a POS-only PIN identity without an email. A duplicate supplied address is a 409 —
  * `users.email` is globally unique — and why it lands on the Email control rather than
  * in a banner: the API answers it as `details: [{ path: "body.email", message }]` like
  * any other field error.
@@ -32,6 +31,7 @@ import Checkbox from "@/components/ui/Checkbox";
 import Drawer from "@/components/ui/Drawer";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import StaffRoster from "@/components/staff/StaffRoster";
 import { showToast } from "@/components/ui/toast-store";
 import { ROLE_OPTIONS } from "@/constants/staff";
 import { useDepartments } from "@/hooks/useDepartments";
@@ -42,9 +42,13 @@ interface FormState {
   name: string;
   email: string;
   password: string;
+  posPin: string;
+  pinOnly: boolean;
+  removePin: boolean;
   globalRole: GlobalRole;
   phone: string;
   position: string;
+  commissionRate: string;
   startDate: string;
   endDate: string;
   disabled: boolean;
@@ -60,9 +64,13 @@ const EMPTY_FORM: FormState = {
   name: "",
   email: "",
   password: "",
+  posPin: "",
+  pinOnly: false,
+  removePin: false,
   globalRole: "STAFF",
   phone: "",
   position: "",
+  commissionRate: "0",
   startDate: "",
   endDate: "",
   disabled: false,
@@ -72,13 +80,17 @@ const EMPTY_FORM: FormState = {
 function toForm(staff: StaffDetail): FormState {
   return {
     name: staff.name,
-    email: staff.email,
+    email: staff.email ?? "",
+    pinOnly: staff.email === null,
+    removePin: false,
+    posPin: "",
     // Never seeded from the record: the list response carries no password material,
     // and a filled-in box would imply the existing password could be read back.
     password: "",
     globalRole: staff.globalRole,
     phone: staff.phone ?? "",
     position: staff.position ?? "",
+    commissionRate: staff.commissionRate ?? "0",
     // `startDate`/`endDate` cross the wire as `YYYY-MM-DD` (the service slices the
     // timestamp), which is exactly what a date input reads and writes.
     startDate: staff.startDate ?? "",
@@ -148,14 +160,29 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
     // `emailSchema` on the server rather than being re-declared as a regex here.
     const localErrors: Record<string, string> = {};
     if (name === "") localErrors["name"] = "Name is required";
+    const commissionRate = Number(form.commissionRate);
+    if (
+      form.commissionRate.trim() === "" ||
+      !Number.isFinite(commissionRate) ||
+      commissionRate < 0 ||
+      commissionRate > 100 ||
+      Math.abs(commissionRate * 100 - Math.round(commissionRate * 100)) > 1e-8
+    ) {
+      localErrors["commissionRate"] =
+        "Enter a percentage from 0 to 100 with at most two decimal places.";
+    }
 
-    if (!isEditing) {
+    if (!isEditing && !form.pinOnly) {
       if (email === "") localErrors["email"] = "Email is required";
       if (form.password.length < PASSWORD_MIN_LENGTH) {
         localErrors["password"] = `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
       }
     }
 
+    if (((!isEditing && form.pinOnly) || form.posPin !== "") && !/^\d{6}$/.test(form.posPin))
+      localErrors["posPin"] = "Use a six-digit PIN.";
+    if (form.pinOnly && ["SUPER_ADMIN", "MANAGER"].includes(form.globalRole))
+      localErrors["globalRole"] = "PIN-only staff cannot have a management role.";
     if (Object.keys(localErrors).length > 0) {
       setFieldErrors(localErrors);
       return;
@@ -170,6 +197,8 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
             globalRole: form.globalRole,
             phone: clearable(form.phone),
             position: clearable(form.position),
+            commissionRate,
+            ...(form.removePin ? { posPin: null } : form.posPin ? { posPin: form.posPin } : {}),
             startDate: clearable(form.startDate),
             endDate: clearable(form.endDate),
             disabled: form.disabled,
@@ -182,11 +211,13 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
       } else {
         await createStaff.mutateAsync({
           name,
-          email,
-          password: form.password,
+          ...(form.pinOnly
+            ? { posPin: form.posPin }
+            : { email, password: form.password, ...(form.posPin ? { posPin: form.posPin } : {}) }),
           globalRole: form.globalRole,
           phone: optional(form.phone),
           position: optional(form.position),
+          commissionRate,
           startDate: optional(form.startDate),
           endDate: optional(form.endDate),
           departmentIds: form.departmentIds,
@@ -244,18 +275,25 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
           autoFocus
         />
 
+        {!isEditing && (
+          <Checkbox
+            label="POS PIN only (no email login)"
+            checked={form.pinOnly}
+            onChange={(event) => setField("pinOnly", event.target.checked)}
+          />
+        )}
         {isEditing ? (
           // Text, not a disabled input: the contract has no `email` on update, so a
           // greyed-out box would suggest a field that is merely locked when in fact
           // nothing about it would ever be sent.
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-ink">Email</p>
-            <p className="text-sm text-ink-body">{staff.email}</p>
+            <p className="text-sm text-ink-body">{staff.email ?? "POS PIN only"}</p>
             <p className="text-xs text-ink-muted">
               The address they sign in with, so it is not changed from this form.
             </p>
           </div>
-        ) : (
+        ) : !form.pinOnly ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <Input
               label="Email"
@@ -278,7 +316,7 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
               maxLength={200}
             />
           </div>
-        )}
+        ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Select
@@ -305,6 +343,38 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
           onChange={(event) => setField("phone", event.target.value)}
           error={fieldError("phone")}
           maxLength={64}
+        />
+
+        <Input
+          label={isEditing ? "New POS PIN (leave blank to keep)" : "POS PIN"}
+          type="password"
+          inputMode="numeric"
+          autoComplete="new-password"
+          maxLength={6}
+          value={form.posPin}
+          onChange={(event) => setField("posPin", event.target.value)}
+          error={fieldError("posPin")}
+          hint="Six digits. POS identity only; no web access or management permissions."
+        />
+
+        {isEditing && (
+          <Checkbox
+            label="Revoke POS PIN"
+            checked={form.removePin}
+            onChange={(event) => setField("removePin", event.target.checked)}
+            hint="Immediately ends existing PIN verifications. A new PIN can be set later."
+          />
+        )}
+        <Input
+          label="Service commission (%)"
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          value={form.commissionRate}
+          onChange={(event) => setField("commissionRate", event.target.value)}
+          error={fieldError("commissionRate")}
+          hint="Service revenue after discounts, excluding tax. Includes redeemed services; excludes package purchases and direct tips."
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
@@ -363,6 +433,7 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
             hint="A disabled account cannot sign in. Their appointments and their history stay."
           />
         ) : null}
+        {staff && open ? <StaffRoster staffId={staff.id} /> : null}
       </form>
     </Drawer>
   );

@@ -5,8 +5,8 @@
  * (Q4 in `legacy/LEGACY-MAP.md` §6): `EmployeeController::create()` created a
  * `User`, and `employee_leaves.employee_id` was a foreign key onto `users.id`. So
  * this module reads and writes `User` plus its `StaffDepartment` links — and
- * **creating staff creates a login**, which makes this the one place in the API
- * where a password is set on somebody else's behalf.
+ * creation supports an email login or a PIN-only POS identity. This is where
+ * management sets credentials on another person's behalf.
  *
  * Nothing here can leak credential material: every row is serialised through
  * `staffSummarySchema`, which has no `passwordHash` and no token column, and the
@@ -27,7 +27,8 @@ import type {
 } from "@glampro_suite/shared";
 import { staffSummarySchema } from "@glampro_suite/shared";
 
-import { conflict, notFound } from "../lib/http-error.js";
+import { badRequest, conflict, notFound } from "../lib/http-error.js";
+import { randomBytes } from "node:crypto";
 import { hashPassword } from "../lib/password.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
@@ -47,6 +48,7 @@ const STAFF_SELECT = {
   globalRole: true,
   phone: true,
   position: true,
+  commissionRate: true,
   color: true,
   avatar: true,
   startDate: true,
@@ -83,6 +85,7 @@ function toSummary(row: StaffRow): StaffSummary {
     globalRole: row.globalRole,
     phone: row.phone,
     position: row.position,
+    commissionRate: row.commissionRate.toFixed(2),
     color: row.color,
     avatar: row.avatar,
     // Both are dates on the wire, not timestamps: the form is a date input.
@@ -216,10 +219,13 @@ function toDateValue(value: string | null | undefined): Date | null | undefined 
  * `tokenVersion` keeps its default, so the new account's first sign-in is ordinary.
  */
 export async function createStaff(input: CreateStaffInput): Promise<StaffDetail> {
-  const { password, departmentIds, email, globalRole, startDate, endDate, ...profile } = input;
+  const { password, posPin, departmentIds, email, globalRole, startDate, endDate, ...profile } =
+    input;
   await assertDepartmentsExist(departmentIds);
 
-  const existing = await prisma.user.findFirst({ where: { email }, select: { id: true } });
+  const existing = email
+    ? await prisma.user.findFirst({ where: { email }, select: { id: true } })
+    : null;
   if (existing) throw emailTaken();
 
   const created = await prisma.user
@@ -229,11 +235,12 @@ export async function createStaff(input: CreateStaffInput): Promise<StaffDetail>
         // handler cannot create a user in another salon even if it tried.
         tenantId: "",
         ...profile,
-        email,
+        email: email ?? null,
         // The contract defaults this too; repeating it here means the column can
         // never be written as `undefined` if the schema is reshaped.
         globalRole: globalRole ?? "STAFF",
-        passwordHash: await hashPassword(password),
+        passwordHash: await hashPassword(password ?? randomBytes(32).toString("hex")),
+        posPinHash: posPin ? await hashPassword(posPin) : null,
         startDate: toDateValue(startDate) ?? null,
         endDate: toDateValue(endDate) ?? null,
       },
@@ -262,16 +269,27 @@ export async function createStaff(input: CreateStaffInput): Promise<StaffDetail>
  * not for this.
  */
 export async function updateStaff(id: string, input: UpdateStaffInput): Promise<StaffDetail> {
-  const { departmentIds, startDate, endDate, disabled, ...fields } = input;
+  const { departmentIds, startDate, endDate, disabled, posPin, ...fields } = input;
   await assertDepartmentsExist(departmentIds);
 
-  const existing = await prisma.user.findFirst({ where: { id }, select: { id: true } });
+  const existing = await prisma.user.findFirst({
+    where: { id },
+    select: { id: true, email: true },
+  });
   if (!existing) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
+  if (!existing.email && fields.globalRole && !["STAFF", "CASHIER"].includes(fields.globalRole))
+    throw badRequest("PIN-only staff cannot have a management role.");
 
   await prisma.user.update({
     where: { id },
     data: {
       ...fields,
+      ...(posPin !== undefined
+        ? {
+            posPinHash: posPin === null ? null : await hashPassword(posPin),
+            posPinVersion: { increment: 1 },
+          }
+        : {}),
       ...(disabled !== undefined ? { disabled, disabledAt: disabled ? new Date() : null } : {}),
       // Absent means "leave it alone" and must stay absent; `null` clears the date.
       ...(startDate !== undefined ? { startDate: toDateValue(startDate) ?? null } : {}),

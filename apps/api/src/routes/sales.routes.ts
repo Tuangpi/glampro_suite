@@ -36,6 +36,7 @@ import { receiptEmailLimiter } from "../middleware/rateLimit.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
 import { emailSaleReceipt } from "../services/receipt-email.service.js";
+import { posStaffFromToken } from "../services/pos-pin.service.js";
 import {
   completeSale,
   createSale,
@@ -242,7 +243,15 @@ salesRouter.post(
     try {
       if (!req.user) throw unauthorized();
       const input = validated<CreateSaleInput>(req, "body");
-      const receipt = await createSale({ ...input, staffId: input.staffId ?? req.user.id });
+      const posStaff = await posStaffFromToken(
+        req.get("x-pos-staff-token"),
+        req.user.id,
+        req.get("authorization")!,
+      );
+      const receipt = await createSale({
+        ...input,
+        staffId: posStaff ?? input.staffId ?? req.user.id,
+      });
       res.status(201).json({ data: receipt });
     } catch (error) {
       next(error);
@@ -272,7 +281,15 @@ salesRouter.post(
       if (!req.user) throw unauthorized();
       const { id } = validated<{ id: string }>(req, "params");
       const input = validated<CompleteSaleInput>(req, "body");
-      const receipt = await completeSale(id, { ...input, staffId: input.staffId ?? req.user.id });
+      const posStaff = await posStaffFromToken(
+        req.get("x-pos-staff-token"),
+        req.user.id,
+        req.get("authorization")!,
+      );
+      const receipt = await completeSale(id, {
+        ...input,
+        staffId: posStaff ?? input.staffId ?? req.user.id,
+      });
       res.status(200).json({ data: receipt });
     } catch (error) {
       next(error);

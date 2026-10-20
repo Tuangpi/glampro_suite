@@ -29,7 +29,9 @@ process.env.NODE_ENV = "test";
 
 const { createApp } = await import("../app.js");
 const { prisma } = await import("../lib/prisma.js");
-const { runAsPlatform } = await import("../lib/tenant-context.js");
+const { runAsPlatform, runAsTenant } = await import("../lib/tenant-context.js");
+const { verifyPosPin, posStaffFromToken } = await import("../services/pos-pin.service.js");
+const { verifyAccessToken } = await import("../lib/tokens.js");
 const { hashPassword } = await import("../lib/password.js");
 
 const PASSWORD = "correct-horse-1";
@@ -221,6 +223,125 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
     await prisma.$disconnect();
   });
 
+  describe("POS PIN identities", () => {
+    it("creates email-free staff with hashed PIN, scoped verification and immediate reset revocation", async () => {
+      const response = await request("POST", "/api/staff", managerToken, {
+        name: "PIN-only colleague",
+        posPin: "246810",
+        commissionRate: 12.5,
+      });
+      assert.equal(response.status, 201);
+      const staff = await dataOf<StaffSummary>(response);
+      try {
+        assert.equal(staff.email, null);
+        assert.equal(staff.commissionRate, "12.50");
+        const stored = await runAsPlatform(() =>
+          prisma.user.findUniqueOrThrow({ where: { id: staff.id } }),
+        );
+        assert.notEqual(stored.posPinHash, "246810");
+        assert.ok(stored.posPinHash?.startsWith("$2"));
+        const identity = await runAsTenant(TENANTS.a, () =>
+          verifyPosPin(staff.id, "246810", "staffrt-manager", "session-a"),
+        );
+        assert.equal(
+          await runAsTenant(TENANTS.a, () =>
+            posStaffFromToken(identity.token, "staffrt-manager", "session-a"),
+          ),
+          staff.id,
+        );
+        await assert.rejects(
+          runAsTenant(TENANTS.a, () =>
+            posStaffFromToken(identity.token, "staffrt-stylist", "session-a"),
+          ),
+        );
+        await assert.rejects(
+          runAsTenant(TENANTS.b, () =>
+            posStaffFromToken(identity.token, "staffrt-manager", "session-a"),
+          ),
+        );
+        assert.throws(() => verifyAccessToken(identity.token));
+        await assert.rejects(
+          runAsTenant(TENANTS.a, () =>
+            posStaffFromToken(identity.token, "staffrt-manager", "session-b"),
+          ),
+        );
+        await assert.rejects(
+          runAsTenant(TENANTS.a, () =>
+            verifyPosPin(staff.id, "000000", "staffrt-manager", "session-a"),
+          ),
+        );
+        assert.equal(
+          (await request("PATCH", `/api/staff/${staff.id}`, managerToken, { posPin: "135790" }))
+            .status,
+          200,
+        );
+        await assert.rejects(
+          runAsTenant(TENANTS.a, () =>
+            posStaffFromToken(identity.token, "staffrt-manager", "session-a"),
+          ),
+        );
+        assert.equal(
+          (
+            await request("PATCH", `/api/staff/${staff.id}`, managerToken, {
+              globalRole: "MANAGER",
+            })
+          ).status,
+          400,
+        );
+        const updated = await runAsTenant(TENANTS.a, () =>
+          verifyPosPin(staff.id, "135790", "staffrt-manager", "session-a"),
+        );
+        await request("PATCH", `/api/staff/${staff.id}`, managerToken, { disabled: true });
+        await assert.rejects(
+          runAsTenant(TENANTS.a, () =>
+            posStaffFromToken(updated.token, "staffrt-manager", "session-a"),
+          ),
+        );
+      } finally {
+        await runAsPlatform(() => prisma.user.delete({ where: { id: staff.id } }));
+      }
+    });
+    it("refuses PIN setup and privileged email-free accounts from staff callers", async () => {
+      assert.equal(
+        (
+          await request("POST", "/api/staff", stylistToken, {
+            name: "Not authorized",
+            posPin: "123456",
+          })
+        ).status,
+        403,
+      );
+      assert.equal(
+        (
+          await request("POST", "/api/staff", managerToken, {
+            name: "Not permitted",
+            posPin: "123456",
+            globalRole: "SUPER_ADMIN",
+          })
+        ).status,
+        422,
+      );
+    });
+    it("rate limits failed PIN attempts without issuing login credentials", async () => {
+      for (let attempt = 0; attempt < 10; attempt++) {
+        const response = await request("POST", "/api/staff/pos-pin/verify", managerToken, {
+          staffId: "staffrt-stylist",
+          pin: "000000",
+        });
+        assert.equal(response.status, 403);
+      }
+      assert.equal(
+        (
+          await request("POST", "/api/staff/pos-pin/verify", managerToken, {
+            staffId: "staffrt-stylist",
+            pin: "000000",
+          })
+        ).status,
+        429,
+      );
+    });
+  });
+
   describe("GET /api/staff", () => {
     it("lists the salon's team by name, with the branches each person works in", async () => {
       const response = await request("GET", "/api/staff", stylistToken);
@@ -401,7 +522,7 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
       assert.deepEqual(fieldPaths(body), ["body.departmentIds"]);
     });
 
-    it("422s when the login is missing, because creating staff creates a login", async () => {
+    it("422s when neither an email login nor a POS PIN is provided", async () => {
       const response = await request("POST", "/api/staff", managerToken, {
         name: "No Login",
         position: "Colourist",
@@ -409,7 +530,7 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
 
       const body = await envelope(response);
       assert.equal(response.status, 422);
-      assert.deepEqual(fieldPaths(body).sort(), ["body.email", "body.password"]);
+      assert.deepEqual(fieldPaths(body), ["body.posPin"]);
     });
   });
 

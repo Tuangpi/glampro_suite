@@ -28,7 +28,7 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 export interface StaffOption {
   id: string;
   name: string;
-  email?: string;
+  email?: string | null;
 }
 
 export interface CartLineProps {

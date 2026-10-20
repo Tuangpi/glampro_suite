@@ -6,6 +6,7 @@
  * interceptor.
  */
 import type { AuthSession, AuthUser } from "@glampro_suite/shared";
+import { clearPosIdentity } from "@/lib/pos-identity";
 
 const ACCESS_TOKEN_KEY = "glampro.accessToken";
 const REFRESH_TOKEN_KEY = "glampro.refreshToken";
@@ -38,6 +39,7 @@ export function setSession(session: AuthSession): void {
 }
 
 export function clearSession(): void {
+  clearPosIdentity();
   localStorage.removeItem(ACCESS_TOKEN_KEY);
   localStorage.removeItem(REFRESH_TOKEN_KEY);
   localStorage.removeItem(USER_KEY);

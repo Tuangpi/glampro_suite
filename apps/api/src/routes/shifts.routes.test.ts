@@ -253,6 +253,69 @@ describe("shift endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
   });
 
   describe("GET /api/shifts", () => {
+    it("enforces salon-local work and breaks, leaving no-roster staff unrestricted", async () => {
+      const { assertStaffAvailable } = await import("../services/staff-availability.service.js");
+      const { runAsTenant } = await import("../lib/tenant-context.js");
+      const tenant = await runAsPlatform(() =>
+        prisma.tenant.findUniqueOrThrow({ where: { id: TENANTS.a } }),
+      );
+      await runAsPlatform(() =>
+        prisma.tenant.update({ where: { id: TENANTS.a }, data: { timeZone: "Asia/Singapore" } }),
+      );
+      try {
+        await runAsTenant(TENANTS.a, async () => {
+          await assertStaffAvailable(
+            STYLIST,
+            new Date("2026-10-20T01:00:00Z"),
+            new Date("2026-10-20T04:00:00Z"),
+          );
+          await assert.rejects(
+            assertStaffAvailable(
+              STYLIST,
+              new Date("2026-10-20T04:00:00Z"),
+              new Date("2026-10-20T05:00:00Z"),
+            ),
+            (error: unknown) =>
+              error instanceof Error && "code" in error && error.code === "STAFF_UNAVAILABLE",
+          );
+          await assert.rejects(
+            assertStaffAvailable(
+              STYLIST,
+              new Date("2026-10-20T00:00:00Z"),
+              new Date("2026-10-20T01:00:00Z"),
+            ),
+          );
+          await assert.rejects(
+            assertStaffAvailable(
+              STYLIST,
+              new Date("2026-10-21T01:00:00Z"),
+              new Date("2026-10-21T02:00:00Z"),
+            ),
+          );
+          await assert.rejects(
+            assertStaffAvailable(
+              STYLIST,
+              new Date("2026-10-23T02:00:00Z"),
+              new Date("2026-10-23T03:00:00Z"),
+            ),
+          );
+          await assertStaffAvailable(
+            STYLIST,
+            new Date("2026-11-06T02:00:00Z"),
+            new Date("2026-11-06T03:00:00Z"),
+          );
+          await assertStaffAvailable(
+            OTHER,
+            new Date("2026-10-20T00:00:00Z"),
+            new Date("2026-10-20T01:00:00Z"),
+          );
+        });
+      } finally {
+        await runAsPlatform(() =>
+          prisma.tenant.update({ where: { id: TENANTS.a }, data: { timeZone: tenant.timeZone } }),
+        );
+      }
+    });
     it("reads every day of the week down the page in order, with the name denormalised", async () => {
       const page = await dataOf<{ data: ShiftSummary[]; total: number }>(
         await request("GET", "/api/shifts", managerToken),
@@ -439,6 +502,64 @@ describe("shift endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
   });
 
   describe("GET /api/shifts/:id and PATCH /api/shifts/:id", () => {
+    it("rejects a reversed merged time window without changing the row", async () => {
+      const response = await request("PATCH", `/api/shifts/${SHIFTS.monday}`, managerToken, {
+        endsAtMinute: 1,
+      });
+      assert.equal(response.status, 400);
+      assert.equal((await envelope(response)).code, "INVALID_SHIFT_WINDOW");
+      const row = await dataOf<ShiftSummary>(
+        await request("GET", `/api/shifts/${SHIFTS.monday}`, managerToken),
+      );
+      assert.ok(row.endsAtMinute > row.startsAtMinute);
+    });
+
+    it("rejects reversed merged effective dates", async () => {
+      const response = await request("PATCH", `/api/shifts/${SHIFTS.windowed}`, managerToken, {
+        effectiveTo: "2026-10-31",
+      });
+      assert.equal(response.status, 400);
+      assert.equal((await envelope(response)).code, "INVALID_SHIFT_WINDOW");
+    });
+
+    it("refuses a break whose effective dates outlive its covering work", async () => {
+      const response = await request("POST", "/api/shifts", managerToken, {
+        userId: STYLIST,
+        dayOfWeek: 6,
+        startsAtMinute: 600,
+        endsAtMinute: 660,
+        kind: "WORK",
+        effectiveFrom: "2026-11-01",
+        effectiveTo: "2026-11-30",
+      });
+      assert.equal(response.status, 201);
+      const invalid = await request("POST", "/api/shifts", managerToken, {
+        userId: STYLIST,
+        dayOfWeek: 6,
+        startsAtMinute: 610,
+        endsAtMinute: 620,
+        kind: "BREAK",
+      });
+      assert.equal(invalid.status, 400);
+      assert.equal((await envelope(invalid)).code, "BREAK_OUTSIDE_SHIFT");
+      const valid = await request("POST", "/api/shifts", managerToken, {
+        userId: STYLIST,
+        dayOfWeek: 6,
+        startsAtMinute: 610,
+        endsAtMinute: 620,
+        kind: "BREAK",
+        effectiveFrom: "2026-11-01",
+        effectiveTo: "2026-11-30",
+      });
+      assert.equal(valid.status, 201);
+      const work = await dataOf<ShiftSummary>(response);
+      const shortened = await request("PATCH", `/api/shifts/${work.id}`, managerToken, {
+        effectiveTo: "2026-11-15",
+      });
+      assert.equal(shortened.status, 400);
+      assert.equal((await envelope(shortened)).code, "BREAK_OUTSIDE_SHIFT");
+    });
+
     it("404s for another salon's row, so ids are not guessable across tenants", async () => {
       const response = await request("GET", `/api/shifts/${SHIFTS.other}`, managerToken);
 

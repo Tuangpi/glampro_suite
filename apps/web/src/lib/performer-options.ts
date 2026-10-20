@@ -1,7 +1,7 @@
 interface Performer {
   id: string;
   name: string;
-  email?: string;
+  email?: string | null;
 }
 
 /** Keep identities distinct: equal names are not evidence of duplicate accounts. */

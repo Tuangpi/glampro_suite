@@ -33,7 +33,7 @@ import type {
   ShiftSummary,
   UpdateShiftInput,
 } from "@glampro_suite/shared";
-import { shiftSummarySchema } from "@glampro_suite/shared";
+import { createShiftSchema, shiftSummarySchema } from "@glampro_suite/shared";
 
 import { badRequest, HttpError, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
@@ -174,7 +174,7 @@ async function assertStaffExists(userId: string): Promise<void> {
  * stored as a statement about a day the person is not working.
  */
 async function assertBreakInsideShift(input: CreateShiftInput): Promise<void> {
-  const covering = await prisma.staffShift.findFirst({
+  const covering = await prisma.staffShift.findMany({
     where: {
       userId: input.userId,
       dayOfWeek: input.dayOfWeek,
@@ -182,9 +182,29 @@ async function assertBreakInsideShift(input: CreateShiftInput): Promise<void> {
       startsAtMinute: { lte: input.startsAtMinute },
       endsAtMinute: { gte: input.endsAtMinute },
     },
-    select: { id: true },
+    select: { effectiveFrom: true, effectiveTo: true },
   });
-  if (!covering) throw breakOutsideShift();
+  if (
+    !covering.some((shift) =>
+      coversEffectiveWindow(shift, {
+        effectiveFrom: toDateValue(input.effectiveFrom) ?? null,
+        effectiveTo: toDateValue(input.effectiveTo) ?? null,
+      }),
+    )
+  )
+    throw breakOutsideShift();
+}
+
+function coversEffectiveWindow(
+  work: { effectiveFrom: Date | null; effectiveTo: Date | null },
+  rest: { effectiveFrom: Date | null; effectiveTo: Date | null },
+): boolean {
+  return (
+    (work.effectiveFrom === null ||
+      (rest.effectiveFrom !== null && work.effectiveFrom <= rest.effectiveFrom)) &&
+    (work.effectiveTo === null ||
+      (rest.effectiveTo !== null && work.effectiveTo >= rest.effectiveTo))
+  );
 }
 
 function breakOutsideShift(): HttpError {
@@ -201,6 +221,8 @@ type DayRow = {
   kind: string;
   startsAtMinute: number;
   endsAtMinute: number;
+  effectiveFrom: Date | null;
+  effectiveTo: Date | null;
 };
 
 /**
@@ -215,7 +237,9 @@ function assertBreaksCovered(rows: DayRow[]): void {
     if (row.kind !== "BREAK") continue;
     const covered = work.some(
       (shift) =>
-        shift.startsAtMinute <= row.startsAtMinute && shift.endsAtMinute >= row.endsAtMinute,
+        shift.startsAtMinute <= row.startsAtMinute &&
+        shift.endsAtMinute >= row.endsAtMinute &&
+        coversEffectiveWindow(shift, row),
     );
     if (!covered) throw breakOutsideShift();
   }
@@ -275,7 +299,14 @@ async function assertDayStillCovered(existing: ShiftRow, merged: CreateShiftInpu
   for (const day of days.values()) {
     const rows = await prisma.staffShift.findMany({
       where: { userId: day.userId, dayOfWeek: day.dayOfWeek },
-      select: { id: true, kind: true, startsAtMinute: true, endsAtMinute: true },
+      select: {
+        id: true,
+        kind: true,
+        startsAtMinute: true,
+        endsAtMinute: true,
+        effectiveFrom: true,
+        effectiveTo: true,
+      },
     });
 
     // The row as the update will leave it: replaced where it still belongs to
@@ -292,6 +323,8 @@ async function assertDayStillCovered(existing: ShiftRow, merged: CreateShiftInpu
                 kind: merged.kind,
                 startsAtMinute: merged.startsAtMinute,
                 endsAtMinute: merged.endsAtMinute,
+                effectiveFrom: toDateValue(merged.effectiveFrom) ?? null,
+                effectiveTo: toDateValue(merged.effectiveTo) ?? null,
               },
             ]
           : [],
@@ -317,13 +350,32 @@ export async function updateShift(id: string, input: UpdateShiftInput): Promise<
   const existing = await findShiftRow(id);
   if (!existing) throw notFound("That shift does not exist.", "SHIFT_NOT_FOUND");
 
-  const merged: CreateShiftInput = {
+  const mergedInput = {
     userId: input.userId ?? existing.userId,
     dayOfWeek: input.dayOfWeek ?? existing.dayOfWeek,
     startsAtMinute: input.startsAtMinute ?? existing.startsAtMinute,
     endsAtMinute: input.endsAtMinute ?? existing.endsAtMinute,
     kind: input.kind ?? existing.kind,
+    effectiveFrom:
+      input.effectiveFrom === undefined ? toDate(existing.effectiveFrom) : input.effectiveFrom,
+    effectiveTo: input.effectiveTo === undefined ? toDate(existing.effectiveTo) : input.effectiveTo,
   };
+
+  const parsed = createShiftSchema.safeParse({
+    ...mergedInput,
+    effectiveFrom: mergedInput.effectiveFrom ?? undefined,
+  });
+  if (!parsed.success) {
+    throw badRequest(
+      "That shift window is invalid.",
+      parsed.error.issues.map((issue) => ({
+        path: `body.${issue.path.join(".")}`,
+        message: issue.message,
+      })),
+      "INVALID_SHIFT_WINDOW",
+    );
+  }
+  const merged = parsed.data;
 
   if (input.userId !== undefined) await assertStaffExists(merged.userId);
   await assertDayStillCovered(existing, merged);

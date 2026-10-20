@@ -607,7 +607,7 @@ async function customerIdOf(tenantId: string, member: boolean): Promise<string> 
 async function staffIdOf(tenantId: string): Promise<string> {
   const rows = await runAsTenant(tenantId, () =>
     prisma.user.findMany({
-      where: { email: { endsWith: "@sale-write.test" } },
+      where: { email: `staff-${tenantId}@sale-write.test` },
       select: { id: true },
     }),
   );
@@ -666,6 +666,68 @@ describe(
   () => {
     before(seed);
     after(purge);
+
+    it("snapshots discounted tax-exclusive service commission once and reverses it on refund", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const staffId = await staffIdOf(TENANT_A);
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const originalTenant = await runAsPlatform(() =>
+          prisma.tenant.findUniqueOrThrow({ where: { id: TENANT_A } }),
+        );
+        await prisma.user.update({ where: { id: staffId }, data: { commissionRate: 12.5 } });
+        await runAsPlatform(() =>
+          prisma.tenant.update({
+            where: { id: TENANT_A },
+            data: { gstEnabled: true, gstRegistrationNumber: "M12345678X" },
+          }),
+        );
+        try {
+          const input = {
+            idempotencyKey: randomUUID(),
+            lines: [
+              { itemType: "SERVICE" as const, itemId, quantity: 1, staffId, discountPercent: 10 },
+            ],
+            payments: [{ method: "CASH" as const, amount: 45 }],
+          };
+          const sale = await createSale(input);
+          await createSale(input);
+          const rows = await prisma.employeeCommission.findMany({ where: { saleId: sale.id } });
+          assert.equal(rows.length, 1);
+          assert.equal(rows[0]?.rate.toFixed(2), "12.50");
+          assert.equal(rows[0]?.amount.toFixed(2), "5.16");
+          await prisma.user.update({ where: { id: staffId }, data: { commissionRate: 50 } });
+          assert.equal(
+            (
+              await prisma.employeeCommission.findFirstOrThrow({ where: { saleId: sale.id } })
+            ).amount.toFixed(2),
+            "5.16",
+          );
+          await refundSale(
+            sale.id,
+            {
+              payouts: [{ method: "CASH", amount: 45 }],
+              reason: "Commission regression",
+              restock: false,
+            },
+            staffId,
+          );
+          const refunded = await prisma.employeeCommission.findMany({ where: { saleId: sale.id } });
+          assert.equal(refunded.length, 2);
+          assert.equal(refunded.find((row) => row.refundAdjustment)?.amount.toFixed(2), "-5.16");
+        } finally {
+          await prisma.user.update({ where: { id: staffId }, data: { commissionRate: 0 } });
+          await runAsPlatform(() =>
+            prisma.tenant.update({
+              where: { id: TENANT_A },
+              data: {
+                gstEnabled: originalTenant.gstEnabled,
+                gstRegistrationNumber: originalTenant.gstRegistrationNumber,
+              },
+            }),
+          );
+        }
+      });
+    });
 
     it("records direct staff tips once, without changing sale accounting, and preserves return history after void", async () => {
       const actor = await staffIdOf(TENANT_A);
@@ -1314,6 +1376,88 @@ describe(
       });
     });
 
+    for (const paymentState of ["unpaid", "paid", "mixed"] as const) {
+      it(`void removes unpaid commissions and preserves paid reconciliation (${paymentState})`, async () => {
+        await runAsTenant(TENANT_A, async () => {
+          const actor = await staffIdOf(TENANT_A);
+          const sale = await createSale({
+            lines: [
+              {
+                itemType: "SERVICE",
+                itemId: await idOf(TENANT_A, nameOf(TENANT_A, "Cut")),
+                quantity: 1,
+                staffId: actor,
+              },
+            ],
+            payments: [{ method: "CASH", amount: 50 }],
+          });
+          await prisma.sale.update({
+            where: { id: sale.id },
+            data: { soldAt: new Date("2020-01-01T12:00:00Z") },
+          });
+          if (paymentState !== "paid") {
+            await prisma.employeeCommission.create({
+              data: { tenantId: TENANT_A, saleId: sale.id, userId: actor, rate: 10, amount: 5 },
+            });
+          }
+          const paid =
+            paymentState === "unpaid"
+              ? null
+              : await prisma.employeeCommission.create({
+                  data: {
+                    tenantId: TENANT_A,
+                    saleId: sale.id,
+                    userId: actor,
+                    rate: 12.5,
+                    amount: 6.25,
+                    paidAt: new Date("2020-01-02T12:00:00Z"),
+                  },
+                });
+          const { reportOverview } = await import("./report.service.js");
+          const reportInput = {
+            from: new Date(Date.now() - 60_000).toISOString(),
+            to: new Date(Date.now() + 60_000).toISOString(),
+            timeZone: "UTC",
+          };
+          const before = await reportOverview(reportInput);
+          const results = await Promise.all([
+            voidSale(sale.id, { reason: "Commission void" }, actor),
+            voidSale(sale.id, { reason: "Concurrent retry" }, actor),
+          ]);
+          assert.equal(results[0]!.status, "VOID");
+          assert.equal(results[1]!.voidedAt, results[0]!.voidedAt);
+          assert.equal(results[1]!.voidReason, results[0]!.voidReason);
+          const commissions = await prisma.employeeCommission.findMany({
+            where: { saleId: sale.id },
+          });
+          assert.deepEqual(
+            commissions,
+            paid === null ? [] : [{ ...paid, reconciliationRequired: true }],
+          );
+          await voidSale(sale.id, { reason: "Later retry" }, actor);
+          assert.deepEqual(
+            await prisma.employeeCommission.findMany({ where: { saleId: sale.id } }),
+            commissions,
+          );
+          const after = await reportOverview(reportInput);
+          assert.equal(
+            after.totals.commissionReconciliation,
+            before.totals.commissionReconciliation + (paid === null ? 0 : 1),
+          );
+          assert.deepEqual(
+            after.staffPerformance.map((row) => row.commission),
+            before.staffPerformance.map((row) => row.commission),
+          );
+          const historical = await reportOverview({
+            from: "2020-01-01T00:00:00Z",
+            to: "2020-01-02T23:59:59Z",
+            timeZone: "UTC",
+          });
+          assert.equal(historical.totals.commissionReconciliation, 0);
+        });
+      });
+    }
+
     it("gives a member the member price and an ordinary customer the other one", async () => {
       const cutId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
       const memberId = await customerIdOf(TENANT_A, true);
@@ -1809,13 +1953,24 @@ describe(
 
       // The seeded Cut is 50.00 for a non-member, and the package lists Cut, so one
       // session pays the whole line.
+      const performer = await staffIdOf(TENANT_A);
+      await runAsTenant(TENANT_A, () =>
+        prisma.user.update({ where: { id: performer }, data: { commissionRate: 10 } }),
+      );
       const receipt = await runAsTenant(TENANT_A, () =>
         createSale({
           customerId,
-          lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1 }],
+          lines: [{ itemType: "SERVICE", itemId: cutId, quantity: 1, staffId: performer }],
           payments: [{ method: "PACKAGE", amount: 50, holdingId: holding.id }],
         }),
       );
+      await runAsTenant(TENANT_A, async () => {
+        const commission = await prisma.employeeCommission.findFirstOrThrow({
+          where: { saleId: receipt.id },
+        });
+        assert.equal(commission.amount.toFixed(2), "5.00");
+        await prisma.user.update({ where: { id: performer }, data: { commissionRate: 0 } });
+      });
 
       assert.equal(receipt.totalAmount, "50.00", "a redemption is a tender, not a discount");
       assert.equal(receipt.paidAmount, "50.00");
@@ -1851,6 +2006,12 @@ describe(
         voidSale(receipt.id, { reason: "wrong customer" }, actor),
       );
       assert.equal(voided.status, "VOID");
+      assert.equal(
+        await runAsTenant(TENANT_A, () =>
+          prisma.employeeCommission.count({ where: { saleId: receipt.id } }),
+        ),
+        0,
+      );
 
       const restored = await runAsTenant(TENANT_A, () =>
         prisma.customerPackageHolding.findFirstOrThrow({

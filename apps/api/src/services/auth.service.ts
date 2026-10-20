@@ -101,16 +101,18 @@ async function issueSession(
     id: string;
     tenantId: string;
     name: string;
-    email: string;
+    email: string | null;
     globalRole: AuthSession["user"]["globalRole"];
     tokenVersion: number;
   },
   realm: AuthRealm,
   meta: SessionMeta,
 ): Promise<AuthSession> {
+  if (!user.email) throw unauthorized("PIN-only staff cannot start a web session.");
+  const email = user.email;
   const { token: accessToken, expiresIn } = signAccessToken({
     id: user.id,
-    email: user.email,
+    email,
     globalRole: user.globalRole,
     realm,
     tenantId: user.tenantId,
@@ -141,7 +143,7 @@ async function issueSession(
     user: {
       id: user.id,
       name: user.name,
-      email: user.email,
+      email,
       globalRole: user.globalRole,
       tenantId: user.tenantId,
     },
@@ -187,7 +189,7 @@ export async function login(input: LoginInput, meta: SessionMeta): Promise<AuthS
   // is not the client's business.
   const passwordMatches = await verifyPassword(input.password, user?.passwordHash ?? DUMMY_HASH);
 
-  if (!user || user.disabled || !passwordMatches) {
+  if (!user || !user.email || user.disabled || !passwordMatches) {
     throw unauthorized("That email and password combination is not right.", "INVALID_CREDENTIALS");
   }
 
@@ -200,7 +202,7 @@ export async function login(input: LoginInput, meta: SessionMeta): Promise<AuthS
   // Two-factor authentication is required: send a code by email and make the
   // caller complete verifyTwoFactorForLogin before any tokens are issued.
   if (user.twoFactorEnabled) {
-    return loginWithTwoFactor(user);
+    return loginWithTwoFactor({ ...user, email: user.email });
   }
 
   return issueSession(user, WEB_REALM, meta);
@@ -416,6 +418,7 @@ export async function enableTwoFactor(userId: string): Promise<{ sent: true }> {
     );
   }
 
+  if (!user.email) throw unauthorized("PIN-only staff cannot enable email authentication.");
   await sendTwoFactorCode(user.email, code);
 
   return { sent: true };
@@ -515,12 +518,7 @@ export async function verifyTwoFactorForLogin(
     }),
   );
 
-  if (
-    !user ||
-    !user.twoFactorEnabled ||
-    !user.twoFactorCode ||
-    !user.twoFactorCodeExpiresAt
-  ) {
+  if (!user || !user.twoFactorEnabled || !user.twoFactorCode || !user.twoFactorCodeExpiresAt) {
     throw unauthorized(
       "Two-factor authentication is not required for this account.",
       "TWO_FACTOR_NOT_REQUIRED",
@@ -535,10 +533,7 @@ export async function verifyTwoFactorForLogin(
   }
 
   if (user.twoFactorCodeExpiresAt < new Date()) {
-    throw unauthorized(
-      "The two-factor code has expired. Log in again.",
-      "TWO_FACTOR_EXPIRED",
-    );
+    throw unauthorized("The two-factor code has expired. Log in again.", "TWO_FACTOR_EXPIRED");
   }
 
   const codeMatches = hashRefreshToken(input.code) === user.twoFactorCode;
@@ -565,16 +560,14 @@ export async function verifyTwoFactorForLogin(
  * before receiving an access/refresh pair. Returns an empty-token session with
  * `expiresIn: 0` so the client knows to challenge for the code.
  */
-async function loginWithTwoFactor(
-  user: {
-    id: string;
-    tenantId: string;
-    name: string;
-    email: string;
-    globalRole: AuthSession["user"]["globalRole"];
-    tokenVersion: number;
-  },
-): Promise<AuthSession> {
+async function loginWithTwoFactor(user: {
+  id: string;
+  tenantId: string;
+  name: string;
+  email: string;
+  globalRole: AuthSession["user"]["globalRole"];
+  tokenVersion: number;
+}): Promise<AuthSession> {
   const code = generateTwoFactorCode();
   const expiresAt = new Date(Date.now() + TWO_FACTOR_CODE_TTL_SECONDS * 1000);
 

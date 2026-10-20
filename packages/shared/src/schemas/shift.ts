@@ -149,6 +149,19 @@ const endsAfterStarts: { message: string; path: PropertyKey[] } = {
   path: ["endsAtMinute"],
 };
 
+/** ISO dates sort chronologically; either missing bound means open-ended. */
+export function shiftDatesOrdered(shift: {
+  effectiveFrom?: string | null;
+  effectiveTo?: string | null;
+}): boolean {
+  return !shift.effectiveFrom || !shift.effectiveTo || shift.effectiveFrom <= shift.effectiveTo;
+}
+
+const datesOrdered = {
+  message: "A shift's effective end date cannot precede its start date.",
+  path: ["effectiveTo"],
+};
+
 /**
  * A window of one day, in minutes. Shared by the schema and the service so the
  * "ends after it starts" rule is written once.
@@ -180,7 +193,8 @@ export const createShiftSchema = shiftWindowShape
     effectiveTo: z.iso.date().nullable().optional(),
     note: z.string().trim().max(500).nullable().optional(),
   })
-  .refine((shift) => shift.endsAtMinute > shift.startsAtMinute, endsAfterStarts);
+  .refine((shift) => shift.endsAtMinute > shift.startsAtMinute, endsAfterStarts)
+  .refine(shiftDatesOrdered, datesOrdered);
 
 export type CreateShiftInput = z.infer<typeof createShiftSchema>;
 
@@ -210,6 +224,7 @@ export const updateShiftSchema = shiftWindowShape
       shift.endsAtMinute === undefined ||
       shift.endsAtMinute > shift.startsAtMinute,
     endsAfterStarts,
-  );
+  )
+  .refine(shiftDatesOrdered, datesOrdered);
 
 export type UpdateShiftInput = z.infer<typeof updateShiftSchema>;

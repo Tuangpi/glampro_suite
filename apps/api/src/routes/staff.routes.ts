@@ -1,4 +1,7 @@
 import { Router } from "express";
+import { z } from "zod";
+import { rateLimit } from "express-rate-limit";
+import { verifyPosPin } from "../services/pos-pin.service.js";
 import {
   createStaffSchema,
   idParamSchema,
@@ -35,6 +38,33 @@ import { createStaff, getStaff, listStaff, updateStaff } from "../services/staff
  * third verb exists here and not on customers (Q28).
  */
 export const staffRouter = Router();
+
+const pinInput = z.object({ staffId: z.string().min(1).max(64), pin: z.string().regex(/^\d{6}$/) });
+staffRouter.post(
+  "/pos-pin/verify",
+  auth,
+  requireModule("sales"),
+  requireWritableTenant(),
+  rateLimit({
+    windowMs: 15 * 60_000,
+    limit: 10,
+    skipSuccessfulRequests: true,
+    standardHeaders: "draft-8",
+    legacyHeaders: false,
+  }),
+  validate(pinInput),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const input = validated<z.infer<typeof pinInput>>(req, "body");
+      res.json({
+        data: await verifyPosPin(input.staffId, input.pin, req.user.id, req.get("authorization")!),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 staffRouter.get(
   "/",

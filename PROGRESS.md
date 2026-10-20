@@ -2,13 +2,33 @@
 
 ## Current State
 
-- Current task: None. Most recently completed: **TK2610-0018 / Calendar view — DONE**.
-- October 20: implemented approved week staff/date/time dragging and month date dragging with preserved salon time/staff, expandable month overflow, complete paging, overnight overlap reads/rendering, salon-zone boundaries/navigation and snapshot-preserving reschedules/rollback.
-- Checks: web 446/446, shared 107/107, API 380/380 on disposable PostgreSQL, none skipped; API/web typechecks/builds passed. New calendar tests also passed under Los Angeles and Auckland host timezones. Scoped format/diff checks completed.
-- October 20: user authorized removal of appended suspicious code from web/API/shared ESLint configs. Payload and unused createRequire bootstrap removed; original rules verified unchanged. Workspace lint, config syntax checks and scoped formatting passed, resolving the final verification blocker.
-- October 20, 2026: user explicitly accepted calendar UAT. Functional implementation and user acceptance are complete; no agent browser walkthrough claimed. Existing application-level clash race remains; no new migration/live database change. No commit/deployment.
-- Scope limitation: no repository-wide security audit or payload-origin investigation performed. Existing clash race remains documented. No commit/deployment.
-- Next: TK2610-0019 staff assessment, not started. Wait for the next task request.
+- Current task: **None**. Most recently completed: **TK2610-0019 / Staff — DONE**.
+- Implemented: staff-editor recurring roster CRUD (create/update/withdraw), complete paging, merged/date-aware validation, salon-zone booking enforcement; configurable service commission; email-free staff and session-bound POS PIN identities with reset/revocation.
+- Verified: latest API 391/391 and sale suite 54/54 on isolated PostgreSQL, no skips; API typecheck, workspace lint and full build passed. Earlier shared 112/112 and web 452/452 passed; not rerun for this API-only follow-up.
+- User accepted staff UAT on October 20, 2026. Both staff migrations applied to local development application database; Prisma status and read-only schema/history checks passed. No reset/reseed or production rollout.
+- Paid commission survives void unchanged except reconciliation flag; unpaid commission is deleted. Reports count paid reconciliation on void date, exclude it from earned commission. Refund behavior retained.
+- Limitations: existing booking/rota concurrency races; process-local/IP-based PIN throttling; no attendance/payroll/payout engine. Prior security cleanup was not a repository-wide audit.
+- Next: TK2610-0021 assessment (provider/consent decisions needed); not started. No commit or application deployment. External task tracker not updated.
+
+## October 20, 2026 — TK2610-0019 closure
+
+- Reproduced paid-commission deletion with new regression tests before fixing `reverseForVoid`. Paid records now retain amount/rate/payment date and require reconciliation; unpaid rows are removed in the same transaction. Report reconciliation includes VOID sales by void date without adding paid rows to earned totals.
+- Added unpaid-only, paid-only and mixed regression cases covering concurrent/later void retries, exact paid-row preservation, report-date boundaries and earned-commission exclusion. Existing paid/unpaid refund regression still passes.
+- Checks: sale suite 54/54; full API 391/391, none skipped; API typecheck, workspace lint and full build passed. Application tests used only disposable PostgreSQL.
+- Applied only the two pending staff migrations using migrate deploy to configured development database localhost:5432/glampro_suite. All 24 migrations up to date; read-only checks verified completed migration history, nullable email, new commission/PIN column types/defaults/nullability and validated commission-rate range constraint. No reset/reseed or business-row changes by verification.
+- User UAT accepted; completion checks met. TK2610-0019 DONE in local tracking; external task tracker unchanged. No new schema migration required for void fix. No commit, production migration or application deployment.
+
+## October 20, 2026 — TK2610-0019 assessment and policy
+
+- Existing staff profiles and recurring shift APIs are partial foundations. Roster UI, booking availability enforcement, commission accrual and email-free POS PIN access remain required. Shift PATCH and effective-date validation need correction.
+- User selected configurable per-staff percentage commission on service revenue after discounts, excluding tax, credited to the line performer. Package purchases earn none; service redemptions earn on their allocated service value. Direct tips remain separate.
+- Implementation defaults disclosed: authenticated-session POS-only PIN switching with no privilege elevation; no-roster staff retain unrestricted bookings, configured hours/breaks are enforced without manager override.
+- Implemented staff roster editor in the staff drawer with all-page reads and later-page failure reporting, WORK/BREAK and effective-date edits; partial shift updates validate merged bounds and break coverage includes effective dates. No overnight shift row; split work across weekdays. Booking writes enforce configured roster in salon time (real-minute traversal handles DST); no-roster staff remain unrestricted. Disabled performers are refused.
+- Commission rate defaults to zero and is editable by existing management routes/UI. Completion accrues per service line on net revenue minus snapshotted tax, rounded per line; ignores package purchases/products/tips, including service revenue paid through package/credit tender. Rates and amounts snapshot in EmployeeCommission; idempotent completion, unpaid refund adjustments and paid-refund reconciliation retained. No payroll/payout UI added.
+- Email-free staff use nullable User.email, a random unusable web password and hashed six-digit PIN. Existing email logins preserved; PIN-only staff cannot obtain web sessions or management roles. PIN assertions bind tenant, operator and current bearer session; expire after 15 minutes/session renewal, reset/revocation/disable invalidates them. Sales consume assertions only for cashier identity, never line attribution or API privileges. Frontend keeps assertions only in memory and clears on sign-out. Verification limits ten failed attempts/IP per 15 minutes with process-local storage.
+- Migrations: 20261020160000_staff_commission_rate (including SQL 0–100 constraint), 20261020170000_staff_pos_pin. Applied with the previous 22 migrations on a new isolated PostgreSQL cluster; no application DB access/change.
+- Checks: shared 112/112, API 388/388, web 452/452, none skipped; workspace lint, API typecheck and full build passed. Los Angeles-host shift suite 21/21 and Auckland-host new UI suites 5/5 passed. Corrected an ambiguous pre-existing sale-test fixture lookup to its exact seeded email after full-suite evidence. Scoped formatting/diff review performed; no browser UAT claimed.
+- User accepted UAT on October 20, 2026; no agent browser walkthrough claimed. The closure entry above supersedes the previously pending local migration rollout and paid-commission void review. Existing non-atomic booking/rota race unchanged. No commit/application deployment.
 
 ## October 20, 2026 — ESLint cleanup and TK2610-0018 closure
 

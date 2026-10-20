@@ -324,7 +324,10 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
       prisma.employeeCommission.count({
         where: {
           reconciliationRequired: true,
-          sale: { refund: { refundedAt: { gte: from, lte: to } } },
+          OR: [
+            { sale: { refund: { refundedAt: { gte: from, lte: to } } } },
+            { sale: { status: "VOID", voidedAt: { gte: from, lte: to } } },
+          ],
         },
       }),
     ]);

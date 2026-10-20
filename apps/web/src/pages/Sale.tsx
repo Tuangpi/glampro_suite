@@ -44,6 +44,7 @@ import {
 
 import { Search } from "@/components/icons";
 import DirectTipsPanel from "@/components/sale/DirectTipsPanel";
+import PosStaffSwitch from "@/components/sale/PosStaffSwitch";
 import CartPanel from "@/components/sale/CartPanel";
 import { type StaffOption } from "@/components/sale/CartLine";
 import CustomerPicker from "@/components/sale/CustomerPicker";
@@ -574,6 +575,7 @@ export default function Sale() {
         </p>
       </header>
 
+      {!receipt && <PosStaffSwitch disabled={isReadOnly} />}
       {/* After a sale the till is gone until "New sale" — see the module comment. */}
       {receipt ? (
         <>

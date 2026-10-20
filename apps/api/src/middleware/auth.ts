@@ -64,7 +64,7 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
       }),
     );
 
-    if (!user || user.disabled) {
+    if (!user || !user.email || user.disabled) {
       res.status(401).json({
         statusCode: 401,
         message: "Your session is no longer valid. Please log in again.",

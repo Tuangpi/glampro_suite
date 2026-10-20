@@ -39,6 +39,7 @@ import {
 import { badRequest, conflict, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
+import { assertStaffAvailable } from "./staff-availability.service.js";
 
 /**
  * A booking with everything the day view draws. The three relations come along
@@ -140,9 +141,11 @@ async function resolveService(serviceId: string): Promise<ResolvedService> {
 async function assertPerformerEligible(staffId: string, service: ResolvedService): Promise<void> {
   const staff = await prisma.user.findFirst({
     where: { id: staffId },
-    select: { id: true, departments: { select: { departmentId: true } } },
+    select: { id: true, disabled: true, departments: { select: { departmentId: true } } },
   });
   if (!staff) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
+  if (staff.disabled)
+    throw badRequest("That staff member is disabled.", undefined, "STAFF_DISABLED");
 
   if (service.departmentId === null) return;
 
@@ -310,6 +313,7 @@ export async function createAppointment(input: CreateAppointmentInput): Promise<
   const endsAt = new Date(startsAt.getTime() + service.durationMinutes * 60_000);
   const status = input.status ?? "SCHEDULED";
 
+  if (status !== "CANCELLED") await assertStaffAvailable(input.staffId ?? null, startsAt, endsAt);
   await assertNoClash(input.staffId ?? null, startsAt, endsAt);
 
   const created = await prisma.appointment.create({
@@ -375,6 +379,7 @@ export async function updateAppointment(
       input.serviceId !== undefined ||
       input.status !== undefined)
   ) {
+    await assertStaffAvailable(staffId ?? null, startsAt, endsAt);
     await assertNoClash(staffId ?? null, startsAt, endsAt, id);
   }
 

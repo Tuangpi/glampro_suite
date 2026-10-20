@@ -1,13 +1,8 @@
 /**
  * Staff — handoff screen 09.
  *
- * **Two columns the handoff draws are deliberately absent: shifts and ratings.**
- * There is no rota table to read a shift from — scheduling arrives with the phase that
- * builds the appointment calendar — and no reviews table in the schema or in the legacy
- * database the schema was derived from. `PROJECT.md#design-6` says screens
- * 05–11 are proposals and the screen is what changes where it disagrees with the real
- * model: an empty Shifts column would read to a salon as "nobody is rostered", which is
- * a different and wrong statement. Both columns return in the phase that has the data.
+ * Working hours are managed in the staff editor rather than a summary column.
+ * Ratings remain absent because the application has no reviews model.
  *
  * **Every tile is a server-side count, not a count of the rows on screen** (ADR 0010).
  * The three tiles ask `?status=` with `pageSize=1` rather than counting what happens to

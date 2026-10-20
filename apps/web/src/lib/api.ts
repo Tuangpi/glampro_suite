@@ -21,6 +21,7 @@ import {
   setSession,
 } from "@/lib/auth-storage";
 import { normalisePaginated } from "@/lib/apiUtils";
+import { clearPosIdentity, getPosIdentity } from "@/lib/pos-identity";
 
 /**
  * Per-request flags the interceptors below set on the axios config.
@@ -57,6 +58,14 @@ api.interceptors.request.use((config) => {
   const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+  }
+  const identity = getPosIdentity();
+  if (
+    identity &&
+    config.method === "post" &&
+    (config.url === "/sales" || /^\/sales\/[^/]+\/complete$/.test(config.url ?? ""))
+  ) {
+    config.headers["x-pos-staff-token"] = identity.token;
   }
   return config;
 });
@@ -131,6 +140,7 @@ api.interceptors.response.use(
     }
 
     if (status === 401) {
+      clearPosIdentity();
       const hadToken = Boolean(getAccessToken());
       clearSession();
 

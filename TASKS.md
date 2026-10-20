@@ -433,10 +433,19 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0019 — P1-08 Staff: rosters, working hours, commission, POS PIN
 
-- Status: Not assessed
+- Status: DONE
 - Expected result: Staff: rosters/shifts, working hours, commission rules, staff PIN at POS (no email needed)
 - Completion check / dependencies: Assess existing shifts; verify rosters/hours, commission rules and POS PIN without mandatory email. Confirm roles, secure PIN handling and correct accounting.
-- Next: audit current implementation against the full expected result and check.
+- Assessment: staff profiles and recurring WORK/BREAK APIs exist; roster UI, appointment availability enforcement, commission rules/calculation and email-free POS PIN access are missing. Partial shift updates and effective-date containment need validation.
+- Approved commission policy (October 20, 2026): configurable per-staff percentage on service revenue after discounts and excluding tax; credit the line performer. Package purchases earn no commission; redeemed services earn on their allocated service value.
+- Implementation defaults: POS-only PIN switching inside an authenticated salon session, never managerial elevation; preserve unrestricted booking when staff have no roster, enforce configured hours/breaks without a manager override.
+- Implemented: staff-editor roster create/update/withdraw and full paging; merged time/date validation and date-aware break containment; salon-zone booking enforcement and disabled-performer refusal; configurable per-staff service commission snapshots on completion; nullable-email staff and hashed six-digit POS PIN, session-bound assertion, reset/revocation and failed-attempt limiter. Existing email sessions preserved; PIN never elevates permissions or changes line attribution.
+- Verified: shared 112/112, API 388/388 on isolated PostgreSQL, web 452/452; no skips. Lint, API typecheck and full build passed; focused Los Angeles/Auckland host-timezone checks passed. Two migrations tested only on disposable database.
+- UAT: accepted by user on October 20, 2026.
+- Closure: paid commissions survive void and require reconciliation; unpaid rows removed atomically. Reports include paid void reconciliation on void date, not earned totals. Three new cases cover unpaid/paid/mixed, concurrent/later retries, exact preservation and report dates; existing refund regression retained. Sale suite 54/54 and full API 391/391 (no skips), API typecheck, workspace lint and full build passed.
+- Local rollout: both staff migrations applied using migrate deploy to configured development application database. All 24 migrations up to date; read-only history/column/default/constraint checks passed. No reset/reseed, production migration or application deployment.
+- Limitations: existing application-level clash/rota races remain; PIN throttling is process-local/IP-based. No payroll/payout engine or automatic recovery of paid commissions; reconciliation is flagged for manual handling. External task tracker unchanged.
+- Next: TK2610-0021 assessment; not started.
 
 ### TK2610-0021 — P1-04 WhatsApp/SMS reminders, confirmations, rebooking
 
