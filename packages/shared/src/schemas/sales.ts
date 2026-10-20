@@ -78,6 +78,14 @@ export type SaleItemKind = z.infer<typeof saleItemKindSchema>;
 export const saleItemSearchQuerySchema = z.object({
   search: z.string().trim().max(200).optional(),
   kind: saleItemKindSchema.optional(),
+  /**
+   * An exact barcode, as a scanner or a typed code delivers it.
+   *
+   * Normalised the same way the stored barcodes are (trimmed, upper-cased), so
+   * a scan finds the product whether the code was written in lower case or
+   * with stray spaces. An empty value means "no barcode" and is ignored.
+   */
+  barcode: z.string().trim().max(64).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_SALE_ITEM_LIMIT).default(DEFAULT_SALE_ITEM_LIMIT),
 });
 
@@ -136,6 +144,13 @@ const productSaleItemSchema = z.object({
    * one `limit`-sized page, so it cannot judge stock for itself (ADR 0010).
    */
   lowStock: z.boolean(),
+  /**
+   * The scannable barcode, normalised, or `null` when the product carries none.
+   *
+   * Carried on the wire so the till can show the code under the product and so a
+   * client that knows a barcode can match it against what it holds.
+   */
+  barcode: z.string().nullable(),
 });
 
 /** A bundle of sessions. Legacy `packages`. */

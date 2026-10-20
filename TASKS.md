@@ -283,7 +283,46 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0017 — P1-07 POS upgrades
 
-- Status: IN PROGRESS
+- Status: DONE
+- October 20, 2026 acceptance: user explicitly accepted UAT for TK2610-0017,
+  closing the final acceptance gate for the agreed POS scope (including barcode
+  scanning and approved direct-to-staff tip recording). Prior automated evidence:
+  API 377/377 (isolated PostgreSQL, no skips), web 433/433, shared 107/107;
+  lint/typecheck/build/scoped formatting/diff checks passed. Both forward
+  migrations applied locally; all 22 up to date, without reset/reseed.
+  This is user-reported acceptance, not an agent browser/scanner walkthrough.
+  Earlier IN PROGRESS/pending-rollout/UAT notes below are historical and superseded.
+  Changes remain uncommitted; no deployment or external tracker update.
+  Next task: TK2610-0018 calendar assessment, not started.
+- October 20 tip decision: user chose option 1, direct-to-staff recording only.
+  Added separate tenant-scoped records with one recipient, positive cent-exact
+  amount, recorded-by audit and idempotent retries. Managers record a full return
+  with reason, retaining the original record. No salon collection, tender, tax
+  classification, sale-total, points, commission or report-revenue integration.
+  Read/write panel is beside the completed/historical receipt, not on customer
+  print/email receipts. Sale void/refund does not return tips. Cashier records;
+  manager returns; suspended tenants read only. Migration is additive and not
+  yet applied to the local salon database. Barcode/tip browser UAT and approved
+  forward migration rollout still prevent marking DONE. Do not start 0018.
+- October 20 rollout update: user explicitly authorized both forward migrations.
+  Verified localhost:5432/glampro_suite and exactly the expected two pending;
+  migrate deploy applied barcode/direct-tip migrations, all 22 now up to date.
+  No reset/reseed. API 377/377 isolated DB, web 433/433, shared 107/107;
+  lint/typecheck/build/scoped formatting/diff checks pass. Remaining acceptance:
+  browser barcode save/clear/duplicate/leading-zero/stock/unknown/inactive checks,
+  physical scanner Enter behavior, direct-tip record/history/manager return and
+  unchanged sale totals. Keep IN PROGRESS until user UAT sign-off.
+- October 20 barcode continuation: tenant-unique nullable barcode, shared catalogue
+  contracts/form and exact POS lookup implemented; leading zeroes preserved,
+  repeated scans respect stock, and delayed results are discarded after draft
+  changes/checkout/unmount. Concurrent scans are ignored, not queued. Added
+  shared/API/web regression coverage and fixed existing barcode route fixtures.
+  Verified API 375/375 with no skips on an isolated PostgreSQL cluster after all
+  21 migrations replayed; web 429/429, shared 104/104; root lint/typecheck/build
+  and diff check pass. Root formatting fails on four unchanged API files only.
+  Barcode migration is still pending on the local salon database; no rollout,
+  physical-scanner/browser UAT, commit or deployment claimed. Tips still need
+  allocation/collection/tax/refund policy approval. Keep IN PROGRESS.
 - Expected result: POS: discounts/vouchers, refunds/voids, tips, side-by-side cart, barcode scan
 - October 19 ADR 0020 continuation: voucher/refund schema, services, routes, payment
   preview and receipt/refund UI implemented. Concurrent refund retries preserve
@@ -365,6 +404,18 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Verification: database-enabled API 367/367 (none skipped), web 424/424, shared
   101/101; root typecheck/lint/build pass. No migration, browser UAT, commit or deploy.
   Backend reversal/receipt retention, barcode and tips remain. Keep IN PROGRESS.
+
+- October 19: user accepted current-catalogue pickup/safe replacement UAT.
+- Backend integrity continuation: post-lock void/refund state; concurrent void replay
+  preserves first audit, missing stock/redemption targets fail atomically, holding
+  locks serialize granting-sale void against package/credit consumption. Forward
+  migration restricts receipt customer/cashier/performer deletion rather than cascading.
+- Verified DB-enabled API 371/371 (none skipped), web 424/424, shared 101/101;
+  root typecheck/lint/build pass. Prisma validates; 20 migrations applied/up to date.
+  No agent commit, deployment or new backend browser UAT. Live name references and
+  whole-tenant retention policy remain limits; no exhaustive deadlock/load claim.
+- Next: barcode scanning, then approved tip policy/implementation. Still IN PROGRESS;
+  do not start TK2610-0018.
 
 ### TK2610-0018 — P1-01 Calendar view: day/week, staff columns, drag-and-drop
 

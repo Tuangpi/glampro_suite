@@ -33,14 +33,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   MAX_SALE_LINES,
   SALE_ITEM_KINDS,
+  normalizeBarcode,
   type CustomerSummary,
   type SaleDetail,
   type SaleItem,
   type SaleItemKind,
   type SalePaymentInput,
+  type SaleItemSearchResult,
 } from "@glampro_suite/shared";
 
 import { Search } from "@/components/icons";
+import DirectTipsPanel from "@/components/sale/DirectTipsPanel";
 import CartPanel from "@/components/sale/CartPanel";
 import { type StaffOption } from "@/components/sale/CartLine";
 import CustomerPicker from "@/components/sale/CustomerPicker";
@@ -75,7 +78,7 @@ import {
   useSaleItems,
   useVoidSale,
 } from "@/hooks/useSale";
-import { getErrorMessage } from "@/lib/api";
+import { get, getErrorMessage } from "@/lib/api";
 import { cartTotalCents, priceToCents } from "@/lib/money";
 import {
   readSaleDraft,
@@ -108,6 +111,12 @@ export default function Sale() {
   const [kind, setKind] = useState<SaleItemKind>("SERVICE");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  /** What the scanner or the cashier typed into the barcode field. */
+  const [barcodeInput, setBarcodeInput] = useState("");
+  /** While a barcode lookup is in flight, so a held Enter cannot double-add. */
+  const [barcodeBusy, setBarcodeBusy] = useState(false);
+  const barcodeInFlight = useRef(false);
+  const barcodeVersion = useRef(0);
   const [customer, setCustomer] = useState<CustomerSummary | null>(
     () => readSaleDraft(draftIdentity).customer,
   );
@@ -166,6 +175,23 @@ export default function Sale() {
   const voidSale = useVoidSale();
   const refundSale = useRefundSale();
   const cartLocked = isReadOnly || holdSale.isPending || busyHoldId !== null;
+
+  // A lookup belongs to the draft it started from, not a replacement or checkout.
+  useEffect(
+    () => () => {
+      barcodeVersion.current += 1;
+    },
+    [
+      cart.lines,
+      customer,
+      draftIdentity,
+      checkoutOpen,
+      receipt,
+      cartLocked,
+      heldSaleId,
+      replacementHoldId,
+    ],
+  );
 
   /**
    * Whether this user may void a receipt (ADR 0016).
@@ -245,6 +271,78 @@ export default function Sale() {
     if (cartLocked || holdAction.current) return;
     setCheckoutError(null);
     setCheckoutOpen(true);
+  }
+
+  /**
+   * A scan or a typed code, resolved to one product and put in the cart.
+   *
+   * The lookup is the server's **exact** barcode answer (`?barcode=`), never the
+   * name search: a barcode is a code, so the product it names is picked out by
+   * comparing the normalised value on this side too. A code that names nothing
+   * adds nothing — a till that fell back to "the closest match" would sell the
+   * wrong shampoo.
+   *
+   * Two checks happen before the line lands, because a scan is too fast to
+   * correct afterwards: the units **already in the cart** count against stock,
+   * so a repeated scan cannot walk a line past what is on the shelf, and an
+   * identical line grows rather than duplicating (which is what `addCartLine`
+   * does — the stock check below is what makes the growth bounded).
+   */
+  async function submitBarcode(): Promise<void> {
+    const code = normalizeBarcode(barcodeInput);
+    setBarcodeInput("");
+    if (
+      code === null ||
+      barcodeInFlight.current ||
+      cartLocked ||
+      holdAction.current ||
+      checkoutOpen ||
+      receipt ||
+      replacementHoldId
+    )
+      return;
+
+    barcodeInFlight.current = true;
+    const version = ++barcodeVersion.current;
+    setBarcodeBusy(true);
+    try {
+      const result = await get<SaleItemSearchResult>("/sales/items", {
+        barcode: code,
+        kind: "PRODUCT",
+        // One name row is all the non-exact part of the answer needs: this side
+        // keeps only the row whose barcode equals the scanned code.
+        limit: 1,
+      });
+      if (version !== barcodeVersion.current || holdAction.current) return;
+      const match = result.items.find(
+        (item): item is Extract<SaleItem, { kind: "PRODUCT" }> =>
+          item.kind === "PRODUCT" && item.barcode === code,
+      );
+      if (!match) {
+        showToast("error", `No product in this salon carries the barcode ${code}.`);
+        return;
+      }
+
+      const inCart = cart.lines
+        .filter((line) => line.itemType === "PRODUCT" && line.itemId === match.id)
+        .reduce((total, line) => total + line.quantity, 0);
+      if (inCart + 1 > match.quantity) {
+        showToast(
+          "error",
+          match.quantity === 0
+            ? `${match.name} is out of stock.`
+            : `Only ${match.quantity} of ${match.name} in stock, and the cart already holds ${inCart}.`,
+        );
+        return;
+      }
+
+      handleAdd(match);
+    } catch (error) {
+      if (version === barcodeVersion.current) showToast("error", getErrorMessage(error));
+    } finally {
+      barcodeInFlight.current = false;
+      setBarcodeBusy(false);
+    }
   }
 
   async function takePayment(
@@ -439,6 +537,7 @@ export default function Sale() {
     setRefundError(null);
     setSearchInput("");
     setSearch("");
+    setBarcodeInput("");
     setKind("SERVICE");
   }
 
@@ -504,6 +603,13 @@ export default function Sale() {
             }}
           />
 
+          <DirectTipsPanel
+            key={`${tenant?.id}:${receipt.id}`}
+            sale={receipt}
+            staff={staffRows}
+            canReturn={canRefund}
+          />
+
           {voidOpen ? (
             <VoidSaleDialog
               receiptLabel={
@@ -554,6 +660,44 @@ export default function Sale() {
               aria-label="Items to sell"
               className="flex flex-col gap-4 rounded-card border border-line bg-surface p-4"
             >
+              {/*
+                The scanner's field. A gun types the code like a keyboard and
+                sends Enter, so the whole row is one form: Enter or the button
+                resolves it, and the field clears either way for the next scan.
+                Kept beside — not merged into — the name search, because the two
+                answer differently: this one demands an exact code, that one
+                matches loosely.
+              */}
+              <form
+                className="flex items-end gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void submitBarcode();
+                }}
+              >
+                <label className="flex-1">
+                  <span className="mb-1.5 block text-sm font-medium text-ink">Barcode</span>
+                  <input
+                    type="text"
+                    value={barcodeInput}
+                    onChange={(event) => setBarcodeInput(event.target.value)}
+                    placeholder="Scan a barcode or type the code"
+                    aria-label="Scan a barcode or type the code"
+                    autoComplete="off"
+                    maxLength={64}
+                    disabled={cartLocked}
+                    className="h-control w-full rounded-md border border-line bg-surface px-3 font-mono text-sm text-ink transition-colors placeholder:font-sans placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-purple disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-ink-disabled"
+                  />
+                </label>
+                <Button
+                  type="submit"
+                  variant="secondary"
+                  disabled={cartLocked || barcodeBusy || barcodeInput.trim() === ""}
+                >
+                  Add
+                </Button>
+              </form>
+
               <div className="relative">
                 <Search
                   aria-hidden

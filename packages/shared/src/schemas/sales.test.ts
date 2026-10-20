@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import { DEFAULT_SALE_ITEM_LIMIT, MAX_SALE_ITEM_LIMIT, MAX_SALE_LIST } from "../constants.js";
+import { MAX_BARCODE_LENGTH } from "./common.js";
 import {
   SALE_ITEM_KINDS,
   completeSaleSchema,
@@ -124,6 +125,18 @@ describe("saleItemSearchQuerySchema", () => {
       assert.equal(saleItemSearchQuerySchema.safeParse({ kind }).success, true, kind);
     }
   });
+
+  it("trims a scanned barcode and refuses one past the length the column holds", () => {
+    // A gun can trail a space and a person can paste a long string; the former
+    // must match the stored code and the latter must fail loudly rather than be
+    // silently cut to something that names a different product.
+    assert.equal(saleItemSearchQuerySchema.parse({ barcode: " 9780000  " }).barcode, "9780000");
+    assert.equal(
+      saleItemSearchQuerySchema.safeParse({ barcode: "x".repeat(MAX_BARCODE_LENGTH + 1) }).success,
+      false,
+    );
+    assert.equal(saleItemSearchQuerySchema.parse({}).barcode, undefined);
+  });
 });
 
 describe("saleItemSchema", () => {
@@ -134,9 +147,18 @@ describe("saleItemSchema", () => {
       points: 5,
       quantity: 12,
       lowStock: false,
+      barcode: "9780000",
     });
     assert.equal(product.kind, "PRODUCT");
     assert.equal("durationMinutes" in product, false);
+    // The barcode rides only on a product: it is how the till resolves a scan,
+    // and a service or a bundle has no code to scan.
+    assert.equal("barcode" in product, true);
+    assert.equal(
+      "barcode" in
+        saleItemSchema.parse({ ...base, kind: "SERVICE", points: 5, durationMinutes: 60 }),
+      false,
+    );
 
     const service = saleItemSchema.parse({
       ...base,

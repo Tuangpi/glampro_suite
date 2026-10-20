@@ -62,6 +62,23 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- Tip policy (October 20, approved option 1): record voluntary tips paid directly
+  to one active staff member. No salon collection or payment integration. Separate
+  immutable amount/recipient/recorder snapshots; manager-only full return with reason
+  retains the original history. Sale void/refund never implies tip return. Records
+  appear beside completed/historical receipts, not customer print/email receipts
+  or sales-revenue reports. No GST exemption or legal/tax classification is claimed.
+  Collection, split allocation, partial returns and aggregate tip reporting are
+  outside this approved recording-only scope. Both barcode/direct-tip forward
+  migrations applied locally with user approval October 20; all 22 up to date.
+  No reset/reseed. User accepted 0017 UAT on October 20, 2026; task DONE for the
+  agreed scope. Acceptance is user-reported, not an agent browser/scanner walkthrough.
+- Barcode POS scope (October 20): optional tenant-unique product codes, trimmed and
+  upper-cased with leading zeroes retained; keyboard-wedge scanner/manual code +
+  Enter resolves an exact active product. No camera/global listener or scan queue.
+  Pending lookups are discarded when their draft context changes. Barcode migration
+  is isolated-test verified and applied locally; user accepted 0017 UAT October 20,
+  2026. Tip policy was separately approved as direct-to-staff recording only.
 - Brand: Glampro Suite. Web branding was accepted on October 15, 2026; this does not
   establish trademark or domain clearance.
 - Repository rename was recorded complete on October 15, 2026. Historical evidence
@@ -458,6 +475,20 @@ API inspection did not prove concurrent lifecycle or all ledger effects. Preserv
 that limitation rather than treating a later broad baseline as targeted race proof.
 
 ### ADR 0016
+
+October 19 backend integrity continuation: void/refund load reversal inputs after
+locking the sale; concurrent void retries preserve the first audit and receipt.
+Missing product stock targets or redeemed holding restoration targets abort the
+whole transaction. Holding row locks serialize package/credit consumption against
+granting-sale void; outstanding row is locked before its payment check. Targeted
+DB race regressions pass, not an exhaustive deadlock/load proof.
+Migration `20261019210000_receipt_parent_retention` changes customer/cashier/performer
+receipt links from Cascade to Restrict; completed/void receipt survival is tested.
+Use account archival rather than deleting referenced parents. Names remain live
+references and whole-tenant erasure policy is unchanged. Earlier findings below
+about cascades, ignored stock counts and concurrent void replay are historical;
+UI outstanding/cache/history fixes are also already delivered. Pickup UAT accepted
+by user October 19; no agent browser walkthrough for this backend continuation.
 
 **Accepted October 14, 2026 — a void records a terminal whole-sale reversal.**
 Keep sale/lines/number/tenders and original paid amount; set VOID/time/reason/actor.

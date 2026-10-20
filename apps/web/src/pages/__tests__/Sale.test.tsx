@@ -59,6 +59,8 @@ const { useServiceList, useStaffList } = vi.hoisted(() => ({
 
 vi.mock("@/hooks/useServices", () => ({ useServiceList }));
 vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
+// This panel's API and retry/return behavior has its own focused tests.
+vi.mock("@/components/sale/DirectTipsPanel", () => ({ default: () => null }));
 
 const isReadOnly = vi.hoisted(() => ({ value: false }));
 /** The signed-in role, writable per test so the void action can be asserted absent. */
@@ -223,6 +225,92 @@ beforeEach(() => {
   // list, a held cart and its customer.
   get.mockReset().mockResolvedValue({ items: [] });
   del.mockReset().mockResolvedValue({ id: "sale-9" });
+});
+
+describe("barcode scanning", () => {
+  function barcodeResult(quantity = 2) {
+    return { searchableKinds: ["PRODUCT"], items: [{ ...PRODUCT, barcode: "001ABC", quantity }] };
+  }
+
+  it("adds exact normalised codes and stops repeated scans at available stock", async () => {
+    const user = userEvent.setup();
+    get.mockImplementation(async (path: string) =>
+      path === "/sales/items" ? barcodeResult() : { items: [] },
+    );
+    renderSale();
+    const input = screen.getByRole("textbox", { name: "Scan a barcode or type the code" });
+    await user.type(input, "001abc{Enter}");
+    await waitFor(() => expect(cartPanel()).toHaveTextContent("Shampoo"));
+    await user.type(input, "001abc{Enter}");
+    await waitFor(() =>
+      expect(within(cartPanel()).getByRole("spinbutton", { name: /quantity/i })).toHaveValue(2),
+    );
+    await user.type(input, "001abc{Enter}");
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith("/sales/items", {
+        barcode: "001ABC",
+        kind: "PRODUCT",
+        limit: 1,
+      }),
+    );
+    expect(within(cartPanel()).getByRole("spinbutton", { name: /quantity/i })).toHaveValue(2);
+  });
+
+  it("does not add a near-match or out-of-stock product", async () => {
+    const user = userEvent.setup();
+    get.mockImplementation(async (path: string) =>
+      path === "/sales/items" ? barcodeResult(0) : { items: [] },
+    );
+    renderSale();
+    const input = screen.getByRole("textbox", { name: "Scan a barcode or type the code" });
+    await user.type(input, "001ABC{Enter}");
+    await waitFor(() => expect(input).toHaveValue(""));
+    expect(cartPanel()).not.toHaveTextContent("Shampoo");
+    await user.type(input, "001AB{Enter}");
+    await waitFor(() => expect(input).toHaveValue(""));
+    expect(cartPanel()).not.toHaveTextContent("Shampoo");
+  });
+
+  it.each(["checkout", "cart edit", "unmount"])(
+    "ignores a delayed response after %s",
+    async (action) => {
+      const user = userEvent.setup();
+      let resolveScan!: (value: ReturnType<typeof barcodeResult>) => void;
+      get.mockImplementation((path: string) =>
+        path === "/sales/items"
+          ? new Promise((resolve) => {
+              resolveScan = resolve;
+            })
+          : Promise.resolve({ items: [] }),
+      );
+      const view = renderSale();
+      await user.click(
+        screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }),
+      );
+      await user.type(
+        screen.getByRole("textbox", { name: "Scan a barcode or type the code" }),
+        "001ABC{Enter}",
+      );
+      // Submitting another code while pending must not start another lookup.
+      await user.type(
+        screen.getByRole("textbox", { name: "Scan a barcode or type the code" }),
+        "001ABC{Enter}",
+      );
+      expect(get.mock.calls.filter(([path]) => path === "/sales/items")).toHaveLength(1);
+      if (action === "checkout") {
+        await user.click(screen.getByRole("button", { name: "Take payment" }));
+      } else if (action === "cart edit") {
+        await user.click(screen.getByRole("button", { name: "One more Root colour" }));
+      } else {
+        view.unmount();
+      }
+      resolveScan(barcodeResult());
+      if (action !== "unmount") {
+        await waitFor(() => expect(screen.getByRole("button", { name: "Add" })).not.toBeEnabled());
+        expect(cartPanel()).not.toHaveTextContent("Shampoo");
+      }
+    },
+  );
 });
 
 describe("vouchers and recorded refunds", () => {

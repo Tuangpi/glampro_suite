@@ -369,6 +369,7 @@ model Tenant {
   vouchers            Voucher[]
   voucherRedemptions  VoucherRedemption[]
   saleRefunds         SaleRefund[]
+  directStaffTips     DirectStaffTip[]
 
   @@index([status])
   @@map("tenants")
@@ -601,6 +602,9 @@ model Product {
   quantity       Int           @default(0)
   points         Int           @default(0)
   description    String?
+  /// Scannable barcode. Null when the product carries none. Stored trimmed
+  /// and upper-cased; unique per tenant (see `@@unique` below).
+  barcode       String?
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
 
@@ -609,6 +613,11 @@ model Product {
 
   @@index([tenantId])
   @@index([departmentId])
+  /// A barcode identifies one product within one salon. The same barcode may
+  /// exist in another salon, so the tenant is part of the key. Postgres treats
+  /// NULLs as distinct in a unique index, so products without a barcode are
+  /// unconstrained.
+  @@unique([tenantId, barcode], map: "products_tenantId_barcode_key")
   @@map("products")
 }
 
@@ -993,9 +1002,10 @@ model Sale {
   updatedAt DateTime @updatedAt
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  staff      User?    @relation("SaleStaff", fields: [staffId], references: [id], onDelete: Cascade)
-  /// `SetNull` where every other link to `User` on this model cascades: deleting a
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  staff      User?    @relation("SaleStaff", fields: [staffId], references: [id], onDelete: Restrict)
+  /// Receipt customer/cashier/performer links restrict deletion. Void actor remains
+  /// `SetNull`: deleting a
   /// departing manager must not delete the sales they voided. The reason column and the
   /// `VOID` status keep the record either way.
   voidedBy   User?    @relation("SaleVoidedBy", fields: [voidedById], references: [id], onDelete: SetNull)
@@ -1014,6 +1024,7 @@ model Sale {
   /// The one full-sale refund recorded against it, if any (ADR 0020). A refund is an
   /// appended record, never an edit to this row's totals or tenders.
   refund SaleRefund?
+  directStaffTips DirectStaffTip[]
 
   /// One receipt reference per salon. Legacy wrote `random_int(100000, 999999)`
   /// into a nullable string with **no constraint at all**, so two sales could share
@@ -1143,7 +1154,7 @@ model SaleLine {
 
   tenant  Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   sale    Sale   @relation(fields: [saleId], references: [id], onDelete: Cascade)
-  staff   User?  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  staff   User?  @relation(fields: [staffId], references: [id], onDelete: Restrict)
   packageHolding      CustomerPackageHolding[]
   valuePackageHolding CustomerValuePackageHolding[]
   giftCardHolding     CustomerGiftCardHolding[]
@@ -1435,14 +1446,33 @@ model VoucherRedemption {
   @@map("voucher_redemptions")
 }
 
-/// A recorded full-sale refund (ADR 0020 / R1).
-///
-/// A refund is **money returning to the customer**, recorded after the fact. It is
-/// not a void: the sale, its receipt number and its tenders stay exactly as they
-/// were, and this row is appended beside them. The system does not move money — no
-/// provider call and no settlement — so the UI must say "recorded" rather than imply
-/// a transfer. One refund per sale, enforced by the unique `saleId`; the actor comes
-/// from the verified token and the reason is mandatory.
+/// Evidence of voluntary money paid directly to one staff member, not the salon.
+/// Separate from tenders and all sale accounting. A full return preserves this row.
+model DirectStaffTip {
+  id String @id @default(cuid())
+  tenantId String
+  saleId String
+  idempotencyKey String
+  amount Decimal @db.Decimal(12, 2)
+  /// IDs and names are audit snapshots, not cascading staff relations.
+  staffId String
+  staffName String
+  recordedById String
+  recordedByName String
+  recordedAt DateTime @default(now())
+  returnedAt DateTime?
+  returnedById String?
+  returnedByName String?
+  returnReason String?
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sale Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, saleId, recordedAt])
+  @@map("direct_staff_tips")
+}
+
+/// A recorded full-sale refund (ADR 0020 / R1), not a void or a money transfer.
+/// Original sale/tenders stand. One refund per sale; verified actor and required reason.
 model SaleRefund {
   id        String   @id @default(cuid())
   tenantId  String

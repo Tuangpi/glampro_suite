@@ -72,6 +72,7 @@ export const TENANT_SCOPED_MODELS = [
   "VoucherRedemption",
   // One recorded full-sale refund per sale (ADR 0020 / R1).
   "SaleRefund",
+  "DirectStaffTip",
   // Salon configuration written per tenant by Settings (P0-03). The service
   // always names `tenantId` itself, but the scope here means a handler that
   // forgets still cannot read or cross-write another salon's hours.

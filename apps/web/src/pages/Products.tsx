@@ -207,6 +207,16 @@ export default function Products() {
       align: "right",
       cell: (row) => formatPrice(row.memberPrice),
     },
+    {
+      key: "barcode",
+      header: "Barcode",
+      cell: (row) =>
+        row.barcode ? (
+          <span className="font-mono text-xs text-ink-body">{row.barcode}</span>
+        ) : (
+          <span className="text-ink-muted">—</span>
+        ),
+    },
     { key: "stock", header: "Stock", align: "right", cell: (row) => <StockCell product={row} /> },
     { key: "status", header: "Status", cell: (row) => <StatusCell status={row.status} /> },
     // A suspended salon may look but not change (TENANCY.md §6), so the shell's

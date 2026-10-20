@@ -10,6 +10,7 @@ import {
   giftCardSummarySchema,
   productSummarySchema,
   updatePackageSchema,
+  updateProductSchema,
 } from "./catalogue.js";
 
 describe("catalogueListQuerySchema", () => {
@@ -30,6 +31,23 @@ describe("catalogueListQuerySchema", () => {
 });
 
 describe("createProductSchema", () => {
+  it("normalises barcode case without losing leading zeroes", () => {
+    const input = { name: "Shampoo", memberPrice: 12, nonmemberPrice: 15 };
+    assert.equal(createProductSchema.parse({ ...input, barcode: " 00abc " }).barcode, "00ABC");
+    assert.equal(createProductSchema.parse({ ...input, barcode: " " }).barcode, null);
+    assert.equal(createProductSchema.parse(input).barcode, undefined);
+    assert.equal(
+      createProductSchema.safeParse({ ...input, barcode: "x".repeat(65) }).success,
+      false,
+    );
+  });
+
+  it("distinguishes omitted barcodes from explicit clearing on update", () => {
+    assert.equal(updateProductSchema.parse({}).barcode, undefined);
+    assert.equal(updateProductSchema.parse({ barcode: null }).barcode, null);
+    assert.equal(updateProductSchema.parse({ barcode: " " }).barcode, null);
+    assert.equal(updateProductSchema.parse({ barcode: " abc " }).barcode, "ABC");
+  });
   it("requires both prices, because a product cannot be rung up without them", () => {
     assert.equal(
       createProductSchema.safeParse({ name: "Shampoo", memberPrice: 12 }).success,
@@ -98,6 +116,7 @@ describe("productSummarySchema", () => {
     departmentId: null,
     departmentName: null,
     lowStock: true,
+    barcode: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
   };

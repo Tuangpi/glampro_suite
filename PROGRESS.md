@@ -2,8 +2,37 @@
 
 ## Current State
 
-- Current task: TK2610-0017 / P1-07 POS upgrades is **IN PROGRESS**. User accepted policy features and historical browsing/held-list pagination. Hold-create retry keys now persist across unchanged retries/reloads, with in-flight edit guards. Current-catalogue pickup and safe local replacement are implemented and automated checks pass. Backend reversal/retention integrity and tips/barcode remain. Do not start TK2610-0018.
-- Latest checks (October 19): API 367/367 (database enabled, none skipped), web 424/424, shared 101/101; root typecheck, lint and production build passed. No migration/schema changes. Baseline `37e2e55` preserved; subsequent changes are uncommitted. No agent browser walkthrough or deployment. Logs: `/tmp/pos-resume-*.log`.
+- Current task: None. Most recently completed: **TK2610-0017 / P1-07 POS upgrades — DONE**.
+- October 20, 2026: user explicitly accepted UAT, closing the final acceptance
+  gate for the agreed POS scope, including barcodes and direct-to-staff tip records.
+  Acceptance is user-reported; no agent browser/physical-scanner walkthrough claimed.
+- Latest implementation checks: API 377/377 (isolated PostgreSQL, none skipped),
+  web 433/433, shared 107/107; lint/typecheck/build/scoped formatting/diff checks
+  passed. Both approved forward migrations applied locally; all 22 up to date.
+  No reset/reseed. Whole-repository formatting still has four unchanged API files.
+- No outstanding acceptance blocker for 0017 within the agreed scope. Changes
+  remain uncommitted; no deployment or external tracker update.
+- Next: TK2610-0018 calendar assessment, not started. Wait for the next task request.
+
+## Earlier session snapshots (historical; superseded by Current State)
+
+- October 20 local rollout completed with explicit user approval: verified target
+  localhost:5432/glampro_suite and exactly two pending migrations; applied
+  `20261020120000_product_barcode` and `20261020140000_direct_staff_tips` using
+  migrate deploy. All 22 migrations now up to date. No reset/reseed. Final web
+  rerun 433/433; API 377/377 isolated DB, shared 107/107; lint/typecheck/build,
+  scoped formatting and diff checks pass. Browser/scanner/tip UAT remains the
+  acceptance gate for TK2610-0017; no commit/deployment and no 0018 work.
+- October 20 tips continuation: user approved option 1 (direct-to-staff records,
+  one recipient, separate full-return audit; salon collection disabled). Implemented
+  additive migration, tenant-scoped API and receipt-side panel. API 377/377 with no
+  skips on isolated PostgreSQL, web 433/433, shared 107/107; lint/typecheck pass.
+  Production build and final diff review passed. Local salon DB unchanged; barcode and
+  direct-tip migrations need approved rollout. Browser/scanner/tip UAT remains.
+  TK2610-0017 IN PROGRESS; do not start 0018. No commit or deployment.
+- October 20 continuation: barcode implementation is automated-test verified, but local rollout and physical-scanner/browser UAT remain. API 375/375 against an isolated temporary PostgreSQL cluster (none skipped), web 429/429, shared 104/104; root lint/typecheck/build pass. Root formatting still fails only on four unchanged API files. Local salon database is unchanged: `20261020120000_product_barcode` remains pending. Tips require explicit policy approval; TK2610-0017 stays IN PROGRESS. No commit/deployment/external tracker update.
+- Current task: TK2610-0017 / P1-07 POS upgrades is **IN PROGRESS**. User accepted policy features and historical browsing/held-list pagination. Hold-create retry keys now persist across unchanged retries/reloads, with in-flight edit guards. User accepted current-catalogue pickup/safe replacement UAT on October 19. Backend reversal/receipt-retention hardening now passes automated checks. Barcode and tips remain; tip policy needs approval. Do not start TK2610-0018.
+- Latest checks (October 19): API 371/371 (database enabled, none skipped), web 424/424, shared 101/101; root typecheck, lint and production build passed. Forward receipt-retention migration applied locally; 20 migrations up to date. Current continuation changes are uncommitted. No agent browser walkthrough or deployment. Logs: `/tmp/pos-integrity-*.log`.
 - Most recently completed: TK2610-0016 customer profile. On October 19 the user explicitly confirmed testing and acceptance, and requested POS upgrades. Prior rollout and automated checks remain historical evidence; no agent browser walkthrough. Ready to mark Done externally. Existing uncommitted implementation changes preserved.
 - Milestone verification (October 19): root production build, typecheck and workspace lint exit 0; web 392/392, shared 92/92 and pure demo-dataset 13/13 tests pass. Root formatting still fails on four unchanged API files. No database-backed API rerun or browser walkthrough; earlier API 339/339 is historical evidence. See the milestone handoff below for the readiness checklist and accepted demo limits.
 - Most recent work: TK2610-0012 / P0-06 reports (commit `18c973f`) audited against its completion check and signed off after UAT. The Z-report draws the salon-local day, counts voids by `voidedAt`, splits collected from redeemed and carries the snapshotted GST. The overview returns sales-by-day, top items, service and staff totals with commission, tender subtotals and a liability snapshot that excludes expired/exhausted holdings. ADR 0010 conflict closed: `?threshold=` filters only while row badges use the stored tenant threshold, with a new row-flag test. Verified: API 339/339, web 392/392 across 43 files, API typecheck/ESLint/scoped Prettier and web typecheck pass. That ADR 0010 edit and a Prettier re-wrap of `report.service.ts` are uncommitted.
@@ -18,6 +47,26 @@
 - Earlier records report P0-07, P0-08, P0-03 and P1-09 Done. This consolidation does not independently revalidate their product behavior.
 
 ## Unresolved decisions and carried-forward findings
+
+### October 20 — TK2610-0017 barcode continuation
+
+- Existing nullable tenant-unique barcode migration, catalogue contracts/form and exact POS lookup retained. Leading zeroes survive; codes are trimmed/upper-cased. Blank/null clears, omitted update preserves; duplicates are scoped to the salon. Archived and foreign products cannot resolve as scan matches.
+- Removed unused POS import. Added synchronous scan-submit guard and draft-version invalidation on cart/customer/hold/checkout/receipt/context changes and unmount, so delayed lookup results cannot edit a changed draft. Scans are explicit keyboard-wedge/manual code + Enter, not a camera integration or global keyboard listener. A concurrent scan is ignored while a lookup is pending; scans are not queued.
+- Added shared normalisation/clearing/length coverage, catalogue duplicate/tenant/preserve/clear tests, exact/inactive/foreign barcode service tests, and browser repeated-scan/stock/near-match/delayed-response tests. Repaired existing barcode route tests: fixture writes need explicit platform scope, `dataOf` already unwraps the response, array comparisons need deep equality, and mixed name-search results are not all exact barcode matches.
+- Verified: API 375/375 with no skips after all 21 migrations replayed in an isolated PostgreSQL 18 cluster on port 55439; cluster stopped after tests. Web 429/429, shared 104/104; root lint/typecheck/production build and git diff check pass. Root Prettier still reports the same four unchanged API files. Earlier whole-tree formatting noise in those files was removed only after comparing to formatted HEAD; unrelated work retained.
+- Local salon migration status explicitly reports the barcode migration pending. Do not claim local rollout or browser acceptance. No local database migration/reset/reseed, commit, push or deploy. Logs: `/tmp/barcode-*.log`, `/tmp/glampro-barcode-db/`.
+- Next: approve tip collection/allocation/tax/refund policy before implementation. Barcode UAT after rollout: save and clear a code; reject a duplicate; scan twice to increment one product; reject unknown/inactive/out-of-stock codes; verify leading zeroes and Enter from a physical scanner. TK2610-0017 remains IN PROGRESS; do not start TK2610-0018.
+
+### October 19 — TK2610-0017 pickup accepted; backend reversal/receipt integrity
+
+- User confirmed UAT acceptance for current-catalogue pickup/safe replacement and authorized continuation. This is user-reported acceptance, not an agent browser walkthrough.
+- Void now reloads status/lines/points after taking the shared sale lock; waiting concurrent void retries return the first reversal receipt/audit without duplicate effects. Refund likewise uses post-lock lines, points, customer and total.
+- Missing product on void/restocking refund and missing redeemed package/credit on void now fail the whole transaction instead of silently skipping restoration. Explicit no-restock refund remains valid under existing policy.
+- Granting-sale void locks holdings before checking spent state. Package/credit redemption takes the corresponding holding lock before reading it; consume/delete races cannot both succeed. Outstanding row is locked before later-payment checks; there is currently no service writer for later outstanding payments, so no end-to-end collection race was claimed.
+- Applied reviewed forward migration `20261019210000_receipt_parent_retention`: Sale customer/cashier and SaleLine performer deletion now RESTRICT rather than CASCADE. No rows deleted/backfilled. Route fixture cleanup explicitly removes fixture sales before staff. Account archival remains supported; hard deletion of linked parents is intentionally refused.
+- Verified API 371/371 (DB enabled, no skips), web 424/424, shared 101/101; root typecheck/lint/build pass; Prisma validate/generate pass and migration status reports 20 up to date. New regressions cover concurrent void replay, missing-product rollback/no-restock refund, completed/void receipt parent deletion, and granting-sale reversal versus package/credit consumption. One new race-test fixture used the wrong seeded credit name; corrected and reran.
+- Limits: receipt names remain live references, not immutable name snapshots. Whole-tenant erasure policy is not changed. Locks protect tested race paths but exhaustive multi-holding/deadlock/load testing is not claimed; transaction errors still roll back. No new backend browser UAT, production deploy, agent commit, reset or reseed.
+- Keep TK2610-0017 IN PROGRESS. Next: barcode scanning; tips require a concrete policy proposal/approval. Do not start TK2610-0018.
 
 ### October 19 — TK2610-0017 current-catalogue pickup and safe replacement
 

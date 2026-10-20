@@ -138,6 +138,7 @@ function product(overrides: Record<string, unknown> = {}) {
     departmentId: null,
     departmentName: "Hair",
     lowStock: false,
+    barcode: null,
     createdAt: "2021-03-04T00:00:00.000Z",
     updatedAt: "2021-03-04T00:00:00.000Z",
     ...overrides,

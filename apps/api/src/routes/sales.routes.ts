@@ -1,5 +1,16 @@
 import { Router } from "express";
 import {
+  directTipParamsSchema,
+  recordDirectTipSchema,
+  returnDirectTipSchema,
+  type RecordDirectTipInput,
+} from "@glampro_suite/shared";
+import {
+  listDirectTips,
+  recordDirectTip,
+  returnDirectTip,
+} from "../services/direct-tip.service.js";
+import {
   completeSaleSchema,
   createSaleSchema,
   emailSaleReceiptSchema,
@@ -59,6 +70,59 @@ import {
  * list and the single receipt do not — reading stays open (TENANCY.md §6).
  */
 export const salesRouter = Router();
+
+salesRouter.get(
+  "/:id/direct-tips",
+  auth,
+  requireModule("sales"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({ data: await listDirectTips(id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+salesRouter.post(
+  "/:id/direct-tips",
+  auth,
+  requireModule("sales"),
+  requireWritableTenant(),
+  validate(idParamSchema, "params"),
+  validate(recordDirectTipSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({
+        data: await recordDirectTip(id, validated<RecordDirectTipInput>(req, "body"), req.user.id),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+salesRouter.post(
+  "/:id/direct-tips/:tipId/return",
+  auth,
+  requireModule("sales"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(directTipParamsSchema, "params"),
+  validate(returnDirectTipSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id, tipId } = validated<{ id: string; tipId: string }>(req, "params");
+      const { reason } = validated<{ reason: string }>(req, "body");
+      res.json({ data: await returnDirectTip(id, tipId, reason, req.user.id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 salesRouter.get(
   "/items",

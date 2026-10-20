@@ -414,6 +414,36 @@ describe(
           /does not exist/,
         );
       });
+      it("normalises tenant-unique barcodes and supports preserving and clearing them", async () => {
+        const input = {
+          name: "Barcode product",
+          memberPrice: 1,
+          nonmemberPrice: 2,
+          barcode: " 001abc ",
+        };
+        const a = await runAsTenant(TENANT_A, () => createProduct(input));
+        const b = await runAsTenant(TENANT_B, () => createProduct(input));
+        assert.equal(a.barcode, "001ABC");
+        assert.equal(b.barcode, "001ABC");
+        await assert.rejects(
+          runAsTenant(TENANT_A, () => createProduct(input)),
+          (error: unknown) => {
+            assert.ok(error instanceof HttpError);
+            assert.equal(error.code, "DUPLICATE_BARCODE");
+            return true;
+          },
+        );
+        assert.equal(
+          (await runAsTenant(TENANT_A, () => updateProduct(a.id, { name: "Renamed barcode" })))
+            .barcode,
+          "001ABC",
+        );
+        assert.equal(
+          (await runAsTenant(TENANT_A, () => updateProduct(a.id, { barcode: " " }))).barcode,
+          null,
+        );
+        assert.equal((await runAsTenant(TENANT_A, () => createProduct(input))).barcode, "001ABC");
+      });
     });
 
     describe("services", () => {

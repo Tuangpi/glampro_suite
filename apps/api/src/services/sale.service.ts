@@ -31,6 +31,7 @@ import {
   MAX_RECEIPT_NUMBER,
   SALE_ITEM_KINDS,
   isRedemptionPaymentMethod,
+  normalizeBarcode,
   saleDetailSchema,
   saleItemSearchResultSchema,
   saleListSchema,
@@ -147,6 +148,7 @@ async function searchProducts(search: string | undefined, limit: number): Promis
       nonmemberPrice: true,
       quantity: true,
       points: true,
+      barcode: true,
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     take: limit,
@@ -161,6 +163,7 @@ async function searchProducts(search: string | undefined, limit: number): Promis
     points: row.points,
     quantity: row.quantity,
     lowStock: row.quantity <= threshold,
+    barcode: row.barcode,
   }));
 }
 
@@ -281,6 +284,49 @@ function byNameThenKind(a: SaleItem, b: SaleItem): number {
 }
 
 /**
+ * The one product a barcode names, if this salon has one.
+ *
+ * **Exact and normalised, never a `contains`.** A barcode is a code, not a word:
+ * a partial match would sell the wrong shampoo for a near-miss scan, so the
+ * lookup is equality on the normalised value. The read runs inside the tenant
+ * scope, so a barcode another salon uses resolves to nothing here rather than
+ * to that salon's product.
+ *
+ * Archived products are excluded, because the till sells what the salon still
+ * offers — the same rule `searchProducts` follows.
+ */
+async function findProductByBarcode(barcode: string): Promise<SaleItem | null> {
+  const threshold = await resolveLowStockThreshold();
+
+  const row = await prisma.product.findFirst({
+    where: { barcode, status: "ACTIVE" },
+    select: {
+      id: true,
+      name: true,
+      memberPrice: true,
+      nonmemberPrice: true,
+      quantity: true,
+      points: true,
+      barcode: true,
+    },
+  });
+
+  if (!row) return null;
+
+  return {
+    kind: "PRODUCT",
+    id: row.id,
+    name: row.name,
+    price: money(row.nonmemberPrice),
+    memberPrice: money(row.memberPrice),
+    points: row.points,
+    quantity: row.quantity,
+    lowStock: row.quantity <= threshold,
+    barcode: row.barcode,
+  };
+}
+
+/**
  * The POS item search — five kinds behind one box.
  *
  * One endpoint rather than the picker making five requests, because the cart treats the
@@ -304,12 +350,35 @@ export async function searchSaleItems(query: SaleItemSearchQuery): Promise<SaleI
     requested.map((kind) => readKind(kind, query.search, query.limit)),
   );
 
+  // A scanned or typed barcode resolves to **one** product, and it is always in
+  // the answer.
+  //
+  // The search box and the scanner share one request, so the name search may
+  // also have matched. The exact match is resolved separately and never dropped:
+  // a product whose *name* does not contain the code would otherwise be
+  // unfindable, which is the whole point of a barcode. The client picks it out
+  // by comparing `barcode`, so it is found wherever the sort puts it.
+  //
+  // The product is only resolved when the salon may sell products at all, so an
+  // add-on-less salon gains nothing.
+  const normalizedBarcode = normalizeBarcode(query.barcode);
+  const exact =
+    normalizedBarcode !== null && searchableKinds.includes("PRODUCT")
+      ? await findProductByBarcode(normalizedBarcode)
+      : null;
+
   // Parsed once for the whole answer. Each reader names the columns of one kind, and
   // this is where a reader that left one out is caught rather than shipping it
   // (AGENTS.md rule 6).
   return saleItemSearchResultSchema.parse({
     searchableKinds,
-    items: groups.flat().sort(byNameThenKind),
+    items: [
+      ...(exact ? [exact] : []),
+      // The exact match may also be a name match; it is listed once.
+      ...groups
+        .flat()
+        .filter((item) => !(exact && item.kind === exact.kind && item.id === exact.id)),
+    ].sort(byNameThenKind),
   });
 }
 
@@ -1394,6 +1463,12 @@ async function redeemPackage(
   holdingId: string,
   usedAt: Date,
 ): Promise<void> {
+  // Lock before reading: a granting-sale reversal must not validate an unspent
+  // holding while this transaction is about to consume it.
+  await tx.customerPackageHolding.updateMany({
+    where: { id: holdingId, customerId },
+    data: { quantityRemaining: { increment: 0 } },
+  });
   const holding = await tx.customerPackageHolding.findFirst({
     where: { id: holdingId, customerId },
     select: {
@@ -1493,6 +1568,10 @@ async function redeemCredit(
   holdingId: string,
   usedAt: Date,
 ): Promise<void> {
+  await tx.customerValuePackageHolding.updateMany({
+    where: { id: holdingId, customerId },
+    data: { amountRemaining: { increment: 0 } },
+  });
   const holding = await tx.customerValuePackageHolding.findFirst({
     where: { id: holdingId, customerId },
     select: {
@@ -2287,6 +2366,21 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
 
   const lineIds = sale.lines.map((line) => line.id);
   if (lineIds.length > 0) {
+    // Update locks are held through the final delete, so redemption either commits
+    // first (and is refused here) or waits and finds the holding gone.
+    const where = { saleLineId: { in: lineIds } };
+    await tx.customerPackageHolding.updateMany({
+      where,
+      data: { quantityRemaining: { increment: 0 } },
+    });
+    await tx.customerValuePackageHolding.updateMany({
+      where,
+      data: { amountRemaining: { increment: 0 } },
+    });
+    await tx.customerGiftCardHolding.updateMany({
+      where,
+      data: { valueRemaining: { increment: 0 } },
+    });
     const [packages, credits, cards] = await Promise.all([
       tx.customerPackageHolding.findMany({
         where: { saleLineId: { in: lineIds } },
@@ -2317,6 +2411,10 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
 
   // `saleId` is unique on the outstanding, so this is at most one row however many
   // payments hang off it.
+  await tx.customerOutstanding.updateMany({
+    where: { saleId: sale.id },
+    data: { unpaidAmount: { increment: 0 } },
+  });
   const outstanding = await tx.customerOutstanding.findFirst({
     where: { saleId: sale.id },
     select: { _count: { select: { payments: true } } },
@@ -2354,10 +2452,16 @@ async function reverseForVoid(
 ): Promise<void> {
   for (const line of sale.lines) {
     if (line.itemType !== "PRODUCT") continue;
-    await tx.product.updateMany({
+    const restored = await tx.product.updateMany({
       where: { id: line.itemId },
       data: { quantity: { increment: line.quantity } },
     });
+    if (restored.count !== 1) {
+      throw conflict(
+        "A sold product no longer exists. Stock cannot be restored; nothing was reversed.",
+        "REVERSAL_PRODUCT_MISSING",
+      );
+    }
   }
 
   const pointsEarned = sale.points.reduce((sum, entry) => sum + entry.point, 0);
@@ -2377,15 +2481,25 @@ async function reverseForVoid(
   for (const redemption of redemptions) {
     if (redemption.holdingId !== null) {
       if (redemption.itemType === "PACKAGE") {
-        await tx.customerPackageHolding.updateMany({
+        const restored = await tx.customerPackageHolding.updateMany({
           where: { id: redemption.holdingId },
           data: { quantityRemaining: { increment: redemption.quantity } },
         });
+        if (restored.count !== 1)
+          throw conflict(
+            "The redeemed package no longer exists. Nothing was reversed.",
+            "REVERSAL_HOLDING_MISSING",
+          );
       } else if (redemption.itemType === "VALUE_PACKAGE" && redemption.amount !== null) {
-        await tx.customerValuePackageHolding.updateMany({
+        const restored = await tx.customerValuePackageHolding.updateMany({
           where: { id: redemption.holdingId },
           data: { amountRemaining: { increment: redemption.amount } },
         });
+        if (restored.count !== 1)
+          throw conflict(
+            "The redeemed credit no longer exists. Nothing was reversed.",
+            "REVERSAL_HOLDING_MISSING",
+          );
       }
       // A gift card is not spendable yet (TK2610-0011 covers packages and credit);
       // when it is, its restore belongs here with the other two.
@@ -2471,9 +2585,17 @@ export async function voidSale(
     // Serialize with refund before checking its record. Otherwise a refund could
     // commit after assertVoidable's read but before this void changes the status.
     await tx.sale.update({ where: { id: sale.id }, data: { updatedAt: new Date() } });
+    const current = await tx.sale.findFirst({
+      where: { id: sale.id },
+      select: VOIDABLE_SALE_SELECT,
+    });
+    if (!current) throw notFound("That sale does not exist.", "SALE_NOT_FOUND");
+    if (current.status === "VOID") return;
+    if (current.status !== "COMPLETED")
+      throw conflict("This sale was not completed.", "SALE_NOT_COMPLETED");
     // Both refusals run here rather than before, so a void that is going to be refused
     // rolls back inside the same transaction that would have changed the row.
-    await assertVoidable(tx, sale);
+    await assertVoidable(tx, current);
 
     // Count-guarded, like the hold's completion and the stock decrement: two managers
     // voiding one sale at the same instant cannot both reverse it.
@@ -2490,7 +2612,7 @@ export async function voidSale(
       throw conflict("This sale has already been voided.", "SALE_ALREADY_VOID");
     }
 
-    await reverseForVoid(tx, tenantId, sale);
+    await reverseForVoid(tx, tenantId, current);
   });
 
   return getSale(sale.id);
@@ -2563,7 +2685,9 @@ export async function refundSale(
           totalAmount: true,
           paidAmount: true,
           refund: { select: { id: true } },
-          lines: { select: { itemType: true } },
+          customerId: true,
+          points: { select: { point: true } },
+          lines: { select: { itemType: true, itemId: true, quantity: true } },
           payments: { select: { method: true, amount: true } },
           outstanding: { select: { id: true } },
         },
@@ -2618,7 +2742,7 @@ export async function refundSale(
           tenantId: requireTenantScope(),
           saleId: sale.id,
           // Snapshotted from the sale, so the refund cannot disagree with the receipt.
-          amount: sale.totalAmount,
+          amount: current.totalAmount,
           payouts: input.payouts.map((payout) => ({
             method: payout.method,
             amount: new Prisma.Decimal(payout.amount).toFixed(2),
@@ -2669,26 +2793,32 @@ export async function refundSale(
       }
 
       if (input.restock) {
-        for (const line of sale.lines) {
+        for (const line of current.lines) {
           if (line.itemType !== "PRODUCT") continue;
           // No upper guard: the goods are real and have come back. A stock level edited
           // by hand in the meantime is the salon's business, not a reason to refuse.
-          await tx.product.updateMany({
+          const restored = await tx.product.updateMany({
             where: { id: line.itemId },
             data: { quantity: { increment: line.quantity } },
           });
+          if (restored.count !== 1) {
+            throw conflict(
+              "A sold product no longer exists. Choose no restock only if goods were not returned; nothing was refunded.",
+              "REVERSAL_PRODUCT_MISSING",
+            );
+          }
         }
       }
 
       // The money went back, so the points earned on it go too. Like a void, this is an
       // offsetting ledger row rather than an edit or delete of the original earn: the
       // history of what the sale awarded stays readable, and the balance is the sum.
-      const pointsEarned = sale.points.reduce((sum, entry) => sum + entry.point, 0);
-      if (sale.customerId !== null && pointsEarned !== 0) {
+      const pointsEarned = current.points.reduce((sum, entry) => sum + entry.point, 0);
+      if (current.customerId !== null && pointsEarned !== 0) {
         await tx.customerPoint.create({
           data: {
             tenantId: requireTenantScope(),
-            customerId: sale.customerId,
+            customerId: current.customerId,
             saleId: sale.id,
             point: -pointsEarned,
           },

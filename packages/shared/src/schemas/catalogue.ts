@@ -15,6 +15,7 @@
 import { z } from "zod";
 
 import {
+  barcodeInputSchema,
   durationMinutesSchema,
   moneySchema,
   paginationQuerySchema,
@@ -78,6 +79,8 @@ export const productSummarySchema = z.object({
   quantity: z.number().int(),
   points: z.number().int(),
   description: z.string().nullable(),
+  /** Scannable barcode, normalised (trimmed, upper-cased) or null. */
+  barcode: z.string().nullable(),
   departmentId: z.string().nullable(),
   departmentName: z.string().nullable(),
   /** True when `quantity` is at or below the tenant's low-stock threshold. */
@@ -102,6 +105,8 @@ export const createProductSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   departmentId: z.string().min(1).max(64).optional(),
   status: catalogStatusSchema.optional(),
+  /** Optional barcode. Blank means "no barcode" and is stored as null. */
+  barcode: barcodeInputSchema,
 });
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
@@ -120,6 +125,8 @@ export const updateProductSchema = z.object({
   description: z.string().trim().max(2000).nullable().optional(),
   departmentId: z.string().min(1).max(64).nullable().optional(),
   status: catalogStatusSchema.optional(),
+  /** Optional barcode. Blank or null clears the barcode. */
+  barcode: barcodeInputSchema,
 });
 
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;

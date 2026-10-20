@@ -56,6 +56,8 @@ async function purge(): Promise<void> {
     await prisma.giftCard.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
     await prisma.product.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
     await prisma.service.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
+    // Receipts intentionally prevent customer/staff cascades; remove fixture sales first.
+    await prisma.sale.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
     await prisma.user.deleteMany({ where: { email: { endsWith: `@${DOMAIN}` } } });
     await prisma.tenant.deleteMany({ where: { id: { in: TENANT_IDS } } });
   });
@@ -203,7 +205,13 @@ interface Envelope {
 /** The item search's payload, as much of it as these tests read. */
 interface SearchBody {
   searchableKinds: string[];
-  items: { kind: string; name: string; price: string; memberPrice: string | null }[];
+  items: {
+    kind: string;
+    name: string;
+    price: string;
+    memberPrice: string | null;
+    barcode?: string | null;
+  }[];
 }
 
 /** The receipt — `POST /api/sales` and `GET /api/sales/:id` answer with the same one. */
@@ -641,6 +649,58 @@ describe(
       );
     });
 
+    it("returns a product's barcode when it carries one", async () => {
+      await runAsPlatform(() =>
+        prisma.product.updateMany({
+          where: { tenantId: TENANT_A, name: "Aloha Shampoo" },
+          data: { barcode: "8800000000007" },
+        }),
+      );
+
+      const body = await dataOf<SearchBody>(
+        await request("GET", "/api/sales/items?search=shampoo", token),
+      );
+
+      const product = body.items.find((item) => item.name === "Aloha Shampoo");
+      assert.ok(product, "the shampoo row is the one the barcode search should hit");
+      assert.equal(product.barcode, "8800000000007");
+    });
+
+    it("resolves a scan by the normalised barcode, and nothing else", async () => {
+      await runAsPlatform(() =>
+        prisma.product.updateMany({
+          where: { tenantId: TENANT_A, name: "Aloha Shampoo" },
+          data: { barcode: "8800000000007" },
+        }),
+      );
+
+      const exact = await dataOf<SearchBody>(
+        await request("GET", "/api/sales/items?barcode=8800000000007", token),
+      );
+      assert.deepEqual(
+        exact.items.filter((item) => item.barcode === "8800000000007").map((item) => item.name),
+        ["Aloha Shampoo"],
+      );
+
+      // A lowercase or spaced equivalent must name the same product.
+      const loose = await dataOf<SearchBody>(
+        await request("GET", "/api/sales/items?barcode= 8800000000007 ", token),
+      );
+      assert.deepEqual(
+        loose.items.filter((item) => item.barcode === "8800000000007").map((item) => item.name),
+        ["Aloha Shampoo"],
+      );
+
+      // A code that names a different product must not match.
+      const foreign = await dataOf<SearchBody>(
+        await request("GET", "/api/sales/items?barcode=9999999999999", token),
+      );
+      assert.equal(
+        foreign.items.some((item) => item.barcode === "9999999999999"),
+        false,
+      );
+    });
+
     /*
      * ── The write (5b.2) ──────────────────────────────────────────────────────
      *
@@ -773,6 +833,64 @@ describe(
      * both. A test that only checked "POST with hold returns 201" would pass with the
      * whole distinction gone.
      */
+    describe("direct-to-staff tips", () => {
+      it("allows cashier recording, requires a manager for returns and blocks suspended writes", async () => {
+        const itemId = await seededIdOf("SERVICE");
+        const created = await send(
+          "POST",
+          "/api/sales",
+          {
+            lines: [{ itemType: "SERVICE", itemId, quantity: 1 }],
+            payments: [{ method: "CASH", amount: 100 }],
+          },
+          cashierToken,
+        );
+        assert.equal(created.status, 201);
+        const sale = await dataOf<ReceiptBody>(created);
+        assert.ok(sale.staffId);
+        const path = `/api/sales/${sale.id}/direct-tips`;
+        const input = { staffId: sale.staffId, amount: 2.5, idempotencyKey: crypto.randomUUID() };
+        assert.equal((await request("GET", path)).status, 401);
+        assert.equal(
+          (await send("POST", path, { ...input, amount: 0.001 }, cashierToken)).status,
+          422,
+        );
+        const recorded = await send("POST", path, input, cashierToken);
+        assert.equal(recorded.status, 200);
+        const body = await dataOf<{ items: { id: string; amount: string }[] }>(recorded);
+        assert.equal(body.items.length, 1);
+        assert.equal(body.items[0]?.amount, "2.50");
+        const returnPath = `${path}/${body.items[0]!.id}/return`;
+        assert.equal(
+          (await send("POST", returnPath, { reason: "Returned directly" }, cashierToken)).status,
+          403,
+        );
+        await runAsPlatform(() =>
+          prisma.tenant.update({ where: { id: TENANT_A }, data: { status: "SUSPENDED" } }),
+        );
+        try {
+          assert.equal(
+            (await send("POST", path, { ...input, idempotencyKey: crypto.randomUUID() }, token))
+              .status,
+            403,
+          );
+          assert.equal(
+            (await send("POST", returnPath, { reason: "Returned directly" }, token)).status,
+            403,
+          );
+          assert.equal((await request("GET", path, token)).status, 200);
+        } finally {
+          await runAsPlatform(() =>
+            prisma.tenant.update({ where: { id: TENANT_A }, data: { status: "ACTIVE" } }),
+          );
+        }
+        assert.equal(
+          (await send("POST", returnPath, { reason: "Returned directly" }, token)).status,
+          200,
+        );
+      });
+    });
+
     describe("voucher campaigns and recorded refunds", () => {
       it("restricts publishing and refunds to managers, and completes a voucher sale", async () => {
         const campaign = {

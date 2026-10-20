@@ -47,6 +47,8 @@ import {
 import { SaleLineItemType } from "../../generated/prisma/enums.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
+import { listDirectTips, recordDirectTip, returnDirectTip } from "./direct-tip.service.js";
+import { randomUUID } from "node:crypto";
 import {
   completeSale,
   createSale,
@@ -476,6 +478,43 @@ describe(
       );
     });
 
+    it("resolves exact barcodes beyond the name limit without leaking foreign or inactive products", async () => {
+      await runAsTenant(TENANT_A, () =>
+        prisma.product.updateMany({
+          where: { name: nameOf(TENANT_A, "Shampoo") },
+          data: { barcode: "001ABC" },
+        }),
+      );
+      await runAsTenant(TENANT_B, () =>
+        prisma.product.updateMany({
+          where: { name: nameOf(TENANT_B, "Shampoo") },
+          data: { barcode: "FOREIGN" },
+        }),
+      );
+      await runAsTenant(TENANT_A, () =>
+        prisma.product.updateMany({
+          where: { name: nameOf(TENANT_A, "Retired Cream") },
+          data: { barcode: "RETIRED" },
+        }),
+      );
+      const search = (barcode: string) =>
+        runAsTenant(TENANT_A, () =>
+          searchSaleItems({
+            ...NO_FILTERS,
+            kind: "PRODUCT",
+            search: "no-name-match",
+            barcode,
+            limit: 1,
+          }),
+        );
+      const result = await search(" 001abc ");
+      assert.equal(result.items.length, 1);
+      assert.equal(result.items[0]?.name, nameOf(TENANT_A, "Shampoo"));
+      for (const code of ["001AB", "FOREIGN", "RETIRED", "UNKNOWN"]) {
+        assert.deepEqual((await search(code)).items, []);
+      }
+    });
+
     it("caps each kind rather than the list, so one big kind cannot crowd out the rest", async () => {
       const result = await runAsTenant(TENANT_A, () =>
         searchSaleItems({ ...NO_FILTERS, limit: 1 }),
@@ -628,6 +667,59 @@ describe(
     before(seed);
     after(purge);
 
+    it("records direct staff tips once, without changing sale accounting, and preserves return history after void", async () => {
+      const actor = await staffIdOf(TENANT_A);
+      const foreign = await staffIdOf(TENANT_B);
+      await runAsTenant(TENANT_A, async () => {
+        const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        const sale = await createSale({
+          staffId: actor,
+          lines: [{ itemType: "SERVICE", itemId, quantity: 1 }],
+          payments: [{ method: "CASH", amount: 50 }],
+        });
+        const input = { staffId: actor, amount: 3.25, idempotencyKey: randomUUID() };
+        await assert.rejects(
+          recordDirectTip(sale.id, { ...input, staffId: foreign }, actor),
+          hasCode("TIP_STAFF_NOT_FOUND"),
+        );
+        const results = await Promise.all([
+          recordDirectTip(sale.id, input, actor),
+          recordDirectTip(sale.id, input, actor),
+        ]);
+        assert.equal(results[1]?.items.length, 1);
+        assert.deepEqual(
+          await getSale(sale.id),
+          sale,
+          "all sale/tender/GST/loyalty/commission receipt fields remain identical",
+        );
+        await assert.rejects(
+          recordDirectTip(sale.id, { ...input, amount: 4 }, actor),
+          hasCode("TIP_RETRY_MISMATCH"),
+        );
+        await runAsTenant(TENANT_B, async () => {
+          await assert.rejects(listDirectTips(sale.id), hasCode("SALE_NOT_FOUND"));
+          await assert.rejects(
+            returnDirectTip(sale.id, results[0]!.items[0]!.id, "Foreign return", foreign),
+            hasCode("TIP_NOT_FOUND"),
+          );
+        });
+        await voidSale(sale.id, { reason: "Separate sale void" }, actor);
+        assert.equal((await listDirectTips(sale.id)).items[0]?.returnedAt, null);
+        await assert.rejects(
+          recordDirectTip(sale.id, { ...input, idempotencyKey: randomUUID() }, actor),
+          hasCode("TIP_SALE_NOT_ELIGIBLE"),
+        );
+        const tipId = results[0]!.items[0]!.id;
+        const returned = await returnDirectTip(sale.id, tipId, "Staff returned full tip", actor);
+        assert.ok(returned.items[0]?.returnedAt);
+        assert.equal(returned.items[0]?.amount, "3.25");
+        assert.deepEqual(
+          await returnDirectTip(sale.id, tipId, "Retry must not replace reason", actor),
+          returned,
+        );
+      });
+    });
+
     it("prices from the catalogue, not from the request", async () => {
       // The contract has no price field at all, so this can only pass if the server read
       // the catalogue — a hand-posted `unitPrice` is not even accepted.
@@ -735,6 +827,203 @@ describe(
           1,
         );
         assert.equal(await prisma.voucherRedemption.count({ where: { voucherId: voucher.id } }), 1);
+      });
+    });
+
+    it("replays concurrent voids once and preserves the first audit and receipt", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const customerId = await customerIdOf(TENANT_A, false);
+        const actor = await staffIdOf(TENANT_A);
+        const product = await prisma.product.create({
+          data: {
+            tenantId: TENANT_A,
+            name: "Void race fixture",
+            quantity: 5,
+            memberPrice: 10,
+            nonmemberPrice: 10,
+            points: 3,
+          },
+        });
+        const sale = await createSale({
+          customerId,
+          staffId: actor,
+          lines: [{ itemType: "PRODUCT", itemId: product.id, quantity: 2 }],
+          payments: [{ method: "CASH", amount: 20 }],
+        });
+        const results = await Promise.all([
+          voidSale(sale.id, { reason: "First attempt" }, actor),
+          voidSale(sale.id, { reason: "Retry attempt" }, actor),
+        ]);
+        assert.equal(results[0]!.status, "VOID");
+        assert.equal(results[1]!.voidReason, results[0]!.voidReason);
+        assert.equal(results[1]!.voidedAt, results[0]!.voidedAt);
+        assert.equal(results[0]!.receiptNumber, sale.receiptNumber);
+        assert.deepEqual(results[0]!.lines, sale.lines);
+        assert.deepEqual(results[0]!.payments, sale.payments);
+        assert.equal(
+          (await prisma.product.findFirstOrThrow({ where: { id: product.id } })).quantity,
+          5,
+        );
+        const points = await prisma.customerPoint.findMany({ where: { saleId: sale.id } });
+        assert.equal(points.length, 2);
+        assert.equal(
+          points.reduce((sum, row) => sum + row.point, 0),
+          0,
+        );
+      });
+    });
+
+    it("rolls back void and restocking refund when a sold product was removed", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const customerId = await customerIdOf(TENANT_A, false);
+        const actor = await staffIdOf(TENANT_A);
+        const product = await prisma.product.create({
+          data: {
+            tenantId: TENANT_A,
+            name: "Missing reversal fixture",
+            quantity: 5,
+            memberPrice: 10,
+            nonmemberPrice: 10,
+            points: 3,
+          },
+        });
+        const sale = await createSale({
+          customerId,
+          lines: [{ itemType: "PRODUCT", itemId: product.id, quantity: 1 }],
+          payments: [{ method: "CASH", amount: 10 }],
+        });
+        await prisma.product.delete({ where: { id: product.id } });
+        for (const reverse of [
+          () => voidSale(sale.id, { reason: "Missing product" }, actor),
+          () =>
+            refundSale(
+              sale.id,
+              {
+                reason: "Missing product",
+                restock: true,
+                payouts: [{ method: "CASH", amount: 10 }],
+              },
+              actor,
+            ),
+        ]) {
+          await assert.rejects(
+            reverse,
+            (error: unknown) => (error as { code?: string }).code === "REVERSAL_PRODUCT_MISSING",
+          );
+          const unchanged = await getSale(sale.id);
+          assert.equal(unchanged.status, "COMPLETED");
+          assert.equal(unchanged.refundedAt, null);
+          assert.equal(unchanged.pointsEarned, sale.pointsEarned);
+          assert.deepEqual(unchanged.lines, sale.lines);
+        }
+        const refunded = await refundSale(
+          sale.id,
+          {
+            reason: "Goods not returned",
+            restock: false,
+            payouts: [{ method: "CASH", amount: 10 }],
+          },
+          actor,
+        );
+        assert.equal(refunded.refundRestocked, false);
+      });
+    });
+
+    it("retains completed/voided receipts when customer, cashier or performer deletion is attempted", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const customerId = await customerIdOf(TENANT_A, false);
+        const actor = await staffIdOf(TENANT_A);
+        const performer = await prisma.user.create({
+          data: {
+            tenantId: TENANT_A,
+            email: "receipt-performer@sale-write.test",
+            name: "Receipt performer",
+            passwordHash: "test-only",
+          },
+        });
+        const sale = await createSale({
+          customerId,
+          staffId: actor,
+          lines: [
+            {
+              itemType: "SERVICE",
+              itemId: await idOf(TENANT_A, nameOf(TENANT_A, "Cut")),
+              quantity: 1,
+              staffId: performer.id,
+            },
+          ],
+          payments: [{ method: "CASH", amount: 50 }],
+        });
+        for (const status of ["COMPLETED", "VOID"]) {
+          if (status === "VOID") await voidSale(sale.id, { reason: "Retain audit" }, actor);
+          for (const remove of [
+            () => prisma.customer.delete({ where: { id: customerId } }),
+            () => prisma.user.delete({ where: { id: actor } }),
+            () => prisma.user.delete({ where: { id: performer.id } }),
+          ])
+            await assert.rejects(
+              remove,
+              (error: unknown) => (error as { code?: string }).code === "P2003",
+            );
+          const retained = await getSale(sale.id);
+          assert.equal(retained.status, status);
+          assert.deepEqual(retained.lines, sale.lines);
+          assert.deepEqual(retained.payments, sale.payments);
+          assert.equal(retained.receiptNumber, sale.receiptNumber);
+        }
+      });
+    });
+
+    it("never consumes a holding while its granting sale is successfully voided", async () => {
+      await grant(TENANT_A, "packages");
+      await runAsTenant(TENANT_A, async () => {
+        const customerId = await customerIdOf(TENANT_A, false);
+        const actor = await staffIdOf(TENANT_A);
+        const serviceId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+        for (const kind of ["PACKAGE", "VALUE_PACKAGE"] as const) {
+          const itemId =
+            kind === "PACKAGE"
+              ? await packageIdOf(TENANT_A, nameOf(TENANT_A, "Aloha Bundle"))
+              : await valuePackageIdOf(TENANT_A, nameOf(TENANT_A, "Prepaid Credit"));
+          const issued = await createSale({
+            customerId,
+            lines: [{ itemType: kind, itemId, quantity: 1 }],
+            payments: [{ method: "CASH", amount: 1000 }],
+          });
+          const holding =
+            kind === "PACKAGE"
+              ? await prisma.customerPackageHolding.findFirstOrThrow({
+                  where: { saleLineId: issued.lines[0]!.id },
+                })
+              : await prisma.customerValuePackageHolding.findFirstOrThrow({
+                  where: { saleLineId: issued.lines[0]!.id },
+                });
+          const outcomes = await Promise.allSettled([
+            voidSale(issued.id, { reason: "Grant reversal race" }, actor),
+            createSale({
+              customerId,
+              lines: [{ itemType: "SERVICE", itemId: serviceId, quantity: 1 }],
+              payments: [
+                {
+                  method: kind === "PACKAGE" ? "PACKAGE" : "PREPAID_CREDIT",
+                  holdingId: holding.id,
+                  amount: 50,
+                },
+              ],
+            }),
+          ]);
+          assert.equal(outcomes.filter((outcome) => outcome.status === "fulfilled").length, 1);
+          const current = await getSale(issued.id);
+          const remaining =
+            kind === "PACKAGE"
+              ? await prisma.customerPackageHolding.findFirst({ where: { id: holding.id } })
+              : await prisma.customerValuePackageHolding.findFirst({ where: { id: holding.id } });
+          assert.equal(current.status === "VOID", remaining === null);
+          const redemptions = await prisma.customerRedemption.count({
+            where: { holdingId: holding.id, revertedAt: null },
+          });
+          assert.equal(redemptions, current.status === "VOID" ? 0 : 1);
+        }
       });
     });
 

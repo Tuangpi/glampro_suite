@@ -16,6 +16,7 @@
  */
 import type { PaginatedResponse } from "@glampro_suite/shared";
 import {
+  normalizeBarcode,
   productDetailSchema,
   productSummarySchema,
   serviceDetailSchema,
@@ -31,7 +32,7 @@ import {
   type UpdateServiceInput,
 } from "@glampro_suite/shared";
 
-import { notFound, validationFailed } from "../lib/http-error.js";
+import { conflict, notFound, validationFailed } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
@@ -63,6 +64,7 @@ const PRODUCT_SELECT = {
   quantity: true,
   points: true,
   description: true,
+  barcode: true,
   departmentId: true,
   department: { select: { id: true, name: true } },
   createdAt: true,
@@ -151,6 +153,7 @@ function toProduct(row: ProductRow, threshold: number): ProductSummary {
     quantity: row.quantity,
     points: row.points,
     description: row.description,
+    barcode: row.barcode,
     departmentId: row.departmentId,
     departmentName: row.department?.name ?? null,
     // Computed here, never in the browser: the badge counts the whole catalogue
@@ -248,8 +251,11 @@ export async function getProduct(id: string): Promise<ProductDetail> {
 
 /** `quantity` and `points` default to zero in the schema, so they may be absent. */
 export async function createProduct(input: CreateProductInput): Promise<ProductDetail> {
-  const { departmentId, ...fields } = input;
+  const { departmentId, barcode, ...fields } = input;
   await assertDepartmentExists(departmentId);
+
+  const normalizedBarcode = normalizeBarcode(barcode);
+  await assertBarcodeAvailable(normalizedBarcode);
 
   const created = await prisma.product.create({
     data: {
@@ -260,11 +266,49 @@ export async function createProduct(input: CreateProductInput): Promise<ProductD
       // `null`, not `undefined`: a new product with no branch is unassigned, which
       // is a real state the Products tab renders as "—".
       departmentId: departmentId ?? null,
+      // `null` means "no barcode". A blank barcode and an absent one are the same
+      // thing, and the column is nullable so the unique index leaves them alone.
+      barcode: normalizedBarcode,
     },
     select: { id: true },
   });
 
   return getProduct(created.id);
+}
+
+/**
+ * Refuses a barcode another product in this salon already carries.
+ *
+ * The database enforces the same rule — `@@unique([tenantId, barcode])` — but a
+ * raw unique violation reaches the browser as a generic 409 with no field to
+ * point at. Checking first lets the error name the **barcode field** and the
+ * product that already holds it, which is what the person at the till needs.
+ *
+ * The lookup is a `findFirst` inside the tenant scope, so a barcode used by
+ * *another salon* is not a conflict: the same code may identify a different
+ * product in a different salon.
+ */
+async function assertBarcodeAvailable(
+  barcode: string | null,
+  excludeProductId?: string,
+): Promise<void> {
+  if (barcode === null) return;
+
+  const existing = await prisma.product.findFirst({
+    where: {
+      barcode,
+      ...(excludeProductId ? { id: { not: excludeProductId } } : {}),
+    },
+    select: { id: true, name: true },
+  });
+
+  if (existing) {
+    throw conflict(
+      `Barcode ${barcode} is already used by "${existing.name}".`,
+      "DUPLICATE_BARCODE",
+      [{ path: "body.barcode", message: "This barcode is already in use." }],
+    );
+  }
 }
 
 /**
@@ -276,11 +320,20 @@ export async function createProduct(input: CreateProductInput): Promise<ProductD
  * nullable: stock is corrected by an adjustment, not by erasing it.
  */
 export async function updateProduct(id: string, input: UpdateProductInput): Promise<ProductDetail> {
-  const { departmentId, ...fields } = input;
+  const { departmentId, barcode, ...fields } = input;
   await assertDepartmentExists(departmentId);
 
   const existing = await prisma.product.findFirst({ where: { id }, select: { id: true } });
   if (!existing) throw notFound("That product does not exist.", "PRODUCT_NOT_FOUND");
+
+  // An absent barcode leaves the current one alone; a present one (including a
+  // blank, which means "clear it") is normalised and checked against the
+  // salon's other products, excluding this one so re-saving a form does not
+  // collide with the row it is editing.
+  const normalizedBarcode = barcode === undefined ? undefined : normalizeBarcode(barcode);
+  if (normalizedBarcode !== undefined) {
+    await assertBarcodeAvailable(normalizedBarcode, id);
+  }
 
   await prisma.product.update({
     where: { id },
@@ -289,6 +342,7 @@ export async function updateProduct(id: string, input: UpdateProductInput): Prom
       // Only when the form sent it: `undefined` here means "leave the branch
       // alone", while `null` means "unassign" and must reach Prisma.
       ...(departmentId !== undefined ? { departmentId } : {}),
+      ...(normalizedBarcode !== undefined ? { barcode: normalizedBarcode } : {}),
     },
   });
 

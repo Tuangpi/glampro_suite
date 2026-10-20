@@ -41,6 +41,7 @@ interface FormState {
   departmentId: string;
   status: string;
   description: string;
+  barcode: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -52,6 +53,7 @@ const EMPTY_FORM: FormState = {
   departmentId: "",
   status: "ACTIVE",
   description: "",
+  barcode: "",
 };
 
 function toForm(product: ProductDetail): FormState {
@@ -66,6 +68,7 @@ function toForm(product: ProductDetail): FormState {
     departmentId: product.departmentId ?? "",
     status: product.status,
     description: product.description ?? "",
+    barcode: product.barcode ?? "",
   };
 }
 
@@ -172,6 +175,9 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
             ...(points !== undefined ? { points } : {}),
             description: clearable(form.description),
             departmentId: clearable(form.departmentId),
+            // A blank box means "remove the barcode" — the same clear semantics
+            // as `description` above.
+            barcode: clearable(form.barcode),
             status: (form.status || undefined) as CatalogStatusValue | undefined,
           },
         });
@@ -185,6 +191,8 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
           ...(points !== undefined ? { points } : {}),
           description: optional(form.description),
           departmentId: optional(form.departmentId),
+          // Blank means "no barcode"; the shared schema normalises it to null.
+          barcode: optional(form.barcode),
           status: (form.status || undefined) as CatalogStatusValue | undefined,
         });
         showToast("success", "Product added.");
@@ -311,6 +319,20 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
             options={STATUS_OPTIONS}
           />
         </div>
+
+        <Input
+          label="Barcode"
+          value={form.barcode}
+          onChange={(event) => set("barcode")(event.target.value)}
+          error={fieldError("barcode")}
+          maxLength={64}
+          autoComplete="off"
+          hint={
+            isEditing
+              ? "Scanned at the till. Leave blank to remove it."
+              : "Optional. A scanner at the till looks this up."
+          }
+        />
 
         <Input
           label="Description"
