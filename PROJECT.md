@@ -62,7 +62,7 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
-- Booking resources (TK2610-0020 Phase D, October 20, 2026): user approved the full rooms/equipment slice. One tenant-scoped row represents one physical resource; a service's eligibility links mean **one of these**, not all simultaneously. Each appointment line auto-selects one free active resource in name/id order; no links preserves resource-free booking. Every non-cancelled status occupies a half-open interval. Settings manages eligibility through resource `serviceIds`; archived resources remain visible in booking history. No manual assignment or concurrent PostgreSQL exclusion was added. Migration verified only on disposable databases; application rollout and UAT remain pending.
+- Booking resources (TK2610-0020 Phase D, October 20, 2026): user approved the full rooms/equipment slice. One tenant-scoped row represents one physical resource; a service's eligibility links mean **one of these**, not all simultaneously. Each appointment line auto-selects one free active resource in name/id order; no links preserves resource-free booking. Every non-cancelled status occupies a half-open interval. Settings manages eligibility through resource `serviceIds`; archived resources remain visible in booking history. No manual assignment or concurrent PostgreSQL exclusion was added. User accepted UAT and reports running Prisma migration; read-only migration status reports all 28 migrations up to date on local application database `glampro_suite` at `localhost:5432`. Post-migration smoke testing and production rollout are unverified; concurrency completion criterion remains open.
 
 - Messaging acceptance (October 20, 2026): user accepted TK2610-0021 UAT for the approved code/documentation scope. Acceptance is user-reported; live-provider verification and application migration remain pending and require separate authorization.
 - Messaging (TK2610-0021, October 20, 2026): approved code/documentation scope uses the official Twilio SDK behind a replaceable sender function, independent WhatsApp/SMS enablement (default off), purpose/channel-specific audited consent and one explicit preferred automatic channel, with no fallback. Durable PostgreSQL jobs are written atomically with booking changes; bounded definite-rejection retries and UNCERTAIN handling avoid blind resubmission. Secure hashed bearer receipt/action/unsubscribe links use minimal server-rendered public pages; GET never mutates. Default reminder 24 hours, rebooking 28 days, quiet hours 20:00–09:00 salon time, cancellation cutoff two hours, receipt expiry 30 days. See `docs/whatsapp-sms-integration.md`. Code verified against disposable PostgreSQL; live provider setup, real-device delivery, legal wording/retention approval and application migration remain unperformed. No provider activation or paid traffic authorized.
@@ -433,6 +433,15 @@ The optimistic rollback is not proof of safe overlapping mutations. Historical
 service tests had five occupying-status assertions; frontend 32-test result mocked
 the drawer and did not prove drag lifecycle or API eligibility. Source: appointment
 service/tests and `apps/web/src/hooks/useAppointments.ts`.
+
+October 21, 2026 continuation: application-level tenant-row lock (`lockBookingCalendar`,
+`SELECT ... FROM tenants WHERE id = ... FOR NO KEY UPDATE`) now serializes all API booking
+writes for a salon — create, update, cancel, series cancellation, booking-link issue and
+public booking actions — so overlap, resource and staff-availability reads occur inside
+one ReadCommitted transaction per salon. Message jobs are written in the same transaction
+and therefore publish only after a successful commit. Lock coverage is API-only; direct SQL
+writers remain outside it. PostgreSQL `EXCLUDE`/`tstzrange` remains an optional future
+defense-in-depth measure, not implemented policy (ADR 0014).
 
 ### ADR 0015
 

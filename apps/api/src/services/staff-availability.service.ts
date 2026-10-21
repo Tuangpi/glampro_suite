@@ -8,11 +8,12 @@ export async function assertStaffAvailable(
   staffId: string | null,
   start: Date,
   end: Date,
+  db: Pick<typeof prisma, "staffShift" | "tenant"> = prisma,
 ): Promise<void> {
   if (!staffId) return;
-  const rows = await prisma.staffShift.findMany({ where: { userId: staffId } });
+  const rows = await db.staffShift.findMany({ where: { userId: staffId } });
   if (rows.length === 0) return;
-  const zone = await salonTimeZone();
+  const zone = await salonTimeZone(db);
   const dateAt = (instant: Date) => {
     const parts = new Intl.DateTimeFormat("en-CA", {
       timeZone: zone,

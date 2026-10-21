@@ -24,6 +24,9 @@ export function tenantId() {
   if (scope?.kind !== "tenant") throw forbidden();
   return scope.tenantId;
 }
+export async function lockBookingCalendar(tx: Tx): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId()} FOR NO KEY UPDATE`;
+}
 export function normalizePhone(value: string | null): string | null {
   const normalized = value?.replace(/[\s().-]/g, "") ?? "";
   return /^\+[1-9]\d{7,14}$/.test(normalized) ? normalized : null;
@@ -211,6 +214,7 @@ export async function issueLink(kind: "BOOKING" | "RECEIPT", targetId: string) {
     let revision = 0;
     let expiresAt = new Date(Date.now() + 30 * 86400000);
     if (kind === "BOOKING") {
+      await lockBookingCalendar(tx);
       await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${targetId} AND "tenantId" = ${tenantId()} FOR UPDATE`;
       const booking = await tx.appointment.findFirst({ where: { id: targetId } });
       if (!booking || booking.status !== "SCHEDULED" || booking.startsAt <= new Date())
@@ -233,7 +237,7 @@ export async function issueLink(kind: "BOOKING" | "RECEIPT", targetId: string) {
       },
     });
     return { url: `${origin}/api/public/messages/${token}`, expiresAt };
-  });
+  }, { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 });
 }
 export async function revokeLinks(kind: string, targetId: string) {
   await prisma.publicLink.updateMany({
@@ -264,6 +268,7 @@ export async function publicBookingAction(
   if (link.kind !== "BOOKING") throw notFound();
   const settings = await getMessagingSettings();
   await prisma.$transaction(async (tx) => {
+    await lockBookingCalendar(tx);
     await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${link.targetId} AND "tenantId" = ${tenantId()} FOR UPDATE`;
     const currentLink = await tx.publicLink.findFirst({
       where: { id: link.id, revokedAt: null, expiresAt: { gt: new Date() } },
@@ -290,7 +295,7 @@ export async function publicBookingAction(
           : { status: "CANCELLED", customerConfirmedAt: null, messageRevision: { increment: 1 } },
     });
     if (action === "cancel") await queueAppointmentMessages(tx, booking.id);
-  });
+  }, { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 });
 }
 export async function queueReceipt(saleId: string, channel: Channel) {
   const sale = await getSale(saleId);

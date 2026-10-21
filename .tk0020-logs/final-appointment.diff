@@ -1,0 +1,551 @@
+diff --git a/apps/api/src/services/appointment.service.ts b/apps/api/src/services/appointment.service.ts
+index d16cba5..d0948e1 100644
+--- a/apps/api/src/services/appointment.service.ts
++++ b/apps/api/src/services/appointment.service.ts
+@@ -206,10 +206,11 @@ interface ResolvedService {
+  * deactivating a service cannot freeze every booking on it.
+  */
+ async function resolveService(
++  tx: Tx,
+   serviceId: string,
+   options: { requireActive?: boolean } = {},
+ ): Promise<ResolvedService> {
+-  const service = await prisma.service.findFirst({
++  const service = await tx.service.findFirst({
+     where: { id: serviceId },
+     select: { id: true, departmentId: true, durationMinutes: true, status: true },
+   });
+@@ -270,6 +271,7 @@ interface PlannedLine {
+  * a manicure by another be one booking.
+  */
+ async function planLines(
++  tx: Tx,
+   startsAt: Date,
+   selections: LineSelection[],
+   defaultStaffId: string | null,
+@@ -279,11 +281,11 @@ async function planLines(
+   let cursor = startsAt;
+ 
+   for (const selection of selections) {
+-    const service = await resolveService(selection.serviceId, {
++    const service = await resolveService(tx, selection.serviceId, {
+       requireActive: options.requireActiveFor(selection.serviceId),
+     });
+     const staffId = selection.staffId === undefined ? defaultStaffId : selection.staffId;
+-    if (staffId) await assertPerformerEligible(staffId, service);
++    if (staffId) await assertPerformerEligible(tx, staffId, service);
+ 
+     const durationMinutes = selection.durationMinutes ?? service.durationMinutes;
+     const endsAt = new Date(cursor.getTime() + durationMinutes * 60_000);
+@@ -331,8 +333,12 @@ function sameLines(current: AppointmentRow["lines"], planned: PlannedLine[]): bo
+  * anyone — the salon has not said who may perform it — and an absent `staffId`
+  * is a booking nobody has claimed yet, which stays bookable.
+  */
+-async function assertPerformerEligible(staffId: string, service: ResolvedService): Promise<void> {
+-  const staff = await prisma.user.findFirst({
++async function assertPerformerEligible(
++  tx: Tx,
++  staffId: string,
++  service: ResolvedService,
++): Promise<void> {
++  const staff = await tx.user.findFirst({
+     where: { id: staffId },
+     select: { id: true, disabled: true, departments: { select: { departmentId: true } } },
+   });
+@@ -362,8 +368,8 @@ async function assertPerformerEligible(staffId: string, service: ResolvedService
+ }
+ 
+ /** Same existence check for the customer, whose FK would otherwise 500. */
+-async function assertCustomerExists(customerId: string): Promise<void> {
+-  const customer = await prisma.customer.findFirst({
++async function assertCustomerExists(tx: Tx, customerId: string): Promise<void> {
++  const customer = await tx.customer.findFirst({
+     where: { id: customerId },
+     select: { id: true },
+   });
+@@ -389,10 +395,10 @@ const OCCUPYING_APPOINTMENT_STATUSES = APPOINTMENT_STATUSES.filter(
+  * A stylist only occupies the line they perform, so a break at 11:00 blocks the
+  * line that falls in it and leaves the rest of somebody else's chain alone.
+  */
+-async function assertStaffFree(lines: PlannedLine[]): Promise<void> {
++async function assertStaffFree(tx: Tx, lines: PlannedLine[]): Promise<void> {
+   for (const line of lines) {
+     if (!line.staffId) continue;
+-    await assertStaffAvailable(line.staffId, line.startsAt, line.endsAt);
++    await assertStaffAvailable(line.staffId, line.startsAt, line.endsAt, tx);
+   }
+ }
+ 
+@@ -408,14 +414,12 @@ async function assertStaffFree(lines: PlannedLine[]): Promise<void> {
+  * **skipped for an unassigned line**, because nobody named is nobody
+  * double-booked.
+  *
+- * It runs *before* the write and is not one atomic statement with it, so two
+- * concurrent requests can both pass and both write. That residual is inherent
+- * to an application-level check — the eventual fix is a Postgres `EXCLUDE`
+- * constraint over a `tstzrange`, which needs `btree_gist` and a migration over
+- * every tenant's `appointments` (see the ADR). It is documented rather than
+- * hidden so nobody mistakes the check for a guarantee.
++ * Reads through the write transaction after acquiring the salon booking lock.
++ * Other API booking writes for this salon wait until commit, then check the
++ * committed slots. Direct SQL writers must follow the same protocol; this is
++ * not a PostgreSQL exclusion constraint (ADR 0014).
+  */
+-async function assertNoClash(lines: PlannedLine[], excludeId?: string): Promise<void> {
++async function assertNoClash(tx: Tx, lines: PlannedLine[], excludeId?: string): Promise<void> {
+   const slots = lines.filter(
+     (line): line is PlannedLine & { staffId: string } => line.staffId !== null,
+   );
+@@ -432,28 +436,26 @@ async function assertNoClash(lines: PlannedLine[], excludeId?: string): Promise<
+     ...(excludeId ? { id: { not: excludeId } } : {}),
+   };
+ 
+-  const [bookedLine, legacyRow] = await Promise.all([
+-    prisma.appointmentLine.findFirst({
+-      where: { OR: overlap, appointment: appointmentFilter },
+-      select: {
+-        startsAt: true,
+-        endsAt: true,
+-        appointment: { select: { customer: { select: { name: true } } } },
+-      },
+-      orderBy: { startsAt: "asc" },
+-    }),
+-    // A booking with no lines predates service lines (or was written straight to
+-    // the table): its own window still holds the slot, so it is judged as it
+-    // always was.
+-    prisma.appointment.findFirst({
+-      where: {
+-        OR: overlap.map((slot) => ({ ...slot, lines: { none: {} } })),
+-        ...appointmentFilter,
+-      },
+-      select: { startsAt: true, endsAt: true, customer: { select: { name: true } } },
+-      orderBy: { startsAt: "asc" },
+-    }),
+-  ]);
++  const bookedLine = await tx.appointmentLine.findFirst({
++    where: { OR: overlap, appointment: appointmentFilter },
++    select: {
++      startsAt: true,
++      endsAt: true,
++      appointment: { select: { customer: { select: { name: true } } } },
++    },
++    orderBy: { startsAt: "asc" },
++  });
++  // A booking with no lines predates service lines (or was written straight to
++  // the table): its own window still holds the slot, so it is judged as it
++  // always was.
++  const legacyRow = await tx.appointment.findFirst({
++    where: {
++      OR: overlap.map((slot) => ({ ...slot, lines: { none: {} } })),
++      ...appointmentFilter,
++    },
++    select: { startsAt: true, endsAt: true, customer: { select: { name: true } } },
++    orderBy: { startsAt: "asc" },
++  });
+ 
+   const clashes: ({ startsAt: Date; endsAt: Date; customer: { name: string } | null } | null)[] = [
+     bookedLine && {
+@@ -472,7 +474,7 @@ async function assertNoClash(lines: PlannedLine[], excludeId?: string): Promise<
+ 
+   // The clash is a fact about the salon's day, so it is quoted in the salon's
+   // zone. Formatting in the server's zone reads as an hour nobody booked.
+-  const zone = await salonTimeZone();
++  const zone = await salonTimeZone(tx);
+   const timeInSalon = (instant: Date) =>
+     instant.toLocaleTimeString("en-GB", {
+       timeZone: zone,
+@@ -509,17 +511,18 @@ async function assertNoClash(lines: PlannedLine[], excludeId?: string): Promise<
+  *
+  * When the service's resources are all busy — or all inactive, which is a
+  * configuration mistake worth saying out loud — the answer is `409
+- * RESOURCE_UNAVAILABLE`. Like the performer check this is not atomic with the
+- * write; the concurrent case is the same documented residual (ADR 0014).
++ * RESOURCE_UNAVAILABLE`. Assignment reads through the locked write transaction,
++ * so another API booking cannot take the selected resource before commit.
+  */
+ async function assignResources(
++  tx: Tx,
+   lines: PlannedLine[],
+   excludeAppointmentId?: string,
+ ): Promise<PlannedLine[]> {
+   const serviceIds = [...new Set(lines.map((line) => line.serviceId))];
+   if (serviceIds.length === 0) return lines;
+ 
+-  const links = await prisma.serviceResource.findMany({
++  const links = await tx.serviceResource.findMany({
+     where: { serviceId: { in: serviceIds } },
+     select: {
+       serviceId: true,
+@@ -546,7 +549,7 @@ async function assignResources(
+     ...(excludeAppointmentId ? { id: { not: excludeAppointmentId } } : {}),
+   };
+ 
+-  const zone = await salonTimeZone();
++  const zone = await salonTimeZone(tx);
+   const timeInSalon = (instant: Date) =>
+     instant.toLocaleTimeString("en-GB", {
+       timeZone: zone,
+@@ -572,7 +575,7 @@ async function assignResources(
+       );
+     }
+ 
+-    const taken = await prisma.appointmentLine.findMany({
++    const taken = await tx.appointmentLine.findMany({
+       where: {
+         resourceId: { in: active.map((candidate) => candidate.id) },
+         startsAt: { lt: line.endsAt },
+@@ -617,12 +620,23 @@ async function assignResources(
+  * person the desk can name, which is a better first answer than "no room".
+  */
+ async function reserve(
++  tx: Tx,
+   lines: PlannedLine[],
+   excludeAppointmentId?: string,
+ ): Promise<PlannedLine[]> {
+-  await assertStaffFree(lines);
+-  await assertNoClash(lines, excludeAppointmentId);
+-  return assignResources(lines, excludeAppointmentId);
++  await assertStaffFree(tx, lines);
++  await assertNoClash(tx, lines, excludeAppointmentId);
++  return assignResources(tx, lines, excludeAppointmentId);
++}
++
++/**
++ * Serialize API booking writes per salon, including across API processes.
++ * NO KEY UPDATE permits the FK key-share locks taken by line/message inserts.
++ * Always acquire this before appointment row locks and perform occupancy reads
++ * through this same ReadCommitted transaction after the lock is granted.
++ */
++async function lockBookingCalendar(tx: Tx): Promise<void> {
++  await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId()} FOR NO KEY UPDATE`;
+ }
+ 
+ /**
+@@ -799,6 +813,20 @@ function isSkippableOccurrence(error: unknown): error is HttpError {
+ export async function createAppointment(
+   input: CreateAppointmentInput,
+ ): Promise<CreatedAppointment> {
++  const created = await prisma.$transaction(
++    async (tx) => {
++      await lockBookingCalendar(tx);
++      return createAppointmentInTransaction(tx, input);
++    },
++    { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 },
++  );
++  return { appointment: await getAppointment(created.id), series: created.series };
++}
++
++async function createAppointmentInTransaction(
++  tx: Tx,
++  input: CreateAppointmentInput,
++): Promise<{ id: string; series: AppointmentSeriesReport | null }> {
+   const selections: LineSelection[] = input.services
+     ? input.services.map((line) => ({ serviceId: line.serviceId, staffId: line.staffId }))
+     : input.serviceId
+@@ -814,10 +842,10 @@ export async function createAppointment(
+ 
+   const startsAt = new Date(input.startsAt);
+   const status = input.status ?? "SCHEDULED";
+-  const lines = await planLines(startsAt, selections, input.staffId ?? null, {
++  const lines = await planLines(tx, startsAt, selections, input.staffId ?? null, {
+     requireActiveFor: () => true,
+   });
+-  if (input.customerId) await assertCustomerExists(input.customerId);
++  if (input.customerId) await assertCustomerExists(tx, input.customerId);
+ 
+   const plan: BookingPlan = {
+     customerId: input.customerId ?? null,
+@@ -831,18 +859,18 @@ export async function createAppointment(
+   const holds = status !== "CANCELLED";
+ 
+   if (!input.repeat) {
+-    const booked = holds ? await reserve(lines) : lines;
+-    const id = await prisma.$transaction((tx) => writeBooking(tx, { ...plan, lines: booked }));
+-    return { appointment: await getAppointment(id), series: null };
++    const booked = holds ? await reserve(tx, lines) : lines;
++    const id = await writeBooking(tx, { ...plan, lines: booked });
++    return { id, series: null };
+   }
+ 
+   // The anchor is the booking the desk asked for, so a busy time — or a service
+   // whose rooms are all taken — is refused as it always was rather than quietly
+   // producing a series with nothing in it.
+-  const anchorLines = holds ? await reserve(lines) : lines;
++  const anchorLines = holds ? await reserve(tx, lines) : lines;
+ 
+   const { intervalWeeks, occurrences } = input.repeat;
+-  const zone = await salonTimeZone();
++  const zone = await salonTimeZone(tx);
+   const skipped: AppointmentSeriesReport["skipped"] = [];
+   const planned: { index: number; lines: PlannedLine[] }[] = [{ index: 0, lines: anchorLines }];
+ 
+@@ -860,7 +888,7 @@ export async function createAppointment(
+     }
+ 
+     try {
+-      planned.push({ index, lines: await reserve(occurrenceLines) });
++      planned.push({ index, lines: await reserve(tx, occurrenceLines) });
+     } catch (error) {
+       // One busy fortnight is not a reason to throw away the other bookings. Any
+       // other refusal — an ineligible performer, a dead service — is a real error
+@@ -870,34 +898,31 @@ export async function createAppointment(
+     }
+   }
+ 
+-  const written = await prisma.$transaction(async (tx) => {
+-    const series = await tx.appointmentSeries.create({
+-      // Placeholder: `scopeCreateData` stamps the caller's tenant.
+-      data: { tenantId: "", intervalWeeks, occurrences },
+-      select: { id: true },
+-    });
+-
+-    let anchorId = "";
+-    for (const occurrence of planned) {
+-      const id = await writeBooking(tx, {
+-        ...plan,
+-        lines: occurrence.lines,
+-        series: { id: series.id, index: occurrence.index },
+-      });
+-      if (occurrence.index === 0) anchorId = id;
+-    }
+-    return { seriesId: series.id, anchorId };
++  const series = await tx.appointmentSeries.create({
++    // Placeholder: `scopeCreateData` stamps the caller's tenant.
++    data: { tenantId: "", intervalWeeks, occurrences },
++    select: { id: true },
+   });
+ 
++  let anchorId = "";
++  for (const occurrence of planned) {
++    const id = await writeBooking(tx, {
++      ...plan,
++      lines: occurrence.lines,
++      series: { id: series.id, index: occurrence.index },
++    });
++    if (occurrence.index === 0) anchorId = id;
++  }
++
+   const report = appointmentSeriesReportSchema.parse({
+-    id: written.seriesId,
++    id: series.id,
+     intervalWeeks,
+     occurrences,
+     created: planned.length,
+     skipped,
+   });
+ 
+-  return { appointment: await getAppointment(written.anchorId), series: report };
++  return { id: anchorId, series: report };
+ }
+ 
+ /**
+@@ -913,11 +938,27 @@ export async function updateAppointment(
+   id: string,
+   input: UpdateAppointmentInput,
+ ): Promise<AppointmentDetail> {
+-  const existing = await findRow(id);
++  await prisma.$transaction(
++    async (tx) => {
++      await lockBookingCalendar(tx);
++      await updateAppointmentInTransaction(tx, id, input);
++    },
++    { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 },
++  );
++  return getAppointment(id);
++}
++
++async function updateAppointmentInTransaction(
++  tx: Tx,
++  id: string,
++  input: UpdateAppointmentInput,
++): Promise<void> {
++  await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${id} AND "tenantId" = ${tenantId()} FOR UPDATE`;
++  const existing = await tx.appointment.findFirst({ where: { id }, select: APPOINTMENT_SELECT });
+   if (!existing) throw notFound("That appointment does not exist.", "APPOINTMENT_NOT_FOUND");
+ 
+   const customerId = input.customerId === undefined ? existing.customerId : input.customerId;
+-  if (customerId) await assertCustomerExists(customerId);
++  if (customerId) await assertCustomerExists(tx, customerId);
+ 
+   const startsAt = input.startsAt ? new Date(input.startsAt) : existing.startsAt;
+   // The booking's performer, as the request leaves it. It is the default for a
+@@ -966,7 +1007,7 @@ export async function updateAppointment(
+     );
+   }
+ 
+-  const lines = await planLines(startsAt, selections, staffId, {
++  const lines = await planLines(tx, startsAt, selections, staffId, {
+     // Only a *new* choice has to be active; keeping a service the booking
+     // already has must survive that service being retired.
+     requireActiveFor: (serviceId) => !existingServiceIds.has(serviceId),
+@@ -993,7 +1034,7 @@ export async function updateAppointment(
+   // The chain as it will be written. Re-picking a resource can move a line from
+   // Room 1 to Room 2, which is exactly why the rewrite below uses this rather
+   // than the freshly planned chain.
+-  const booked = mustCheck ? await reserve(lines, id) : lines;
++  const booked = mustCheck ? await reserve(tx, lines, id) : lines;
+   // A room that changed hands is a line that changed, even when its service, its
+   // performer and its window did not — so the rewrite has to happen then too.
+   const resourcesChanged =
+@@ -1005,59 +1046,54 @@ export async function updateAppointment(
+   // not keep the time it was done at, or the day's history reads as two truths.
+   const finishedAt = status === "COMPLETED" ? (existing.finishedAt ?? new Date()) : null;
+ 
+-  await prisma.$transaction(async (tx) => {
+-    await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${id} AND "tenantId" = ${tenantId()} FOR UPDATE`;
+-    const current = await tx.appointment.findFirstOrThrow({ where: { id } });
+-    if (current.updatedAt.getTime() !== existing.updatedAt.getTime())
+-      throw conflict("Booking changed. Reload before editing.", "APPOINTMENT_CHANGED");
+-    const relevant =
+-      current.customerId !== customerId ||
+-      current.staffId !== primary.staffId ||
+-      current.serviceId !== primary.serviceId ||
+-      current.startsAt.getTime() !== startsAt.getTime() ||
+-      current.endsAt.getTime() !== endsAt.getTime() ||
+-      current.status !== status ||
+-      linesChanged;
+-
+-    if (linesChanged || resourcesChanged) {
+-      // The chain is rewritten rather than diffed: lines are cheap, ordered, and
+-      // a stale row left behind by a partial update is exactly the kind of ghost
+-      // the overlap rule would then trip over.
+-      await tx.appointmentLine.deleteMany({ where: { appointmentId: id } });
+-      await tx.appointmentLine.createMany({
+-        data: booked.map((line, position) => ({
+-          tenantId: "",
+-          appointmentId: id,
+-          serviceId: line.serviceId,
+-          staffId: line.staffId,
+-          resourceId: line.resourceId,
+-          position,
+-          startsAt: line.startsAt,
+-          endsAt: line.endsAt,
+-          durationMinutes: line.durationMinutes,
+-        })),
+-      });
+-    }
+-
+-    await tx.appointment.update({
+-      where: { id },
+-      data: {
+-        customerId: customerId ?? null,
+-        staffId: primary.staffId,
+-        serviceId: primary.serviceId,
+-        startsAt,
+-        endsAt,
+-        status,
+-        durationMinutes,
+-        finishedAt,
+-        ...(input.comment !== undefined ? { comment: input.comment } : {}),
+-        ...(relevant ? { messageRevision: { increment: 1 }, customerConfirmedAt: null } : {}),
+-      },
++  const current = await tx.appointment.findFirstOrThrow({ where: { id } });
++  if (current.updatedAt.getTime() !== existing.updatedAt.getTime())
++    throw conflict("Booking changed. Reload before editing.", "APPOINTMENT_CHANGED");
++  const relevant =
++    current.customerId !== customerId ||
++    current.staffId !== primary.staffId ||
++    current.serviceId !== primary.serviceId ||
++    current.startsAt.getTime() !== startsAt.getTime() ||
++    current.endsAt.getTime() !== endsAt.getTime() ||
++    current.status !== status ||
++    linesChanged;
++
++  if (linesChanged || resourcesChanged) {
++    // The chain is rewritten rather than diffed: lines are cheap, ordered, and
++    // a stale row left behind by a partial update is exactly the kind of ghost
++    // the overlap rule would then trip over.
++    await tx.appointmentLine.deleteMany({ where: { appointmentId: id } });
++    await tx.appointmentLine.createMany({
++      data: booked.map((line, position) => ({
++        tenantId: "",
++        appointmentId: id,
++        serviceId: line.serviceId,
++        staffId: line.staffId,
++        resourceId: line.resourceId,
++        position,
++        startsAt: line.startsAt,
++        endsAt: line.endsAt,
++        durationMinutes: line.durationMinutes,
++      })),
+     });
+-    if (relevant) await queueAppointmentMessages(tx, id);
+-  });
++  }
+ 
+-  return getAppointment(id);
++  await tx.appointment.update({
++    where: { id },
++    data: {
++      customerId: customerId ?? null,
++      staffId: primary.staffId,
++      serviceId: primary.serviceId,
++      startsAt,
++      endsAt,
++      status,
++      durationMinutes,
++      finishedAt,
++      ...(input.comment !== undefined ? { comment: input.comment } : {}),
++      ...(relevant ? { messageRevision: { increment: 1 }, customerConfirmedAt: null } : {}),
++    },
++  });
++  if (relevant) await queueAppointmentMessages(tx, id);
+ }
+ 
+ /**
+@@ -1070,7 +1106,20 @@ export async function updateAppointment(
+  * joined a series is untouched — this is the series' own exit, not a bulk edit.
+  */
+ export async function cancelAppointmentSeries(seriesId: string): Promise<{ cancelled: number }> {
+-  const series = await prisma.appointmentSeries.findFirst({
++  return prisma.$transaction(
++    async (tx) => {
++      await lockBookingCalendar(tx);
++      return cancelAppointmentSeriesInTransaction(tx, seriesId);
++    },
++    { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 },
++  );
++}
++
++async function cancelAppointmentSeriesInTransaction(
++  tx: Tx,
++  seriesId: string,
++): Promise<{ cancelled: number }> {
++  const series = await tx.appointmentSeries.findFirst({
+     where: { id: seriesId },
+     select: { id: true },
+   });
+@@ -1078,22 +1127,23 @@ export async function cancelAppointmentSeries(seriesId: string): Promise<{ cance
+     throw notFound("That repeating booking does not exist.", "APPOINTMENT_SERIES_NOT_FOUND");
+   }
+ 
+-  const rows = await prisma.appointment.findMany({
++  const rows = await tx.appointment.findMany({
+     where: { seriesId, status: "SCHEDULED", startsAt: { gt: new Date() } },
+     select: { id: true },
+     orderBy: { startsAt: "asc" },
+   });
+   if (rows.length === 0) return { cancelled: 0 };
+ 
+-  await prisma.$transaction(async (tx) => {
+-    await tx.appointment.updateMany({
+-      where: { id: { in: rows.map((row) => row.id) } },
+-      data: { status: "CANCELLED" },
+-    });
+-    // Each cancelled slot is a message the customer should hear about, and the
+-    // queue is per booking — the same call the single-booking path makes.
+-    for (const row of rows) await queueAppointmentMessages(tx, row.id);
++  await tx.appointment.updateMany({
++    where: {
++      id: { in: rows.map((row) => row.id) },
++      status: "SCHEDULED",
++      startsAt: { gt: new Date() },
++    },
++    data: { status: "CANCELLED" },
+   });
+-
++  // Each cancelled slot is a message the customer should hear about, and the
++  // queue is per booking — the same call the single-booking path makes.
++  for (const row of rows) await queueAppointmentMessages(tx, row.id);
+   return { cancelled: rows.length };
+ }

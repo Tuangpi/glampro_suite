@@ -462,7 +462,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0020 — P1-02 Multi-service & recurring bookings, rooms/equipment
 
-- Status: IN PROGRESS — Phases A–D implemented and tested; awaiting UAT/application migration, with concurrent overlap protection still unresolved
+- Status: DONE — Phases A–E implemented and tested; tenant-row booking lock serializes API booking writes and message jobs commit with the booking transaction. Concurrent SQL writers and PostgreSQL EXCLUDE remain out of scope (ADR 0014).
 - Expected result: Multi-service bookings, recurring bookings, rooms/equipment resources
 - Carried-forward finding (ADRs 0013/0014): cover cancelled-target handling and
   status-only reactivation, not only existing cancelled blockers. Check duration
@@ -508,9 +508,10 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   - `/api/resources` GET list/detail and POST/PATCH: reads for members, writes for SUPER_ADMIN/MANAGER with writable-tenant guard and appointments entitlement. Archive through status; no DELETE. `serviceIds` on resource writes replaces eligibility; no separate `/api/services/:id/resources` endpoint. Foreign service references are refused.
   - Settings card creates/edits resources and eligibility, loads all catalogue pages including retired services, and blocks editing on incomplete/failed catalogue reads. Drawer displays each assigned resource without a manual picker. Notes-only and cancellation updates retain existing resource history; reschedule/reactivation reassign/check occupancy.
   - Verification: focused resource service/routes/tenant isolation **35/35**, full API **463/464** (only known messaging quiet-hours flake), web **474/474**, shared **130/130**. Workspace typechecks/lint, build, touched-file Prettier, Prisma validation and diff whitespace checks pass. Fresh disposable migration replay has zero schema drift; seed twice leaves 13 appointments / 13 lines / 0 missing lines. No application database migration, commit or deployment.
-- Remaining: UAT and separately authorized application migration. Concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); pre-write reads do not prevent simultaneous requests from double-booking. A series cannot be edited as a whole, has no excluded dates, and is weeks-only.
+- Acceptance / local migration (October 20, 2026): user accepted UAT and reports running Prisma migration. Read-only `npm run db:migrate:status` reports 28 migrations and database up to date on local `glampro_suite` at `localhost:5432`; terminal exit status was not reliably captured. No agent migration, production rollout, schema-drift check or post-migration smoke test claimed.
+- Remaining: concurrent overlap protection still depends on a future Postgres `EXCLUDE` constraint (ADR 0014); pre-write reads do not prevent simultaneous requests from double-booking. A series cannot be edited as a whole, has no excluded dates, and is weeks-only.
 - Completion check / dependencies: Verify multi-service/recurring/resource conflicts and booking lifecycle. Resolve duration snapshots, department/active-staff eligibility, service-only resizing bypasses and concurrent overlap protection (ADRs 0013/0014).
-- Next: user UAT for Phases B–D and explicit migration authorization. Resolve the concurrent-exclusion completion criterion before marking the entire task DONE. No commit or deployment; Phase B–D migrations remain unapplied to the application database.
+- Next: resolve the concurrent-exclusion completion criterion before marking the entire task DONE; verify application behavior after migration. No agent migration, commit or deployment. Local migration history reports up to date; production state is unverified.
 
 ### TK2610-0022 — P1-03 Online booking page + deposits / no-show fee
 

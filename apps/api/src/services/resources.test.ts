@@ -187,6 +187,242 @@ describe(
       return true;
     }
 
+    async function oneWinner(
+      requests: Promise<unknown>[],
+      code: "APPOINTMENT_CLASH" | "RESOURCE_UNAVAILABLE",
+    ): Promise<void> {
+      const results = await Promise.allSettled(requests);
+      assert.equal(results.filter((result) => result.status === "fulfilled").length, 1);
+      for (const result of results) {
+        if (result.status !== "rejected") continue;
+        assert.ok(result.reason instanceof HttpError);
+        assert.equal(result.reason.statusCode, 409);
+        assert.equal(result.reason.code, code);
+      }
+    }
+
+    it("allows only one simultaneous booking for the same performer", async () => {
+      const s = requireSeeded();
+      await oneWinner(
+        Array.from({ length: 6 }, () =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: s.consultServiceId,
+              staffId: s.miraId,
+              startsAt: at(day(23), 10),
+            }),
+          ),
+        ),
+        "APPOINTMENT_CLASH",
+      );
+    });
+
+    it("allows only one simultaneous booking for an unassigned equipment slot", async () => {
+      const s = requireSeeded();
+      await oneWinner(
+        Array.from({ length: 6 }, () =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: s.steamServiceId,
+              startsAt: at(day(24), 10),
+            }),
+          ),
+        ),
+        "RESOURCE_UNAVAILABLE",
+      );
+    });
+
+    it("assigns different eligible rooms to simultaneous bookings", async () => {
+      const s = requireSeeded();
+      const created = await Promise.all(
+        Array.from({ length: 2 }, () =>
+          asTenantA(() =>
+            createAppointment({ serviceId: s.cutServiceId, startsAt: at(day(25), 10) }),
+          ),
+        ),
+      );
+      assert.deepEqual(
+        new Set(created.map((result) => result.appointment.services[0]?.resourceId)),
+        new Set([s.room1Id, s.room2Id]),
+      );
+      await assert.rejects(
+        () =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: s.cutServiceId,
+              startsAt: at(day(25), 10),
+            }),
+          ),
+        isResourceRefusal,
+      );
+    });
+
+    it("serializes simultaneous reschedules into one resource slot", async () => {
+      const s = requireSeeded();
+      const bookings = await Promise.all(
+        [8, 12].map((hour) =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: s.steamServiceId,
+              startsAt: at(day(26), hour),
+            }),
+          ),
+        ),
+      );
+      await oneWinner(
+        bookings.map((booking) =>
+          asTenantA(() => updateAppointment(booking.appointment.id, { startsAt: at(day(26), 10) })),
+        ),
+        "RESOURCE_UNAVAILABLE",
+      );
+    });
+
+    it("serializes simultaneous reactivations for one performer", async () => {
+      const s = requireSeeded();
+      const bookings = await Promise.all(
+        Array.from({ length: 2 }, () =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: s.consultServiceId,
+              staffId: s.miraId,
+              startsAt: at(day(27), 10),
+              status: "CANCELLED",
+            }),
+          ),
+        ),
+      );
+      await oneWinner(
+        bookings.map((booking) =>
+          asTenantA(() => updateAppointment(booking.appointment.id, { status: "SCHEDULED" })),
+        ),
+        "APPOINTMENT_CLASH",
+      );
+    });
+
+    it("checks simultaneous recurring bookings before writing their series", async () => {
+      const s = requireSeeded();
+      await oneWinner(
+        Array.from({ length: 2 }, () =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: s.steamServiceId,
+              startsAt: at(day(28), 10),
+              repeat: { intervalWeeks: 1, occurrences: 3 },
+            }),
+          ),
+        ),
+        "RESOURCE_UNAVAILABLE",
+      );
+      const count = await asTenantA(() =>
+        prisma.appointment.count({
+          where: { startsAt: new Date(at(day(28), 10)) },
+        }),
+      );
+      assert.equal(count, 1);
+    });
+
+    it("allows simultaneous back-to-back equipment bookings", async () => {
+      const s = requireSeeded();
+      const created = await Promise.all(
+        [10, 11].map((hour) =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: s.steamServiceId,
+              startsAt: at(day(29), hour),
+            }),
+          ),
+        ),
+      );
+      assert.equal(created.length, 2);
+    });
+
+    it("checks later service lines during simultaneous creates and reschedules", async () => {
+      const s = requireSeeded();
+      const moving = await asTenantA(() =>
+        createAppointment({
+          serviceId: s.steamServiceId,
+          startsAt: "2026-12-10T08:00:00.000Z",
+        }),
+      );
+      await oneWinner(
+        [
+          asTenantA(() =>
+            createAppointment({
+              services: [{ serviceId: s.consultServiceId }, { serviceId: s.steamServiceId }],
+              startsAt: "2026-12-10T10:00:00.000Z",
+            }),
+          ),
+          asTenantA(() =>
+            updateAppointment(moving.appointment.id, {
+              startsAt: "2026-12-10T10:30:00.000Z",
+            }),
+          ),
+        ],
+        "RESOURCE_UNAVAILABLE",
+      );
+    });
+
+    it("reports later recurring conflicts when a simultaneous one-off takes the slot", async () => {
+      const s = requireSeeded();
+      const results = await Promise.allSettled([
+        asTenantA(() =>
+          createAppointment({
+            serviceId: s.steamServiceId,
+            startsAt: "2031-01-12T10:00:00.000Z",
+            repeat: { intervalWeeks: 1, occurrences: 2 },
+          }),
+        ),
+        asTenantA(() =>
+          createAppointment({
+            serviceId: s.steamServiceId,
+            startsAt: "2031-01-19T10:00:00.000Z",
+          }),
+        ),
+      ]);
+      const series = results[0];
+      assert.ok(series && series.status === "fulfilled");
+      const report = series.value.series!;
+      if (results[1]?.status === "fulfilled") {
+        assert.equal(report.created, 1);
+        assert.equal(report.skipped[0]?.startsAt, "2031-01-19T10:00:00.000Z");
+      } else {
+        assert.equal(report.created, 2);
+        assert.equal(report.skipped.length, 0);
+        const refusal = results[1];
+        assert.ok(refusal && refusal.status === "rejected");
+        isResourceRefusal(refusal.reason);
+      }
+      assert.equal(
+        await asTenantA(() =>
+          prisma.appointment.count({
+            where: { startsAt: new Date("2031-01-19T10:00:00.000Z") },
+          }),
+        ),
+        1,
+      );
+    });
+
+    it("releases the calendar lock after refusal so another booking can proceed", async () => {
+      const s = requireSeeded();
+      await assert.rejects(
+        () =>
+          asTenantA(() =>
+            createAppointment({
+              serviceId: "missing-service",
+              startsAt: "2026-12-20T10:00:00.000Z",
+            }),
+          ),
+        (error: unknown) => error instanceof HttpError && error.code === "SERVICE_NOT_FOUND",
+      );
+      const result = await asTenantA(() =>
+        createAppointment({
+          serviceId: s.steamServiceId,
+          startsAt: "2026-12-20T10:00:00.000Z",
+        }),
+      );
+      assert.equal(result.appointment.services[0]?.resourceId, s.steamerId);
+    });
+
     it("gives a line the room its service is tied to", async () => {
       const s = requireSeeded();
 

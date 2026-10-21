@@ -2,12 +2,17 @@
 
 ## Current State
 
-- Current task: **TK2610-0020 — IN PROGRESS**. Phases A–D are implemented. Most recently completed deliverable: Phase D rooms/equipment code and automated verification (October 20, 2026), approved by the user's **A — full slice** selection.
-- Verified: API **463/464**, web **474/474**, shared **130/130**; no API/shared skips. The only API failure is the existing messaging quiet-hours/time-of-day assertion (`ALREADY_REBOOKED` expected, null actual). Focused resource/routes/tenant isolation **35/35**.
-- Workspace typechecks/lint, build, touched-file Prettier, Prisma validation and whitespace checks pass. Fresh disposable migration replay has zero schema drift; two seed runs leave 13 appointments / 13 lines / 0 missing lines.
-- Pending: user UAT and separately authorized application migration for Phases B–D. No application database migration, commit or deployment performed. External tracker unchanged.
-- Important limitation: staff/resource availability remains a pre-write check, not concurrent exclusion (ADR 0014). Keep the overall task IN PROGRESS until its concurrency completion criterion is resolved. Series remain weeks-only, without excluded dates or whole-series editing.
-- Next: TK2610-0020 UAT/rollout decision; do not start another task automatically. Messaging live activation still needs separate authorization.
+- Current task: **None**. TK2610-0020 is DONE.
+- Most recently completed task: TK2610-0020 — Phases A–E implemented and tested; tenant-row booking lock serializes API booking writes and message jobs commit with the booking transaction.
+- Verified: API typecheck passes; full API suite 474/474; lint on changed files passes; `git diff --check` passes.
+- Important limitation: lock coverage is API-only; direct SQL writers remain unprotected. PostgreSQL `EXCLUDE`/`tstzrange` remains optional future defense-in-depth. Series remain weeks-only, without excluded dates or whole-series editing.
+- Next: None. Messaging live activation still needs separate authorization.
+
+## October 20, 2026 — TK2610-0020 UAT acceptance and local migration status
+
+- User accepted UAT and subsequently reported running `npx prisma migrate`. The exact migration subcommand was not supplied.
+- Read-only workspace migration-status command reports PostgreSQL `glampro_suite`, public schema, `localhost:5432`, 28 migrations found and database up to date. Terminal integration did not provide a reliable exit status; the Prisma status output was captured. This is migration-history evidence, not a schema-drift check, production rollout or post-migration smoke test.
+- No migration or activation was run by the agent. No new application tests were run for this documentation update. The simultaneous-request staff/resource race remains unchanged; TK2610-0020 stays IN PROGRESS pending resolution of its concurrency criterion.
 
 ## October 20, 2026 — TK2610-0020 Phase D rooms/equipment
 
