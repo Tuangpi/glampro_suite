@@ -72,7 +72,12 @@ export const salonProfileSchema = z.object({
   gstEnabled: z.boolean(),
   /** GST registration number printed on receipts and reports; `null` when unset. */
   gstRegistrationNumber: z.string().nullable(),
+  /** Online booking (TK2610-0022). */
+  onlineBookingEnabled: z.boolean(),
+  onlineDepositAmount: z.number().int().min(0),
+  onlineNoShowFee: z.number().int().min(0),
   owner: z.object({ id: z.string(), name: z.string(), email: z.string() }).nullable(),
+
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -109,6 +114,9 @@ export const updateSalonProfileSchema = z
      * so the stored pair can never be "enabled but unnumbered".
      */
     gstRegistrationNumber: gstRegistrationNumberSchema.nullable().optional(),
+    onlineBookingEnabled: z.boolean().optional(),
+    onlineDepositAmount: z.number().int().min(0).optional(),
+    onlineNoShowFee: z.number().int().min(0).optional(),
   })
   .strict()
   .refine(

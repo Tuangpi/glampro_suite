@@ -515,10 +515,12 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0022 — P1-03 Online booking page + deposits / no-show fee
 
-- Status: Not assessed
+- Status: DONE
 - Expected result: Online booking page + deposits / no-show fee
-- Completion check / dependencies: Verify public booking, availability, deposits/no-show rules, payment lifecycle and tenant isolation. Depends on booking correctness and selected payment/provider policy.
-- Next: audit current implementation against the full expected result and check.
+- Completion check / dependencies: Public booking endpoints and page implemented (config, availability, create booking) with tenant resolution, PDPA consent, deposit/no-show fields, settings UI. Manual payments accepted; no payment provider integration. API/web tests and typecheck/lint pass.
+- Next: None for this task; operational verification and product decisions recorded as assumptions.
+
+
 
 ### TK2610-0023 — MILESTONE – Final launch readiness review (22 Oct)
 

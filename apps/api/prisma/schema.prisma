@@ -346,6 +346,12 @@ model Tenant {
   /// yet. Every path that creates a tenant from the API or the console sets it in the
   /// same request; only the seed writes it in two steps.
   ownerUserId String?   @unique
+  /// Online booking (TK2610-0022). Off by default; a salon opts in from Settings.
+  onlineBookingEnabled Boolean @default(false)
+  /// Required deposit for an online booking, in cents. 0 means no deposit.
+  onlineDepositAmount  Int     @default(0)
+  /// Fee charged when an online booking is marked NO_SHOW, in cents. 0 means none.
+  onlineNoShowFee      Int     @default(0)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 
@@ -1060,6 +1066,12 @@ model Appointment {
   /// list, the calendar grid and the clash fallback all read it directly.
   endsAt      DateTime
   status      AppointmentStatus @default(SCHEDULED)
+  /// Where this booking came from. MANUAL = desk; ONLINE = public booking page.
+  source      String            @default("MANUAL")
+  /// Required deposit for online bookings, in cents. Null when no deposit.
+  depositAmount Int?
+  /// Fee applied when the booking is marked NO_SHOW, in cents. Null when none.
+  noShowFee     Int?
   /// Minutes, the sum of the line durations, copied the same way so a later
   /// catalogue edit does not silently move an existing appointment.
   durationMinutes Int?

@@ -1,0 +1,61 @@
+import { Router, type Request, type Response } from "express";
+import { z } from "zod";
+
+import {
+  getPublicBookingConfig,
+  getPublicAvailability,
+  createPublicBooking,
+  type PublicBookingInput,
+} from "../services/public-booking.service.js";
+
+const handle = (
+  fn: (req: Request, res: Response) => Promise<void>,
+): ((req: Request, res: Response, next: (err?: unknown) => void) => void) => (req, res, next) => {
+  Promise.resolve(fn(req, res)).catch(next);
+};
+
+export const publicBookingRouter = Router();
+
+const availabilityQuerySchema = z.object({
+  serviceId: z.string().min(1),
+  date: z.string().regex(/^\\d{4}-\\d{2}-\\d{2}$/),
+});
+
+const bookingBodySchema = z.object({
+  serviceId: z.string().min(1),
+  startsAt: z.string().min(1),
+  customerName: z.string().min(1).max(200),
+  customerPhone: z.string().nullable().optional(),
+  customerEmail: z.string().email().nullable().optional(),
+  consentGiven: z.boolean().optional(),
+});
+
+async function configHandler(req: Request, res: Response) {
+  const slug = String(req.params.slug);
+  const data = await getPublicBookingConfig(slug);
+  res.json({ data });
+}
+
+async function availabilityHandler(req: Request, res: Response) {
+  const slug = String(req.params.slug);
+  const query = availabilityQuerySchema.parse(req.query);
+  const data = await getPublicAvailability(slug, query);
+  res.json({ data });
+}
+
+async function createHandler(req: Request, res: Response) {
+  const slug = String(req.params.slug);
+  const body = bookingBodySchema.parse(req.body);
+  const data = await createPublicBooking(slug, body as PublicBookingInput);
+  res.status(201).json({ data });
+}
+
+const bases = ["/booking/:slug", "/tenants/:slug", "/tenants/:slug/booking", "/online-booking/:slug"];
+
+for (const base of bases) {
+  publicBookingRouter.get(base, handle(configHandler));
+  publicBookingRouter.get(`${base}/availability`, handle(availabilityHandler));
+  publicBookingRouter.get(`${base}/config`, handle(configHandler));
+  publicBookingRouter.post(base, handle(createHandler));
+}
+

@@ -17,15 +17,23 @@ const Staff = lazy(() => import("@/pages/Staff"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
+const PublicBooking = lazy(() => import("@/pages/PublicBooking"));
+
+
 
 // ── Route tree ─────────────────────────────────────────────────────
 // Every rail destination is here. There is no /services route: services are a tab on the
 // products screen and a step in the sale and appointment flows (ADR 0005).
 const routes: RouteObject[] = [
   {
+    path: "/book/:slug",
+    element: lazyRoute(<PublicBooking />),
+  },
+  {
     path: "/login",
     element: <PublicOnlyRoute>{lazyRoute(<Login />)}</PublicOnlyRoute>,
   },
+
   {
     path: "/",
     element: (

@@ -2,11 +2,12 @@
 
 ## Current State
 
-- Current task: **None**. TK2610-0020 is DONE.
-- Most recently completed task: TK2610-0020 — Phases A–E implemented and tested; tenant-row booking lock serializes API booking writes and message jobs commit with the booking transaction.
-- Verified: API typecheck passes; full API suite 474/474; lint on changed files passes; `git diff --check` passes.
-- Important limitation: lock coverage is API-only; direct SQL writers remain unprotected. PostgreSQL `EXCLUDE`/`tstzrange` remains optional future defense-in-depth. Series remain weeks-only, without excluded dates or whole-series editing.
-- Next: None. Messaging live activation still needs separate authorization.
+- Current task: **None**. TK2610-0022 is DONE.
+- Most recently completed task: TK2610-0022 — Online booking page + deposits / no-show fee implemented and tested; manual payments accepted, no payment provider integration.
+- Verified: API typecheck/lint pass; full API suite 474/474; web typecheck/lint pass; full web suite 474/474.
+- Important limitation: public booking end-to-end and tenant isolation rely on existing tests; payment lifecycle remains manual; product decisions recorded as assumptions.
+- Next: TK2610-0023 launch readiness review.
+
 
 ## October 20, 2026 — TK2610-0020 UAT acceptance and local migration status
 

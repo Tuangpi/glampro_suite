@@ -61,7 +61,11 @@ export async function getSalonProfile(): Promise<SalonProfile> {
       locale: true,
       gstEnabled: true,
       gstRegistrationNumber: true,
+      onlineBookingEnabled: true,
+      onlineDepositAmount: true,
+      onlineNoShowFee: true,
       createdAt: true,
+
       updatedAt: true,
       owner: { select: { id: true, name: true, email: true } },
     },

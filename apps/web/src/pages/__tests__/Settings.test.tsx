@@ -79,7 +79,11 @@ beforeEach(() => {
       locale: "en-SG",
       gstEnabled: false,
       gstRegistrationNumber: null,
+      onlineBookingEnabled: false,
+      onlineDepositAmount: 0,
+      onlineNoShowFee: 0,
       owner: { id: "owner-1", name: "Ava Owner", email: "ava@example.com" },
+
       createdAt: "2026-01-02T00:00:00.000Z",
       updatedAt: "2026-10-09T00:00:00.000Z",
     },
@@ -202,6 +206,9 @@ describe("Settings", () => {
       locale: "en-SG",
       gstEnabled: false,
       gstRegistrationNumber: null,
+      onlineBookingEnabled: false,
+      onlineDepositAmount: 0,
+      onlineNoShowFee: 0,
     });
   });
 
@@ -221,6 +228,9 @@ describe("Settings", () => {
       locale: "en-GB",
       gstEnabled: false,
       gstRegistrationNumber: null,
+      onlineBookingEnabled: false,
+      onlineDepositAmount: 0,
+      onlineNoShowFee: 0,
     });
   });
 
@@ -240,6 +250,9 @@ describe("Settings", () => {
       locale: "en-SG",
       gstEnabled: true,
       gstRegistrationNumber: "M90312345X",
+      onlineBookingEnabled: false,
+      onlineDepositAmount: 0,
+      onlineNoShowFee: 0,
     });
   });
 

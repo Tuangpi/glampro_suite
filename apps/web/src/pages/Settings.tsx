@@ -108,6 +108,10 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
   const [draftLocale, setDraftLocale] = useState<string | null>(null);
   const [draftGstEnabled, setDraftGstEnabled] = useState<boolean | null>(null);
   const [draftGstNumber, setDraftGstNumber] = useState<string | null>(null);
+  const [draftOnlineEnabled, setDraftOnlineEnabled] = useState<boolean | null>(null);
+  const [draftOnlineDeposit, setDraftOnlineDeposit] = useState<string | null>(null);
+  const [draftOnlineNoShow, setDraftOnlineNoShow] = useState<string | null>(null);
+
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -117,6 +121,10 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
   const locale = draftLocale ?? data?.locale ?? "";
   const gstEnabled = draftGstEnabled ?? data?.gstEnabled ?? false;
   const gstRegistrationNumber = draftGstNumber ?? data?.gstRegistrationNumber ?? "";
+  const onlineEnabled = draftOnlineEnabled ?? data?.onlineBookingEnabled ?? false;
+  const onlineDeposit = draftOnlineDeposit ?? (data === undefined ? "" : String(data.onlineDepositAmount));
+  const onlineNoShow = draftOnlineNoShow ?? (data === undefined ? "" : String(data.onlineNoShowFee));
+
 
   const fieldError = (field: string): string | undefined =>
     fieldErrors[field] ?? fieldErrors[`body.${field}`];
@@ -137,6 +145,9 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
         gstEnabled,
         gstRegistrationNumber:
           gstRegistrationNumber.trim().length > 0 ? gstRegistrationNumber.trim() : null,
+        onlineBookingEnabled: onlineEnabled,
+        onlineDepositAmount: Number(onlineDeposit || 0),
+        onlineNoShowFee: Number(onlineNoShow || 0),
       });
       showToast("success", "Salon profile saved.");
     } catch (error) {
@@ -239,7 +250,35 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
             </p>
           </div>
 
+          <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
+            <Checkbox
+              label="Enable online booking"
+              checked={onlineEnabled}
+              disabled={!canEdit || update.isPending}
+              onChange={(event) => setDraftOnlineEnabled(event.target.checked)}
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Input
+                label="Deposit amount (cents)"
+                type="number"
+                min={0}
+                value={onlineDeposit}
+                onChange={(event) => setDraftOnlineDeposit(event.target.value)}
+                disabled={!canEdit || update.isPending}
+              />
+              <Input
+                label="No-show fee (cents)"
+                type="number"
+                min={0}
+                value={onlineNoShow}
+                onChange={(event) => setDraftOnlineNoShow(event.target.value)}
+                disabled={!canEdit || update.isPending}
+              />
+            </div>
+          </div>
+
           <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+
             <Fact label="Salon identifier" value={data.slug} />
             <Fact label="Status" value={data.status} />
             <Fact label="Owner" value={data.owner?.name ?? "—"} />
