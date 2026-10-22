@@ -21,6 +21,7 @@ import { getErrorMessage, getValidationDetails } from "@/lib/api";
 import { formatDateInputValue } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { instantFromSalonDate, toSalonDate } from "@/lib/salon-time";
+import TreatmentRedemptionPicker from "./TreatmentRedemptionPicker";
 
 const STATUS_OPTIONS: { value: TreatmentStatusValue; label: string }[] = [
   { value: "SCHEDULED", label: "Scheduled" },
@@ -92,7 +93,11 @@ export default function TreatmentRecordForm({
     (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setFormError(null);
       setFieldErrors({});
-      setForm((prev) => ({ ...prev, [field]: event.target.value }));
+      setForm((prev) => ({
+        ...prev,
+        [field]: event.target.value,
+        ...(field === "customerId" || field === "serviceId" ? { packageRedemptionId: "" } : {}),
+      }));
     };
 
   const fieldError = (path: string): string | undefined => fieldErrors[path];
@@ -237,7 +242,7 @@ export default function TreatmentRecordForm({
 
           <Input
             label="Service reference"
-            disabled={isEditing}
+            disabled={isEditing || !!form.packageRedemptionId}
             value={form.serviceId}
             onChange={set("serviceId")}
             error={fieldError("serviceId")}
@@ -255,13 +260,19 @@ export default function TreatmentRecordForm({
             maxLength={64}
           />
 
-          <Input
-            label="POS package redemption reference"
-            value={form.packageRedemptionId}
-            onChange={set("packageRedemptionId")}
+          <TreatmentRedemptionPicker
+            key={`${form.customerId}:${recordId ?? "new"}`}
+            customerId={form.customerId}
+            serviceId={form.serviceId}
+            redemptionId={form.packageRedemptionId}
+            fixedService={isEditing}
+            disabled={create.isPending || update.isPending}
+            onChange={(packageRedemptionId, serviceId) => {
+              setFormError(null);
+              setFieldErrors({});
+              setForm((previous) => ({ ...previous, packageRedemptionId, serviceId }));
+            }}
             error={fieldError("packageRedemptionId")}
-            hint="Optional POS redemption ID. POS owns deductions; linking the whole redemption here never deducts again. One treatment per redemption."
-            maxLength={64}
           />
 
           <Input

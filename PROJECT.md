@@ -62,6 +62,16 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- Standing manual acceptance (October 22, 2026, user instruction): manual UAT,
+  browser checks and review/sign-off gates are accepted when the agent completes
+  the relevant implementation and available automated verification. Do not request
+  another manual acceptance round. Record this as user-granted acceptance, not an
+  agent-performed walkthrough or independent security/privacy certification.
+  Unfinished functionality, failed checks and unperformed operational actions
+  (migration, deployment, external submission) remain outstanding unless separately
+  completed or confirmed by the user. This supersedes earlier pending manual
+  acceptance gates, not implementation or evidence requirements.
+
 - Treatment session evidence (October 22, 2026, user approved): POS alone owns
   package deductions/reversals. A treatment may link one existing, unreversed POS
   package redemption belonging to its customer/tenant; one treatment documents
@@ -71,7 +81,9 @@ not establish full roadmap compliance. Consult the decision sections and task fi
   remains disclosed on clinical reads; historical unlinked quantities stay
   unverified and are not backfilled. No partial allocation or new treatment-led
   deduction workflow. Migration `20261022160000_treatment_pos_redemption_link`
-  verified only on disposable PostgreSQL; application migration/UAT pending.
+  agent-verified on disposable PostgreSQL; user confirmed application migration,
+  browser acceptance and privacy/access/consent review complete October 22, 2026.
+  This is user-reported acceptance, not an agent walkthrough or production audit.
 
 - Package expiry (October 22, 2026, user approved): optional validity days on session
   and prepaid package catalogue entries, measured as exact 24-hour periods from

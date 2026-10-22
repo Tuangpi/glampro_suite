@@ -6,6 +6,8 @@ import {
   createTreatmentRecordSchema,
   idParamSchema,
   treatmentRecordListQuerySchema,
+  treatmentRedemptionQuerySchema,
+  type TreatmentRedemptionQuery,
   type CreateTreatmentConsentEventInput,
   type CreateTreatmentConsentFormInput,
   type CreateTreatmentPhotoInput,
@@ -22,6 +24,7 @@ import {
   listConsentEvents,
   listTreatmentConsentForms,
   listTreatmentRecords,
+  listTreatmentRedemptions,
   removeTreatmentPhoto,
   recordTreatmentConsentEvent,
   updateTreatmentRecord,
@@ -54,6 +57,23 @@ treatmentRouter.get(
     try {
       const query = validated<TreatmentRecordListQuery>(req, "query");
       res.json({ data: await listTreatmentRecords(query) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/** Read-only, customer-scoped eligible POS evidence. Must precede /:id. */
+treatmentRouter.get(
+  "/redemptions",
+  auth,
+  requireModule("treatments"),
+  validate(treatmentRedemptionQuerySchema, "query"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await listTreatmentRedemptions(validated<TreatmentRedemptionQuery>(req, "query")),
+      });
     } catch (error) {
       next(error);
     }

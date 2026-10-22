@@ -3,6 +3,8 @@ import {
   treatmentConsentFormSchema,
   treatmentPhotoSchema,
   treatmentRecordSchema,
+  treatmentRedemptionOptionSchema,
+  type TreatmentRedemptionQuery,
   type CreateTreatmentConsentEventInput,
   type CreateTreatmentConsentFormInput,
   type CreateTreatmentPhotoInput,
@@ -100,6 +102,92 @@ export async function getTreatmentRecord(id: string): Promise<TreatmentRecord> {
 }
 
 type TreatmentTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** Eligible evidence only. Listing never reserves a redemption or changes balances. */
+export async function listTreatmentRedemptions(query: TreatmentRedemptionQuery) {
+  const scope = currentScope();
+  if (scope?.kind !== "tenant") throw forbiddenScope();
+  const customer = await prisma.customer.findFirst({ where: { id: query.customerId } });
+  if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
+  const paging = parsePagination(query);
+  const holdings = await prisma.customerPackageHolding.findMany({
+    where: { customerId: query.customerId },
+    include: {
+      package: {
+        include: { services: { include: { service: { select: { id: true, name: true } } } } },
+      },
+    },
+  });
+  const eligible = holdings
+    .map((holding) => ({
+      holding,
+      services: holding.package.services
+        .map((link) => link.service)
+        .filter((service) => !query.serviceId || service.id === query.serviceId),
+    }))
+    .filter(({ services }) => services.length > 0);
+  const where = {
+    customerId: query.customerId,
+    tenantId: scope.tenantId,
+    itemType: "PACKAGE" as const,
+    revertedAt: null,
+    quantity: { gt: 0 },
+    treatmentRecord: { is: null },
+    OR: eligible.map(({ holding, services }) => ({
+      holdingId: holding.id,
+      itemId: holding.packageId,
+      sale: {
+        tenantId: scope.tenantId,
+        customerId: query.customerId,
+        status: "COMPLETED" as const,
+        lines: {
+          some: {
+            tenantId: scope.tenantId,
+            itemType: "SERVICE" as const,
+            itemId: { in: services.map((service) => service.id) },
+          },
+        },
+      },
+    })),
+  };
+  const [rows, total] = await Promise.all([
+    prisma.customerRedemption.findMany({
+      where,
+      skip: paging.skip,
+      take: paging.take,
+      orderBy: [{ usedAt: "desc" }, { id: "desc" }],
+      include: {
+        sale: {
+          select: {
+            receiptNumber: true,
+            lines: {
+              where: { tenantId: scope.tenantId, itemType: "SERVICE" },
+              select: { itemId: true },
+            },
+          },
+        },
+      },
+    }),
+    prisma.customerRedemption.count({ where }),
+  ]);
+  return paginated(
+    rows.map((row) => {
+      const match = eligible.find(({ holding }) => holding.id === row.holdingId)!;
+      return treatmentRedemptionOptionSchema.parse({
+        id: row.id,
+        receiptNumber: row.sale.receiptNumber,
+        usedAt: row.usedAt.toISOString(),
+        packageName: match.holding.package.name,
+        quantity: row.quantity,
+        services: match.services.filter((service) =>
+          row.sale.lines.some((line) => line.itemId === service.id),
+        ),
+      });
+    }),
+    total,
+    paging,
+  );
+}
 
 /** Links evidence only. POS remains the sole owner of all balance mutations. */
 async function resolvePackageLink(

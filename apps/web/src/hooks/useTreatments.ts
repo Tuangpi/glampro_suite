@@ -12,6 +12,7 @@ import type {
   TreatmentPhoto,
   TreatmentRecord,
   TreatmentRecordListQuery,
+  TreatmentRedemptionOption,
   UpdateTreatmentRecordInput,
 } from "@glampro_suite/shared";
 
@@ -21,6 +22,25 @@ import { showToast } from "@/components/ui/toast-store";
 import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 20;
+
+export function useTreatmentRedemptions(
+  customerId: string,
+  serviceId: string | undefined,
+  page: number,
+) {
+  return useQuery({
+    queryKey: [...queryKeys.treatments.all(), "redemptions", customerId, serviceId, page],
+    queryFn: () =>
+      getPaginated<TreatmentRedemptionOption>("/treatments/redemptions", {
+        customerId,
+        serviceId,
+        page,
+        pageSize: PAGE_SIZE,
+      }),
+    enabled: customerId.length > 0,
+    staleTime: 0,
+  });
+}
 
 export function useTreatmentList(
   filters: TreatmentRecordListQuery & { page: number; pageSize: number },

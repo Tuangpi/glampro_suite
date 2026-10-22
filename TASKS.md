@@ -15,6 +15,13 @@ not a new test run. Assess code first; follow dependencies rather than date orde
 
 ## Documentation consolidation
 
+Standing acceptance override (October 22, 2026): the user accepts all manual
+UAT/browser/review gates when implementation and available automated verification
+are complete. No further manual sign-off request is required. Record acceptance
+as user-granted, not agent-executed testing. Unfinished features, failed checks and
+unperformed migrations/deployments/external submissions are not completed by this
+instruction. See PROJECT.md for the standing rule.
+
 ### DOCS-01 — Consolidate project documentation
 
 - Status: DONE
@@ -613,7 +620,23 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Completion check / dependencies: Verify consent forms, before/after photos, treatment records, session tracking and package expiry with privacy/access controls.
 - Done: Prisma schema models (TreatmentRecord, TreatmentPhoto, TreatmentConsentForm, TreatmentConsentEvent, TreatmentStatus, TreatmentPhotoType); opposite relations on User/Customer/CustomerPackageHolding; TENANT_SCOPED_MODELS updated; shared Zod schemas; API service + routes; router mounted; module added to MODULE_CODES/MODULE_NAMES/CORE_MODULE_CODES + seed categories. Prisma migration `20261021120000_treatment_records_and_consent` created and applied; Prisma client regenerated. Build passes; all existing tests pass (474 API + 130 shared).
 - October 22 UI follow-up: mounted treatment list in customer profile behind treatment entitlement. Wired create/edit/delete with confirmation, error retry, read-only controls and server pagination. Profile customer locked; immutable reference fields disabled in edit. Corrected date/time input to salon-local/UTC conversion, retained legacy date contract and preserved unchanged historical instants. Web 495/495, shared 141/141, full build and API typecheck passed. No application migration or browser acceptance performed.
-- Remaining: usable POS redemption selector, before/after photo-tagging integration, clinical privacy/access/consent review, and treatment-link application migration/browser acceptance. Standalone TreatmentPhotoTagger exists but is not integrated; removed inert list action rather than claiming it works. Earlier component-only completion claims are not end-to-end evidence. Parent task remains IN PROGRESS.
+- Acceptance update (October 22): user confirms treatment-link application migration, browser acceptance and privacy/access/consent review complete. This supersedes pending acceptance/rollout notes above; no agent walkthrough or production audit is claimed.
+- October 22 redemption selector: DONE for this slice. Added authenticated,
+  treatment-entitled, customer-scoped paginated POS evidence endpoint and picker.
+  Shows receipt/date/package/service/quantity; selecting evidence fills its covered
+  service. Excludes reversed/non-completed/already-linked/missing-holding and
+  service-mismatched evidence; save-time linkage validation remains authoritative.
+  Existing unavailable/reversed evidence is preserved on ordinary clinical edits;
+  explicit clearing never restores sessions. Customer changes reset selection.
+  No schema migration or balance mutation added. Manual acceptance is user-granted
+  under the standing instruction, not an agent browser walkthrough.
+- Verification: isolated PostgreSQL sale/linkage/HTTP acceptance 56/56, web 500/500,
+  shared 143/143, full build and root lint passed. No application database changes,
+  commit or deployment. See PROGRESS.md for verification details.
+- Remaining / next: before/after photo-tagging integration. Standalone
+  TreatmentPhotoTagger exists but is not integrated. Earlier component-only claims
+  are not end-to-end evidence. Parent task remains IN PROGRESS; TK2610-0027 family,
+  transfer and audit gaps remain independent.
 
 ### TK2610-0027 — P2-03 Family/shared prepaid credit, package transfer, expiry rules
 

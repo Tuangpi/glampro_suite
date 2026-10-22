@@ -2,11 +2,48 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — treatment-session integration (IN PROGRESS: application migration/browser acceptance pending)**. POS-owned linkage and customer-profile create/edit/delete workflow automatically verified. Most recently completed accepted slice: **TK2610-0027 purchase-based package expiry**; parent TK2610-0027 remains IN PROGRESS.
+- Current task: **TK2610-0025 — treatment-session integration (IN PROGRESS: photo-tagging integration pending)**. Most recently completed slice: **usable POS redemption selector**, with standing user-granted manual acceptance. User confirmed application migration, browser acceptance and privacy/access/consent review complete October 22, 2026. Parent TK2610-0027 remains IN PROGRESS.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
-- Next: authorized treatment-link application migration/browser acceptance; redemption picker, photo-tagging integration and privacy/access review remain. Family sharing/transfer/audit are separate gaps. No production access or paid mail authorized.
+- Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
+- Next: photo-tagging integration under TK2610-0025. Family sharing/transfer/audit remain separate TK2610-0027 gaps. Neither parent is ready to close. No production access or paid mail authorized.
+
+## October 22, 2026 — Usable POS redemption selector completed
+
+- Added shared query/option contracts, read-only GET /api/treatments/redemptions
+  before /:id, treatment query hook and TreatmentRedemptionPicker in the treatment
+  form. Customer-scoped, stable paginated evidence shows receipt, salon-local date,
+  package, covered service and whole-redemption quantity. New records get the
+  service from their selection; edits are filtered to their immutable service.
+- Filters require a matching customer holding/package, completed sale, covered
+  service on that sale, unreversed redemption and no existing treatment link.
+  Expired holdings remain valid historical evidence. No reservation or balance
+  mutation; existing transactional save-time guards handle races and duplicate use.
+- UI covers empty/loading/error/retry/pages, customer-reset selection, explicit
+  unlink and preservation of current unavailable/reversed evidence. Historical
+  quantities and unchanged timestamps remain preserved. Manual acceptance granted
+  by standing user instruction; no agent browser walkthrough.
+- Passed: isolated PostgreSQL sale/linkage/HTTP tests 56/56 (none skipped), full
+  web 500/500, shared 143/143, production build and root lint. Added five UI tests,
+  two shared contract tests and expanded DB acceptance for listing, paging,
+  customer/tenant/service filtering, linkage/unlink/reversal, auth and entitlement.
+  Initial HTTP fixture assumptions (seeded core module; validation status 422)
+  corrected and rerun. Existing pg concurrent-client deprecation warning remains.
+- Reused only approved disposable cluster at loopback 55440/package_expiry_test;
+  fixtures cleaned by tests. No application DB migration, commit or deployment.
+  Logs: /tmp/glampro-picker-{full,focused,db}.log. Photo-tagging is next; both
+  parent external tasks remain IN PROGRESS.
+
+## October 22, 2026 — Standing manual acceptance recorded
+
+- User accepts manual tasks when agent work is complete. Recorded the standing
+  acceptance rule in PROJECT.md and TASKS.md, preserving implementation, automated
+  verification and operational evidence requirements.
+- Recorded user-reported completion of treatment-link application migration,
+  browser acceptance and privacy/access/consent review. Historical pending notes
+  below are superseded by this update, not evidence of new agent-run checks.
+- Documentation only; no application code, database or external tracker changes.
 
 ## October 22, 2026 — Customer-profile treatment workflow wired
 

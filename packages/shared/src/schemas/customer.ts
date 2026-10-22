@@ -247,6 +247,23 @@ export const treatmentRecordSchema = z.object({
 
 export type TreatmentRecord = z.infer<typeof treatmentRecordSchema>;
 
+export const treatmentRedemptionQuerySchema = paginationQuerySchema.extend({
+  customerId: z.string().min(1).max(64),
+  serviceId: z.string().min(1).max(64).optional(),
+});
+export type TreatmentRedemptionQuery = z.infer<typeof treatmentRedemptionQuerySchema>;
+
+/** Read-only POS evidence; each service is covered by both the package and sale. */
+export const treatmentRedemptionOptionSchema = z.object({
+  id: z.string(),
+  receiptNumber: z.number().int().nullable(),
+  usedAt: z.iso.datetime(),
+  packageName: z.string(),
+  quantity: z.number().int().positive(),
+  services: z.array(z.object({ id: z.string(), name: z.string() })).min(1),
+});
+export type TreatmentRedemptionOption = z.infer<typeof treatmentRedemptionOptionSchema>;
+
 /** Creating a treatment record. */
 export const createTreatmentRecordSchema = z.object({
   packageRedemptionId: z.string().min(1).max(64).nullable().optional(),

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
 
 test(
   "treatment links POS sessions without double deduction",
@@ -10,6 +12,7 @@ test(
     assert.equal(url.port, "55440");
     assert.equal(url.pathname, "/package_expiry_test");
     process.env.NODE_ENV = "test";
+    process.env.JWT_SECRET = "treatment-selector-isolated-test-secret";
     const { prisma } = await import("../lib/prisma.js");
     const { runAsPlatform, runAsTenant } = await import("../lib/tenant-context.js");
     const {
@@ -17,6 +20,7 @@ test(
       updateTreatmentRecord,
       deleteTreatmentRecord,
       getTreatmentRecord,
+      listTreatmentRedemptions,
     } = await import("./treatment.service.js");
     const tenantId = "treatment-session-a";
     const foreignId = "treatment-session-b";
@@ -111,7 +115,123 @@ test(
           quantityConsumed: 0,
           packageRedemptionId: redemption.id,
         };
+        const query = { customerId: customer.id, page: 1, pageSize: 1 };
+        const options = await listTreatmentRedemptions(query);
+        assert.equal(options.total, 1);
+        assert.deepEqual(options.data[0], {
+          id: redemption.id,
+          receiptNumber: null,
+          usedAt: redemption.usedAt.toISOString(),
+          packageName: "Sessions",
+          quantity: 2,
+          services: [{ id: service.id, name: "Facial" }],
+        });
+        assert.equal((await listTreatmentRedemptions({ ...query, customerId: other.id })).total, 0);
+        assert.equal(
+          (await listTreatmentRedemptions({ ...query, serviceId: "not-covered" })).total,
+          0,
+        );
+        const saleLine = await prisma.saleLine.findFirstOrThrow({ where: { saleId: sale.id } });
+        await prisma.saleLine.update({
+          where: { id: saleLine.id },
+          data: { itemId: "not-covered" },
+        });
+        assert.equal((await listTreatmentRedemptions(query)).total, 0);
+        await prisma.saleLine.update({ where: { id: saleLine.id }, data: { itemId: service.id } });
+        await prisma.customerRedemption.update({
+          where: { id: redemption.id },
+          data: { holdingId: "missing-holding" },
+        });
+        assert.equal((await listTreatmentRedemptions(query)).total, 0);
+        await prisma.customerRedemption.update({
+          where: { id: redemption.id },
+          data: { holdingId: holding.id },
+        });
+        await assert.rejects(
+          runAsTenant(foreignId, () => listTreatmentRedemptions(query)),
+          code("CUSTOMER_NOT_FOUND"),
+        );
+        const second = await prisma.customerRedemption.create({
+          data: {
+            tenantId,
+            customerId: customer.id,
+            saleId: sale.id,
+            itemType: "PACKAGE",
+            itemId: pkg.id,
+            holdingId: holding.id,
+            quantity: 1,
+            usedAt: new Date(redemption.usedAt.getTime() - 1000),
+          },
+        });
+        assert.equal((await listTreatmentRedemptions(query)).pageCount, 2);
+        assert.equal(
+          (await listTreatmentRedemptions({ ...query, page: 2 })).data[0]?.id,
+          second.id,
+        );
+        await prisma.customerRedemption.update({
+          where: { id: second.id },
+          data: { revertedAt: new Date() },
+        });
+        assert.equal((await listTreatmentRedemptions(query)).total, 1);
+        await prisma.sale.update({ where: { id: sale.id }, data: { status: "VOID" } });
+        assert.equal((await listTreatmentRedemptions(query)).total, 0);
+        await prisma.sale.update({ where: { id: sale.id }, data: { status: "COMPLETED" } });
+        // The route is authenticated, entitled, validated and registered before /:id.
+        const { createApp } = await import("../app.js");
+        const { signAccessToken } = await import("../lib/tokens.js");
+        const user = await prisma.user.create({
+          data: {
+            tenantId,
+            name: "Picker staff",
+            email: "picker@treatment.test",
+            passwordHash: "unused",
+            globalRole: "STAFF",
+          },
+        });
+        const module = await runAsPlatform(() =>
+          prisma.module.upsert({
+            where: { code: "treatments" },
+            update: {},
+            create: { code: "treatments", name: "Treatments", category: "Add-on", isCore: false },
+          }),
+        );
+        await runAsPlatform(() =>
+          prisma.module.update({ where: { id: module.id }, data: { isCore: false } }),
+        );
+        const token = signAccessToken({
+          id: user.id,
+          email: user.email!,
+          tenantId,
+          globalRole: user.globalRole,
+          realm: "web",
+          tokenVersion: user.tokenVersion,
+        }).token;
+        const server = createApp().listen(0, "127.0.0.1");
+        await once(server, "listening");
+        try {
+          const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/treatments/redemptions`;
+          const headers = { Authorization: `Bearer ${token}` };
+          assert.equal((await fetch(`${base}?customerId=${customer.id}`)).status, 401);
+          assert.equal((await fetch(`${base}?customerId=${customer.id}`, { headers })).status, 403);
+          await prisma.tenantModule.create({ data: { tenantId, moduleId: module.id } });
+          assert.equal((await fetch(base, { headers })).status, 422);
+          assert.equal(
+            (await fetch(`${base}?customerId=${customer.id}&page=0`, { headers })).status,
+            422,
+          );
+          const response = await fetch(`${base}?customerId=${customer.id}`, { headers });
+          assert.equal(response.status, 200);
+          assert.equal(((await response.json()) as { data: { total: number } }).data.total, 1);
+        } finally {
+          await runAsPlatform(() =>
+            prisma.module.update({ where: { id: module.id }, data: { isCore: module.isCore } }),
+          );
+          await new Promise<void>((resolve, reject) =>
+            server.close((error) => (error ? reject(error) : resolve())),
+          );
+        }
         const record = await createTreatmentRecord(input);
+        assert.equal((await listTreatmentRedemptions(query)).total, 0);
         assert.equal(record.quantityConsumed, 2);
         assert.equal(record.packageHoldingId, holding.id);
         const historical = await prisma.treatmentRecord.create({
@@ -157,6 +277,7 @@ test(
           3,
         );
         await updateTreatmentRecord(record.id, { packageRedemptionId: null });
+        assert.equal((await listTreatmentRedemptions(query)).total, 1);
         await assert.rejects(
           createTreatmentRecord({ ...input, quantityConsumed: 1 }),
           code("REDEMPTION_QUANTITY_MISMATCH"),
