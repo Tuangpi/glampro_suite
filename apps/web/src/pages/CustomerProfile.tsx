@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CustomerPhoto, CustomerPurchase, CustomerVisit } from "@glampro_suite/shared";
 import CustomerAvatar from "@/components/customers/CustomerAvatar";
+import CustomerArchivePanel from "@/components/customers/CustomerArchivePanel";
 import CustomerFormDrawer from "@/components/customers/CustomerFormDrawer";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -56,6 +57,7 @@ function Profile({ id }: { id: string }) {
           Edit profile and consent
         </Button>
       </header>
+      <CustomerArchivePanel key={row.id} customer={row} refreshing={customer.isFetching} />
       <section
         className="rounded-card border border-line bg-surface p-5"
         aria-label="Customer details"

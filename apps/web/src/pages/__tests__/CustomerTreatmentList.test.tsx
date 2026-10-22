@@ -29,6 +29,20 @@ vi.mock("@/components/treatments/TreatmentPhotoTagger", () => ({
     </p>
   ),
 }));
+vi.mock("@/components/treatments/TreatmentConsent", () => ({
+  default: ({ customerId, recordId }: { customerId: string; recordId: string }) => (
+    <p>
+      Consent workflow {customerId} {recordId}
+    </p>
+  ),
+}));
+vi.mock("@/components/treatments/TreatmentRetention", () => ({
+  default: ({ customerId, recordId }: { customerId: string; recordId: string }) => (
+    <p>
+      Retention workflow {customerId} {recordId}
+    </p>
+  ),
+}));
 vi.mock("@/components/treatments/TreatmentRecordForm", () => ({
   default: ({
     record,
@@ -80,6 +94,35 @@ it("opens photos for the selected treatment even when writes are disabled", asyn
   );
   expect(mocks.detail).toHaveBeenLastCalledWith("t1");
 });
+it("opens customer-scoped consent evidence even when writes are disabled", async () => {
+  mocks.readOnly = true;
+  render(<CustomerTreatmentList customerId="c1" />);
+  await userEvent.click(screen.getByRole("button", { name: "Treatment consent" }));
+  expect(screen.getByRole("dialog", { name: "Treatment consent" })).toHaveTextContent(
+    "Consent workflow c1 t1",
+  );
+});
+it("opens scoped retention details in read-only mode and blocks deleting held treatments", async () => {
+  mocks.readOnly = true;
+  mocks.list.mockReturnValue({
+    data: { data: [{ ...record, retentionHold: true }], pageCount: 1 },
+  });
+  render(<CustomerTreatmentList customerId="c1" />);
+  expect(screen.getByText("Retention hold active")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Retention review" }));
+  expect(screen.getByRole("dialog", { name: "Treatment retention review" })).toHaveTextContent(
+    "Retention workflow c1 t1",
+  );
+});
+it("blocks deleting a held record even in a writable salon", () => {
+  mocks.list.mockReturnValue({
+    data: { data: [{ ...record, retentionHold: true }], pageCount: 1 },
+  });
+  render(<CustomerTreatmentList customerId="c1" />);
+  expect(screen.getByRole("button", { name: "Delete" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Edit" })).toBeEnabled();
+});
 it("opens scoped create and edit forms and keeps new available on nonempty lists", async () => {
   const user = userEvent.setup();
   render(<CustomerTreatmentList customerId="c1" />);
@@ -108,6 +151,21 @@ it("keeps a failed deletion visible for retry", async () => {
   await user.click(screen.getByRole("button", { name: "Delete" }));
   await user.click(screen.getByRole("button", { name: "Confirm delete" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Deletion refused");
+});
+it("explains protected consent evidence and keeps a refused deletion visible", async () => {
+  mocks.remove.mockRejectedValue(
+    new Error("This treatment has consent evidence and cannot be deleted."),
+  );
+  render(<CustomerTreatmentList customerId="c1" />);
+  await userEvent.click(screen.getByRole("button", { name: "Delete" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent(
+    "Treatments with consent evidence cannot be deleted",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "This treatment has consent evidence and cannot be deleted.",
+  );
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
 it("requests server pages and disables writes for read-only salons", async () => {
   mocks.readOnly = true;

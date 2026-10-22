@@ -95,6 +95,26 @@ beforeEach(() => {
 });
 
 describe("the list", () => {
+  it("includes archived customers explicitly and labels preserved records", async () => {
+    useCustomerList.mockReturnValue(listOf([summary({ archivedAt: "2026-10-22T01:00:00Z" })]));
+    render(<Customers />);
+    expect(screen.getByText("Archived")).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Include archived customers" })).not.toBeChecked();
+    await userEvent.click(screen.getByRole("checkbox", { name: "Include archived customers" }));
+    expect(useCustomerList).toHaveBeenLastCalledWith({
+      page: 1,
+      pageSize: 20,
+      search: undefined,
+      includeArchived: true,
+    });
+    await userEvent.click(screen.getByRole("checkbox", { name: "Include archived customers" }));
+    expect(useCustomerList).toHaveBeenLastCalledWith({
+      page: 1,
+      pageSize: 20,
+      search: undefined,
+      includeArchived: undefined,
+    });
+  });
   it("renders a row per customer and the server's total", () => {
     useCustomerList.mockReturnValue(
       listOf([summary(), summary({ id: "c2", name: "Irene Foo", phone: null })]),

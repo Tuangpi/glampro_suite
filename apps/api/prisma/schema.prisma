@@ -930,6 +930,9 @@ model PublicLink {
 model Customer {
   id       String @id @default(cuid())
   tenantId String
+  archivedAt DateTime?
+  archivedById String?
+  archiveReason String?
   /// Human-readable label shown in the UI. Legacy `customer_id`.
   code     String?
   name     String
@@ -1047,6 +1050,12 @@ model CustomerConsentEvent {
 /// member and service, and tracks package-session consumption.
 model TreatmentRecord {
   id            String          @id @default(cuid())
+  retentionReviewAt DateTime?
+  retentionReason String?
+  retentionReviewedAt DateTime?
+  retentionReviewedById String?
+  retentionHold Boolean @default(false)
+  retentionHoldReason String?
   tenantId      String
   customerId    String
   appointmentId String?
@@ -1108,6 +1117,7 @@ model TreatmentPhoto {
 /// A salon-authored consent form for a category of treatments. Versions are
 /// immutable — a new version is a new row.
 model TreatmentConsentForm {
+  signatureRequired Boolean @default(false)
   id          String   @id @default(cuid())
   tenantId    String
   /// Which treatment category this form covers, e.g. "laser", "chemical peel".
@@ -1132,6 +1142,10 @@ model TreatmentConsentForm {
 /// Append-only record that a customer consented (or declined) to a treatment
 /// consent form for a specific treatment record.
 model TreatmentConsentEvent {
+  eventType         String
+  previousEventId   String?
+  correctsEventId   String?
+  reason            String?
   id                String   @id @default(cuid())
   tenantId          String
   treatmentRecordId String
@@ -1146,12 +1160,13 @@ model TreatmentConsentEvent {
   signatureData     Bytes?
   createdAt         DateTime @default(now())
 
-  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  treatmentRecord    TreatmentRecord       @relation(fields: [treatmentRecordId], references: [id], onDelete: Cascade)
-  treatmentConsentForm TreatmentConsentForm @relation(fields: [treatmentConsentFormId], references: [id], onDelete: Cascade)
-  customer           Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  treatmentRecord    TreatmentRecord       @relation(fields: [treatmentRecordId], references: [id], onDelete: Restrict)
+  treatmentConsentForm TreatmentConsentForm @relation(fields: [treatmentConsentFormId], references: [id], onDelete: Restrict)
+  customer           Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
 
-  @@unique([treatmentRecordId, treatmentConsentFormId])
+  @@unique([previousEventId])
+  @@index([treatmentRecordId, treatmentConsentFormId, consentedAt])
   @@index([tenantId])
   @@index([customerId])
   @@map("treatment_consent_events")

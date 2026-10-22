@@ -15,6 +15,8 @@ import Pagination from "@/components/ui/Pagination";
 import Modal from "@/components/ui/Modal";
 import Drawer from "@/components/ui/Drawer";
 import TreatmentPhotoTagger from "@/components/treatments/TreatmentPhotoTagger";
+import TreatmentConsent from "@/components/treatments/TreatmentConsent";
+import TreatmentRetention from "@/components/treatments/TreatmentRetention";
 import { getErrorMessage } from "@/lib/api";
 
 interface CustomerTreatmentListProps {
@@ -26,6 +28,8 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
   const [deleting, setDeleting] = useState<TreatmentRecord | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
+  const [consentRecordId, setConsentRecordId] = useState<string | null>(null);
+  const [retentionRecordId, setRetentionRecordId] = useState<string | null>(null);
   const photoRecord = useTreatment(photoRecordId);
   const { isReadOnly } = useAuth();
   const { formatDate } = useSalonFormatting();
@@ -130,6 +134,23 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
                 </td>
                 <td className="text-sm text-ink-muted">{formatDate(record.createdAt)}</td>
                 <td className="text-right">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setRetentionRecordId(record.id)}
+                  >
+                    Retention review
+                  </Button>
+                  {record.retentionHold ? (
+                    <span className="text-warning">Retention hold active</span>
+                  ) : null}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setConsentRecordId(record.id)}
+                  >
+                    Treatment consent
+                  </Button>
                   <Button variant="secondary" size="sm" onClick={() => setPhotoRecordId(record.id)}>
                     Before/after photos
                   </Button>
@@ -144,7 +165,7 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
                   <Button
                     variant="danger"
                     size="sm"
-                    disabled={isReadOnly}
+                    disabled={isReadOnly || record.retentionHold}
                     onClick={() => {
                       setDeleteError(null);
                       setDeleting(record);
@@ -214,6 +235,20 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
           </>
         ) : null}
       </Drawer>
+      <Drawer
+        open={consentRecordId !== null}
+        onClose={() => setConsentRecordId(null)}
+        title="Treatment consent"
+        widthClassName="max-w-2xl"
+      >
+        {consentRecordId !== null ? (
+          <TreatmentConsent
+            key={consentRecordId}
+            customerId={customerId}
+            recordId={consentRecordId}
+          />
+        ) : null}
+      </Drawer>
       <Modal
         open={deleting !== null && !isReadOnly}
         onClose={() => {
@@ -224,6 +259,10 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
         <p>
           Delete {deleting?.treatmentType}? This removes clinical documentation, not the POS
           redemption. Package balances will not change.
+        </p>
+        <p>
+          Treatments with consent evidence cannot be deleted. The server checks this before
+          deletion. Active retention holds also prevent deletion.
         </p>
         {deleteError ? <p role="alert">{deleteError}</p> : null}
         <Button disabled={remove.isPending} variant="secondary" onClick={() => setDeleting(null)}>
@@ -237,6 +276,20 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
           Confirm delete
         </Button>
       </Modal>
+      <Drawer
+        open={retentionRecordId !== null}
+        onClose={() => setRetentionRecordId(null)}
+        title="Treatment retention review"
+        widthClassName="max-w-2xl"
+      >
+        {retentionRecordId ? (
+          <TreatmentRetention
+            key={`${customerId}:${retentionRecordId}`}
+            customerId={customerId}
+            recordId={retentionRecordId}
+          />
+        ) : null}
+      </Drawer>
     </section>
   );
 }

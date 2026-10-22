@@ -18,6 +18,8 @@ import {
 import { getCustomerConsent, recordCustomerConsent } from "../services/consent.service.js";
 import {
   createCustomerSchema,
+  archiveCustomerSchema,
+  type ArchiveCustomerInput,
   customerListQuerySchema,
   idParamSchema,
   updateCustomerSchema,
@@ -26,12 +28,13 @@ import {
   type UpdateCustomerInput,
 } from "@glampro_suite/shared";
 
-import { auth, requireWritableTenant } from "../middleware/auth.js";
+import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
 import {
   createCustomer,
+  archiveCustomer,
   getCustomer,
   getCustomerHoldings,
   listCustomers,
@@ -50,6 +53,27 @@ import {
  * that exists passes it.
  */
 export const customersRouter = Router();
+
+customersRouter.post(
+  "/:id/archive",
+  auth,
+  requireModule("customers"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(idParamSchema, "params"),
+  validate(archiveCustomerSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({
+        data: await archiveCustomer(id, validated<ArchiveCustomerInput>(req, "body"), req.user.id),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 for (const [path, list] of [
   ["visits", listCustomerVisits],

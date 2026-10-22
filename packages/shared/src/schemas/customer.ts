@@ -34,6 +34,10 @@ export type GenderValue = z.infer<typeof genderSchema>;
  * rather than making the caller know which one the salon typed into.
  */
 export const customerListQuerySchema = paginationQuerySchema.extend({
+  includeArchived: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
   search: z.string().trim().max(200).optional(),
   /** Restrict to customers carrying this membership reference. */
   memberId: z.string().trim().max(64).optional(),
@@ -44,6 +48,9 @@ export type CustomerListQuery = z.infer<typeof customerListQuerySchema>;
 /** A row in the screen-07 list. */
 export const customerSummarySchema = z.object({
   id: z.string(),
+  archivedAt: z.iso.datetime().nullable().optional(),
+  archivedById: z.string().nullable().optional(),
+  archiveReason: z.string().nullable().optional(),
   code: z.string().nullable(),
   name: z.string(),
   memberId: z.string().nullable(),
@@ -226,6 +233,12 @@ export type TreatmentPhotoTypeValue = z.infer<typeof treatmentPhotoTypeSchema>;
 /** A treatment record row. */
 export const treatmentRecordSchema = z.object({
   id: z.string(),
+  retentionReviewAt: z.iso.datetime().nullable().optional(),
+  retentionReason: z.string().nullable().optional(),
+  retentionReviewedAt: z.iso.datetime().nullable().optional(),
+  retentionReviewedById: z.string().nullable().optional(),
+  retentionHold: z.boolean().optional(),
+  retentionHoldReason: z.string().nullable().optional(),
   tenantId: z.string(),
   customerId: z.string(),
   appointmentId: z.string().nullable(),
@@ -248,6 +261,28 @@ export const treatmentRecordSchema = z.object({
 });
 
 export type TreatmentRecord = z.infer<typeof treatmentRecordSchema>;
+
+/** A complete manual review. Clearing a hold still requires a documented review reason. */
+export const reviewTreatmentRetentionSchema = z
+  .object({
+    reviewAt: z.iso.datetime(),
+    reason: z.string().trim().min(1).max(2000),
+    hold: z.boolean(),
+    holdReason: z.string().trim().min(1).max(2000).nullable(),
+  })
+  .strict()
+  .refine((input) => !input.hold || input.holdReason !== null, {
+    message: "A retention hold requires a reason.",
+    path: ["holdReason"],
+  });
+export type ReviewTreatmentRetentionInput = z.infer<typeof reviewTreatmentRetentionSchema>;
+
+export const archiveCustomerSchema = z
+  .object({
+    reason: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+export type ArchiveCustomerInput = z.infer<typeof archiveCustomerSchema>;
 
 export const treatmentRedemptionQuerySchema = paginationQuerySchema.extend({
   customerId: z.string().min(1).max(64),
@@ -326,6 +361,7 @@ export const treatmentConsentFormSchema = z.object({
   treatmentType: z.string().trim().min(1).max(100),
   title: z.string().trim().min(1).max(200),
   content: z.string().trim().min(1),
+  signatureRequired: z.boolean().optional(),
   version: z.number().int().min(1),
   isActive: z.boolean(),
   createdAt: z.string(),
@@ -349,6 +385,7 @@ export type TreatmentConsentFormListQuery = z.infer<typeof treatmentConsentFormL
 
 /** Creating a treatment consent form. */
 export const createTreatmentConsentFormSchema = z.object({
+  signatureRequired: z.boolean().optional(),
   treatmentType: z.string().trim().min(1).max(100, "Treatment type is required"),
   title: z.string().trim().min(1, "Title is required").max(200),
   content: z.string().trim().min(1, "Content is required"),
@@ -360,6 +397,10 @@ export type CreateTreatmentConsentFormInput = z.infer<typeof createTreatmentCons
 
 /** A treatment consent event row. */
 export const treatmentConsentEventSchema = z.object({
+  eventType: z.enum(["GRANT", "DECLINE", "WITHDRAWAL", "RECONSENT", "CORRECTION"]).optional(),
+  previousEventId: z.string().nullable().optional(),
+  correctsEventId: z.string().nullable().optional(),
+  reason: z.string().nullable().optional(),
   id: z.string(),
   tenantId: z.string(),
   treatmentRecordId: z.string(),
@@ -376,13 +417,56 @@ export const treatmentConsentEventSchema = z.object({
 export type TreatmentConsentEvent = z.infer<typeof treatmentConsentEventSchema>;
 
 /** Recording a customer's consent to a treatment consent form. */
+export const treatmentSignatureSchema = z
+  .object({
+    strokes: z
+      .array(
+        z
+          .array(
+            z
+              .object({
+                x: z.number().finite().min(0).max(600),
+                y: z.number().finite().min(0).max(200),
+              })
+              .strict(),
+          )
+          .min(2)
+          .max(500),
+      )
+      .min(1)
+      .max(30),
+  })
+  .strict()
+  .refine(
+    ({ strokes }) =>
+      strokes.some((stroke) =>
+        stroke.some((point) => Math.hypot(point.x - stroke[0]!.x, point.y - stroke[0]!.y) >= 5),
+      ),
+    "Draw a signature, not just a dot.",
+  );
+
 export const createTreatmentConsentEventSchema = z.object({
+  eventType: z.enum(["GRANT", "DECLINE", "WITHDRAWAL", "RECONSENT", "CORRECTION"]).optional(),
+  previousEventId: z.string().min(1).nullable().optional(),
+  correctsEventId: z.string().min(1).optional(),
+  reason: z.string().trim().min(1).max(2000).optional(),
   treatmentRecordId: z.string().min(1),
   treatmentConsentFormId: z.string().min(1),
   customerId: z.string().min(1),
   consented: z.boolean(),
-  // The witness comes from authentication. Signature capture is not implemented.
-  signatureData: z.null().optional(),
+  // Bounded vector evidence, never arbitrary images/HTML or executable SVG.
+  signatureData: z
+    .string()
+    .max(200000)
+    .refine((value) => {
+      try {
+        return treatmentSignatureSchema.safeParse(JSON.parse(value)).success;
+      } catch {
+        return false;
+      }
+    }, "Invalid drawn signature")
+    .nullable()
+    .optional(),
 });
 
 export type CreateTreatmentConsentEventInput = z.infer<typeof createTreatmentConsentEventSchema>;

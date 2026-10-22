@@ -25,6 +25,9 @@ vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ isReadOnly: mocks.r
 vi.mock("@/components/customers/CustomerFormDrawer", () => ({
   default: () => <div>Profile editor with consent</div>,
 }));
+vi.mock("@/components/customers/CustomerArchivePanel", () => ({
+  default: ({ customer }: { customer: { id: string } }) => <div>Archival for {customer.id}</div>,
+}));
 vi.mock("@/lib/api", () => ({
   default: { get: vi.fn() },
   getPaginated: mocks.getPaginated,
@@ -101,6 +104,7 @@ describe("customer profile", () => {
   it("shows notes, visits, void labels and correctly scaled balances", async () => {
     renderProfile();
     expect(screen.getByText("Sensitive skin")).toBeInTheDocument();
+    expect(screen.getByText("Archival for c1")).toBeInTheDocument();
     const balances = screen.getByRole("region", { name: "Package and credit balances" });
     expect(within(balances).getByText(/3 sessions/)).toBeInTheDocument();
     expect(within(balances).getByText(/S\$42.50/)).toBeInTheDocument();

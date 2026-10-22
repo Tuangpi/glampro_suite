@@ -5,6 +5,7 @@ import type {
   CustomerHoldings,
   CustomerSummary,
   UpdateCustomerInput,
+  ArchiveCustomerInput,
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
@@ -14,6 +15,7 @@ export interface CustomerListFilters {
   page: number;
   pageSize: number;
   search?: string;
+  includeArchived?: boolean;
 }
 
 /**
@@ -32,6 +34,7 @@ export function useCustomerList(filters: CustomerListFilters) {
         page: filters.page,
         pageSize: filters.pageSize,
         search: filters.search || undefined,
+        includeArchived: filters.includeArchived ? "true" : undefined,
       }),
     placeholderData: (previous) => previous,
   });
@@ -82,6 +85,19 @@ export function useUpdateCustomer() {
       void queryClient.invalidateQueries({
         queryKey: queryKeys.customers.detail(variables.id),
       });
+    },
+  });
+}
+
+export function useArchiveCustomer() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: ArchiveCustomerInput }) =>
+      post<CustomerDetail>(`/customers/${id}/archive`, input),
+    onSuccess: (customer, { id }) => {
+      queryClient.setQueryData(queryKeys.customers.detail(id), customer);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.customers.list() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.customers.detail(id) });
     },
   });
 }

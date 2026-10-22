@@ -669,11 +669,81 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   API typecheck and root lint pass. Only approved disposable loopback 55440 used;
   fixtures cleaned. Full API suite/browser not run; manual acceptance is standing
   user-granted. No application database changes, deployment or commit.
-- Next: wire form versioning, preview, grant/decline and original-form evidence
-  history into the entitled customer profile with read-only/error handling. Resolve
-  retention, role permissions and repeat/withdrawal behavior explicitly before
-  changing policy. Deletion cascades, signature capture, history pagination and
-  treatment-status consent requirements remain unresolved; audit findings above
+- October 22 consent profile UI: DONE for this slice. Added customer-scoped treatment
+  consent drawer with active/inactive form preview, salon-wide new-version draft
+  preview and publication confirmation, explicit grant/decline confirmation and
+  original-form evidence history (wording/version/time/witness/reference). Server
+  assigns versions and witness; one-decision-per-record/form remains unchanged.
+  Read-only viewing, query/mutation retry, stale-version confirmation refusal and
+  cache refresh are covered. Current evidence-deletion behavior is disclosed.
+- Verification: full web 526/526 (62 files), root lint and full production build
+  pass, including API/web TypeScript checks. No backend or database change; prior
+  database acceptance was not rerun. Standing user-granted manual acceptance applies,
+  not an agent browser walkthrough. No migration, deployment or commit.
+- October 22 deletion protection: DONE for this slice following user decision to
+  block treatment deletion with consent evidence. Transactional treatment-row lock
+  shared with capture prevents deletion/capture races. Grant or decline causes
+  409 / TREATMENT_HAS_CONSENT_EVIDENCE; no-evidence deletion remains available.
+  UI explains protection and retains server errors. Customer/tenant deletion,
+  database cascades and all other consent policies are unchanged. No migration.
+- Verification: isolated PostgreSQL consent HTTP/service acceptance 1/1, none
+  skipped; web 527/527; full production build and root lint passed. Includes
+  evidence preservation, ordinary deletion, access checks and concurrent capture/
+  delete coverage. Approved disposable database only; no deployment or commit.
+- October 22 policy decisions: user approved recommended R1 / D1 / P1 / W1 / S2.
+  Manual retention review with review date/reason and holds, archival plus controlled
+  erasure, manager-controlled forms with staff capture, append-only withdrawal/
+  re-consent and manager correction annotations, and signatures configurable per
+  form/version are approved requirements. See PROJECT.md for the full policy.
+  No fixed retention duration, automatic purge or external signing provider selected.
+  Approval is not implementation, legal sign-off or authorization to erase data.
+- October 22 P1 publication slice: DONE. API form publication restricted to
+  SUPER_ADMIN/MANAGER; staff decision capture and evidence/form reads preserved.
+  UI blocks publication for other roles and removes the editor after role loss.
+  Correction permissions remain pending with W1. Disposable PostgreSQL consent
+  acceptance 1/1 (none skipped), focused UI 19/19, full web 530/530 and workspace
+  typecheck/lint passed. No schema change, migration, erasure, deployment or commit.
+- October 22 R1/D1 backend slice: retention review date/reason/reviewer/time and
+  documented holds; manager/owner writable-tenant review/archive endpoints;
+  hold-protected service/database deletion; consent parent foreign keys RESTRICT;
+  idempotent customer archive and explicit archived-list inclusion. No pre-existing
+  customer delete endpoint existed. Archival does not disable all bookings/POS/mobile
+  activity. Existing cancelled-tenant access denial verified, evidence retained.
+  Migration 20261022190000_treatment_retention_protection tested only on approved
+  disposable PostgreSQL. Acceptance 1/1 (none skipped), workspace typecheck/lint,
+  shared 148/148, full web 530/530, final consent UI 19/19, full production build,
+  scoped format/diff checks passed. Disposable cluster stopped after fixture cleanup.
+  No application migration, erasure or deployment.
+  R1/D1 remain partial: separate authorized disposal pending; management UI delivered below.
+- October 22 R1/D1 UI slice: DONE for review/hold and archive management controls.
+  Scoped treatment drawer displays review/hold evidence and owner/manager confirmed
+  updates, salon-local scheduling, exact unchanged timestamps and hold-release warning.
+  Customer-profile archive confirmation preserves failed drafts and shows original
+  actor/time/reason; archived-list inclusion and labels support discovery. Read-only/
+  role transitions block writes; held delete disabled; relevant caches refreshed.
+  Initial focused web 53/53, final full web 556/556 (65 files), workspace typecheck,
+  root lint and production build passed. Frontend-only; no database/API acceptance
+  rerun, application migration, erasure, deployment or commit. Standing user-granted
+  manual acceptance applies, not an agent browser walkthrough.
+- October 22 W1/S2 slice: DONE for implementation and available verification.
+  Serialized append-only withdrawal/re-consent and manager-only correction annotations
+  preserve original events/form versions; expected-head checks reject stale writes.
+  Corrections require a same-treatment/form reference and reason, and cannot change
+  consent. Inactive versions allow withdrawal/annotations. Per-version configurable
+  drawn signatures required only for grant/re-consent; bounded coordinate evidence
+  stored as bytes, validated at schema/service boundaries and rendered safely.
+  Confirmed UI actions include role/read-only/stale guards and failed draft retention.
+  Database UPDATE triggers protect events and version wording/signature configuration.
+  Migration 20261022200000_treatment_consent_history deployed only to disposable
+  loopback PostgreSQL after correcting the legacy unique-index name. Acceptance
+  1/1 none skipped; shared 149/149; web 565/565 (66 files); workspace typecheck,
+  lint and production build passed. Full API suite/agent browser walkthrough not run.
+  Standing user-granted manual acceptance applies. No application migration,
+  erasure, deployment or commit. Parent remains IN PROGRESS.
+- Next: history pagination under this task. Resolve treatment-status consent policy
+  and separate authorized disposal before their implementation. No application
+  migration or deployment is authorized by the policy selection.
+  History pagination and treatment-status consent requirements remain open; audit findings above
   are historical where superseded by this implementation.
   Both TK2610-0025 and TK2610-0027 remain IN PROGRESS and are not ready for external
   closure; family, transfer and audit gaps remain independent under TK2610-0027.

@@ -14,6 +14,7 @@ import type {
   TreatmentRecordListQuery,
   TreatmentRedemptionOption,
   UpdateTreatmentRecordInput,
+  ReviewTreatmentRetentionInput,
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
@@ -22,6 +23,18 @@ import { showToast } from "@/components/ui/toast-store";
 import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 20;
+
+export function useReviewTreatmentRetention() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: ReviewTreatmentRetentionInput }) =>
+      post<TreatmentRecord>(`/treatments/${id}/retention-review`, input),
+    onSuccess: (record, { id }) => {
+      queryClient.setQueryData(queryKeys.treatments.detail(id), record);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.treatments.all() });
+    },
+  });
+}
 
 export function useTreatmentRedemptions(
   customerId: string,
@@ -230,7 +243,7 @@ export function useCreateConsentForm() {
   const { isReadOnly } = useAuth();
 
   return useMutation({
-    mutationFn: (input: CreateTreatmentConsentFormInput) =>
+    mutationFn: (input: Omit<CreateTreatmentConsentFormInput, "version">) =>
       post<TreatmentConsentForm>("/treatments/consent/forms", input),
     onMutate: () => {
       if (isReadOnly) showToast("error", "This salon is suspended — changes are disabled.");

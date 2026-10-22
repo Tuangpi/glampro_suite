@@ -36,6 +36,7 @@ export default function Customers() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [editing, setEditing] = useState<CustomerDetail | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -53,6 +54,7 @@ export default function Customers() {
     page,
     pageSize: PAGE_SIZE,
     search: search || undefined,
+    includeArchived: includeArchived || undefined,
   });
 
   const rows = data?.data ?? [];
@@ -83,6 +85,7 @@ export default function Customers() {
             >
               {row.name}
             </a>
+            {row.archivedAt ? <p className="text-xs font-bold">Archived</p> : null}
             <p className="truncate text-xs text-ink-muted">
               {row.code
                 ? `Code ${row.code}`
@@ -157,6 +160,17 @@ export default function Customers() {
         aria-label="Customer list"
         className="rounded-card border border-line bg-surface"
       >
+        <label className="flex items-center gap-2 px-5 py-3">
+          <input
+            type="checkbox"
+            checked={includeArchived}
+            onChange={(event) => {
+              setIncludeArchived(event.target.checked);
+              setPage(1);
+            }}
+          />
+          Include archived customers
+        </label>
         <div className="flex items-center justify-between border-b border-line-soft px-5 py-3.5">
           <p className="text-sm text-ink-muted">
             {isPending

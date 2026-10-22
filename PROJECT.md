@@ -157,6 +157,62 @@ not establish full roadmap compliance. Consult the decision sections and task fi
   No automatic evidence purge is configured. Events follow customer/tenant deletion;
   published notices remain tenant-owned. A broader retention/export policy remains
   operator-owned and must be settled before introducing automated retention jobs.
+- Treatment-consent deletion protection (TK2610-0025, October 22, 2026): user selected
+  blocking treatment deletion whenever grant or decline evidence exists. The API
+  checks inside a transaction with the same treatment-row lock as consent capture;
+  conflicts preserve treatment details and evidence. Treatments without evidence
+  remain deletable. No archive, retention duration, customer/tenant deletion change,
+  role-policy change, withdrawal/correction or signature capture is authorized by
+  this decision. Database cascade definitions remain unchanged; this guard applies
+  to the treatment deletion service/API, not direct database or parent deletion.
+- Treatment-consent policy approval (TK2610-0025, October 22, 2026): user accepted
+  recommended R1 / D1 / P1 / W1 / S2. These are approved requirements, not implemented
+  behavior or a legal-compliance determination:
+  - R1: manual retention review initially; no fixed duration or automatic purge.
+    Record review date and reason for continued retention. Owner/admin authorizes
+    disposal when records are no longer needed; documented dispute/retention holds
+    prevent disposal. This is not indefinite retention approval.
+  - D1: normal customer deletion becomes archival when protected evidence exists;
+    tenant closure disables access without immediately erasing evidence. Separate
+    authorized erasure applies the retention policy. Archival does not replace review.
+  - P1: SUPER_ADMIN/MANAGER publish forms and authorize correction annotations.
+    Staff with treatment access may view forms and capture customer grant, decline
+    or withdrawal. Enforce permissions server-side with tenant isolation and no
+    suspended/read-only writes.
+  - W1: append-only grant, decline, withdrawal and later re-consent events. Manager-only
+    corrections reference the original event and require a reason; never overwrite
+    evidence. Staff may record withdrawal immediately. Treatment consent remains
+    separate from data-processing and marketing consent.
+  - S2: signature requirement configurable per form/version. A form requiring a drawn
+    customer signature requires it for grant/re-consent, not decline or withdrawal.
+    Preserve the exact form version and evidence; no external signing provider selected.
+  - Implementation update: P1 form publication is restricted to SUPER_ADMIN/MANAGER
+    by API role middleware and UI controls; staff capture/read access is preserved.
+    Correction authorization awaits W1. R1/D1 backend now records manual review
+    date/reason/reviewer/time and documented holds through manager/owner APIs.
+    Holds block treatment deletion (including database parent cascades); consent
+    event parent foreign keys RESTRICT customer/treatment/form/tenant deletion.
+    Customer archival is explicit, idempotent and preserves evidence; default lists
+    exclude archived customers, with includeArchived=true for discovery. It does
+    not yet disable every booking/POS/mobile action. Existing CANCELLED tenant access
+    refusal is preserved. Review/archive UI now provides owner/manager confirmation,
+    read-only evidence, salon-local review scheduling, hold-release warnings and
+    archived-list discovery. Separate authorized disposal remains pending.
+    Migration 20261022190000_treatment_retention_protection tested only on
+    disposable PostgreSQL. W1/S2 now provide serialized append-only grant/decline/
+    withdrawal/re-consent and manager-only correction annotations with required
+    reasons/original references; annotations never change consent state. Inactive
+    versions still allow withdrawal/annotations, not grant/re-consent. Database
+    UPDATE guards preserve events and version wording/signature requirements.
+    Per-version signatureRequired defaults false; configured grant/re-consent
+    requires bounded drawn coordinate evidence, stored as bytes and safely rendered
+    through authenticated treatment evidence access. Decline/withdrawal never
+    requires signing. This is witnessed drawing capture, not identity verification
+    or an external signing provider. Migration 20261022200000_treatment_consent_history
+    verified only on disposable PostgreSQL; shared 149/149, web 565/565, DB acceptance
+    1/1, workspace typecheck/lint and production build passed. Application migration,
+    history pagination, treatment-status consent rules and separate disposal remain open.
+    No data erasure, application migration or deployment is authorized.
 - Manual payment-method recording is not provider integration; voiding a sale is
   not returning money. Provider onboarding, trademark clearance, grant submission
   and readiness sign-offs need external evidence.

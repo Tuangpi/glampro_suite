@@ -2,12 +2,200 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. Latest completed slice: **consent integrity/contracts with isolated HTTP/database acceptance**. Consent profile UI and retention/permissions/repeat-decision policy remain unfinished. Prior treatment-link migration/browser/privacy acceptance is user-reported. TK2610-0027 remains IN PROGRESS.
+- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. W1 append-only withdrawal/re-consent/manager annotations and S2 per-version drawn signatures implemented and verified on disposable PostgreSQL. Application migration remains unperformed. Separate authorized disposal, history pagination and treatment-status consent policy remain open. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
-- Next: integrate consent forms/events into customer profiles under TK2610-0025; resolve retention, role permissions and repeat/withdrawal policy before changing those behaviors. Family sharing/transfer/audit remain separate TK2610-0027 gaps. Neither parent is ready to close. No production access or paid mail authorized.
+- Next: TK2610-0025 history pagination; resolve treatment-status consent requirements and separate authorized disposal before implementation. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, erasure or paid mail authorized.
+
+## October 22, 2026 — Append-only consent history and configurable signatures
+
+- W1/S2 implementation slice complete; parent TK2610-0025 remains IN PROGRESS.
+  Events now distinguish grant, decline, withdrawal, re-consent and correction.
+  Serialized treatment locks, expected previous-event IDs and unique chain links
+  reject stale/concurrent writes. Earlier events remain unchanged. Withdrawal and
+  manager annotations work against inactive versions; new grants/re-consent require
+  an active version. Corrections reference same-treatment/form evidence, require a
+  reason and current manager/owner database role, and cannot change consent state.
+- UI provides confirmed history actions, annotation reasons/references, original
+  wording, stale-history/read-only/role guards and preserved failed drafts. Signature
+  requirement is set only by publishing a new form version. Drawn evidence is bounded
+  JSON coordinate strokes stored as bytes and rendered as validated polylines;
+  arbitrary HTML/SVG/images are refused. Required for grant/re-consent only, never
+  decline/withdrawal. This is witnessed drawing capture, not verified identity or an
+  external signing-provider integration. Existing versions default to no requirement.
+- Added migration 20261022200000_treatment_consent_history; backfills original
+  event kinds, removes one-event uniqueness, adds chain/reference constraints and
+  database UPDATE guards for event evidence and form wording/signature policy.
+  An initial disposable-only migration failure exposed the legacy truncated index
+  name; corrected migration and recovered only its partial disposable additions.
+  Successful deploy and acceptance rerun followed. No application database touched.
+- Verified: PostgreSQL HTTP/service acceptance 1/1, none skipped; shared 149/149;
+  final full web 565/565 (66 files), workspace typecheck, root lint and production
+  build passed. Added pointer drawing/clear/read-only and safe signature rendering
+  tests, history actions/role loss/stale draft tests, immutable-evidence checks,
+  concurrent withdrawal and signature/re-consent regressions. Existing pg query
+  concurrency deprecation warning remains. Full API suite and agent browser
+  walkthrough not performed; standing user-granted manual acceptance applies.
+- Disposable loopback 55440/package_expiry_test fixture cleanup verified and cluster
+  stopped at handoff. No application migration, deployment, erasure or commit.
+  Existing uncommitted changes preserved. Next: history pagination; treatment-status
+  requirements and separate disposal authorization/policy remain unresolved.
+
+## October 22, 2026 — Retention and archival management UI
+
+- TK2610-0025 remains IN PROGRESS, not ready for external closure. Added a
+  customer-scoped treatment retention drawer with current review/hold evidence,
+  reviewer account/time, next review and reasons. Owner/manager writable-salon
+  controls require explicit confirmation; hold release is warned separately.
+  Staff/read-only users can view evidence. Detail loading/errors/customer mismatch
+  block editing; refetch/mutation activity blocks submissions. Failed drafts survive.
+- Review scheduling uses the salon timezone, not the browser zone; unchanged review
+  timestamps preserve seconds/milliseconds. Editing details resets confirmation;
+  record revisions/timezone changes remount the draft. Role/read-only changes remove
+  the retention editor or archive confirmation. Held treatment deletion is disabled
+  locally; existing server protection remains authoritative.
+- Added customer-profile archival with mandatory reason, explicit confirmation,
+  refusal/retry and returned archive actor/date/reason. Customer list supports
+  Include archived customers and Archived labels. Hooks update detail caches and
+  invalidate relevant list/detail queries. UI explains evidence preservation,
+  no restoration/disposal, and that archival is not a universal booking/POS/mobile ban.
+- Checks: initial focused web 53/53; final full web 556/556 (65 files), including
+  added whitespace/held-delete checks. Workspace typecheck, root lint and full
+  production build passed. Final scoped format/diff checks recorded at handoff.
+- Frontend-only slice; no backend/schema edits this session, database access,
+  application migration, erasure, deployment or commit. Existing uncommitted work
+  preserved. No API/database acceptance rerun or agent browser walkthrough claimed;
+  standing user-granted manual acceptance applies.
+- Next: W1 append-only withdrawal/re-consent and manager correction annotations,
+  followed by S2 per-form/version signatures. Separate owner-authorized disposal,
+  history pagination and treatment-status consent policy remain unresolved.
+
+## October 22, 2026 — Retention and archival backend protection
+
+- TK2610-0025 remains IN PROGRESS. Added manager/owner-only, tenant-scoped,
+  writable-account retention-review API with next review date, retention reason,
+  authenticated reviewer/time and documented hold. Hold release requires a review;
+  review never authorizes disposal. Ordinary clinical edits cannot change these fields.
+- Holds block service deletion and database deletion/cascades, including records
+  without consent. Consent event parent foreign keys now RESTRICT customer,
+  treatment, form and tenant deletion. Existing capture/deletion serialization remains.
+- Added explicit manager/owner customer archive API (there was no customer delete
+  endpoint to convert). Archive preserves evidence/references and original archive
+  actor/time/reason on retries. Default customer lists exclude archived rows;
+  includeArchived=true permits discovery and direct detail/history reads remain.
+  Archival is a list/lifecycle marker, not a universal booking/POS/mobile-access ban.
+- Migration 20261022190000_treatment_retention_protection applied ONLY to approved
+  disposable loopback 55440/package_expiry_test. No application migration, data
+  erasure, deployment or commit. Initial cluster start omitted port options and
+  failed to bind; rerun with explicit approved port succeeded. No default-port DB used.
+- Verified disposable PostgreSQL HTTP/service acceptance 1/1, none skipped: review
+  permissions/current-role checks, invalid holds, foreign tenant refusal, hold release,
+  four hold/delete races, direct parent-delete protection, archival/evidence retention,
+  archived-list filtering, suspended writes and existing cancelled-tenant access denial.
+  Workspace typecheck/lint, shared 148/148, full web 530/530 (62 files), final
+  consent UI 19/19, full production build, scoped Prettier and git diff check passed.
+  Disposable cluster stopped after fixture cleanup. Existing pg concurrent-query
+  deprecation warning remains.
+- Remaining: review/archive UI; separate owner-authorized disposal workflow; review
+  audit history if required; W1 append-only withdrawal/re-consent/corrections; S2
+  signatures; history pagination/status policy. No full API suite or agent browser
+  walkthrough claimed. Standing user-granted manual acceptance applies.
+
+## October 22, 2026 — Consent publication permissions
+
+- Implemented the first P1 slice under TK2610-0025: POST consent forms requires
+  SUPER_ADMIN/MANAGER through existing authenticated server-side role middleware.
+  Staff reads and grant/decline capture remain available within existing tenant,
+  entitlement and writable-account boundaries. Correction permissions await W1.
+- UI disables publication for other roles and removes an open editor after role
+  loss. Updated explanatory wording to distinguish approved policies from pending
+  implementation. Existing uncommitted treatment changes preserved.
+- Checks: focused consent UI 19/19; full web 530/530 (62 files); workspace
+  typecheck and lint exit 0. Disposable PostgreSQL consent HTTP/service acceptance
+  1/1, none skipped: staff publication refusal without inserts, manager/owner
+  publication, immediate database-role rechecks, staff capture and existing
+  tenant/suspension/deletion-race regressions. Existing pg deprecation warning remains.
+- Only approved loopback 55440/package_expiry_test used; matching fixture tenants
+  count zero after cleanup, cluster stopped. No application database, schema change,
+  migration, erasure, deployment, commit or agent browser walkthrough. Standing
+  user-granted manual acceptance applies. Full API suite/build not run this slice.
+- Next: R1/D1 retention review/holds and archival protection, then W1/S2 consent
+  history and signatures. Parent remains IN PROGRESS, not ready for external closure.
+
+## October 22, 2026 — Treatment consent policy selections approved
+
+- User accepted the recommended R1 / D1 / P1 / W1 / S2 options. Full requirements
+  recorded in PROJECT.md; remaining implementation/checks recorded in TASKS.md.
+- Approved: manual retention review with review date/reason and retention holds;
+  archive protected customers and disable closed tenants, with separate authorized
+  erasure; managers publish forms/authorize correction annotations and treatment-access
+  staff capture decisions; append-only withdrawal/re-consent/corrections; signatures
+  configurable per form/version, required only for grant/re-consent when configured.
+- No fixed retention duration or automatic purge approved. This is a product-policy
+  decision, not legal sign-off, implementation or authorization to erase data.
+- Documentation-only update; existing uncommitted application changes preserved.
+  Runtime behavior and database cascades unchanged. No migration, deployment or commit.
+  TK2610-0025 remains IN PROGRESS; not ready for external closure.
+
+## October 22, 2026 — Treatment consent deletion protection
+
+- User selected: block treatment deletion when consent evidence exists; leave other
+  behavior unchanged. TK2610-0025 remains IN PROGRESS. This is not a complete
+  retention policy or permission/signature/withdrawal decision.
+- deleteTreatmentRecord now checks for any grant/decline evidence transactionally
+  and returns 409 / TREATMENT_HAS_CONSENT_EVIDENCE. It takes the same tenant-scoped
+  treatment-row lock as capture, preventing a successful capture from being lost
+  through concurrent treatment deletion. No-evidence treatment deletion is unchanged.
+- Consent drawer and deletion confirmation explain protection. Existing deletion
+  error handling keeps a refusal visible. Preserved all prior uncommitted consent
+  UI work. Customer/tenant deletion and database cascades remain unchanged; no
+  archival, automatic retention or direct-database protection is claimed.
+- Verification: isolated PostgreSQL consent service/HTTP acceptance 1/1, none
+  skipped, with protection for grants and declines, evidence preservation, ordinary
+  deletion, auth/tenant/suspended-write checks and four capture/delete races. Full
+  web 527/527 (62 files), root lint and full production build passed. Initial build
+  found an inference error in the added race test; explicit result typing fixed it.
+  Final acceptance/lint/type/format/diff checks recorded at handoff.
+- Reused approved disposable loopback 55440/package_expiry_test only; fixtures
+  cleaned by acceptance. Existing pg concurrent-client deprecation warning remains.
+  No application database access, migration, full API suite, deployment, commit or
+  agent browser walkthrough. Standing user-granted manual acceptance applies.
+  Logs: /tmp/glampro-consent-protection-{db,web,build,lint}.log.
+
+## October 22, 2026 — Customer-profile treatment consent UI completed
+
+- TK2610-0025 remains IN PROGRESS. Added a per-treatment consent drawer within the
+  existing treatment-entitled customer profile. Fresh-detail/customer matching
+  precedes form/history queries. Read-only salons can view forms and evidence but
+  cannot publish or record decisions. Existing role/API boundaries are unchanged.
+- New TreatmentConsent component previews active and inactive versions, publishes
+  salon-wide active versions after draft preview and explicit confirmation, and
+  leaves version allocation to the server. Editing wording resets draft preview;
+  failed publication preserves the draft. Form hook accepts input without version.
+- Grant/decline requires explicit confirmation against the displayed active form;
+  authenticated server witness is authoritative. Existing one-decision-per-record/
+  form rule is preserved. History-loading/errors and query refreshes block capture;
+  changing the active form invalidates the displayed confirmation. Failed capture
+  refreshes form eligibility and evidence before retry. Successful capture blocks
+  another local decision even before evidence refetch completes.
+- Evidence shows original form title/version/plain-text wording, salon-local time,
+  witness account ID, evidence reference and signature availability. Missing wording
+  is disclosed rather than substituted with current text. No signature UI or new
+  withdrawal, correction, retention, access or treatment-status policy was added.
+  Current deletion cascade is disclosed in the consent UI and delete confirmation.
+- Verified: full web suite **526/526**, 62 files, none skipped; root lint exit 0;
+  full production build exit 0 (shared, Prisma generation, API and web TypeScript,
+  Vite). Initial focused run caught two ambiguous text queries in tests, corrected
+  before the passing full runs. Added component/profile/cache tests cover explicit
+  decisions, cancellation, versions, draft preview/publication/retry, original
+  evidence, duplicates, read-only transitions, active-version changes, query
+  failures and invalidation. Final format/diff checks recorded at handoff.
+- Logs: /tmp/glampro-consent-ui-{web,build,lint-final}.log. No database acceptance
+  rerun (backend unchanged), application database access, migration, deployment,
+  commit or agent browser walkthrough. Standing user-granted manual acceptance
+  applies; this does not close unresolved parent-task requirements.
 
 ## October 22, 2026 — Consent integrity/contracts completed
 

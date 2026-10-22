@@ -1,6 +1,8 @@
 import { Router } from "express";
 import {
   createTreatmentConsentEventSchema,
+  reviewTreatmentRetentionSchema,
+  type ReviewTreatmentRetentionInput,
   createTreatmentConsentFormSchema,
   createTreatmentPhotoSchema,
   createTreatmentRecordSchema,
@@ -31,8 +33,9 @@ import {
   removeTreatmentPhoto,
   recordTreatmentConsentEvent,
   updateTreatmentRecord,
+  reviewTreatmentRetention,
 } from "../services/treatment.service.js";
-import { auth, requireWritableTenant } from "../middleware/auth.js";
+import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import {
   updateTreatmentRecordSchema,
   type UpdateTreatmentRecordInput,
@@ -45,10 +48,35 @@ import { unauthorized } from "../lib/http-error.js";
  * Aesthetics module — treatment records, before/after photos, treatment consent.
  *
  * Reads are open to every signed-in member of the salon; writes additionally
- * require a writable tenant. `requireModule("treatments")` is the entitlement
- * boundary.
+ * require a writable tenant. Publishing salon-wide consent forms additionally
+ * requires SUPER_ADMIN/MANAGER. `requireModule("treatments")` is the entitlement boundary.
  */
 export const treatmentRouter = Router();
+
+treatmentRouter.post(
+  "/:id/retention-review",
+  auth,
+  requireModule("treatments"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(idParamSchema, "params"),
+  validate(reviewTreatmentRetentionSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({
+        data: await reviewTreatmentRetention(
+          id,
+          validated<ReviewTreatmentRetentionInput>(req, "body"),
+          req.user.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /** GET /api/treatments — list treatment records with optional filters. */
 treatmentRouter.get(
@@ -217,6 +245,7 @@ treatmentRouter.post(
   auth,
   requireModule("treatments"),
   requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
   validate(createTreatmentConsentFormSchema),
   async (req, res, next) => {
     try {

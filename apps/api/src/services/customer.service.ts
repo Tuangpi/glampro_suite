@@ -23,6 +23,7 @@ import {
   type CustomerListQuery,
   type CustomerSummary,
   type UpdateCustomerInput,
+  type ArchiveCustomerInput,
 } from "@glampro_suite/shared";
 
 import { conflict, notFound } from "../lib/http-error.js";
@@ -56,6 +57,9 @@ const CUSTOMER_SELECT = {
   maniCardNumber: true,
   cardNumber: true,
   familyId: true,
+  archivedAt: true,
+  archivedById: true,
+  archiveReason: true,
   departments: { select: { department: { select: { id: true, name: true } } } },
 } as const;
 
@@ -85,6 +89,9 @@ function fromIsoDate(value: string | null | undefined): Date | null | undefined 
 function toSummary(row: CustomerRow): CustomerSummary {
   return customerSummarySchema.parse({
     id: row.id,
+    archivedAt: row.archivedAt?.toISOString() ?? null,
+    archivedById: row.archivedById,
+    archiveReason: row.archiveReason,
     code: row.code,
     name: row.name,
     memberId: row.memberId,
@@ -142,6 +149,7 @@ export async function listCustomers(
   // The screen's own placeholder is "Search name or phone…", so one box matches
   // either field rather than making the user pick which one they typed into.
   const where = {
+    ...(query.includeArchived ? {} : { archivedAt: null }),
     ...(query.search
       ? {
           OR: [
@@ -329,4 +337,22 @@ async function assertEmailAvailable(email: string | null | undefined, exceptId?:
     throw conflict("That email belongs to another customer.", "CUSTOMER_EMAIL_EXISTS", [
       { path: "body.email", message: "That email belongs to another customer." },
     ]);
+}
+
+/** Archive rather than erase; all evidence and existing references remain readable. */
+export async function archiveCustomer(id: string, input: ArchiveCustomerInput, actorId: string) {
+  const scope = currentScope();
+  if (scope?.kind !== "tenant") throw new Error("Customer archival requires tenant scope.");
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM customers WHERE id = ${id} AND "tenantId" = ${scope.tenantId} FOR UPDATE`;
+    const customer = await tx.customer.findFirst({ where: { id } });
+    if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
+    // Retry is idempotent and preserves the original actor/reason/time.
+    if (!customer.archivedAt)
+      await tx.customer.update({
+        where: { id },
+        data: { archivedAt: new Date(), archivedById: actorId, archiveReason: input.reason },
+      });
+  });
+  return getCustomer(id);
 }
