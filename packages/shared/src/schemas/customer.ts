@@ -416,6 +416,22 @@ export const treatmentConsentEventSchema = z.object({
 
 export type TreatmentConsentEvent = z.infer<typeof treatmentConsentEventSchema>;
 
+/** Current chain state is independent of the evidence page being viewed. */
+export type TreatmentConsentState = {
+  treatmentConsentFormId: string;
+  headEventId: string;
+  consented: boolean;
+};
+
+export type TreatmentConsentHistory = {
+  data: TreatmentConsentEvent[];
+  total: number;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  states: TreatmentConsentState[];
+};
+
 /** Recording a customer's consent to a treatment consent form. */
 export const treatmentSignatureSchema = z
   .object({

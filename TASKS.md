@@ -740,10 +740,22 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   lint and production build passed. Full API suite/agent browser walkthrough not run.
   Standing user-granted manual acceptance applies. No application migration,
   erasure, deployment or commit. Parent remains IN PROGRESS.
-- Next: history pagination under this task. Resolve treatment-status consent policy
+- October 22 history pagination: DONE for this slice. Validated page/pageSize
+  (default 20, maximum 200), deterministic consentedAt/id ordering, metadata and
+  current per-form chain heads in a repeatable-read snapshot. Detail includes only
+  the latest 20 events; full evidence remains accessible through paged history.
+  UI navigation/retry and page-keyed caches preserve current consent for old-page
+  actions and prevent duplicate first decisions when evidence is on another page.
+  PostgreSQL acceptance 1/1, none skipped, covers tied timestamps, large histories,
+  preview bounds, metadata and tenant/auth/validation regressions. Full web 569/569,
+  shared 149/149, workspace typecheck, root lint and production build passed.
+  Disposable fixture cleanup verified and cluster stopped. No schema/migration,
+  application database access, erasure, deployment or commit. Full API suite and
+  agent browser walkthrough not run; standing user-granted acceptance applies.
+- Next: resolve treatment-status consent policy
   and separate authorized disposal before their implementation. No application
   migration or deployment is authorized by the policy selection.
-  History pagination and treatment-status consent requirements remain open; audit findings above
+  Treatment-status consent requirements remain open; audit findings above
   are historical where superseded by this implementation.
   Both TK2610-0025 and TK2610-0027 remain IN PROGRESS and are not ready for external
   closure; family, transfer and audit gaps remain independent under TK2610-0027.

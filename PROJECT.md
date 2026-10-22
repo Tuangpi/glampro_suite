@@ -211,7 +211,10 @@ not establish full roadmap compliance. Consult the decision sections and task fi
     or an external signing provider. Migration 20261022200000_treatment_consent_history
     verified only on disposable PostgreSQL; shared 149/149, web 565/565, DB acceptance
     1/1, workspace typecheck/lint and production build passed. Application migration,
-    history pagination, treatment-status consent rules and separate disposal remain open.
+    treatment-status consent rules and separate disposal remain open. History pagination
+    now provides bounded pages (20 default, 200 maximum), current per-form action
+    state independent of the displayed page, and a 20-event detail preview. Deploy
+    API/web together: history now returns a page envelope rather than an array.
     No data erasure, application migration or deployment is authorized.
 - Manual payment-method recording is not provider integration; voiding a sale is
   not returning money. Provider onboarding, trademark clearance, grant submission

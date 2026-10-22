@@ -7,6 +7,8 @@ import {
   createTreatmentPhotoSchema,
   createTreatmentRecordSchema,
   idParamSchema,
+  paginationQuerySchema,
+  type PaginationQuery,
   treatmentRecordListQuerySchema,
   treatmentRedemptionQuerySchema,
   treatmentConsentTypeParamsSchema,
@@ -288,10 +290,11 @@ treatmentRouter.get(
   auth,
   requireModule("treatments"),
   validate(idParamSchema, "params"),
+  validate(paginationQuerySchema, "query"),
   async (req, res, next) => {
     try {
       const { id } = validated<{ id: string }>(req, "params");
-      res.json({ data: await listConsentEvents(id) });
+      res.json({ data: await listConsentEvents(id, validated<PaginationQuery>(req, "query")) });
     } catch (error) {
       next(error);
     }

@@ -69,7 +69,7 @@ it("keeps consent type and active filters in separate cache entries", async () =
 });
 
 it("refreshes evidence history and treatment details after recording a decision", async () => {
-  get.mockResolvedValue([]);
+  get.mockResolvedValue({ data: [], states: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
   post.mockResolvedValue({ id: "e1" });
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const invalidate = vi.spyOn(client, "invalidateQueries");
@@ -116,5 +116,49 @@ it("publishes without a client version and refreshes all form-filter caches", as
   await result.current.publish.mutateAsync(input);
   expect(post).toHaveBeenCalledWith("/treatments/consent/forms", input);
   await waitFor(() => expect(get).toHaveBeenCalledTimes(4));
+  client.clear();
+});
+
+it("isolates consent pages and treatment IDs and invalidates all pages after a write", async () => {
+  get.mockImplementation((_path, query) =>
+    Promise.resolve({
+      data: [{ id: `${_path}-${query.page}` }],
+      states: [],
+      total: 40,
+      page: query.page,
+      pageSize: query.pageSize,
+      pageCount: 2,
+    }),
+  );
+  post.mockResolvedValue({ id: "new" });
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const wrapper = ({ children }: PropsWithChildren) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const { result } = renderHook(
+    () => ({
+      first: useConsentEvents("t1", 1),
+      second: useConsentEvents("t1", 2),
+      foreign: useConsentEvents("t2", 1),
+      record: useRecordConsentEvent(),
+    }),
+    { wrapper },
+  );
+  await waitFor(() =>
+    expect(
+      result.current.first.isSuccess &&
+        result.current.second.isSuccess &&
+        result.current.foreign.isSuccess,
+    ).toBe(true),
+  );
+  expect(result.current.first.data?.data).not.toEqual(result.current.second.data?.data);
+  expect(get).toHaveBeenCalledWith("/treatments/t1/consent", { page: 2, pageSize: 20 });
+  await result.current.record.mutateAsync({
+    treatmentRecordId: "t1",
+    treatmentConsentFormId: "f1",
+    customerId: "c1",
+    consented: false,
+  });
+  await waitFor(() => expect(get).toHaveBeenCalledTimes(5));
   client.clear();
 });

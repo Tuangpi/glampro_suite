@@ -2,12 +2,36 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. W1 append-only withdrawal/re-consent/manager annotations and S2 per-version drawn signatures implemented and verified on disposable PostgreSQL. Application migration remains unperformed. Separate authorized disposal, history pagination and treatment-status consent policy remain open. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
+- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. History pagination slice complete, following W1/S2 consent history/signatures. Verified on disposable PostgreSQL. Earlier application migrations remain unperformed. Separate authorized disposal and treatment-status consent policy remain open. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
-- Next: TK2610-0025 history pagination; resolve treatment-status consent requirements and separate authorized disposal before implementation. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, erasure or paid mail authorized.
+- Next: resolve TK2610-0025 treatment-status consent requirements and separate authorized disposal before implementation. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, erasure or paid mail authorized.
+
+## October 22, 2026 — Consent history pagination
+
+- History pagination slice DONE; parent TK2610-0025 remains IN PROGRESS.
+- Shared page/state contracts, validated API paging (20 default, 200 maximum),
+  deterministic consentedAt/id ordering and repeatable-read metadata/current heads.
+  Treatment detail caps its recent evidence preview at 20, with full history on
+  the paged endpoint. API/web must roll out together for the page-envelope change.
+- Existing drawer now uses accessible pagination, totals, page-keyed queries,
+  retry/return-to-latest controls and independent current chain state for actions.
+  Old-page annotations use the actual head/current consent, not an old decision.
+  Changing treatment or page resets local history action drafts; errors retain
+  drafts on the same page and existing stale-head checks still protect writes.
+- Verified: PostgreSQL service/HTTP acceptance 1/1, none skipped (25 tied-time
+  events, page coverage, detail cap, current-state consistency, validation/auth/
+  tenant regressions); focused UI/hooks 34/34; full web 569/569 (66 files); shared
+  149/149; workspace typecheck, root lint and production build passed. Existing
+  pg concurrent-query deprecation warning remains. Initial acceptance used 101 as
+  an invalid size; corrected to 201 to match the existing maximum of 200.
+- Only approved disposable loopback 55440/package_expiry_test used; fixture tenants
+  count zero after cleanup, cluster stopped. No schema/migration, application DB,
+  erasure, deployment or commit. Full API suite/agent browser walkthrough not run;
+  standing user-granted manual acceptance applies. Consent policy and disposal
+  remain unresolved and unchanged; neither parent external task is ready to close.
 
 ## October 22, 2026 — Append-only consent history and configurable signatures
 

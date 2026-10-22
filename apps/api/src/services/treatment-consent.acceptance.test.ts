@@ -197,7 +197,7 @@ test(
         assert.equal(decisions.filter((result) => result.status === "fulfilled").length, 1);
         const rejected = decisions.find((result) => result.status === "rejected");
         assert.ok(rejected?.status === "rejected" && code("CONSENT_EVENT_EXISTS")(rejected.reason));
-        const grant = (await listConsentEvents(record.id))[0]!;
+        const grant = (await listConsentEvents(record.id)).data[0]!;
         const withdrawalInput = {
           ...input,
           previousEventId: grant.id,
@@ -209,7 +209,7 @@ test(
           recordTreatmentConsentEvent(withdrawalInput, user.id),
         ]);
         assert.equal(withdrawals.filter((result) => result.status === "fulfilled").length, 1);
-        const withdrawal = (await listConsentEvents(record.id))[0]!;
+        const withdrawal = (await listConsentEvents(record.id)).data[0]!;
         assert.equal(withdrawal.eventType, "WITHDRAWAL");
         await assert.rejects(
           recordTreatmentConsentEvent(
@@ -266,7 +266,8 @@ test(
         );
         assert.equal(reconsent.eventType, "RECONSENT");
         assert.equal(
-          (await listConsentEvents(record.id)).find((event) => event.id === grant.id)?.consented,
+          (await listConsentEvents(record.id)).data.find((event) => event.id === grant.id)
+            ?.consented,
           true,
         );
         await prisma.user.update({ where: { id: user.id }, data: { globalRole: "STAFF" } });
@@ -398,19 +399,68 @@ test(
           }),
           1,
         );
-        const history = await listConsentEvents(record.id);
+        const history = (await listConsentEvents(record.id)).data;
         assert.equal(history.length, 4);
+        const firstPage = await listConsentEvents(record.id, { page: 1, pageSize: 2 });
+        const secondPage = await listConsentEvents(record.id, { page: 2, pageSize: 2 });
+        assert.equal(firstPage.total, 4);
+        assert.equal(firstPage.pageCount, 2);
+        assert.deepEqual([...firstPage.data, ...secondPage.data], history);
+        assert.deepEqual(firstPage.states, secondPage.states);
+        assert.equal(firstPage.states[0].headEventId, history[0].id);
+        assert.equal(firstPage.states[0].consented, true);
+        assert.deepEqual((await listConsentEvents(record.id, { page: 3, pageSize: 2 })).data, []);
         assert.equal(history[0].treatmentConsentForm?.content, "Original text");
         assert.equal(history[0].treatmentConsentForm?.version, 1);
         assert.equal(history[0].treatmentConsentForm?.isActive, false);
         assert.deepEqual((await getTreatmentRecord(record.id)).consentEvents, history);
+        // Large, tied-time fixture verifies stable ordering and the detail preview bound.
+        const pagedRecord = await createTreatmentRecord({
+          customerId: customer.id,
+          treatmentType: "laser",
+          status: "SCHEDULED",
+          quantityConsumed: 0,
+        });
+        const tiedAt = new Date("2026-10-22T00:00:00.000Z");
+        const fixtureIds = Array.from(
+          { length: 25 },
+          (_, index) => `${pagedRecord.id}-event-${String(index).padStart(2, "0")}`,
+        );
+        await prisma.treatmentConsentEvent.createMany({
+          data: fixtureIds.map((id, index) => ({
+            id,
+            tenantId,
+            customerId: customer.id,
+            treatmentRecordId: pagedRecord.id,
+            treatmentConsentFormId: form.id,
+            consentedById: user.id,
+            consented: true,
+            eventType: index === 0 ? "GRANT" : "CORRECTION",
+            consentedAt: tiedAt,
+            previousEventId: index === 0 ? null : fixtureIds[index - 1],
+            correctsEventId: index === 0 ? null : fixtureIds[0],
+            reason: index === 0 ? null : "Fixture annotation",
+          })),
+        });
+        const largeFirst = await listConsentEvents(pagedRecord.id);
+        const largeSecond = await listConsentEvents(pagedRecord.id, { page: 2 });
+        assert.equal(largeFirst.data.length, 20);
+        assert.equal(largeSecond.data.length, 5);
+        assert.equal(largeFirst.total, 25);
+        assert.deepEqual(
+          [...largeFirst.data, ...largeSecond.data].map((event) => event.id),
+          [...fixtureIds].reverse(),
+        );
+        assert.deepEqual((await getTreatmentRecord(pagedRecord.id)).consentEvents, largeFirst.data);
+        assert.deepEqual(largeFirst.states, largeSecond.states);
+        assert.equal(largeSecond.states[0].headEventId, fixtureIds[24]);
         await assert.rejects(listConsentEvents(foreign.record.id), code("TREATMENT_NOT_FOUND"));
         await assert.rejects(listConsentEvents("missing"), code("TREATMENT_NOT_FOUND"));
         await assert.rejects(
           deleteTreatmentRecord(record.id),
           code("TREATMENT_HAS_CONSENT_EVIDENCE"),
         );
-        assert.deepEqual(await listConsentEvents(record.id), history);
+        assert.deepEqual((await listConsentEvents(record.id)).data, history);
         await assert.rejects(deleteTreatmentRecord(foreign.record.id), code("TREATMENT_NOT_FOUND"));
         await assert.rejects(deleteTreatmentRecord("missing"), code("TREATMENT_NOT_FOUND"));
 
@@ -444,7 +494,10 @@ test(
             assert.equal(outcomes[1].status, "rejected");
             if (outcomes[1].status === "rejected")
               assert.ok(code("TREATMENT_HAS_CONSENT_EVIDENCE")(outcomes[1].reason));
-            assert.equal((await listConsentEvents(competingRecord.id))[0].consented, consented);
+            assert.equal(
+              (await listConsentEvents(competingRecord.id)).data[0].consented,
+              consented,
+            );
           } else {
             assert.ok(code("TREATMENT_NOT_FOUND")(outcomes[0].reason));
             assert.equal(outcomes[1].status, "fulfilled");
@@ -484,6 +537,22 @@ test(
           assert.equal((await fetch(forms)).status, 401);
           assert.equal((await fetch(forms, { headers })).status, 403);
           await prisma.tenantModule.create({ data: { tenantId, moduleId: module.id } });
+          const historyUrl = `${base}/${record.id}/consent`;
+          for (const query of ["page=0", "pageSize=201", "page=1.5", "pageSize=nope"]) {
+            assert.equal((await fetch(`${historyUrl}?${query}`, { headers })).status, 422);
+          }
+          assert.equal((await fetch(historyUrl)).status, 401);
+          assert.equal(
+            (await fetch(`${base}/${foreign.record.id}/consent?page=2`, { headers })).status,
+            404,
+          );
+          const historyResponse = await fetch(`${historyUrl}?page=2&pageSize=2`, { headers });
+          assert.equal(historyResponse.status, 200);
+          const historyPage = (await historyResponse.json()).data;
+          assert.equal(historyPage.page, 2);
+          assert.equal(historyPage.pageSize, 2);
+          assert.equal(historyPage.data.length, 2);
+          assert.equal(historyPage.total, 4);
           const reviewUrl = `${base}/${record.id}/retention-review`;
           const review = (body: unknown = reviewInput) =>
             fetch(reviewUrl, {
@@ -626,7 +695,7 @@ test(
             }),
           );
           assert.equal((await fetch(eventUrl, { headers })).status, 403);
-          assert.equal((await listConsentEvents(record.id)).length, 5);
+          assert.equal((await listConsentEvents(record.id)).data.length, 5);
           await runAsPlatform(() =>
             prisma.tenant.update({
               where: { id: tenantId },
@@ -642,7 +711,7 @@ test(
             ((await protectedDelete.json()) as { code: string }).code,
             "TREATMENT_HAS_CONSENT_EVIDENCE",
           );
-          assert.equal((await listConsentEvents(record.id)).length, 5);
+          assert.equal((await listConsentEvents(record.id)).data.length, 5);
           // Declines are evidence too, independently of grants.
           const declinedRecord = await createTreatmentRecord({
             customerId: customer.id,
@@ -658,8 +727,8 @@ test(
             (await fetch(`${base}/${declinedRecord.id}`, { method: "DELETE", headers })).status,
             409,
           );
-          assert.equal((await listConsentEvents(declinedRecord.id)).length, 1);
-          assert.equal((await listConsentEvents(declinedRecord.id))[0].consented, false);
+          assert.equal((await listConsentEvents(declinedRecord.id)).data.length, 1);
+          assert.equal((await listConsentEvents(declinedRecord.id)).data[0].consented, false);
           const unprotected = await createTreatmentRecord({
             customerId: customer.id,
             treatmentType: "laser",
@@ -713,7 +782,7 @@ test(
           assert.ok(archiveData.archivedAt);
           assert.equal(archiveData.archivedById, user.id);
           assert.equal((await archive()).status, 200);
-          assert.equal((await listConsentEvents(record.id)).length, 5);
+          assert.equal((await listConsentEvents(record.id)).data.length, 5);
           const { listCustomers } = await import("./customer.service.js");
           assert.equal(
             (await listCustomers({ page: 1, pageSize: 100 })).data.some(

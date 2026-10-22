@@ -8,6 +8,7 @@ import type {
   CreateTreatmentPhotoInput,
   CreateTreatmentRecordInput,
   TreatmentConsentEvent,
+  TreatmentConsentHistory,
   TreatmentConsentForm,
   TreatmentPhoto,
   TreatmentRecord,
@@ -230,10 +231,14 @@ export function useRecordConsentEvent() {
   });
 }
 
-export function useConsentEvents(treatmentRecordId: string | null) {
+export function useConsentEvents(treatmentRecordId: string | null, page = 1) {
   return useQuery({
-    queryKey: [...queryKeys.treatments.detail(treatmentRecordId ?? ""), "consent"],
-    queryFn: () => get<TreatmentConsentEvent[]>(`/treatments/${treatmentRecordId}/consent`),
+    queryKey: [...queryKeys.treatments.detail(treatmentRecordId ?? ""), "consent", page],
+    queryFn: () =>
+      get<TreatmentConsentHistory>(`/treatments/${treatmentRecordId}/consent`, {
+        page,
+        pageSize: PAGE_SIZE,
+      }),
     enabled: treatmentRecordId !== null,
   });
 }

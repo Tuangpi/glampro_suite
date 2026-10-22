@@ -22,7 +22,32 @@ vi.mock("@/contexts/AuthContext", () => ({
 vi.mock("@/hooks/useTreatments", () => ({
   useTreatment: mocks.record,
   useConsentForms: mocks.forms,
-  useConsentEvents: mocks.history,
+  useConsentEvents: (...args: unknown[]) => {
+    const result = mocks.history(...args);
+    if (!Array.isArray(result.data)) return result;
+    const states = result.data
+      .filter(
+        (event: typeof evidence, index: number, rows: (typeof evidence)[]) =>
+          rows.findIndex((row) => row.treatmentConsentFormId === event.treatmentConsentFormId) ===
+          index,
+      )
+      .map((event: typeof evidence) => ({
+        treatmentConsentFormId: event.treatmentConsentFormId,
+        headEventId: event.id,
+        consented: event.consented,
+      }));
+    return {
+      ...result,
+      data: {
+        data: result.data,
+        states,
+        total: result.data.length,
+        page: 1,
+        pageSize: 20,
+        pageCount: 1,
+      },
+    };
+  },
   useRecordConsentEvent: () => ({ mutateAsync: mocks.recordDecision, isPending: mocks.busy }),
   useCreateConsentForm: () => ({ mutateAsync: mocks.publish, isPending: false }),
 }));
@@ -52,6 +77,79 @@ const evidence = {
   treatmentConsentForm: old,
 };
 const renderPanel = () => render(<TreatmentConsent customerId="c1" recordId="t1" />);
+
+it("navigates evidence pages without treating an older decision as current", async () => {
+  mocks.history.mockImplementation((_id, page) => ({
+    data: {
+      data: [{ ...evidence, id: page === 1 ? "new" : "old", consented: page === 1 }],
+      states: [
+        { treatmentConsentFormId: "f1", headEventId: "new", consented: true },
+        { treatmentConsentFormId: "f2", headEventId: "active-head", consented: false },
+      ],
+      total: 21,
+      page,
+      pageSize: 20,
+      pageCount: 2,
+    },
+  }));
+  renderPanel();
+  expect(screen.getByRole("button", { name: "Grant consent" })).toBeDisabled();
+  const nav = screen.getByRole("navigation", { name: "Consent history pages" });
+  expect(within(nav).getByRole("button", { name: "Previous page" })).toBeDisabled();
+  await userEvent.click(within(nav).getByRole("button", { name: "Next page" }));
+  expect(mocks.history).toHaveBeenLastCalledWith("t1", 2);
+  expect(screen.getByRole("article")).toHaveTextContent("Evidence reference: old");
+  expect(within(nav).getByRole("button", { name: "Next page" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: /Withdraw consent/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Confirm withdrawal" }));
+  expect(mocks.recordDecision).toHaveBeenCalledWith(
+    expect.objectContaining({ previousEventId: "new", consented: false }),
+  );
+});
+
+it("uses current consent for annotations even when only an old decline is displayed", async () => {
+  mocks.history.mockReturnValue({
+    data: {
+      data: [evidence],
+      total: 21,
+      page: 1,
+      pageSize: 20,
+      pageCount: 2,
+      states: [{ treatmentConsentFormId: "f1", headEventId: "current-grant", consented: true }],
+    },
+  });
+  renderPanel();
+  await userEvent.click(screen.getByRole("button", { name: "Annotate evidence e1" }));
+  await userEvent.type(screen.getByLabelText("Correction reason"), "Witness detail");
+  await userEvent.click(screen.getByRole("button", { name: "Confirm correction" }));
+  expect(mocks.recordDecision).toHaveBeenCalledWith(
+    expect.objectContaining({
+      previousEventId: "current-grant",
+      correctsEventId: "e1",
+      consented: true,
+    }),
+  );
+});
+
+it("keeps failed pages retryable and allows returning to latest evidence", async () => {
+  mocks.history.mockImplementation((_id, page) =>
+    page === 1
+      ? {
+          data: { data: [evidence], states: [], total: 21, page, pageSize: 20, pageCount: 2 },
+        }
+      : { isError: true, refetch: mocks.retryHistory },
+  );
+  renderPanel();
+  await userEvent.click(screen.getByRole("button", { name: "Next page" }));
+  expect(screen.queryByRole("article")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Grant consent" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Retry evidence" }));
+  expect(mocks.retryHistory).toHaveBeenCalledTimes(1);
+  await userEvent.click(screen.getByRole("button", { name: "Return to latest evidence" }));
+  expect(mocks.history).toHaveBeenLastCalledWith("t1", 1);
+  expect(screen.getByRole("article")).toBeInTheDocument();
+});
+
 beforeEach(() => {
   vi.resetAllMocks();
   mocks.readOnly = false;
@@ -75,7 +173,7 @@ it.each([
   async (consented, label, confirm) => {
     renderPanel();
     expect(mocks.forms).toHaveBeenCalledWith("Facial");
-    expect(mocks.history).toHaveBeenCalledWith("t1");
+    expect(mocks.history).toHaveBeenCalledWith("t1", 1);
     expect(screen.getAllByText(/Current wording/).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole("button", { name: label }));
     expect(mocks.recordDecision).not.toHaveBeenCalled();

@@ -1,5 +1,9 @@
 import { useState } from "react";
-import type { TreatmentConsentEvent, TreatmentConsentForm } from "@glampro_suite/shared";
+import type {
+  TreatmentConsentEvent,
+  TreatmentConsentForm,
+  TreatmentConsentState,
+} from "@glampro_suite/shared";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRecordConsentEvent } from "@/hooks/useTreatments";
 import { getErrorMessage } from "@/lib/api";
@@ -8,12 +12,14 @@ import ConsentSignature from "./ConsentSignature";
 
 export default function ConsentHistoryActions({
   events,
+  states,
   forms,
   customerId,
   recordId,
   blocked,
 }: {
   events: TreatmentConsentEvent[];
+  states: TreatmentConsentState[];
   forms: TreatmentConsentForm[];
   customerId: string;
   recordId: string;
@@ -34,18 +40,11 @@ export default function ConsentHistoryActions({
   const disabled = blocked || isReadOnly || mutation.isPending;
   const head =
     draft &&
-    events.find((event) => event.treatmentConsentFormId === draft.original.treatmentConsentFormId);
+    states.find((state) => state.treatmentConsentFormId === draft.original.treatmentConsentFormId);
   const form = draft && forms.find((row) => row.id === draft.original.treatmentConsentFormId);
-  const lastDecision =
-    draft &&
-    events.find(
-      (event) =>
-        event.treatmentConsentFormId === draft.original.treatmentConsentFormId &&
-        event.eventType !== "CORRECTION",
-    );
   const eligible =
     draft &&
-    head?.id === draft.head &&
+    head?.headEventId === draft.head &&
     savedHead !== draft.head &&
     (draft.eventType !== "CORRECTION" || manager) &&
     (draft.eventType !== "RECONSENT" || (form?.isActive && !!draft.original.treatmentConsentForm));
@@ -77,7 +76,7 @@ export default function ConsentHistoryActions({
         eventType: draft.eventType,
         consented:
           draft.eventType === "CORRECTION"
-            ? (lastDecision?.consented ?? false)
+            ? (head?.consented ?? false)
             : draft.eventType === "RECONSENT",
         ...(draft.eventType === "CORRECTION"
           ? { correctsEventId: draft.original.id, reason: reason.trim() }
@@ -94,11 +93,10 @@ export default function ConsentHistoryActions({
   return (
     <section aria-label="Consent history actions" className="flex flex-col gap-3">
       {events.map((event, index) => {
-        const chain = events.filter(
+        const latest = states.find(
           (row) => row.treatmentConsentFormId === event.treatmentConsentFormId,
         );
-        const latest = chain[0]!;
-        const decision = chain.find((row) => row.eventType !== "CORRECTION");
+        const decision = latest;
         return (
           <div key={event.id}>
             {events.findIndex(
@@ -107,14 +105,14 @@ export default function ConsentHistoryActions({
               <Button
                 disabled={
                   disabled ||
-                  savedHead === latest.id ||
+                  savedHead === latest!.headEventId ||
                   (!decision.consented &&
                     !forms.some(
                       (form) => form.id === event.treatmentConsentFormId && form.isActive,
                     ))
                 }
                 onClick={() =>
-                  open(decision.consented ? "WITHDRAWAL" : "RECONSENT", event, latest.id)
+                  open(decision.consented ? "WITHDRAWAL" : "RECONSENT", event, latest!.headEventId)
                 }
               >
                 {decision.consented ? "Withdraw consent" : "Record re-consent"} —{" "}
@@ -124,8 +122,8 @@ export default function ConsentHistoryActions({
             {manager && !isReadOnly ? (
               <Button
                 variant="secondary"
-                disabled={disabled || savedHead === latest.id}
-                onClick={() => open("CORRECTION", event, latest.id)}
+                disabled={disabled || !latest || savedHead === latest.headEventId}
+                onClick={() => latest && open("CORRECTION", event, latest.headEventId)}
               >
                 Annotate evidence {event.id}
               </Button>

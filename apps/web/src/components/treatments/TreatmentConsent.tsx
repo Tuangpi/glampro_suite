@@ -3,6 +3,7 @@ import { createTreatmentConsentFormSchema } from "@glampro_suite/shared";
 import type { TreatmentConsentForm } from "@glampro_suite/shared";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
+import Pagination from "@/components/ui/Pagination";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import {
@@ -36,7 +37,7 @@ export default function TreatmentConsent({
     return <p role="alert">Treatment is unavailable for this customer.</p>;
   return (
     <ConsentPanel
-      key={record.data.treatmentType}
+      key={`${recordId}:${record.data.treatmentType}`}
       customerId={customerId}
       recordId={recordId}
       treatmentType={record.data.treatmentType}
@@ -57,7 +58,8 @@ function ConsentPanel({
   const canPublish = user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER";
   const { formatDateTime } = useSalonFormatting();
   const forms = useConsentForms(treatmentType);
-  const history = useConsentEvents(recordId);
+  const [page, setPage] = useState(1);
+  const history = useConsentEvents(recordId, page);
   const decision = useRecordConsentEvent();
   const [authoring, setAuthoring] = useState(false);
   const [confirmation, setConfirmation] = useState<{ formId: string; consented: boolean } | null>(
@@ -70,7 +72,7 @@ function ConsentPanel({
   const hasDecision =
     active &&
     (savedFormIds.includes(active.id) ||
-      history.data?.some((event) => event.treatmentConsentFormId === active.id));
+      history.data?.states.some((state) => state.treatmentConsentFormId === active.id));
   const busy = decision.isPending;
   const canDecide =
     !isReadOnly &&
@@ -224,7 +226,9 @@ function ConsentPanel({
       <h3 className="font-bold">Consent evidence history</h3>
       {history.data && !history.isError ? (
         <ConsentHistoryActions
-          events={history.data}
+          key={page}
+          events={history.data.data}
+          states={history.data.states}
           forms={forms.data ?? []}
           customerId={customerId}
           recordId={recordId}
@@ -244,11 +248,11 @@ function ConsentPanel({
           <Button onClick={() => void history.refetch()}>Retry evidence</Button>
         </div>
       ) : null}
-      {!history.isPending && !history.isError && history.data?.length === 0 ? (
+      {!history.isPending && !history.isError && history.data?.total === 0 ? (
         <p>No consent decisions recorded.</p>
       ) : null}
       {!history.isError
-        ? history.data?.map((event) => (
+        ? history.data?.data.map((event) => (
             <article key={event.id} className="rounded-card border border-line p-3">
               <h4 className="font-semibold">
                 {event.eventType === "CORRECTION"
@@ -286,6 +290,26 @@ function ConsentPanel({
             </article>
           ))
         : null}
+      {history.data && !history.isError && !history.isFetching ? (
+        <>
+          <p>
+            {history.data.total} consent events. Page {page} of{" "}
+            {Math.max(1, history.data.pageCount)}.
+          </p>
+          {history.data.data.length === 0 && history.data.total > 0 ? (
+            <p>No evidence on this page.</p>
+          ) : null}
+          <Pagination
+            page={page}
+            pageCount={history.data.pageCount}
+            onPageChange={setPage}
+            label="Consent history pages"
+          />
+        </>
+      ) : null}
+      {page > 1 && (history.isError || history.isPending) ? (
+        <Button onClick={() => setPage(1)}>Return to latest evidence</Button>
+      ) : null}
     </section>
   );
 }

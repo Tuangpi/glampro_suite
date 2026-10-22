@@ -11,6 +11,8 @@ import {
   type CreateTreatmentPhotoInput,
   type CreateTreatmentRecordInput,
   type TreatmentConsentEvent,
+  type TreatmentConsentHistory,
+  type PaginationQuery,
   type TreatmentConsentForm,
   type TreatmentPhoto,
   type TreatmentRecord,
@@ -74,7 +76,7 @@ export async function listTreatmentRecords(query: {
   );
 }
 
-/** Gets a single treatment record with its photos and consent events. */
+/** Gets a treatment with a bounded recent-evidence preview; full history is paginated. */
 export async function getTreatmentRecord(id: string): Promise<TreatmentRecord> {
   const row = await prisma.treatmentRecord.findUnique({
     where: { id },
@@ -91,6 +93,7 @@ export async function getTreatmentRecord(id: string): Promise<TreatmentRecord> {
         },
       },
       consentEvents: {
+        take: 20,
         include: { treatmentConsentForm: true },
         orderBy: [{ consentedAt: "desc" }, { id: "desc" }],
       },
@@ -774,15 +777,44 @@ export async function recordTreatmentConsentEvent(
 /** Lists consent events for a treatment record. */
 export async function listConsentEvents(
   treatmentRecordId: string,
-): Promise<TreatmentConsentEvent[]> {
+  query: Partial<PaginationQuery> = {},
+): Promise<TreatmentConsentHistory> {
+  const paging = parsePagination(query);
   const record = await prisma.treatmentRecord.findFirst({ where: { id: treatmentRecordId } });
   if (!record) throw notFound("That treatment record does not exist.", "TREATMENT_NOT_FOUND");
-  const rows = await prisma.treatmentConsentEvent.findMany({
-    where: { treatmentRecordId },
-    orderBy: [{ consentedAt: "desc" }, { id: "desc" }],
-    include: { treatmentConsentForm: true },
-  });
-  return rows.map(serializeConsentEvent);
+  // One snapshot keeps page metadata and action heads consistent during append-only writes.
+  return prisma.$transaction(
+    async (tx) => {
+      const where = { treatmentRecordId };
+      const orderBy = [{ consentedAt: "desc" as const }, { id: "desc" as const }];
+      const rows = await tx.treatmentConsentEvent.findMany({
+        where,
+        orderBy,
+        skip: paging.skip,
+        take: paging.take,
+        include: { treatmentConsentForm: true },
+      });
+      const total = await tx.treatmentConsentEvent.count({ where });
+      const heads = await tx.treatmentConsentEvent.findMany({
+        where,
+        orderBy,
+        distinct: ["treatmentConsentFormId"],
+        select: { id: true, treatmentConsentFormId: true, consented: true },
+      });
+      // Corrections cannot change consent, so each head already carries the current decision.
+      return {
+        ...paginated(rows.map(serializeConsentEvent), total, paging),
+        states: heads.map((head) => ({
+          treatmentConsentFormId: head.treatmentConsentFormId,
+          headEventId: head.id,
+          consented: head.consented,
+        })),
+      };
+    },
+    {
+      isolationLevel: "RepeatableRead",
+    },
+  );
 }
 
 type ConsentEventRow = Awaited<ReturnType<typeof prisma.treatmentConsentEvent.findMany>>[number];
