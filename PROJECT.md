@@ -211,11 +211,37 @@ not establish full roadmap compliance. Consult the decision sections and task fi
     or an external signing provider. Migration 20261022200000_treatment_consent_history
     verified only on disposable PostgreSQL; shared 149/149, web 565/565, DB acceptance
     1/1, workspace typecheck/lint and production build passed. Application migration,
-    treatment-status consent rules and separate disposal remain open. History pagination
+    separate disposal remains open. Treatment-status policy approved next: scheduling
+    needs no consent; entering IN_PROGRESS/COMPLETED requires the active form's current
+    grant, with no-active-form transitions blocked. Withdrawal/cancellation remain
+    available at every status; withdrawal does not rewrite status. Existing historical
+    records remain editable without retroactive consent unless entering a gated status
+    or changing treatment type while in a gated status. Direct creation in a gated
+    status is refused: create Scheduled, capture consent, then transition. This is
+    a product rule, not legal sign-off. Status gate implemented and verified with
+    transactional tenant publication/treatment locking, consent/publication races,
+    HTTP boundaries and POS/photo regression on disposable PostgreSQL (2/2),
+    full web 570/570, workspace typecheck/lint and production build. No new schema
+    migration; prior application migrations and separate disposal remain open.
+    History pagination
     now provides bounded pages (20 default, 200 maximum), current per-form action
     state independent of the displayed page, and a 20-event detail preview. Deploy
     API/web together: history now returns a page envelope rather than an array.
     No data erasure, application migration or deployment is authorized.
+  - Disposal scope selected: owner (SUPER_ADMIN) only, one completed/cancelled
+    treatment at a time; preview, reason, explicit confirmation, and transactional
+    hold/status/stale/authorization checks. Remove treatment, consent events and
+    signatures, and photo links. Preserve original customer photos, customer,
+    published forms, appointments, POS and package balances. Keep a minimal audit
+    receipt with actor/time/reason/counts and record reference, not clinical content.
+    No fixed retention period, automatic purge, backup/export deletion, bulk erasure,
+    customer-wide or tenant-wide erasure. Implementation approval is not permission
+    for the agent to delete real records or migrate application databases.
+    Implemented with owner-bound, ten-minute signed digest preview and transactional
+    authorization/hold/status/stale checks; ordinary deletion protection unchanged.
+    Disposable PostgreSQL consent/disposal/POS acceptance 3/3, shared 150/150,
+    web 576/576, workspace typecheck, root lint and production build pass. No new schema migration.
+    Earlier application migrations/rollout and parent completion checks remain open.
 - Manual payment-method recording is not provider integration; voiding a sale is
   not returning money. Provider onboarding, trademark clearance, grant submission
   and readiness sign-offs need external evidence.

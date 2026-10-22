@@ -89,6 +89,34 @@ it("preserves historical quantities on ordinary clinical edits", async () => {
   expect(update.mock.calls[0]![0].input).not.toHaveProperty("packageRedemptionId");
 });
 
+it("explains the consent gate and preserves a failed status-change draft", async () => {
+  update.mockRejectedValueOnce(new Error("Record a current grant for the active consent form."));
+  const onSaved = vi.fn();
+  const onClose = vi.fn();
+  render(
+    <TreatmentRecordForm
+      open
+      record={{ ...record, status: "SCHEDULED" }}
+      recordId="treatment-1"
+      onClose={onClose}
+      onSaved={onSaved}
+    />,
+  );
+  expect(screen.getByText(/Create new treatments as Scheduled/)).toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText("Status"), "IN_PROGRESS");
+  await userEvent.type(screen.getByLabelText("Notes"), "Keep this draft");
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(/current grant/);
+  expect(screen.getByLabelText("Status")).toHaveValue("IN_PROGRESS");
+  expect(screen.getByLabelText("Notes")).toHaveValue("Keep this draft");
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
+  // Cancellation is not disabled by a failed consent check.
+  await userEvent.selectOptions(screen.getByLabelText("Status"), "CANCELLED");
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+});
+
 it("explicitly clears linkage without asking POS to restore sessions", async () => {
   const user = userEvent.setup();
   render(

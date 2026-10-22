@@ -211,6 +211,14 @@ export default function TreatmentRecordForm({
             />
           </div>
 
+          <p className="text-sm text-ink-muted">
+            Create new treatments as Scheduled, then open Consent to record a grant for the active
+            form before starting or completing treatment. An owner or manager must publish a form if
+            none exists. Existing historical records can be edited without retroactive consent;
+            changing treatment type while started or completed requires consent for the new type.
+            Withdrawal does not change treatment status. Cancellation remains available.
+          </p>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <Input
               label="Started at"

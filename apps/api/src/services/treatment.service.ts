@@ -116,6 +116,35 @@ export async function getTreatmentRecord(id: string): Promise<TreatmentRecord> {
 
 type TreatmentTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
+/** Caller holds the publisher-compatible tenant lock, then the treatment lock. */
+async function requireTreatmentConsent(
+  tx: TreatmentTransaction,
+  treatmentType: string,
+  treatmentRecordId?: string,
+) {
+  const form = await tx.treatmentConsentForm.findFirst({
+    where: { treatmentType, isActive: true },
+    orderBy: { version: "desc" },
+  });
+  if (!form)
+    throw conflict(
+      "An owner or manager must publish an active consent form before treatment can start or complete.",
+      "TREATMENT_ACTIVE_CONSENT_FORM_REQUIRED",
+    );
+  const head = treatmentRecordId
+    ? await tx.treatmentConsentEvent.findFirst({
+        where: { treatmentRecordId, treatmentConsentFormId: form.id },
+        orderBy: [{ consentedAt: "desc" }, { id: "desc" }],
+      })
+    : null;
+  // An annotation preserves the decision, so checking the current head is sufficient.
+  if (!head?.consented)
+    throw conflict(
+      "Save the treatment as Scheduled and record a current grant for its active consent form before starting or completing it.",
+      "TREATMENT_CONSENT_REQUIRED",
+    );
+}
+
 /** Eligible evidence only. Listing never reserves a redemption or changes balances. */
 export async function listTreatmentRedemptions(query: TreatmentRedemptionQuery) {
   const scope = currentScope();
@@ -291,6 +320,10 @@ export async function createTreatmentRecord(
 
   const row = await prisma
     .$transaction(async (tx) => {
+      // Acquire before treatment/form locks to avoid a publication/capture lock cycle.
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${scope.tenantId} FOR SHARE`;
+      if (input.status === "IN_PROGRESS" || input.status === "COMPLETED")
+        await requireTreatmentConsent(tx, input.treatmentType);
       const link = await resolvePackageLink(
         tx,
         input.customerId,
@@ -362,6 +395,9 @@ export async function updateTreatmentRecord(
 
   const row = await prisma
     .$transaction(async (tx) => {
+      // Publication takes NO KEY UPDATE on this row. SHARE prevents a new active
+      // version from appearing between the consent check and status write.
+      await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${scope.tenantId} FOR SHARE`;
       await tx.treatmentRecord.updateMany({
         where: { id },
         data: { quantityConsumed: { increment: 0 } },
@@ -370,6 +406,14 @@ export async function updateTreatmentRecord(
         where: { id },
       });
       if (!existing) throw notFound("That treatment record does not exist.", "TREATMENT_NOT_FOUND");
+
+      const status = input.status ?? existing.status;
+      const treatmentType = input.treatmentType ?? existing.treatmentType;
+      if (
+        (status === "IN_PROGRESS" || status === "COMPLETED") &&
+        (status !== existing.status || treatmentType !== existing.treatmentType)
+      )
+        await requireTreatmentConsent(tx, treatmentType, existing.id);
 
       const changingLink =
         input.packageRedemptionId !== undefined || input.quantityConsumed !== undefined;

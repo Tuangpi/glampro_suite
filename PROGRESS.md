@@ -2,12 +2,65 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. History pagination slice complete, following W1/S2 consent history/signatures. Verified on disposable PostgreSQL. Earlier application migrations remain unperformed. Separate authorized disposal and treatment-status consent policy remain open. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
+- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. Owner-authorized per-treatment disposal implemented/verified after status gate/history/W1/S2. Earlier application migrations remain unperformed. Rollout and remaining completion checks remain open. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
-- Next: resolve TK2610-0025 treatment-status consent requirements and separate authorized disposal before implementation. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, erasure or paid mail authorized.
+- Next: TK2610-0025 remaining completion audit and separately authorized application migration/rollout. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, real-record erasure or paid mail authorized.
+
+## October 22, 2026 — Owner-authorized treatment disposal
+
+- User selected one completed/cancelled treatment per owner (SUPER_ADMIN) action;
+  implemented preview + reason + typed DISPOSE confirmation. Ten-minute signed
+  preview binds owner/tenant/treatment and record/evidence/photo-link digest.
+- Transaction rechecks current owner/2FA/enabled status, writable tenant, treatment
+  status, hold, digest and expiry. Tenant/user/treatment/photo locks serialize
+  conflicting changes. Ordinary deletion still blocks consent evidence.
+- Removes only clinical record, consent chain/signatures and photo links. Preserves
+  original customer photos (including shared gallery uses), customer, published
+  form versions, appointments and POS/package records. No balance reversal.
+- Minimal existing audit receipt records actor/time/reason/counts/treatment reference;
+  UI warns against clinical/customer details in the retained reason. No copied notes,
+  signatures, form answers or customer/photo IDs. Backup/export erasure excluded.
+- PostgreSQL acceptance 3/3, none skipped: consent/status regression, new disposal
+  boundaries/tamper/expiry/stale data/evidence/photos/duplicate submission, four
+  hold races, audit-failure rollback and unchanged POS sale/redemption/holding.
+  Shared 150/150; full web 576/576 (67 files); workspace typecheck, root lint,
+  production build and git diff check pass.
+  Initial render-time expiry lint failure fixed with effect timer/event-time check.
+- Only approved loopback 55440/package_expiry_test fixtures used; cleanup completed,
+  injected trigger/function removed and cluster stopped. No new migration, application
+  DB, real-record erasure, deployment or commit. Full API suite and agent browser
+  walkthrough not run; standing user acceptance applies. Parent remains IN PROGRESS.
+
+## October 22, 2026 — Treatment-status consent gate
+
+- Status-policy slice DONE; TK2610-0025 remains IN PROGRESS, not impossible or
+  ready for external closure. User selected the recommended active-form gate.
+- API create/update require current active-version grant on entering IN_PROGRESS
+  or COMPLETED. Missing active form returns TREATMENT_ACTIVE_CONSENT_FORM_REQUIRED;
+  absent/declined/withdrawn/old-version consent returns TREATMENT_CONSENT_REQUIRED.
+  Create Scheduled first, capture consent, then transition. Changing type in a
+  gated status checks the new type; same-status historical notes remain editable.
+  Scheduling/cancellation remain available; withdrawal preserves treatment status,
+  including completed records. Signature/correction/tenant rules remain unchanged.
+- Tenant SHARE lock precedes treatment locks and conflicts with publishers' existing
+  NO KEY UPDATE lock, covering first/new-version publication without lock-order
+  cycles. Treatment locks serialize withdrawals with status writes. Tests permit
+  either valid serial result, never bypass/rewrite evidence. POS remains sole
+  balance owner; session/photo fixture creation changed to Scheduled accordingly.
+- UI explains the workflow and preserves denied status/notes drafts; cancellation
+  can be retried. No front-end-only security enforcement or new dependency.
+- Verified: disposable PostgreSQL consent and POS/photo acceptance 2/2, none skipped;
+  four withdrawal/status and four publication/status races, new-version gate,
+  historical compatibility, completed withdrawal, tenant/auth/suspension/HTTP errors;
+  focused form 11/11; full web 570/570 (66 files); workspace typecheck, root lint,
+  production build passed. Existing pg deprecation warning remains. Full API suite
+  and agent browser walkthrough not run; standing manual acceptance applies.
+- Only approved loopback 55440/package_expiry_test used; fixtures cleaned and cluster
+  stopped. No schema/migration, application DB, erasure, deployment or commit.
+  Next: decide separate owner-authorized disposal scope, not perform real erasure.
 
 ## October 22, 2026 — Consent history pagination
 

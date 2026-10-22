@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/hooks/useTreatments", () => ({
   useTreatment: mocks.query,
   useReviewTreatmentRetention: () => ({ mutateAsync: mocks.save, isPending: mocks.pending }),
+  usePreviewTreatmentDisposal: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDisposeTreatment: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { globalRole: mocks.role }, isReadOnly: mocks.readOnly }),

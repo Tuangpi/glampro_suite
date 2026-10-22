@@ -1,5 +1,9 @@
 import { useState } from "react";
-import { reviewTreatmentRetentionSchema, type TreatmentRecord } from "@glampro_suite/shared";
+import {
+  reviewTreatmentRetentionSchema,
+  type TreatmentRecord,
+  type TreatmentDisposalReceipt,
+} from "@glampro_suite/shared";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { useAuth } from "@/contexts/AuthContext";
@@ -8,6 +12,7 @@ import { useReviewTreatmentRetention, useTreatment } from "@/hooks/useTreatments
 import { getErrorMessage } from "@/lib/api";
 import { instantFromSalonDate, toSalonDate } from "@/lib/salon-time";
 import { formatDateInputValue } from "@/lib/utils";
+import TreatmentDisposal from "./TreatmentDisposal";
 
 export default function TreatmentRetention({
   customerId,
@@ -17,8 +22,16 @@ export default function TreatmentRetention({
   recordId: string;
 }) {
   const query = useTreatment(recordId);
+  const [disposed, setDisposed] = useState<TreatmentDisposalReceipt | null>(null);
   const { isReadOnly, user } = useAuth();
   const { formatDateTime, timeZone } = useSalonFormatting();
+  if (disposed?.treatmentRecordId === recordId)
+    return (
+      <p role="status">
+        Treatment disposed. Receipt {disposed.receiptId}. Recorded at{" "}
+        {formatDateTime(disposed.disposedAt)}. Original photos and financial records are preserved.
+      </p>
+    );
   if (query.isError)
     return (
       <div role="alert">
@@ -66,6 +79,19 @@ export default function TreatmentRetention({
       ) : (
         <p>Only owners and managers in a writable salon can change retention reviews and holds.</p>
       )}
+      {user?.globalRole === "SUPER_ADMIN" && !isReadOnly ? (
+        <TreatmentDisposal
+          key={record.id}
+          recordId={record.id}
+          customerId={customerId}
+          onDisposed={setDisposed}
+          blocked={
+            query.isFetching ||
+            !!record.retentionHold ||
+            (record.status !== "COMPLETED" && record.status !== "CANCELLED")
+          }
+        />
+      ) : null}
     </section>
   );
 }

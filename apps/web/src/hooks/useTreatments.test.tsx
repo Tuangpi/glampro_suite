@@ -8,6 +8,8 @@ import {
   useCreateConsentForm,
   useRecordConsentEvent,
   useReviewTreatmentRetention,
+  usePreviewTreatmentDisposal,
+  useDisposeTreatment,
 } from "./useTreatments";
 import { queryKeys } from "@/constants/queryKeys";
 
@@ -16,6 +18,37 @@ vi.mock("@/lib/api", () => ({ get, post }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ isReadOnly: false }) }));
 vi.mock("@/components/ui/toast-store", () => ({ showToast: vi.fn() }));
 beforeEach(() => vi.resetAllMocks());
+
+it("previews disposal without modifying caches and removes disposed detail/history while refreshing lists", async () => {
+  const preview = { previewToken: "signed", treatmentRecordId: "t1" };
+  get.mockResolvedValue(preview);
+  post.mockResolvedValue({ receiptId: "receipt1" });
+  const client = new QueryClient();
+  const invalidate = vi.spyOn(client, "invalidateQueries");
+  client.setQueryData(queryKeys.treatments.detail("t1"), { id: "t1", notes: "Private" });
+  client.setQueryData([...queryKeys.treatments.detail("t1"), "consent", 1], {
+    data: [{ id: "e1" }],
+  });
+  client.setQueryData(queryKeys.treatments.detail("t2"), { id: "t2" });
+  const wrapper = ({ children }: PropsWithChildren) => (
+    <QueryClientProvider client={client}>{children}</QueryClientProvider>
+  );
+  const { result } = renderHook(
+    () => ({ preview: usePreviewTreatmentDisposal(), dispose: useDisposeTreatment() }),
+    { wrapper },
+  );
+  expect(await result.current.preview.mutateAsync("t1")).toEqual(preview);
+  expect(get).toHaveBeenCalledWith("/treatments/t1/disposal-preview");
+  expect(invalidate).not.toHaveBeenCalled();
+  const input = { previewToken: "signed", reason: "Reviewed", confirmation: "DISPOSE" as const };
+  await result.current.dispose.mutateAsync({ id: "t1", input });
+  expect(post).toHaveBeenCalledWith("/treatments/t1/dispose", input);
+  expect(client.getQueryData(queryKeys.treatments.detail("t1"))).toBeUndefined();
+  expect(client.getQueryData([...queryKeys.treatments.detail("t1"), "consent", 1])).toBeUndefined();
+  expect(client.getQueryData(queryKeys.treatments.detail("t2"))).toEqual({ id: "t2" });
+  expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.treatments.all() });
+  client.clear();
+});
 
 it("records retention reviews and refreshes treatment detail and list caches", async () => {
   const saved = { id: "t1", retentionHold: true };

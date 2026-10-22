@@ -24,6 +24,7 @@ test(
       listConsentEvents,
       getTreatmentRecord,
       createTreatmentRecord,
+      updateTreatmentRecord,
       getActiveConsentForm,
       deleteTreatmentRecord,
       reviewTreatmentRetention,
@@ -97,6 +98,208 @@ test(
           isActive: true,
         };
         const form = await createTreatmentConsentForm(formInput);
+        // Approved status policy: no retrospective rewrite, but every new entry
+        // into started/completed requires a current grant on the active version.
+        const gatedInput = {
+          customerId: customer.id,
+          treatmentType: "status-policy",
+          status: "SCHEDULED" as const,
+          quantityConsumed: 0,
+        };
+        const gated = await createTreatmentRecord(gatedInput);
+        for (const status of ["IN_PROGRESS", "COMPLETED"] as const) {
+          await assert.rejects(
+            createTreatmentRecord({ ...gatedInput, status }),
+            code("TREATMENT_ACTIVE_CONSENT_FORM_REQUIRED"),
+          );
+          await assert.rejects(
+            updateTreatmentRecord(gated.id, { status }),
+            code("TREATMENT_ACTIVE_CONSENT_FORM_REQUIRED"),
+          );
+        }
+        const gatedForm = await createTreatmentConsentForm({
+          ...formInput,
+          treatmentType: gatedInput.treatmentType,
+        });
+        await assert.rejects(
+          createTreatmentRecord({ ...gatedInput, status: "COMPLETED" }),
+          code("TREATMENT_CONSENT_REQUIRED"),
+        );
+        await assert.rejects(
+          updateTreatmentRecord(gated.id, { status: "IN_PROGRESS" }),
+          code("TREATMENT_CONSENT_REQUIRED"),
+        );
+        const gatedConsent = {
+          treatmentRecordId: gated.id,
+          customerId: customer.id,
+          treatmentConsentFormId: gatedForm.id,
+          consented: false,
+        };
+        const declined = await recordTreatmentConsentEvent(gatedConsent, user.id);
+        await assert.rejects(
+          updateTreatmentRecord(gated.id, { status: "COMPLETED" }),
+          code("TREATMENT_CONSENT_REQUIRED"),
+        );
+        const granted = await recordTreatmentConsentEvent(
+          {
+            ...gatedConsent,
+            eventType: "RECONSENT",
+            consented: true,
+            previousEventId: declined.id,
+          },
+          user.id,
+        );
+        assert.equal(
+          (await updateTreatmentRecord(gated.id, { status: "IN_PROGRESS" })).status,
+          "IN_PROGRESS",
+        );
+        const withdrawn = await recordTreatmentConsentEvent(
+          { ...gatedConsent, eventType: "WITHDRAWAL", previousEventId: granted.id },
+          user.id,
+        );
+        assert.equal((await getTreatmentRecord(gated.id)).status, "IN_PROGRESS");
+        await assert.rejects(
+          updateTreatmentRecord(gated.id, { status: "COMPLETED" }),
+          code("TREATMENT_CONSENT_REQUIRED"),
+        );
+        assert.equal(
+          (await updateTreatmentRecord(gated.id, { notes: "Ongoing notes", status: "IN_PROGRESS" }))
+            .notes,
+          "Ongoing notes",
+        );
+        assert.equal(
+          (await updateTreatmentRecord(gated.id, { status: "CANCELLED" })).status,
+          "CANCELLED",
+        );
+        await recordTreatmentConsentEvent(
+          {
+            ...gatedConsent,
+            eventType: "RECONSENT",
+            consented: true,
+            previousEventId: withdrawn.id,
+          },
+          user.id,
+        );
+        assert.equal(
+          (await updateTreatmentRecord(gated.id, { status: "COMPLETED" })).status,
+          "COMPLETED",
+        );
+        const newGatedForm = await createTreatmentConsentForm({
+          ...formInput,
+          treatmentType: gatedInput.treatmentType,
+        });
+        const completedHead = (await listConsentEvents(gated.id)).states[0].headEventId;
+        await recordTreatmentConsentEvent(
+          { ...gatedConsent, eventType: "WITHDRAWAL", previousEventId: completedHead },
+          user.id,
+        );
+        assert.equal((await getTreatmentRecord(gated.id)).status, "COMPLETED");
+        assert.equal(
+          (await updateTreatmentRecord(gated.id, { status: "COMPLETED", notes: "Historical edit" }))
+            .status,
+          "COMPLETED",
+        );
+        await updateTreatmentRecord(gated.id, { status: "SCHEDULED" });
+        // An old grant cannot cover the newly published active version.
+        await assert.rejects(
+          updateTreatmentRecord(gated.id, { status: "IN_PROGRESS" }),
+          code("TREATMENT_CONSENT_REQUIRED"),
+        );
+        await recordTreatmentConsentEvent(
+          { ...gatedConsent, treatmentConsentFormId: newGatedForm.id, consented: true },
+          user.id,
+        );
+        assert.equal(
+          (await updateTreatmentRecord(gated.id, { status: "COMPLETED" })).status,
+          "COMPLETED",
+        );
+        await assert.rejects(
+          updateTreatmentRecord(gated.id, { treatmentType: "no-form" }),
+          code("TREATMENT_ACTIVE_CONSENT_FORM_REQUIRED"),
+        );
+        // A pre-policy completed record stays editable without inventing consent.
+        const historical = await prisma.treatmentRecord.create({
+          data: {
+            ...gatedInput,
+            tenantId,
+            treatmentType: "historical-no-form",
+            status: "COMPLETED",
+          },
+        });
+        assert.equal(
+          (
+            await updateTreatmentRecord(historical.id, {
+              status: "COMPLETED",
+              notes: "Historical correction",
+            })
+          ).notes,
+          "Historical correction",
+        );
+        await updateTreatmentRecord(historical.id, { status: "CANCELLED" });
+        await assert.rejects(
+          updateTreatmentRecord(historical.id, { status: "COMPLETED" }),
+          code("TREATMENT_ACTIVE_CONSENT_FORM_REQUIRED"),
+        );
+        await assert.rejects(
+          runAsTenant(foreignId, () => updateTreatmentRecord(gated.id, { status: "COMPLETED" })),
+          code("TREATMENT_NOT_FOUND"),
+        );
+        // Withdrawal/status and publication/status races have a valid serial order.
+        // A withdrawal after a successful start preserves status, but blocks completion.
+        for (let iteration = 0; iteration < 4; iteration++) {
+          const raceType = `status-race-${iteration}`;
+          const raceForm = await createTreatmentConsentForm({
+            ...formInput,
+            treatmentType: raceType,
+          });
+          const raceRecord = await createTreatmentRecord({
+            ...gatedInput,
+            treatmentType: raceType,
+          });
+          const consentInput = {
+            ...gatedConsent,
+            treatmentRecordId: raceRecord.id,
+            treatmentConsentFormId: raceForm.id,
+            consented: true,
+          };
+          const raceGrant = await recordTreatmentConsentEvent(consentInput, user.id);
+          const outcomes = await Promise.allSettled([
+            updateTreatmentRecord(raceRecord.id, { status: "IN_PROGRESS" }),
+            recordTreatmentConsentEvent(
+              {
+                ...consentInput,
+                eventType: "WITHDRAWAL",
+                consented: false,
+                previousEventId: raceGrant.id,
+              },
+              user.id,
+            ),
+          ]);
+          assert.equal(outcomes[1].status, "fulfilled");
+          if (outcomes[0].status === "rejected")
+            assert.ok(code("TREATMENT_CONSENT_REQUIRED")(outcomes[0].reason));
+          await assert.rejects(
+            updateTreatmentRecord(raceRecord.id, { status: "COMPLETED" }),
+            code("TREATMENT_CONSENT_REQUIRED"),
+          );
+          const withdrawalHead = (await listConsentEvents(raceRecord.id)).states[0].headEventId;
+          await recordTreatmentConsentEvent(
+            { ...consentInput, eventType: "RECONSENT", previousEventId: withdrawalHead },
+            user.id,
+          );
+          await updateTreatmentRecord(raceRecord.id, { status: "SCHEDULED" });
+          const publicationRace = await Promise.allSettled([
+            updateTreatmentRecord(raceRecord.id, { status: "IN_PROGRESS" }),
+            createTreatmentConsentForm({ ...formInput, treatmentType: raceType }),
+          ]);
+          assert.equal(publicationRace[1].status, "fulfilled");
+          if (publicationRace[0].status === "rejected")
+            assert.ok(code("TREATMENT_CONSENT_REQUIRED")(publicationRace[0].reason));
+          await assert.rejects(
+            updateTreatmentRecord(raceRecord.id, { status: "COMPLETED" }),
+            code("TREATMENT_CONSENT_REQUIRED"),
+          );
+        }
         const reviewInput = {
           reviewAt: "2027-01-22T00:00:00.000Z",
           reason: "Continued clinical review",
@@ -537,6 +740,32 @@ test(
           assert.equal((await fetch(forms)).status, 401);
           assert.equal((await fetch(forms, { headers })).status, 403);
           await prisma.tenantModule.create({ data: { tenantId, moduleId: module.id } });
+          const patchStatus = (id: string, status: string, authorized = true) =>
+            fetch(`${base}/${id}`, {
+              method: "PATCH",
+              headers: authorized ? headers : { "Content-Type": "application/json" },
+              body: JSON.stringify({ status }),
+            });
+          assert.equal((await patchStatus(gated.id, "IN_PROGRESS", false)).status, 401);
+          assert.equal((await patchStatus(foreign.record.id, "IN_PROGRESS")).status, 404);
+          const noGrantResponse = await patchStatus(record.id, "IN_PROGRESS");
+          assert.equal(noGrantResponse.status, 409);
+          assert.equal((await noGrantResponse.json()).code, "TREATMENT_CONSENT_REQUIRED");
+          const noFormResponse = await patchStatus(historical.id, "IN_PROGRESS");
+          assert.equal(noFormResponse.status, 409);
+          assert.equal(
+            (await noFormResponse.json()).code,
+            "TREATMENT_ACTIVE_CONSENT_FORM_REQUIRED",
+          );
+          assert.equal((await patchStatus(gated.id, "IN_PROGRESS")).status, 200);
+          const directCompleted = await fetch(base, {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ ...gatedInput, status: "COMPLETED" }),
+          });
+          assert.equal(directCompleted.status, 409);
+          assert.equal((await directCompleted.json()).code, "TREATMENT_CONSENT_REQUIRED");
+          assert.equal((await patchStatus(record.id, "CANCELLED")).status, 200);
           const historyUrl = `${base}/${record.id}/consent`;
           for (const query of ["page=0", "pageSize=201", "page=1.5", "pageSize=nope"]) {
             assert.equal((await fetch(`${historyUrl}?${query}`, { headers })).status, 422);
@@ -799,6 +1028,7 @@ test(
           await runAsPlatform(() =>
             prisma.tenant.update({ where: { id: tenantId }, data: { status: "SUSPENDED" } }),
           );
+          assert.equal((await patchStatus(gated.id, "COMPLETED")).status, 403);
           assert.equal((await post(decision)).status, 403);
           assert.equal((await review()).status, 403);
           assert.equal((await archive()).status, 403);

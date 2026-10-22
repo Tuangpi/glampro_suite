@@ -277,6 +277,29 @@ export const reviewTreatmentRetentionSchema = z
   });
 export type ReviewTreatmentRetentionInput = z.infer<typeof reviewTreatmentRetentionSchema>;
 
+export const disposeTreatmentSchema = z
+  .object({
+    previewToken: z.string().min(1).max(4000),
+    reason: z.string().trim().min(1).max(500),
+    confirmation: z.literal("DISPOSE"),
+  })
+  .strict();
+export type DisposeTreatmentInput = z.infer<typeof disposeTreatmentSchema>;
+export type TreatmentDisposalPreview = {
+  treatmentRecordId: string;
+  customerId: string;
+  consentEvents: number;
+  signatures: number;
+  photoLinks: number;
+  previewToken: string;
+  expiresAt: string;
+};
+export type TreatmentDisposalReceipt = {
+  receiptId: string;
+  treatmentRecordId: string;
+  disposedAt: string;
+};
+
 export const archiveCustomerSchema = z
   .object({
     reason: z.string().trim().min(1).max(2000),

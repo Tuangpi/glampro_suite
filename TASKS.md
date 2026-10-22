@@ -752,10 +752,29 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   Disposable fixture cleanup verified and cluster stopped. No schema/migration,
   application database access, erasure, deployment or commit. Full API suite and
   agent browser walkthrough not run; standing user-granted acceptance applies.
-- Next: resolve treatment-status consent policy
-  and separate authorized disposal before their implementation. No application
+- Treatment-status consent gate: DONE for implementation/available verification. User approved requiring the active
+  form's current grant on entering IN_PROGRESS/COMPLETED, blocking absent forms,
+  preserving historical records, and allowing withdrawal/cancellation at any status.
+- Direct creation in gated statuses is refused; create Scheduled, capture consent,
+  then transition. Changing treatment type in a gated status rechecks the new type.
+  Same-status historical edits stay available; withdrawal never rewrites status.
+  Shared tenant publication lock precedes treatment lock; withdrawal/status and
+  publication/status races tested. UI explains workflow and retains rejected drafts.
+  PostgreSQL consent + POS/photo acceptance 2/2, none skipped; focused form 11/11;
+  full web 570/570 (66 files), workspace typecheck, root lint and production build
+  passed. No schema change, application migration, erasure, deployment or commit.
+  Full API suite/browser walkthrough not run; standing user-granted acceptance applies.
+- Owner-authorized disposal: DONE for implementation/available verification. User selected one completed/cancelled
+  treatment per confirmed owner action: preview, reason, hold/stale checks, minimal
+  audit receipt; remove clinical record/consent/signatures/photo links only. Preserve
+  original photos/customer/forms/POS/balances. No bulk/tenant/customer erasure.
+- Verified: disposable PostgreSQL consent/disposal/POS acceptance 3/3, no skips;
+  audit-failure rollback, duplicate submission, four hold races, stale record/event/
+  photo previews and unchanged POS ledger/holding. Shared 150/150, web 576/576,
+  workspace typecheck, root lint, production build and diff check pass. No new schema migration.
+- Next: remaining completion audit and separately authorized application rollout. No application
   migration or deployment is authorized by the policy selection.
-  Treatment-status consent requirements remain open; audit findings above
+  Disposal scope implemented; no real-record erasure performed. Audit findings above
   are historical where superseded by this implementation.
   Both TK2610-0025 and TK2610-0027 remain IN PROGRESS and are not ready for external
   closure; family, transfer and audit gaps remain independent under TK2610-0027.

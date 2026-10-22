@@ -24,10 +24,15 @@ test(
       addTreatmentPhoto,
       removeTreatmentPhoto,
     } = await import("./treatment.service.js");
+    const { previewTreatmentDisposal, disposeTreatment } =
+      await import("./treatment-disposal.service.js");
     const tenantId = "treatment-session-a";
     const foreignId = "treatment-session-b";
     async function purge() {
       await runAsPlatform(async () => {
+        await prisma.auditLog.deleteMany({
+          where: { tenantId: { in: [tenantId, foreignId] }, action: "TREATMENT_DISPOSED" },
+        });
         await prisma.treatmentRecord.deleteMany({
           where: { tenantId: { in: [tenantId, foreignId] } },
         });
@@ -113,7 +118,8 @@ test(
           customerId: customer.id,
           serviceId: service.id,
           treatmentType: "Facial",
-          status: "COMPLETED" as const,
+          // Linkage does not require starting treatment; consent gates that separately.
+          status: "SCHEDULED" as const,
           quantityConsumed: 0,
           packageRedemptionId: redemption.id,
         };
@@ -211,13 +217,13 @@ test(
         const photoRecord = await createTreatmentRecord({
           customerId: customer.id,
           treatmentType: "Photos",
-          status: "COMPLETED",
+          status: "SCHEDULED",
           quantityConsumed: 0,
         });
         const otherRecord = await createTreatmentRecord({
           customerId: customer.id,
           treatmentType: "Other photos",
-          status: "COMPLETED",
+          status: "SCHEDULED",
           quantityConsumed: 0,
         });
         const photo = await prisma.customerPhoto.create({
@@ -377,12 +383,53 @@ test(
           code("CUSTOMER_NOT_FOUND"),
         );
         await updateTreatmentRecord(record.id, { status: "CANCELLED", notes: null });
+        const disposalOwner = await prisma.user.create({
+          data: {
+            tenantId,
+            name: "Disposal owner",
+            email: "disposal-owner@session.test",
+            passwordHash: "unused",
+            globalRole: "SUPER_ADMIN",
+            twoFactorEnabled: true,
+          },
+        });
+        const disposalPreview = await previewTreatmentDisposal(record.id, disposalOwner.id);
+        const saleBefore = await prisma.sale.findFirstOrThrow({ where: { id: sale.id } });
+        const redemptionBefore = await prisma.customerRedemption.findFirstOrThrow({
+          where: { id: redemption.id },
+        });
+        const holdingBefore = await prisma.customerPackageHolding.findFirstOrThrow({
+          where: { id: holding.id },
+        });
+        await disposeTreatment(
+          record.id,
+          {
+            previewToken: disposalPreview.previewToken,
+            confirmation: "DISPOSE",
+            reason: "Clinical retention complete",
+          },
+          disposalOwner.id,
+        );
+        assert.deepEqual(
+          await prisma.sale.findFirstOrThrow({ where: { id: sale.id } }),
+          saleBefore,
+        );
+        assert.deepEqual(
+          await prisma.customerRedemption.findFirstOrThrow({ where: { id: redemption.id } }),
+          redemptionBefore,
+        );
+        assert.deepEqual(
+          await prisma.customerPackageHolding.findFirstOrThrow({ where: { id: holding.id } }),
+          holdingBefore,
+        );
+        // Continue ordinary unlink regressions using a replacement scheduled record.
+        const replacement = await createTreatmentRecord(input);
         assert.equal(
           (await prisma.customerPackageHolding.findFirstOrThrow({ where: { id: holding.id } }))
             .quantityRemaining,
           3,
         );
-        await updateTreatmentRecord(record.id, { packageRedemptionId: null });
+        await updateTreatmentRecord(replacement.id, { packageRedemptionId: null });
         assert.equal((await listTreatmentRedemptions(query)).total, 1);
         await assert.rejects(
           createTreatmentRecord({ ...input, quantityConsumed: 1 }),

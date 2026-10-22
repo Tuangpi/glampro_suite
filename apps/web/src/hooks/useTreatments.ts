@@ -9,6 +9,9 @@ import type {
   CreateTreatmentRecordInput,
   TreatmentConsentEvent,
   TreatmentConsentHistory,
+  DisposeTreatmentInput,
+  TreatmentDisposalPreview,
+  TreatmentDisposalReceipt,
   TreatmentConsentForm,
   TreatmentPhoto,
   TreatmentRecord,
@@ -24,6 +27,24 @@ import { showToast } from "@/components/ui/toast-store";
 import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 20;
+
+export function usePreviewTreatmentDisposal() {
+  return useMutation({
+    mutationFn: (id: string) => get<TreatmentDisposalPreview>(`/treatments/${id}/disposal-preview`),
+  });
+}
+
+export function useDisposeTreatment() {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: DisposeTreatmentInput }) =>
+      post<TreatmentDisposalReceipt>(`/treatments/${id}/dispose`, input),
+    onSuccess: (_receipt, { id }) => {
+      client.removeQueries({ queryKey: queryKeys.treatments.detail(id) });
+      void client.invalidateQueries({ queryKey: queryKeys.treatments.all() });
+    },
+  });
+}
 
 export function useReviewTreatmentRetention() {
   const queryClient = useQueryClient();

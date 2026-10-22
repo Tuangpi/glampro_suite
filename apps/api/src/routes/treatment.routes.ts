@@ -2,6 +2,8 @@ import { Router } from "express";
 import {
   createTreatmentConsentEventSchema,
   reviewTreatmentRetentionSchema,
+  disposeTreatmentSchema,
+  type DisposeTreatmentInput,
   type ReviewTreatmentRetentionInput,
   createTreatmentConsentFormSchema,
   createTreatmentPhotoSchema,
@@ -45,6 +47,10 @@ import {
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
+import {
+  disposeTreatment,
+  previewTreatmentDisposal,
+} from "../services/treatment-disposal.service.js";
 
 /**
  * Aesthetics module — treatment records, before/after photos, treatment consent.
@@ -54,6 +60,51 @@ import { unauthorized } from "../lib/http-error.js";
  * requires SUPER_ADMIN/MANAGER. `requireModule("treatments")` is the entitlement boundary.
  */
 export const treatmentRouter = Router();
+
+treatmentRouter.get(
+  "/:id/disposal-preview",
+  auth,
+  requireModule("treatments"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      res.json({
+        data: await previewTreatmentDisposal(
+          validated<{ id: string }>(req, "params").id,
+          req.user.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+treatmentRouter.post(
+  "/:id/dispose",
+  auth,
+  requireModule("treatments"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN"),
+  validate(idParamSchema, "params"),
+  validate(disposeTreatmentSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      res.json({
+        data: await disposeTreatment(
+          validated<{ id: string }>(req, "params").id,
+          validated<DisposeTreatmentInput>(req, "body"),
+          req.user.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 treatmentRouter.post(
   "/:id/retention-review",
