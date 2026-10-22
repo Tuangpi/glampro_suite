@@ -62,6 +62,21 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- Authentication follow-up (SEC-01, October 22, 2026): SUPER_ADMIN is the owner/admin
+  role. Password-verified owner login always requires an email code; successful
+  verification enrolls the account. Unenrolled legacy owner sessions are refused.
+  Other web users can enroll in Settings. Login responses explicitly distinguish
+  challenges from sessions; verification requires the challenge from that password
+  attempt. Enrollment and login hashes have different purposes and code consumption
+  uses an atomic conditional update. Owner 2FA cannot be disabled. New owner and
+  owner password-change credentials require at least 12 characters and reject known
+  defaults; existing password hashes are not silently reset. Production seeding
+  requires explicit non-demo administrator credentials and never creates the demo
+  crew, including when NODE_ENV=production. Historical test accounts remain untouched.
+  Deploy web/API together and verify SMTP and owner mailbox access first; local
+  development also needs a local SMTP inbox to receive codes (no code logging).
+  This is implementation evidence, not production rollout/security certification.
+
 - Booking resources (TK2610-0020 Phase D, October 20, 2026): user approved the full rooms/equipment slice. One tenant-scoped row represents one physical resource; a service's eligibility links mean **one of these**, not all simultaneously. Each appointment line auto-selects one free active resource in name/id order; no links preserves resource-free booking. Every non-cancelled status occupies a half-open interval. Settings manages eligibility through resource `serviceIds`; archived resources remain visible in booking history. No manual assignment or concurrent PostgreSQL exclusion was added. User accepted UAT and reports running Prisma migration; read-only migration status reports all 28 migrations up to date on local application database `glampro_suite` at `localhost:5432`. Post-migration smoke testing and production rollout are unverified; concurrency completion criterion remains open.
 
 - Messaging acceptance (October 20, 2026): user accepted TK2610-0021 UAT for the approved code/documentation scope. Acceptance is user-reported; live-provider verification and application migration remain pending and require separate authorization.

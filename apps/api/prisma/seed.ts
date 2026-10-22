@@ -40,6 +40,7 @@ import {
 } from "./seed-logic.js";
 
 import { createSale } from "../src/services/sale.service.js";
+import { resolveSeedAdmin } from "./seed-security.js";
 import { prisma } from "../src/lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../src/lib/tenant-context.js";
 
@@ -75,16 +76,14 @@ interface SeedUser {
   globalRole: SeedRole;
 }
 
-const SEED_MODE = process.env.SEED_MODE === "production" ? "production" : "development";
+const SEED_MODE =
+  process.env.SEED_MODE === "production" || process.env.NODE_ENV === "production"
+    ? "production"
+    : "development";
 const BCRYPT_ROUNDS = 10;
 
 function resolveAdmin(): SeedUser {
-  return {
-    email: process.env.ADMIN_EMAIL ?? "superadmin@gmail.com",
-    name: process.env.ADMIN_NAME ?? "Glampro Administrator",
-    password: process.env.ADMIN_PASSWORD ?? "admin12345",
-    globalRole: "SUPER_ADMIN",
-  };
+  return resolveSeedAdmin(process.env);
 }
 
 const DEMO_TENANT = {
@@ -846,11 +845,7 @@ async function reconcileProductStock(tenantId: string): Promise<void> {
  */
 
 async function main(): Promise<void> {
-  if (SEED_MODE === "production" && !process.env.ADMIN_PASSWORD) {
-    console.warn(
-      "  ! ADMIN_PASSWORD was not set — the default development password was used. Change it immediately.",
-    );
-  }
+  if (SEED_MODE === "production") resolveAdmin();
 
   const tenantId = await seedTenant();
 

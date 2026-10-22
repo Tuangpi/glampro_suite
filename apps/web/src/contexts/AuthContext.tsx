@@ -15,6 +15,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import type {
   AuthProfile,
   AuthSession,
+  LoginResult,
+  TwoFactorChallenge,
   AuthTenant,
   AuthUser,
   ModuleEntitlement,
@@ -37,7 +39,8 @@ export interface AuthContextValue {
    * before the user tries.
    */
   isReadOnly: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<TwoFactorChallenge | void>;
+  verifySignIn: (email: string, challenge: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -92,10 +95,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(
     async (email: string, password: string) => {
       // `loginSchema` defaults the realm to `web`, so the surface is not sent.
-      const session = await post<AuthSession>("/auth/login", { email, password });
+      const session = await post<LoginResult>("/auth/login", { email, password });
+      if ("requiresTwoFactor" in session) return session;
       setSession(session);
       // The token pair alone is not the session: the tenant and the entitlement
       // list arrive with the profile, and the rail needs both.
+      await loadProfile();
+    },
+    [loadProfile],
+  );
+
+  const verifySignIn = useCallback(
+    async (email: string, challenge: string, code: string) => {
+      const session = await post<AuthSession>("/auth/two-factor/verify-login", {
+        email,
+        challenge,
+        code,
+      });
+      setSession(session);
       await loadProfile();
     },
     [loadProfile],
@@ -134,9 +151,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       entitlements: profile?.entitlements ?? [],
       isReadOnly: profile?.tenant.status === "SUSPENDED",
       signIn,
+      verifySignIn,
       signOut,
     }),
-    [status, profile, signIn, signOut],
+    [status, profile, signIn, verifySignIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

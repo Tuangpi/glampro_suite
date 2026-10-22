@@ -7,6 +7,18 @@ export const authRealmSchema = z.enum(AUTH_REALMS);
 
 export const globalRoleSchema = z.enum(GLOBAL_ROLES);
 
+/** Owner credentials: allow passphrases, but reject short and known demo passwords. */
+export const adminPasswordSchema = z
+  .string()
+  .min(12, "Use at least 12 characters.")
+  .max(200)
+  .refine(
+    (value) =>
+      value.trim().length >= 12 &&
+      !["admin12345", "password12345", "changeme12345"].includes(value.toLowerCase()),
+    "Choose a password that is not a demo or common default.",
+  );
+
 export const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1).max(200),
@@ -94,18 +106,27 @@ export const authSessionSchema = z.object({
 
 export type AuthSession = z.infer<typeof authSessionSchema>;
 
+export const twoFactorChallengeSchema = z.object({
+  requiresTwoFactor: z.literal(true),
+  challenge: z.string().min(32),
+});
+export type TwoFactorChallenge = z.infer<typeof twoFactorChallengeSchema>;
+export const loginResultSchema = z.union([authSessionSchema, twoFactorChallengeSchema]);
+export type LoginResult = z.infer<typeof loginResultSchema>;
+
 /** Six-digit numeric one-time code sent by email. */
 export const TWO_FACTOR_CODE_LENGTH = 6;
 
 export const twoFactorVerifySchema = z.object({
   email: emailSchema,
-  code: z.string().length(TWO_FACTOR_CODE_LENGTH),
+  challenge: z.string().min(32).max(128),
+  code: z.string().regex(/^\d{6}$/, "Enter the six-digit code."),
 });
 
 export type TwoFactorVerifyInput = z.infer<typeof twoFactorVerifySchema>;
 
 export const twoFactorConfirmSchema = z.object({
-  code: z.string().length(TWO_FACTOR_CODE_LENGTH),
+  code: z.string().regex(/^\d{6}$/, "Enter the six-digit code."),
 });
 
 export type TwoFactorConfirmInput = z.infer<typeof twoFactorConfirmSchema>;

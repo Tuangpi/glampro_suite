@@ -81,14 +81,10 @@ export async function sendMail(input: SendMailInput): Promise<SendMailResult> {
 /**
  * Sends a one-time two-factor code to a user's email address.
  *
- * With SMTP configured the code never comes back in the response. Without it — the
- * development and test path — the code is logged and returned so the flow can be
- * exercised without a mailbox.
+ * Codes are never returned to callers or written to application logs.
+ * Development JSON transport is not proof of delivery; use a local SMTP inbox.
  */
-export async function sendTwoFactorCode(
-  email: string,
-  code: string,
-): Promise<{ sent: true; code?: string }> {
+export async function sendTwoFactorCode(email: string, code: string): Promise<{ sent: true }> {
   await sendMail({
     to: email,
     subject: "Your Glampro verification code",
@@ -99,11 +95,6 @@ export async function sendTwoFactorCode(
       "<p>It expires shortly. If you did not try to sign in, ignore this message.</p>",
     ].join(""),
   });
-
-  if (!isSmtpConfigured()) {
-    logger.info(`Two-factor code for ${email}: ${code}`);
-    return { sent: true, code };
-  }
 
   return { sent: true };
 }

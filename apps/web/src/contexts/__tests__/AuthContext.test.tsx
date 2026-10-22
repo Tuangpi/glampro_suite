@@ -47,7 +47,7 @@ function renderProvider() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
   function Probe() {
-    const { status, user, tenant, isReadOnly, signIn, signOut } = useAuth();
+    const { status, user, tenant, isReadOnly, signIn, verifySignIn, signOut } = useAuth();
     return (
       <div>
         <span data-testid="status">{status}</span>
@@ -56,6 +56,9 @@ function renderProvider() {
         <span data-testid="readonly">{String(isReadOnly)}</span>
         <button onClick={() => void signIn("owner@glampro.test", "secret123")}>sign in</button>
         <button onClick={() => void signOut()}>sign out</button>
+        <button onClick={() => void verifySignIn("owner@glampro.test", "a".repeat(64), "012345")}>
+          verify
+        </button>
       </div>
     );
   }
@@ -116,6 +119,29 @@ describe("cold start", () => {
 });
 
 describe("signing in", () => {
+  it("does not store tokens or load a profile for a challenge", async () => {
+    post.mockResolvedValue({ requiresTwoFactor: true, challenge: "a".repeat(64) });
+    renderProvider();
+    await userEvent.click(screen.getByRole("button", { name: "sign in" }));
+    expect(getRefreshToken()).toBeNull();
+    expect(get).not.toHaveBeenCalled();
+    expect(screen.getByTestId("status")).toHaveTextContent("anonymous");
+  });
+
+  it("stores a session only after verification succeeds", async () => {
+    post.mockResolvedValue(SESSION);
+    get.mockResolvedValue(PROFILE);
+    renderProvider();
+    await userEvent.click(screen.getByRole("button", { name: "verify" }));
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+    expect(post).toHaveBeenCalledWith("/auth/two-factor/verify-login", {
+      email: "owner@glampro.test",
+      challenge: "a".repeat(64),
+      code: "012345",
+    });
+    expect(getRefreshToken()).toBe(SESSION.refreshToken);
+  });
+
   it("posts the credentials, stores the pair, then loads the profile", async () => {
     post.mockResolvedValue(SESSION);
     get.mockResolvedValue(PROFILE);

@@ -82,6 +82,20 @@ not a new test run. Assess code first; follow dependencies rather than date orde
 
 ## Product roadmap and readiness gates
 
+### SEC-01 — Complete launch authentication security
+
+- Status: IN PROGRESS
+- Expected result: browser email-code login and optional enrollment; mandatory SUPER_ADMIN verification; stronger administrator passwords; production seed refuses unsafe configuration. Preserve accounts and historical records.
+- Completion check: focused authentication/UI/seed tests, typechecks and lint pass; disclose production SMTP/account-audit and integration-test limitations. Reassesses TK2610-0005 without deleting historical acceptance.
+- Dependencies: existing authentication and email transport. No production account changes authorized.
+- Implementation: explicit challenge/session API, mandatory SUPER_ADMIN email verification,
+  optional Settings enrollment, single-use purpose-bound codes, production seed guard,
+  stronger new/change owner credentials. Existing credentials/accounts preserved.
+- Evidence: web 481/481, shared 136/136; focused mocked API/seed security 15/15;
+  API/web typechecks, web build/lint and changed API lint pass. Whole API lint blocked
+  by existing treatment.service.ts:174 no-explicit-any. No database/SMTP acceptance
+  or deployment performed; IN PROGRESS until those checks are completed.
+
 PDF phase/milestone IDs are retained alongside the 24 product tasks. Within each
 phase, use the listed order unless dependencies or unresolved policy block it.
 

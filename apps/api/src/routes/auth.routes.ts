@@ -156,22 +156,17 @@ authRouter.post(
  * six-digit code by email; the caller must confirm it with
  * `POST /api/auth/two-factor/confirm` to finish enabling.
  */
-authRouter.post(
-  "/two-factor/enable",
-  auth,
-  authLimiter,
-  async (req, res, next) => {
-    try {
-      if (!req.user) {
-        throw unauthorized();
-      }
-      await enableTwoFactor(req.user.id);
-      res.status(200).json({ data: { sent: true } });
-    } catch (error) {
-      next(error);
+authRouter.post("/two-factor/enable", auth, authLimiter, async (req, res, next) => {
+  try {
+    if (!req.user) {
+      throw unauthorized();
     }
-  },
-);
+    await enableTwoFactor(req.user.id);
+    res.status(200).json({ data: { sent: true } });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * Confirms email-based two-factor enrollment for the authenticated user.
@@ -199,27 +194,22 @@ authRouter.post(
 /**
  * Disables two-factor authentication for the authenticated user.
  */
-authRouter.post(
-  "/two-factor/disable",
-  auth,
-  authLimiter,
-  async (req, res, next) => {
-    try {
-      if (!req.user) {
-        throw unauthorized();
-      }
-      await disableTwoFactor(req.user.id);
-      res.status(200).json({ data: { success: true } });
-    } catch (error) {
-      next(error);
+authRouter.post("/two-factor/disable", auth, authLimiter, async (req, res, next) => {
+  try {
+    if (!req.user) {
+      throw unauthorized();
     }
-  },
-);
+    await disableTwoFactor(req.user.id);
+    res.status(200).json({ data: { success: true } });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * Verifies a two-factor code for login and issues a full access/refresh session.
- * Used after `POST /api/auth/login` returns `requiresTwoFactor` (empty tokens,
- * `expiresIn: 0`). Deliberately unauthenticated: there is no session yet.
+ * Used after `POST /api/auth/login` returns a password-verified challenge.
+ * Deliberately unauthenticated: there is no session yet.
  */
 authRouter.post(
   "/two-factor/verify-login",

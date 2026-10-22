@@ -60,6 +60,7 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
           globalRole: true,
           tokenVersion: true,
           disabled: true,
+          twoFactorEnabled: true,
         },
       }),
     );
@@ -79,6 +80,11 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
         message: "Your session has been revoked. Please log in again.",
         code: "SESSION_INVALIDATED",
       });
+      return;
+    }
+
+    if (user.globalRole === "SUPER_ADMIN" && !user.twoFactorEnabled) {
+      next(unauthorized("Sign in again to verify your owner account.", "TWO_FACTOR_REQUIRED"));
       return;
     }
 

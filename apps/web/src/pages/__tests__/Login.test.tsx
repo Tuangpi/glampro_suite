@@ -13,14 +13,17 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { signIn, getErrorCode, getErrorMessage, getValidationDetails } = vi.hoisted(() => ({
-  signIn: vi.fn(),
-  getErrorCode: vi.fn<() => string | undefined>(() => undefined),
-  getErrorMessage: vi.fn<() => string>(() => "Something went wrong."),
-  getValidationDetails: vi.fn<() => Record<string, string>>(() => ({})),
-}));
+const { signIn, verifySignIn, getErrorCode, getErrorMessage, getValidationDetails } = vi.hoisted(
+  () => ({
+    signIn: vi.fn(),
+    verifySignIn: vi.fn(),
+    getErrorCode: vi.fn<() => string | undefined>(() => undefined),
+    getErrorMessage: vi.fn<() => string>(() => "Something went wrong."),
+    getValidationDetails: vi.fn<() => Record<string, string>>(() => ({})),
+  }),
+);
 
-vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ signIn }) }));
+vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ signIn, verifySignIn }) }));
 vi.mock("@/lib/api", () => ({ getErrorCode, getErrorMessage, getValidationDetails }));
 
 const { default: Login } = await import("@/pages/Login");
@@ -50,12 +53,40 @@ async function submit(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(() => {
   signIn.mockReset().mockResolvedValue(undefined);
+  verifySignIn.mockReset().mockResolvedValue(undefined);
   getErrorCode.mockReset().mockReturnValue(undefined);
   getErrorMessage.mockReset().mockReturnValue("Something went wrong.");
   getValidationDetails.mockReset().mockReturnValue({});
 });
 
 describe("the form", () => {
+  it("waits for email verification before navigating and never retains the password", async () => {
+    signIn.mockResolvedValue({ requiresTwoFactor: true, challenge: "a".repeat(64) });
+    const user = renderLogin("/login?next=%2Fcustomers");
+    await submit(user);
+    expect(screen.getByTestId("path")).toHaveTextContent("/login");
+    expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Verification code"), "012345");
+    await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+    expect(verifySignIn).toHaveBeenCalledWith("owner@glampro.test", "a".repeat(64), "012345");
+    await waitFor(() => expect(screen.getByTestId("path")).toHaveTextContent("/customers"));
+  });
+
+  it("keeps the challenge on invalid codes and allows requesting a new code through password login", async () => {
+    signIn.mockResolvedValue({ requiresTwoFactor: true, challenge: "a".repeat(64) });
+    verifySignIn.mockRejectedValue(new Error("invalid code"));
+    getErrorMessage.mockReturnValue("The code is not right.");
+    const user = renderLogin();
+    await submit(user);
+    await user.type(screen.getByLabelText("Verification code"), "123456");
+    await user.click(screen.getByRole("button", { name: "Verify and sign in" }));
+    expect(await screen.findByText("The code is not right.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Verification code")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to sign in / request a new code" }));
+    expect(screen.getByLabelText("Password")).toHaveValue("");
+    expect(screen.queryByLabelText("Verification code")).not.toBeInTheDocument();
+  });
+
   it("offers a labelled email and password and one submit", () => {
     renderLogin();
 

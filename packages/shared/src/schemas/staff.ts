@@ -12,7 +12,7 @@
  */
 import { z } from "zod";
 
-import { globalRoleSchema } from "./auth.js";
+import { adminPasswordSchema, globalRoleSchema } from "./auth.js";
 import { PASSWORD_MIN_LENGTH } from "../constants.js";
 import { emailSchema, paginationQuerySchema } from "./common.js";
 
@@ -94,6 +94,15 @@ export const createStaffSchema = z
     departmentIds: z.array(z.string().min(1)).max(50).optional(),
   })
   .superRefine((staff, context) => {
+    if (staff.globalRole === "SUPER_ADMIN" && staff.password) {
+      const result = adminPasswordSchema.safeParse(staff.password);
+      if (!result.success)
+        context.addIssue({
+          code: "custom",
+          path: ["password"],
+          message: result.error.issues[0].message,
+        });
+    }
     if (!staff.email && !staff.posPin)
       context.addIssue({
         code: "custom",

@@ -2,11 +2,34 @@
 
 ## Current State
 
-- Current task: **TK2610-0003 — Phase 3 – P2 Vertical, differentiators & go-to-market** (DONE).
-- Most recently completed task: TK2610-0003 — Phase 3 – P2 Vertical, differentiators & go-to-market (DONE).
-- Verified: API typecheck/lint pass; full API suite 474/474; web typecheck/lint pass; full web suite 474/474.
-- Important limitation: public booking end-to-end and tenant isolation rely on existing tests; payment lifecycle remains manual; product decisions recorded as assumptions.
-- Next: TK2610-0023 launch readiness review.
+- Current task: **SEC-01 — Complete launch authentication security** (IN PROGRESS).
+- Most recently completed tracked task: TK2610-0003 (historical; audit found incomplete workflows).
+- SEC-01 implementation complete; verification recorded below. Real-DB authentication and SMTP/browser acceptance remain unverified. Existing accounts/passwords unchanged.
+- Next: finish SEC-01 acceptance on an approved disposable database and configured SMTP inbox, then package-expiry work. No production access or paid mail authorized.
+
+## October 22, 2026 — SEC-01 authentication implementation
+
+- Added explicit challenge/session contracts, web verification and optional Settings
+  enrollment. SUPER_ADMIN always verifies an email code; unenrolled legacy sessions
+  cannot refresh/access protected routes. Owners cannot disable 2FA.
+- Crypto-generated codes/challenges, purpose-bound hashes, conditional single-use
+  consumption and pending-code invalidation on password change/forced sign-out.
+  Removed code logging/return. No schema migration required.
+- New/change owner passwords require 12 characters and reject defaults. Production
+  seed validates explicit non-demo email/password before writes; NODE_ENV=production
+  cannot select development crew. Existing accounts/passwords were not changed.
+- Verified: full web 481/481, shared 136/136; API/web typechecks, production web build,
+  web lint and changed API file lint pass. Focused API/seed security unit tests use
+  mocked persistence/mail, not a database: final focused run 15/15 passed, no skips.
+  Final diff whitespace check passed. Whole API lint has an unrelated existing
+  no-explicit-any error at treatment.service.ts:174; intentionally untouched.
+- No migrations, seeding, database tests, deployment, commits, real email or manual
+  browser walkthrough performed. Full API integration suite not run because it can
+  load the application DATABASE_URL; no disposable database was established here.
+- SEC-01 stays IN PROGRESS pending real-DB and SMTP/browser acceptance. Production
+  audit/disable of test accounts remains an explicit operator action, consistent
+  with the earlier recorded decision to retain them. Coordinate web/API rollout;
+  owners need accessible email and SMTP before enabling this release.
 
 
 ## October 20, 2026 — TK2610-0020 UAT acceptance and local migration status

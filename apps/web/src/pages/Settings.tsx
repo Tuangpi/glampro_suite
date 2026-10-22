@@ -53,6 +53,8 @@ import { useStaffList } from "@/hooks/useStaff";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
+import TwoFactorCard from "@/components/TwoFactorCard";
+
 export default function Settings() {
   const { isReadOnly, user } = useAuth();
   const modules = useModules();
@@ -73,6 +75,7 @@ export default function Settings() {
       </header>
 
       <ProfileCard canEdit={canEdit} />
+      <TwoFactorCard />
       <ModulesCard modules={modules.data} isPending={modules.isPending} isError={modules.isError} />
       <OperatingHoursCard canEdit={canEdit} />
       {/* Rooms and equipment sit beside the hours: both describe the salon's
@@ -122,9 +125,10 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
   const gstEnabled = draftGstEnabled ?? data?.gstEnabled ?? false;
   const gstRegistrationNumber = draftGstNumber ?? data?.gstRegistrationNumber ?? "";
   const onlineEnabled = draftOnlineEnabled ?? data?.onlineBookingEnabled ?? false;
-  const onlineDeposit = draftOnlineDeposit ?? (data === undefined ? "" : String(data.onlineDepositAmount));
-  const onlineNoShow = draftOnlineNoShow ?? (data === undefined ? "" : String(data.onlineNoShowFee));
-
+  const onlineDeposit =
+    draftOnlineDeposit ?? (data === undefined ? "" : String(data.onlineDepositAmount));
+  const onlineNoShow =
+    draftOnlineNoShow ?? (data === undefined ? "" : String(data.onlineNoShowFee));
 
   const fieldError = (field: string): string | undefined =>
     fieldErrors[field] ?? fieldErrors[`body.${field}`];
@@ -278,7 +282,6 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
           </div>
 
           <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-
             <Fact label="Salon identifier" value={data.slug} />
             <Fact label="Status" value={data.status} />
             <Fact label="Owner" value={data.owner?.name ?? "—"} />

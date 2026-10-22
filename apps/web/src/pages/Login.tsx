@@ -34,7 +34,7 @@ import { consumeAuthNotice } from "@/lib/auth-storage";
 import { cn } from "@/lib/utils";
 
 export default function Login() {
-  const { signIn } = useAuth();
+  const { signIn, verifySignIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -44,6 +44,8 @@ export default function Login() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [challenge, setChallenge] = useState<string | null>(null);
+  const [code, setCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [notice, setNotice] = useState<string | null>(null);
   const [isSuspended, setIsSuspended] = useState(false);
@@ -60,13 +62,23 @@ export default function Login() {
     setSubmitting(true);
 
     try {
-      await signIn(email, password);
+      if (challenge) {
+        await verifySignIn(email, challenge, code);
+      } else {
+        const result = await signIn(email, password);
+        if (result?.requiresTwoFactor) {
+          setChallenge(result.challenge);
+          setPassword("");
+          return;
+        }
+      }
       navigate(safeNext(searchParams.get("next")), { replace: true });
     } catch (error) {
       const details = getValidationDetails(error);
       setFieldErrors({
         ...(details.email ? { email: details.email } : {}),
         ...(details.password ? { password: details.password } : {}),
+        ...(details.code ? { code: details.code } : {}),
       });
 
       const code = getErrorCode(error);
@@ -139,54 +151,88 @@ export default function Login() {
               {authNotice ? <Notice tone="info">{authNotice}</Notice> : null}
               {notice ? <Notice tone={isSuspended ? "read-only" : "error"}>{notice}</Notice> : null}
 
-              <Input
-                label="Email"
-                type="email"
-                name="email"
-                autoComplete="username"
-                placeholder="you@salon.com"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                error={fieldErrors.email}
-                disabled={submitting}
-                required
-              />
+              {challenge ? (
+                <>
+                  <p className="text-sm text-ink-muted">
+                    Enter the six-digit code sent to {email}. It expires in ten minutes.
+                  </p>
+                  <Input
+                    label="Verification code"
+                    name="code"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    maxLength={6}
+                    error={fieldErrors.code}
+                    disabled={submitting}
+                    required
+                  />
+                  <Button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => {
+                      setChallenge(null);
+                      setCode("");
+                      setNotice(null);
+                      setFieldErrors({});
+                    }}
+                  >
+                    Back to sign in / request a new code
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Input
+                    label="Email"
+                    type="email"
+                    name="email"
+                    autoComplete="username"
+                    placeholder="you@salon.com"
+                    value={email}
+                    onChange={(event) => setEmail(event.target.value)}
+                    error={fieldErrors.email}
+                    disabled={submitting}
+                    required
+                  />
 
-              {/* Hand-composed rather than `Input`, because the control needs a
+                  {/* Hand-composed rather than `Input`, because the control needs a
                   button inside it. `Field` + `CONTROL_CLASS` is exactly what
                   `Input` renders, so the label, error and `aria-describedby`
                   wiring is identical and no other screen's DOM moves. */}
-              <Field label="Password" error={fieldErrors.password}>
-                {({ controlId, describedBy }) => (
-                  <div className="relative">
-                    <input
-                      id={controlId}
-                      type={showPassword ? "text" : "password"}
-                      name="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      disabled={submitting}
-                      aria-invalid={fieldErrors.password ? true : undefined}
-                      aria-describedby={describedBy}
-                      className={cn(CONTROL_CLASS, "h-control px-3 pr-12")}
-                      required
-                    />
-                    {/* Docked inside the control, at the handoff's 44px minimum
+                  <Field label="Password" error={fieldErrors.password}>
+                    {({ controlId, describedBy }) => (
+                      <div className="relative">
+                        <input
+                          id={controlId}
+                          type={showPassword ? "text" : "password"}
+                          name="password"
+                          autoComplete="current-password"
+                          value={password}
+                          onChange={(event) => setPassword(event.target.value)}
+                          disabled={submitting}
+                          aria-invalid={fieldErrors.password ? true : undefined}
+                          aria-describedby={describedBy}
+                          className={cn(CONTROL_CLASS, "h-control px-3 pr-12")}
+                          required
+                        />
+                        {/* Docked inside the control, at the handoff's 44px minimum
                         tap target, so the form stays one column wide. */}
-                    <IconButton
-                      label={showPassword ? "Hide password" : "Show password"}
-                      icon={<Eye />}
-                      className="absolute inset-y-0 right-0"
-                      onClick={() => setShowPassword((current) => !current)}
-                      disabled={submitting}
-                    />
-                  </div>
-                )}
-              </Field>
+                        <IconButton
+                          label={showPassword ? "Hide password" : "Show password"}
+                          icon={<Eye />}
+                          className="absolute inset-y-0 right-0"
+                          onClick={() => setShowPassword((current) => !current)}
+                          disabled={submitting}
+                        />
+                      </div>
+                    )}
+                  </Field>
+                </>
+              )}
 
               <Button type="submit" size="lg" loading={submitting} className="mt-1 w-full">
-                {submitting ? "Signing in…" : "Sign in"}
+                {submitting ? "Signing in…" : challenge ? "Verify and sign in" : "Sign in"}
               </Button>
             </form>
           </div>

@@ -54,7 +54,7 @@ export const env = {
    * Outbound mail (2FA codes and emailed receipts, TK2610-0010).
    *
    * `host` being unset is the development/test path: `lib/email.ts` keeps the
-   * message off the network and logs it instead. In production the same absence is
+   * message off the network without logging its body. In production the same absence is
    * refused rather than silently dropping a customer's receipt.
    */
   smtp: {
