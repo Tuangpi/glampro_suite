@@ -65,6 +65,7 @@ const MODULE_CATEGORIES: Record<(typeof MODULE_CODES)[number], string> = {
   sales: "Core",
   expenses: "Add-on",
   stock: "Add-on",
+  treatments: "Core",
 };
 
 interface SeedUser {

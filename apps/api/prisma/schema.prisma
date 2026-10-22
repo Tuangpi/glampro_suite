@@ -242,6 +242,7 @@ model User {
   performances EmployeePerformance[]
   leaves       EmployeeLeave[]
   shifts       StaffShift[]
+  treatmentRecords TreatmentRecord[]
 
   @@index([globalRole])
   @@index([tenantId])
@@ -400,6 +401,10 @@ model Tenant {
   privacyNotices      PrivacyNotice[]
   consentEvents       CustomerConsentEvent[]
   photos              CustomerPhoto[]
+  treatmentRecords    TreatmentRecord[]
+  treatmentPhotos     TreatmentPhoto[]
+  treatmentConsentForms TreatmentConsentForm[]
+  treatmentConsentEvents TreatmentConsentEvent[]
   vouchers            Voucher[]
   voucherRedemptions  VoucherRedemption[]
   saleRefunds         SaleRefund[]
@@ -622,6 +627,7 @@ model Service {
   resourceLinks     ServiceResource[]
   packageItems       PackageService[]
   valuePackageItems  ValuePackageService[]
+  treatmentRecords   TreatmentRecord[]
 
   @@index([tenantId])
   @@index([departmentId])
@@ -688,6 +694,9 @@ model Product {
   status         CatalogStatus @default(ACTIVE)
   memberPrice    Decimal       @db.Decimal(12, 2)
   nonmemberPrice Decimal       @db.Decimal(12, 2)
+  /// familyId links products into a shared group across branches;
+  /// products with the same familyId are shared across all branches.
+  familyId   String?
   /// Stock on hand. Legacy `quantity` (integer).
   quantity       Int           @default(0)
   points         Int           @default(0)
@@ -723,6 +732,9 @@ model Package {
   nonmemberPrice Decimal       @db.Decimal(12, 2)
   description    String?
   createdAt      DateTime      @default(now())
+  /// familyId links packages into a shared group across branches;
+  /// packages with the same familyId are shared across all branches.
+  familyId   String?
   updatedAt      DateTime      @updatedAt
 
   tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -958,9 +970,14 @@ model Customer {
   redemptions         CustomerRedemption[]
   consentEvents       CustomerConsentEvent[]
   photos              CustomerPhoto[]
+  treatmentRecords    TreatmentRecord[]
+  treatmentConsentEvents TreatmentConsentEvent[]
 
   /// Per-tenant email uniqueness. A customer with no email is unconstrained, which
   /// Postgres treats as satisfying a unique index for every such row.
+  /// familyId links customers into a shared group across branches;
+  /// holdings with the same familyId share credit and expiry.
+  familyId   String?
   @@unique([tenantId, email])
   @@index([tenantId])
   @@index([name])
@@ -979,7 +996,7 @@ model CustomerPhoto {
   createdById String
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-
+  treatmentPhotos TreatmentPhoto[]
   @@index([tenantId, customerId, createdAt])
   @@map("customer_photos")
 }
@@ -1019,6 +1036,130 @@ model CustomerConsentEvent {
   @@unique([customerId, revision])
   @@index([tenantId, customerId])
   @@map("customer_consent_events")
+}
+
+/// A record of a treatment session performed on a customer — facial, laser,
+/// chemical peel, microdermabrasion, etc. Links to the appointment, staff
+/// member and service, and tracks package-session consumption.
+model TreatmentRecord {
+  id            String          @id @default(cuid())
+  tenantId      String
+  customerId    String
+  appointmentId String?
+  staffId       String?
+  serviceId     String?
+  /// Free-text category the salon uses, e.g. "facial", "laser", "chemical peel".
+  treatmentType String
+  status        TreatmentStatus @default(SCHEDULED)
+  /// Clinical notes from the practitioner.
+  notes         String?
+  startedAt     DateTime?
+  endedAt       DateTime?
+  /// How many package sessions were consumed by this record.
+  quantityConsumed Int         @default(0)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  tenant          Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customer        Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  appointment     Appointment?       @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+  staff           User?              @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  service         Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  packageHolding  CustomerPackageHolding? @relation(fields: [packageHoldingId], references: [id], onDelete: SetNull)
+  packageHoldingId String?
+  photos          TreatmentPhoto[]
+  consentEvents   TreatmentConsentEvent[]
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([tenantId, status])
+  @@map("treatment_records")
+}
+
+/// Before/after photo attached to a treatment record. The actual image bytes
+/// live on CustomerPhoto; this row categorises and links them.
+model TreatmentPhoto {
+  id             String @id @default(cuid())
+  tenantId       String
+  treatmentRecordId String
+  customerPhotoId String
+  /// "before" = pre-treatment reference, "after" = post-treatment result.
+  photoType      TreatmentPhotoType
+  caption        String?
+  createdAt      DateTime @default(now())
+
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  treatmentRecord TreatmentRecord @relation(fields: [treatmentRecordId], references: [id], onDelete: Cascade)
+  customerPhoto   CustomerPhoto   @relation(fields: [customerPhotoId], references: [id], onDelete: Cascade)
+
+  @@unique([treatmentRecordId, photoType])
+  @@index([tenantId])
+  @@index([treatmentRecordId])
+  @@map("treatment_photos")
+}
+
+/// A salon-authored consent form for a category of treatments. Versions are
+/// immutable — a new version is a new row.
+model TreatmentConsentForm {
+  id          String   @id @default(cuid())
+  tenantId    String
+  /// Which treatment category this form covers, e.g. "laser", "chemical peel".
+  treatmentType String
+  title       String
+  /// The consent text presented to the customer.
+  content     String
+  version     Int      @default(1)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  consentEvents  TreatmentConsentEvent[]
+
+  @@unique([tenantId, treatmentType, version])
+  @@index([tenantId])
+  @@index([tenantId, treatmentType, isActive])
+  @@map("treatment_consent_forms")
+}
+
+/// Append-only record that a customer consented (or declined) to a treatment
+/// consent form for a specific treatment record.
+model TreatmentConsentEvent {
+  id                String   @id @default(cuid())
+  tenantId          String
+  treatmentRecordId String
+  treatmentConsentFormId String
+  customerId        String
+  /// Whether the customer consented to the treatment.
+  consented         Boolean
+  consentedAt       DateTime @default(now())
+  /// Staff member who witnessed/recorded the consent.
+  consentedById     String
+  /// Optional signature capture (image bytes).
+  signatureData     Bytes?
+  createdAt         DateTime @default(now())
+
+  tenant             Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  treatmentRecord    TreatmentRecord       @relation(fields: [treatmentRecordId], references: [id], onDelete: Cascade)
+  treatmentConsentForm TreatmentConsentForm @relation(fields: [treatmentConsentFormId], references: [id], onDelete: Cascade)
+  customer           Customer              @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([treatmentRecordId, treatmentConsentFormId])
+  @@index([tenantId])
+  @@index([customerId])
+  @@map("treatment_consent_events")
+}
+
+enum TreatmentStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum TreatmentPhotoType {
+  BEFORE
+  AFTER
 }
 
 /// Customer ↔ branch. Legacy `customer_department`, which had no `company_id`.
@@ -1096,6 +1237,7 @@ model Appointment {
   /// "3 of 6" never has to count siblings.
   seriesIndex Int?
   series AppointmentSeries? @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  treatmentRecords   TreatmentRecord[]
 
   @@index([tenantId, startsAt])
   @@index([staffId, startsAt])
@@ -1478,6 +1620,7 @@ model CustomerPackageHolding {
   customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
   package  Package   @relation(fields: [packageId], references: [id], onDelete: Cascade)
   saleLine SaleLine? @relation(fields: [saleLineId], references: [id], onDelete: Cascade)
+  treatmentRecords TreatmentRecord[]
 
   @@index([tenantId])
   @@index([customerId])
@@ -1486,19 +1629,29 @@ model CustomerPackageHolding {
 
 /// Money a customer bought against a value package. Legacy `customer_valuepackages`.
 model CustomerValuePackageHolding {
-  id             String  @id @default(cuid())
-  tenantId       String
-  customerId     String
-  valuePackageId String
-  saleLineId     String?
+  id                String            @id @default(cuid())
+  tenantId          String
+  customerId        String
+  valuePackageId    String
+  saleLineId        String?
 
   /// Legacy `amount`. Widened from `decimal(8,2)`, which capped a holding at
   /// 99,999.99.
-  amount          Decimal   @db.Decimal(12, 2)
-  amountRemaining Decimal   @db.Decimal(12, 2)
-  expiresAt       DateTime?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  amount            Decimal           @db.Decimal(12, 2)
+  amountRemaining   Decimal           @db.Decimal(12, 2)
+  expiresAt         DateTime?
+
+  /// Family/shared grouping: holdings with the same familyId share credit
+  /// and expiry. All members of a family share the same `amountRemaining`
+  /// and `expiresAt` — a redemption by any family member reduces the shared
+  /// pool and may trigger expiry for the whole family.
+  familyId          String?           /// Optional group ID linking shared credit holders
+
+  /// Audit: who last modified this holding and when.
+  updatedBy         String?           /// User ID or actor identifier (e.g. cashier ID, POS session)
+  updatedAt         DateTime @updatedAt   /// Auto-updated on each save
+
+  createdAt         DateTime @default(now())
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
@@ -1507,6 +1660,7 @@ model CustomerValuePackageHolding {
 
   @@index([tenantId])
   @@index([customerId])
+  @@index([familyId])
   @@map("customer_value_package_holdings")
 }
 

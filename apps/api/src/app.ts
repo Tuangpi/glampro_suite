@@ -16,6 +16,7 @@ import { authRouter } from "./routes/auth.routes.js";
 import { customersRouter } from "./routes/customers.routes.js";
 import { departmentsRouter } from "./routes/departments.routes.js";
 import { giftCardsRouter } from "./routes/gift-cards.routes.js";
+import aiAssistantRouter from "./routes/ai-assistant.routes.js";
 import { healthRouter, readiness } from "./routes/health.routes.js";
 import { packagesRouter } from "./routes/packages.routes.js";
 import { productsRouter } from "./routes/products.routes.js";
@@ -23,6 +24,7 @@ import { reportsRouter } from "./routes/reports.routes.js";
 import { resourcesRouter } from "./routes/resources.routes.js";
 import { salesRouter } from "./routes/sales.routes.js";
 import { servicesRouter } from "./routes/services.routes.js";
+import { treatmentRouter } from "./routes/treatment.routes.js";
 import { settingsRouter } from "./routes/settings.routes.js";
 import { shiftsRouter } from "./routes/shifts.routes.js";
 import { staffRouter } from "./routes/staff.routes.js";
@@ -114,6 +116,8 @@ app.use(`${API_PREFIX}/public`, publicBookingRouter);
   // the service (M2), so this mount is the boundary that refuses them rather
   // than trusting the list the form sent (ADR 0013).
   app.use(`${API_PREFIX}/appointments`, appointmentsRouter);
+  // Screen 12 — aesthetics: treatment records, before/after photos, treatment consent.
+  app.use(`${API_PREFIX}/treatments`, treatmentRouter);
   // Rooms and equipment (phase D). Mounted beside appointments because a booking
   // is what occupies them: the same entitlement guards both, and the writes inside
   // are manager-only in the same way the staff screen's are.
@@ -129,6 +133,8 @@ app.use(`${API_PREFIX}/public`, publicBookingRouter);
   // Screen 11. The only router without a `requireModule`: the salon's own
   // configuration is not a switchable feature, so it is never entitlement-hidden.
   app.use(`${API_PREFIX}/settings`, settingsRouter);
+  // AI Assistant — owner summary, rebooking nudges, slow-day promos
+  app.use(`${API_PREFIX}/ai-assistant`, aiAssistantRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

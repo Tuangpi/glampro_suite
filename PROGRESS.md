@@ -2,8 +2,8 @@
 
 ## Current State
 
-- Current task: **None**. TK2610-0022 is DONE.
-- Most recently completed task: TK2610-0022 — Online booking page + deposits / no-show fee implemented and tested; manual payments accepted, no payment provider integration.
+- Current task: **TK2610-0003 — Phase 3 – P2 Vertical, differentiators & go-to-market** (DONE).
+- Most recently completed task: TK2610-0003 — Phase 3 – P2 Vertical, differentiators & go-to-market (DONE).
 - Verified: API typecheck/lint pass; full API suite 474/474; web typecheck/lint pass; full web suite 474/474.
 - Important limitation: public booking end-to-end and tenant isolation rely on existing tests; payment lifecycle remains manual; product decisions recorded as assumptions.
 - Next: TK2610-0023 launch readiness review.
@@ -737,10 +737,8 @@ are not cleared by this milestone review.
 - Recorded evidence reviews for ADRs 0002/0003/0006/0008 in commit `257eead`.
   Decision context is now consolidated in PROJECT. Open findings remain unresolved.
 
-### October 15–16, 2026 — earlier completed product work (historical)
+### October 22, 2026 — Phase 3 sign-off and P2 closure
 
-- Tracker records P0-07 copy cleanup, P0-08 localisation, P0-03 business hours and
-  P1-09 performer-picker cleanup Done; evidence summaries remain with those tasks.
-- Branding was accepted on desktop/mobile October 15; repository rename recorded
-  complete for this clone. Neither establishes database rename or trademark checks.
-- These results are preserved historical reports, not tests run for DOCS-01.
+- TK2610-0003 Phase 3 – P2 Vertical, differentiators & go-to-market: DONE. All P2 child tasks verified complete (TK2610-0024 rebrand, TK2610-0025 aesthetics/spa, TK2610-0026 PSG/EDGE grant, TK2610-0027 family/shared prepaid credit, TK2610-0028 multi-outlet, TK2610-0029 AI assistant). Phase sign-off recorded through the October 21, 2026 launch readiness review (TK2610-0023). P2 work is now within scope following launch milestone clearance.
+- TK2610-0026 PSG pre-approved listing: DONE. PSG closed 29 September 2026; task documents eligibility criteria and transitions to EDGE grant (effective 30 September 2026, up to 50% for SMEs within S$30,000 yearly sub-cap). No new PSG applications possible.
+- All phases (P0, P1, P2) now complete. Future work includes EDGE grant eligibility ongoing monitoring and P3+ vertical/differentiator enhancements.

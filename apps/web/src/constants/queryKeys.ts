@@ -139,6 +139,14 @@ export const queryKeys = {
     count: () => ["staff", "count"] as const,
   },
 
+  /** Treatment records, before/after photos and consent. */
+  treatments: {
+    /** The whole domain, matched by prefix. Any write moves every list and detail. */
+    all: () => ["treatments"] as const,
+    list: () => ["treatments", "list"] as const,
+    detail: (id: string) => ["treatments", "detail", id] as const,
+  },
+
   reports: {
     all: () => ["reports"] as const,
     overview: () => ["reports", "overview"] as const,

@@ -44,6 +44,7 @@ const PACKAGE_SELECT = {
   memberPrice: true,
   nonmemberPrice: true,
   description: true,
+  familyId: true,
   createdAt: true,
   updatedAt: true,
   services: { select: { service: { select: { id: true, name: true } } } },
@@ -145,7 +146,7 @@ export async function getPackage(id: string): Promise<PackageDetail> {
 }
 
 export async function createPackage(input: CreatePackageInput): Promise<PackageDetail> {
-  const { serviceIds, ...fields } = input;
+  const { serviceIds, familyId, ...fields } = input;
   await assertServicesExist(serviceIds);
 
   const created = await prisma.package.create({
@@ -157,6 +158,7 @@ export async function createPackage(input: CreatePackageInput): Promise<PackageD
       // `null`, not `undefined`: a new bundle with no description has none, which
       // is a real state the editor renders as an empty box.
       description: fields.description ?? null,
+      ...(familyId !== undefined ? { familyId } : {},
     },
     select: { id: true },
   });
@@ -174,7 +176,7 @@ export async function createPackage(input: CreatePackageInput): Promise<PackageD
  * Prisma skips `undefined` and writes `null`.
  */
 export async function updatePackage(id: string, input: UpdatePackageInput): Promise<PackageDetail> {
-  const { serviceIds, ...fields } = input;
+  const { serviceIds, familyId, ...fields } = input;
   await assertServicesExist(serviceIds);
 
   const existing = await prisma.package.findFirst({ where: { id }, select: { id: true } });
@@ -183,7 +185,7 @@ export async function updatePackage(id: string, input: UpdatePackageInput): Prom
   // Guarded because `serviceIds` alone is a legitimate patch body, and an empty
   // `data` object is a write that changes nothing.
   if (Object.keys(fields).length > 0) {
-    await prisma.package.update({ where: { id }, data: { ...fields } });
+    await prisma.package.update({ where: { id }, data: { ...fields, ...(familyId !== undefined ? { familyId } : {} ) });
   }
 
   await replaceServices(id, serviceIds);

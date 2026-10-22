@@ -55,6 +55,7 @@ const CUSTOMER_SELECT = {
   hairCardNumber: true,
   maniCardNumber: true,
   cardNumber: true,
+  familyId: true,
   departments: { select: { department: { select: { id: true, name: true } } } },
 } as const;
 
@@ -247,7 +248,7 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
 }
 
 export async function createCustomer(input: CreateCustomerInput): Promise<CustomerDetail> {
-  const { departmentIds, dateOfBirth, ...fields } = input;
+  const { departmentIds, dateOfBirth, familyId, ...fields } = input;
   if (fields.email !== undefined) fields.email = fields.email?.trim().toLowerCase() || null;
   await assertEmailAvailable(fields.email);
   await assertDepartmentsExist(departmentIds);
@@ -259,6 +260,7 @@ export async function createCustomer(input: CreateCustomerInput): Promise<Custom
       tenantId: "",
       ...fields,
       dateOfBirth: fromIsoDate(dateOfBirth) ?? null,
+      ...(familyId !== undefined ? { familyId } : {}),
     },
     select: CUSTOMER_SELECT,
   });
@@ -279,7 +281,7 @@ export async function updateCustomer(
   input: UpdateCustomerInput,
   actorId = "customer-update",
 ): Promise<CustomerDetail> {
-  const { departmentIds, dateOfBirth, ...fields } = input;
+  const { departmentIds, dateOfBirth, familyId, ...fields } = input;
   if (fields.email !== undefined) fields.email = fields.email?.trim().toLowerCase() || null;
   await assertEmailAvailable(fields.email, id);
   await assertDepartmentsExist(departmentIds);
@@ -298,6 +300,7 @@ export async function updateCustomer(
       data: {
         ...fields,
         ...(dateOfBirth !== undefined ? { dateOfBirth: fromIsoDate(dateOfBirth) } : {}),
+        ...(familyId !== undefined ? { familyId } : {}),
       },
     });
     const phone = (value: string | null) => value?.replace(/[\s().-]/g, "") ?? "";

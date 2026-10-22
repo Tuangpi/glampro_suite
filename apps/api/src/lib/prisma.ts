@@ -88,6 +88,12 @@ export const TENANT_SCOPED_MODELS = [
   // One recorded full-sale refund per sale (ADR 0020 / R1).
   "SaleRefund",
   "DirectStaffTip",
+  // Aesthetics module (TK2610-0025). Treatment rows carry their own `tenantId`
+  // so a record from one salon cannot be read or touched by another.
+  "TreatmentRecord",
+  "TreatmentPhoto",
+  "TreatmentConsentForm",
+  "TreatmentConsentEvent",
   // Salon configuration written per tenant by Settings (P0-03). The service
   // always names `tenantId` itself, but the scope here means a handler that
   // forgets still cannot read or cross-write another salon's hours.

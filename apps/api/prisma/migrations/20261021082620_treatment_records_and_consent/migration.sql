@@ -1,0 +1,2 @@
+-- RenameIndex
+ALTER INDEX "treatment_consent_events_treatmentRecordId_treatmentConsentForm" RENAME TO "treatment_consent_events_treatmentRecordId_treatmentConsent_key";

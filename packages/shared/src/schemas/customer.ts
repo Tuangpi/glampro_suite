@@ -200,3 +200,157 @@ export type CustomerPhoto = z.infer<typeof customerPhotoSchema>;
 export const customerPhotoCaptionSchema = z.object({
   caption: z.string().trim().max(500).default(""),
 });
+
+/**
+ * Treatment record contracts — aesthetics module.
+ *
+ * Mirrors the Prisma `TreatmentRecord` model field for field.
+ */
+
+/** Status enum exposed to the client — matches Prisma `TreatmentStatus`. */
+export const TREATMENT_STATUS = ["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] as const;
+
+export const treatmentStatusSchema = z.enum(TREATMENT_STATUS);
+
+export type TreatmentStatusValue = z.infer<typeof treatmentStatusSchema>;
+
+/** Photo type enum — matches Prisma `TreatmentPhotoType`. */
+export const TREATMENT_PHOTO_TYPE = ["BEFORE", "AFTER"] as const;
+
+export const treatmentPhotoTypeSchema = z.enum(TREATMENT_PHOTO_TYPE);
+
+export type TreatmentPhotoTypeValue = z.infer<typeof treatmentPhotoTypeSchema>;
+
+/** A treatment record row. */
+export const treatmentRecordSchema = z.object({
+  id: z.string(),
+  tenantId: z.string(),
+  customerId: z.string(),
+  appointmentId: z.string().nullable(),
+  staffId: z.string().nullable(),
+  serviceId: z.string().nullable(),
+  treatmentType: z.string().trim().min(1).max(100),
+  status: treatmentStatusSchema,
+  notes: z.string().nullable(),
+  startedAt: z.string().nullable(),
+  endedAt: z.string().nullable(),
+  quantityConsumed: z.number().int().min(0),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type TreatmentRecord = z.infer<typeof treatmentRecordSchema>;
+
+/** Creating a treatment record. */
+export const createTreatmentRecordSchema = z.object({
+  customerId: z.string().min(1),
+  appointmentId: z.string().optional(),
+  staffId: z.string().optional(),
+  serviceId: z.string().optional(),
+  treatmentType: z.string().trim().min(1, "Treatment type is required").max(100),
+  status: treatmentStatusSchema.default("SCHEDULED"),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  startedAt: z.iso.date().nullable().optional(),
+  endedAt: z.iso.date().nullable().optional(),
+  quantityConsumed: z.number().int().min(0).default(0),
+});
+
+export type CreateTreatmentRecordInput = z.infer<typeof createTreatmentRecordSchema>;
+
+/** Updating a treatment record. */
+export const updateTreatmentRecordSchema = z.object({
+  treatmentType: z.string().trim().min(1).max(100).optional(),
+  status: treatmentStatusSchema.optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  startedAt: z.iso.date().nullable().optional(),
+  endedAt: z.iso.date().nullable().optional(),
+  quantityConsumed: z.number().int().min(0).optional(),
+});
+
+export type UpdateTreatmentRecordInput = z.infer<typeof updateTreatmentRecordSchema>;
+
+/** A treatment photo row. */
+export const treatmentPhotoSchema = z.object({
+  id: z.string(),
+  tenantId: z.string(),
+  treatmentRecordId: z.string(),
+  customerPhotoId: z.string(),
+  photoType: treatmentPhotoTypeSchema,
+  caption: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type TreatmentPhoto = z.infer<typeof treatmentPhotoSchema>;
+
+/** Linking an existing customer photo as a before/after treatment photo. */
+export const createTreatmentPhotoSchema = z.object({
+  treatmentRecordId: z.string().min(1),
+  customerPhotoId: z.string().min(1),
+  photoType: treatmentPhotoTypeSchema,
+  caption: z.string().trim().max(500).nullable().optional(),
+});
+
+export type CreateTreatmentPhotoInput = z.infer<typeof createTreatmentPhotoSchema>;
+
+/** A treatment consent form row. */
+export const treatmentConsentFormSchema = z.object({
+  id: z.string(),
+  tenantId: z.string(),
+  treatmentType: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(200),
+  content: z.string().trim().min(1),
+  version: z.number().int().min(1),
+  isActive: z.boolean(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type TreatmentConsentForm = z.infer<typeof treatmentConsentFormSchema>;
+
+/** Creating a treatment consent form. */
+export const createTreatmentConsentFormSchema = z.object({
+  treatmentType: z.string().trim().min(1).max(100, "Treatment type is required"),
+  title: z.string().trim().min(1, "Title is required").max(200),
+  content: z.string().trim().min(1, "Content is required"),
+  version: z.number().int().min(1).default(1),
+  isActive: z.boolean().default(true),
+});
+
+export type CreateTreatmentConsentFormInput = z.infer<typeof createTreatmentConsentFormSchema>;
+
+/** A treatment consent event row. */
+export const treatmentConsentEventSchema = z.object({
+  id: z.string(),
+  tenantId: z.string(),
+  treatmentRecordId: z.string(),
+  treatmentConsentFormId: z.string(),
+  customerId: z.string(),
+  consented: z.boolean(),
+  consentedAt: z.string(),
+  consentedById: z.string(),
+  signatureData: z.string().nullable(),
+  createdAt: z.string(),
+});
+
+export type TreatmentConsentEvent = z.infer<typeof treatmentConsentEventSchema>;
+
+/** Recording a customer's consent to a treatment consent form. */
+export const createTreatmentConsentEventSchema = z.object({
+  treatmentRecordId: z.string().min(1),
+  treatmentConsentFormId: z.string().min(1),
+  customerId: z.string().min(1),
+  consented: z.boolean(),
+  consentedById: z.string().min(1),
+  signatureData: z.string().nullable().optional(),
+});
+
+export type CreateTreatmentConsentEventInput = z.infer<typeof createTreatmentConsentEventSchema>;
+
+/** Treatment record list filters. */
+export const treatmentRecordListQuerySchema = paginationQuerySchema.extend({
+  customerId: z.string().optional(),
+  treatmentType: z.string().optional(),
+  status: treatmentStatusSchema.optional(),
+});
+
+export type TreatmentRecordListQuery = z.infer<typeof treatmentRecordListQuerySchema>;

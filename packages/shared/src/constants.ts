@@ -37,6 +37,7 @@ export const MODULE_CODES = [
   "sales",
   "expenses",
   "stock",
+  "treatments",
 ] as const;
 
 export type ModuleCode = (typeof MODULE_CODES)[number];
@@ -69,6 +70,7 @@ export const MODULE_NAMES: Record<ModuleCode, string> = {
   sales: "Sales",
   expenses: "Expenses",
   stock: "Stock",
+  treatments: "Treatments",
 };
 
 /**
@@ -94,6 +96,7 @@ export const CORE_MODULE_CODES = [
   "catalogue",
   "staff",
   "sales",
+  "treatments",
 ] as const;
 
 export const DEFAULT_PAGE_SIZE = 20;

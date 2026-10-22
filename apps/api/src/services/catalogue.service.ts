@@ -66,6 +66,7 @@ const PRODUCT_SELECT = {
   description: true,
   barcode: true,
   departmentId: true,
+  familyId: true,
   department: { select: { id: true, name: true } },
   createdAt: true,
   updatedAt: true,
@@ -199,6 +200,7 @@ function catalogueWhere(query: CatalogueListQuery) {
       : {}),
     ...(query.status ? { status: query.status } : {}),
     ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+    ...(query.familyId ? { familyId: query.familyId } : {}),
   };
 }
 
