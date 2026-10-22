@@ -186,7 +186,7 @@ export function useCustomerPhotos(customerId: string | null, page: number) {
 
 export function useConsentForms(treatmentType?: string, isActive?: boolean) {
   return useQuery({
-    queryKey: queryKeys.treatments.all(),
+    queryKey: [...queryKeys.treatments.all(), "consent-forms", { treatmentType, isActive }],
     queryFn: () =>
       get<TreatmentConsentForm[]>("/treatments/consent/forms", {
         treatmentType,

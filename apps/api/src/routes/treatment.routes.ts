@@ -7,6 +7,9 @@ import {
   idParamSchema,
   treatmentRecordListQuerySchema,
   treatmentRedemptionQuerySchema,
+  treatmentConsentTypeParamsSchema,
+  treatmentConsentFormListQuerySchema,
+  type TreatmentConsentFormListQuery,
   type TreatmentRedemptionQuery,
   type CreateTreatmentConsentEventInput,
   type CreateTreatmentConsentFormInput,
@@ -173,28 +176,30 @@ treatmentRouter.post(
 );
 
 /** GET /api/treatments/consent/forms — list active consent forms. */
-treatmentRouter.get("/consent/forms", auth, requireModule("treatments"), async (req, res, next) => {
-  try {
-    const { treatmentType, isActive } = req.query as {
-      treatmentType?: string;
-      isActive?: string;
-    };
-    const forms = await listTreatmentConsentForms({
-      treatmentType,
-      isActive: isActive === "true" ? true : isActive === "false" ? false : undefined,
-    });
-    res.json({ data: forms });
-  } catch (error) {
-    next(error);
-  }
-});
+treatmentRouter.get(
+  "/consent/forms",
+  auth,
+  requireModule("treatments"),
+  validate(treatmentConsentFormListQuerySchema, "query"),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await listTreatmentConsentForms(
+          validated<TreatmentConsentFormListQuery>(req, "query"),
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 /** GET /api/treatments/consent/forms/active/:treatmentType — latest active form for a type. */
 treatmentRouter.get(
   "/consent/forms/active/:treatmentType",
   auth,
   requireModule("treatments"),
-  validate(idParamSchema, "params"),
+  validate(treatmentConsentTypeParamsSchema, "params"),
   async (req, res, next) => {
     try {
       const { treatmentType } = validated<{ treatmentType: string }>(req, "params");
@@ -272,7 +277,7 @@ treatmentRouter.delete(
   validate(idParamSchema, "params"),
   async (req, res, next) => {
     try {
-      await removeTreatmentPhoto(String(req.params.photoId));
+      await removeTreatmentPhoto(String(req.params.id), String(req.params.photoId));
       res.status(204).end();
     } catch (error) {
       next(error);

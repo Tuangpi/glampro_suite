@@ -57,6 +57,7 @@ export async function listTreatmentRecords(query: {
     rows.map((row) =>
       treatmentRecordSchema.parse({
         ...row,
+        photos: row.photos.map((photo) => ({ ...photo, createdAt: photo.createdAt.toISOString() })),
         packageRedemptionRevertedAt: row.packageRedemption?.revertedAt?.toISOString() ?? null,
         startedAt: row.startedAt?.toISOString() ?? null,
         endedAt: row.endedAt?.toISOString() ?? null,
@@ -87,12 +88,15 @@ export async function getTreatmentRecord(id: string): Promise<TreatmentRecord> {
       },
       consentEvents: {
         include: { treatmentConsentForm: true },
+        orderBy: [{ consentedAt: "desc" }, { id: "desc" }],
       },
     },
   });
   if (!row) throw notFound("That treatment record does not exist.", "TREATMENT_NOT_FOUND");
   return treatmentRecordSchema.parse({
     ...row,
+    consentEvents: row.consentEvents.map(serializeConsentEvent),
+    photos: row.photos.map((photo) => ({ ...photo, createdAt: photo.createdAt.toISOString() })),
     packageRedemptionRevertedAt: row.packageRedemption?.revertedAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     endedAt: row.endedAt?.toISOString() ?? null,
@@ -325,6 +329,7 @@ export async function createTreatmentRecord(
     });
   return treatmentRecordSchema.parse({
     ...row,
+    photos: row.photos.map((photo) => ({ ...photo, createdAt: photo.createdAt.toISOString() })),
     packageRedemptionRevertedAt: row.packageRedemption?.revertedAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     endedAt: row.endedAt?.toISOString() ?? null,
@@ -413,6 +418,7 @@ export async function updateTreatmentRecord(
     });
   return treatmentRecordSchema.parse({
     ...row,
+    photos: row.photos.map((photo) => ({ ...photo, createdAt: photo.createdAt.toISOString() })),
     packageRedemptionRevertedAt: row.packageRedemption?.revertedAt?.toISOString() ?? null,
     startedAt: row.startedAt?.toISOString() ?? null,
     endedAt: row.endedAt?.toISOString() ?? null,
@@ -442,7 +448,8 @@ export async function addTreatmentPhoto(input: CreateTreatmentPhotoInput): Promi
   const photo = await prisma.customerPhoto.findFirst({
     where: { id: input.customerPhotoId },
   });
-  if (!photo) throw notFound("That photo does not exist.", "PHOTO_NOT_FOUND");
+  if (!photo || photo.customerId !== record.customerId)
+    throw notFound("That photo does not exist for this customer.", "PHOTO_NOT_FOUND");
 
   const existing = await prisma.treatmentPhoto.findFirst({
     where: { treatmentRecordId: input.treatmentRecordId, photoType: input.photoType },
@@ -453,16 +460,24 @@ export async function addTreatmentPhoto(input: CreateTreatmentPhotoInput): Promi
       "PHOTO_TYPE_EXISTS",
     );
 
-  const row = await prisma.treatmentPhoto.create({
-    data: {
-      tenantId: scope.tenantId,
-      treatmentRecordId: input.treatmentRecordId,
-      customerPhotoId: input.customerPhotoId,
-      photoType: input.photoType,
-      caption: input.caption ?? null,
-    },
-    include: { customerPhoto: true },
-  });
+  const row = await prisma.treatmentPhoto
+    .create({
+      data: {
+        tenantId: scope.tenantId,
+        treatmentRecordId: input.treatmentRecordId,
+        customerPhotoId: input.customerPhotoId,
+        photoType: input.photoType,
+        caption: input.caption ?? null,
+      },
+    })
+    .catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "P2002")
+        throw conflict(
+          "That photo type is already tagged for this treatment.",
+          "PHOTO_TYPE_EXISTS",
+        );
+      throw error;
+    });
   return treatmentPhotoSchema.parse({
     ...row,
     createdAt: row.createdAt.toISOString(),
@@ -470,11 +485,11 @@ export async function addTreatmentPhoto(input: CreateTreatmentPhotoInput): Promi
 }
 
 /** Removes a before/after photo link from a treatment record. */
-export async function removeTreatmentPhoto(id: string): Promise<void> {
+export async function removeTreatmentPhoto(treatmentRecordId: string, id: string): Promise<void> {
   const scope = currentScope();
   if (scope?.kind !== "tenant") throw forbiddenScope();
 
-  const existing = await prisma.treatmentPhoto.findFirst({ where: { id } });
+  const existing = await prisma.treatmentPhoto.findFirst({ where: { id, treatmentRecordId } });
   if (!existing)
     throw notFound("That treatment photo does not exist.", "TREATMENT_PHOTO_NOT_FOUND");
   await prisma.treatmentPhoto.delete({ where: { id } });
@@ -525,28 +540,32 @@ export async function createTreatmentConsentForm(
   const scope = currentScope();
   if (scope?.kind !== "tenant") throw forbiddenScope();
 
-  const latest = await prisma.treatmentConsentForm.findFirst({
-    where: { treatmentType: input.treatmentType },
-    orderBy: { version: "desc" },
-  });
-  const version = (latest?.version ?? 0) + 1;
-
-  if (input.isActive !== false) {
-    await prisma.treatmentConsentForm.updateMany({
-      where: { treatmentType: input.treatmentType, isActive: true },
-      data: { isActive: false },
+  const row = await prisma.$transaction(async (tx) => {
+    // The tenant row exists even for a type's first form. Serialize publishers
+    // before reading the next version, including inactive draft publication.
+    // NO KEY UPDATE still serializes publishers without blocking event inserts'
+    // tenant foreign-key checks while a publisher waits for their form lock.
+    await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${scope.tenantId} FOR NO KEY UPDATE`;
+    const latest = await tx.treatmentConsentForm.findFirst({
+      where: { treatmentType: input.treatmentType },
+      orderBy: { version: "desc" },
     });
-  }
-
-  const row = await prisma.treatmentConsentForm.create({
-    data: {
-      tenantId: scope.tenantId,
-      treatmentType: input.treatmentType,
-      title: input.title,
-      content: input.content,
-      version,
-      isActive: input.isActive ?? true,
-    },
+    if (input.isActive !== false) {
+      await tx.treatmentConsentForm.updateMany({
+        where: { treatmentType: input.treatmentType, isActive: true },
+        data: { isActive: false },
+      });
+    }
+    return tx.treatmentConsentForm.create({
+      data: {
+        tenantId: scope.tenantId,
+        treatmentType: input.treatmentType,
+        title: input.title,
+        content: input.content,
+        version: (latest?.version ?? 0) + 1,
+        isActive: input.isActive ?? true,
+      },
+    });
   });
   return treatmentConsentFormSchema.parse({
     ...row,
@@ -562,66 +581,101 @@ export async function recordTreatmentConsentEvent(
   const scope = currentScope();
   if (scope?.kind !== "tenant") throw forbiddenScope();
 
-  const record = await prisma.treatmentRecord.findFirst({
-    where: { id: input.treatmentRecordId },
-  });
-  if (!record) throw notFound("That treatment record does not exist.", "TREATMENT_NOT_FOUND");
+  const row = await prisma
+    .$transaction(async (tx) => {
+      // Serialize decisions against treatment edits/deletion and one another.
+      // Lock the form too, so publication cannot deactivate it between check/write.
+      await tx.$queryRaw`SELECT id FROM treatment_records WHERE id = ${input.treatmentRecordId} AND "tenantId" = ${scope.tenantId} FOR UPDATE`;
+      const record = await tx.treatmentRecord.findFirst({ where: { id: input.treatmentRecordId } });
+      if (!record) throw notFound("That treatment record does not exist.", "TREATMENT_NOT_FOUND");
+      const customer = await tx.customer.findFirst({ where: { id: input.customerId } });
+      if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
+      if (record.customerId !== customer.id)
+        throw badRequest(
+          "Consent must belong to the treatment customer.",
+          undefined,
+          "CONSENT_CUSTOMER_MISMATCH",
+        );
 
-  const form = await prisma.treatmentConsentForm.findFirst({
-    where: { id: input.treatmentConsentFormId },
-  });
-  if (!form) throw notFound("That consent form does not exist.", "CONSENT_FORM_NOT_FOUND");
+      await tx.$queryRaw`SELECT id FROM treatment_consent_forms WHERE id = ${input.treatmentConsentFormId} AND "tenantId" = ${scope.tenantId} FOR UPDATE`;
+      const form = await tx.treatmentConsentForm.findFirst({
+        where: { id: input.treatmentConsentFormId },
+      });
+      if (!form) throw notFound("That consent form does not exist.", "CONSENT_FORM_NOT_FOUND");
+      if (form.treatmentType !== record.treatmentType)
+        throw badRequest(
+          "The consent form must cover this treatment type.",
+          undefined,
+          "CONSENT_TYPE_MISMATCH",
+        );
 
-  const customer = await prisma.customer.findFirst({ where: { id: input.customerId } });
-  if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
+      const existing = await tx.treatmentConsentEvent.findFirst({
+        where: { treatmentRecordId: record.id, treatmentConsentFormId: form.id },
+      });
+      if (existing)
+        throw conflict(
+          "A consent event already exists for this treatment and form.",
+          "CONSENT_EVENT_EXISTS",
+        );
+      if (!form.isActive)
+        throw conflict(
+          "That consent form is no longer active. Reload the current form.",
+          "CONSENT_FORM_INACTIVE",
+        );
 
-  const existing = await prisma.treatmentConsentEvent.findFirst({
-    where: {
-      treatmentRecordId: input.treatmentRecordId,
-      treatmentConsentFormId: input.treatmentConsentFormId,
-    },
-  });
-  if (existing)
-    throw conflict(
-      "A consent event already exists for this treatment and form.",
-      "CONSENT_EVENT_EXISTS",
-    );
-
-  const row = await prisma.treatmentConsentEvent.create({
-    data: {
-      tenantId: scope.tenantId,
-      treatmentRecordId: input.treatmentRecordId,
-      treatmentConsentFormId: input.treatmentConsentFormId,
-      customerId: input.customerId,
-      consented: input.consented,
-      consentedById: actorId,
-      signatureData: null,
-    },
-    include: { treatmentConsentForm: true },
-  });
-  return treatmentConsentEventSchema.parse({
-    ...row,
-    consentedAt: row.consentedAt.toISOString(),
-    createdAt: row.createdAt.toISOString(),
-    signatureData: null,
-  });
+      return tx.treatmentConsentEvent.create({
+        data: {
+          tenantId: scope.tenantId,
+          treatmentRecordId: record.id,
+          treatmentConsentFormId: form.id,
+          customerId: record.customerId,
+          consented: input.consented,
+          consentedById: actorId,
+          signatureData: null,
+        },
+        include: { treatmentConsentForm: true },
+      });
+    })
+    .catch((error: unknown) => {
+      if (error && typeof error === "object" && "code" in error && error.code === "P2002")
+        throw conflict(
+          "A consent event already exists for this treatment and form.",
+          "CONSENT_EVENT_EXISTS",
+        );
+      throw error;
+    });
+  return serializeConsentEvent(row);
 }
 
 /** Lists consent events for a treatment record. */
 export async function listConsentEvents(
   treatmentRecordId: string,
 ): Promise<TreatmentConsentEvent[]> {
+  const record = await prisma.treatmentRecord.findFirst({ where: { id: treatmentRecordId } });
+  if (!record) throw notFound("That treatment record does not exist.", "TREATMENT_NOT_FOUND");
   const rows = await prisma.treatmentConsentEvent.findMany({
     where: { treatmentRecordId },
-    orderBy: { consentedAt: "desc" },
+    orderBy: [{ consentedAt: "desc" }, { id: "desc" }],
     include: { treatmentConsentForm: true },
   });
-  return rows.map((row) =>
-    treatmentConsentEventSchema.parse({
-      ...row,
-      consentedAt: row.consentedAt.toISOString(),
-      createdAt: row.createdAt.toISOString(),
-      signatureData: null,
-    }),
-  );
+  return rows.map(serializeConsentEvent);
+}
+
+type ConsentEventRow = Awaited<ReturnType<typeof prisma.treatmentConsentEvent.findMany>>[number];
+type ConsentFormRow = Awaited<ReturnType<typeof prisma.treatmentConsentForm.findMany>>[number];
+
+function serializeConsentEvent(
+  row: ConsentEventRow & { treatmentConsentForm: ConsentFormRow },
+): TreatmentConsentEvent {
+  return treatmentConsentEventSchema.parse({
+    ...row,
+    consentedAt: row.consentedAt.toISOString(),
+    createdAt: row.createdAt.toISOString(),
+    signatureData: null,
+    treatmentConsentForm: {
+      ...row.treatmentConsentForm,
+      createdAt: row.treatmentConsentForm.createdAt.toISOString(),
+      updatedAt: row.treatmentConsentForm.updatedAt.toISOString(),
+    },
+  });
 }

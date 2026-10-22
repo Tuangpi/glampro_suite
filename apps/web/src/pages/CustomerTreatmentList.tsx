@@ -7,12 +7,14 @@ import type { TreatmentRecord } from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
 import { useCustomer } from "@/hooks/useCustomers";
-import { useDeleteTreatment, useTreatmentList } from "@/hooks/useTreatments";
+import { useDeleteTreatment, useTreatment, useTreatmentList } from "@/hooks/useTreatments";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import TreatmentRecordForm from "@/components/treatments/TreatmentRecordForm";
 import Pagination from "@/components/ui/Pagination";
 import Modal from "@/components/ui/Modal";
+import Drawer from "@/components/ui/Drawer";
+import TreatmentPhotoTagger from "@/components/treatments/TreatmentPhotoTagger";
 import { getErrorMessage } from "@/lib/api";
 
 interface CustomerTreatmentListProps {
@@ -23,6 +25,8 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
   const [editor, setEditor] = useState<TreatmentRecord | "new" | null>(null);
   const [deleting, setDeleting] = useState<TreatmentRecord | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [photoRecordId, setPhotoRecordId] = useState<string | null>(null);
+  const photoRecord = useTreatment(photoRecordId);
   const { isReadOnly } = useAuth();
   const { formatDate } = useSalonFormatting();
   const remove = useDeleteTreatment();
@@ -126,6 +130,9 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
                 </td>
                 <td className="text-sm text-ink-muted">{formatDate(record.createdAt)}</td>
                 <td className="text-right">
+                  <Button variant="secondary" size="sm" onClick={() => setPhotoRecordId(record.id)}>
+                    Before/after photos
+                  </Button>
                   <Button
                     variant="secondary"
                     size="sm"
@@ -179,6 +186,34 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
           }}
         />
       ) : null}
+      <Drawer
+        open={photoRecordId !== null}
+        onClose={() => setPhotoRecordId(null)}
+        title="Treatment before/after photos"
+        widthClassName="max-w-2xl"
+      >
+        {photoRecord.isPending ? <p role="status">Loading treatment photos…</p> : null}
+        {photoRecord.isError ? (
+          <div role="alert">
+            <p>Treatment photos could not be loaded.</p>
+            <Button onClick={() => void photoRecord.refetch()}>Retry</Button>
+          </div>
+        ) : null}
+        {photoRecord.data?.customerId === customerId && photoRecord.data.id === photoRecordId ? (
+          <>
+            <p className="mb-3 font-semibold">{photoRecord.data.treatmentType}</p>
+            <TreatmentPhotoTagger
+              key={photoRecordId}
+              customerId={customerId}
+              treatmentRecordId={photoRecord.data.id}
+              existingPhotos={photoRecord.data.photos ?? []}
+              onChange={() => {
+                void photoRecord.refetch();
+              }}
+            />
+          </>
+        ) : null}
+      </Drawer>
       <Modal
         open={deleting !== null && !isReadOnly}
         onClose={() => {

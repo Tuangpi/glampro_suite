@@ -3,12 +3,31 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import CustomerTreatmentList from "../CustomerTreatmentList";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), remove: vi.fn(), readOnly: false }));
+const mocks = vi.hoisted(() => ({
+  list: vi.fn(),
+  detail: vi.fn(),
+  remove: vi.fn(),
+  readOnly: false,
+}));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ isReadOnly: mocks.readOnly }) }));
 vi.mock("@/hooks/useCustomers", () => ({ useCustomer: () => ({ data: { name: "Mina" } }) }));
 vi.mock("@/hooks/useTreatments", () => ({
   useTreatmentList: mocks.list,
+  useTreatment: mocks.detail,
   useDeleteTreatment: () => ({ mutateAsync: mocks.remove, isPending: false }),
+}));
+vi.mock("@/components/treatments/TreatmentPhotoTagger", () => ({
+  default: ({
+    customerId,
+    treatmentRecordId,
+  }: {
+    customerId: string;
+    treatmentRecordId: string;
+  }) => (
+    <p>
+      Photo tagger {customerId} {treatmentRecordId}
+    </p>
+  ),
 }));
 vi.mock("@/components/treatments/TreatmentRecordForm", () => ({
   default: ({
@@ -48,8 +67,18 @@ const record = {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.readOnly = false;
+  mocks.detail.mockReturnValue({ data: { ...record, photos: [] } });
   mocks.remove.mockResolvedValue(undefined);
   mocks.list.mockReturnValue({ data: { data: [record], pageCount: 2 }, isPending: false });
+});
+it("opens photos for the selected treatment even when writes are disabled", async () => {
+  mocks.readOnly = true;
+  render(<CustomerTreatmentList customerId="c1" />);
+  await userEvent.click(screen.getByRole("button", { name: "Before/after photos" }));
+  expect(screen.getByRole("dialog", { name: "Treatment before/after photos" })).toHaveTextContent(
+    "Photo tagger c1 t1",
+  );
+  expect(mocks.detail).toHaveBeenLastCalledWith("t1");
 });
 it("opens scoped create and edit forms and keeps new available on nonempty lists", async () => {
   const user = userEvent.setup();

@@ -241,6 +241,8 @@ export const treatmentRecordSchema = z.object({
   packageHoldingId: z.string().nullable().optional(),
   /** POS reversal is disclosed without changing the clinical record or balance. */
   packageRedemptionRevertedAt: z.string().nullable().optional(),
+  photos: z.array(z.lazy(() => treatmentPhotoSchema)).optional(),
+  consentEvents: z.array(z.lazy(() => treatmentConsentEventSchema)).optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -332,6 +334,19 @@ export const treatmentConsentFormSchema = z.object({
 
 export type TreatmentConsentForm = z.infer<typeof treatmentConsentFormSchema>;
 
+export const treatmentConsentTypeParamsSchema = z.object({
+  treatmentType: z.string().trim().min(1).max(100),
+});
+
+export const treatmentConsentFormListQuerySchema = z.object({
+  treatmentType: z.string().trim().min(1).max(100).optional(),
+  isActive: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+});
+export type TreatmentConsentFormListQuery = z.infer<typeof treatmentConsentFormListQuerySchema>;
+
 /** Creating a treatment consent form. */
 export const createTreatmentConsentFormSchema = z.object({
   treatmentType: z.string().trim().min(1).max(100, "Treatment type is required"),
@@ -355,6 +370,7 @@ export const treatmentConsentEventSchema = z.object({
   consentedById: z.string(),
   signatureData: z.string().nullable(),
   createdAt: z.string(),
+  treatmentConsentForm: treatmentConsentFormSchema.optional(),
 });
 
 export type TreatmentConsentEvent = z.infer<typeof treatmentConsentEventSchema>;
@@ -365,8 +381,8 @@ export const createTreatmentConsentEventSchema = z.object({
   treatmentConsentFormId: z.string().min(1),
   customerId: z.string().min(1),
   consented: z.boolean(),
-  consentedById: z.string().min(1),
-  signatureData: z.string().nullable().optional(),
+  // The witness comes from authentication. Signature capture is not implemented.
+  signatureData: z.null().optional(),
 });
 
 export type CreateTreatmentConsentEventInput = z.infer<typeof createTreatmentConsentEventSchema>;

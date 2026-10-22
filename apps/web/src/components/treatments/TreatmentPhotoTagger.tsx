@@ -20,6 +20,8 @@ import {
   useRemoveTreatmentPhoto,
 } from "@/hooks/useTreatments";
 import api from "@/lib/api";
+import { getErrorMessage } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface TreatmentPhotoTaggerProps {
   customerId: string;
@@ -36,6 +38,8 @@ export default function TreatmentPhotoTagger({
 }: TreatmentPhotoTaggerProps) {
   const [page, setPage] = useState(1);
   const [tagging, setTagging] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { isReadOnly } = useAuth();
   const photos = useCustomerPhotos(customerId, page);
   const addPhoto = useAddTreatmentPhoto();
   const removePhoto = useRemoveTreatmentPhoto();
@@ -43,12 +47,13 @@ export default function TreatmentPhotoTagger({
   const taggedIds = new Set(existingPhotos.map((photo) => photo.customerPhotoId));
   const rows = photos.data?.data ?? [];
 
-  const alreadyTagged = existingPhotos.filter((photo) =>
-    rows.some((row) => row.id === photo.customerPhotoId),
-  );
+  const alreadyTagged = existingPhotos;
   const untagged = rows.filter((photo) => !taggedIds.has(photo.id));
+  const busy = tagging !== null || addPhoto.isPending || removePhoto.isPending;
 
   function tagAs(photoId: string, photoType: "BEFORE" | "AFTER") {
+    if (isReadOnly || busy) return;
+    setError(null);
     setTagging(photoId);
     void addPhoto
       .mutateAsync({
@@ -60,30 +65,24 @@ export default function TreatmentPhotoTagger({
         onChange();
         setTagging(null);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
+        setError(getErrorMessage(error));
         setTagging(null);
       });
   }
 
   async function untag(photoId: string) {
+    if (isReadOnly || busy) return;
+    setError(null);
     setTagging(photoId);
-    await removePhoto.mutateAsync({ recordId: treatmentRecordId, photoId });
-    onChange();
-    setTagging(null);
-  }
-
-  if (photos.isPending) {
-    return <p role="status">Loading photos…</p>;
-  }
-  if (photos.isError) {
-    return (
-      <div role="alert">
-        <p>Photos could not be loaded.</p>
-        <Button type="button" onClick={() => void photos.refetch()}>
-          Retry
-        </Button>
-      </div>
-    );
+    try {
+      await removePhoto.mutateAsync({ recordId: treatmentRecordId, photoId });
+      onChange();
+    } catch (error) {
+      setError(getErrorMessage(error));
+    } finally {
+      setTagging(null);
+    }
   }
 
   return (
@@ -93,17 +92,30 @@ export default function TreatmentPhotoTagger({
     >
       <h3 className="font-bold">Before & after photos</h3>
       <p className="text-sm text-ink-muted">
-        Tag the customer's existing photos as before or after for this treatment. A photo can be
-        tagged on one record at a time.
+        Tag existing customer photos: one before and one after per treatment. Untagging does not
+        delete the original photo. Upload new photos in the customer profile; uploads require
+        current data consent. Retained photos remain available after consent withdrawal.
       </p>
+      {error ? <p role="alert">{error}</p> : null}
+      {photos.isPending ? <p role="status">Loading photos…</p> : null}
+      {photos.isError ? (
+        <div role="alert">
+          <p>Photos could not be loaded.</p>
+          <Button type="button" onClick={() => void photos.refetch()}>
+            Retry
+          </Button>
+        </div>
+      ) : null}
+      {!photos.isPending && !photos.isError && rows.length === 0 ? (
+        <p>No customer photos on this page. Upload photos in the customer profile.</p>
+      ) : null}
 
       {alreadyTagged.length > 0 ? (
         <>
           <h4 className="font-semibold text-sm">Tagged photos</h4>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {alreadyTagged.map((tp) => {
-              const photo = rows.find((p) => p.id === tp.customerPhotoId);
-              if (!photo) return null;
+              const photo = { id: tp.customerPhotoId, caption: tp.caption };
               return (
                 <figure
                   key={tp.id}
@@ -117,7 +129,7 @@ export default function TreatmentPhotoTagger({
                   <Button
                     variant="danger"
                     size="sm"
-                    disabled={removePhoto.isPending}
+                    disabled={isReadOnly || busy}
                     onClick={() => void untag(tp.id)}
                   >
                     Untag
@@ -144,7 +156,9 @@ export default function TreatmentPhotoTagger({
                   <Button
                     variant="secondary"
                     size="sm"
-                    disabled={addPhoto.isPending || tagging === photo.id}
+                    disabled={
+                      isReadOnly || busy || existingPhotos.some((p) => p.photoType === "BEFORE")
+                    }
                     onClick={() => void tagAs(photo.id, "BEFORE")}
                   >
                     Tag before
@@ -152,7 +166,9 @@ export default function TreatmentPhotoTagger({
                   <Button
                     variant="secondary"
                     size="sm"
-                    disabled={addPhoto.isPending || tagging === photo.id}
+                    disabled={
+                      isReadOnly || busy || existingPhotos.some((p) => p.photoType === "AFTER")
+                    }
                     onClick={() => void tagAs(photo.id, "AFTER")}
                   >
                     Tag after

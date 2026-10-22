@@ -2,12 +2,137 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — treatment-session integration (IN PROGRESS: photo-tagging integration pending)**. Most recently completed slice: **usable POS redemption selector**, with standing user-granted manual acceptance. User confirmed application migration, browser acceptance and privacy/access/consent review complete October 22, 2026. Parent TK2610-0027 remains IN PROGRESS.
+- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. Latest completed slice: **consent integrity/contracts with isolated HTTP/database acceptance**. Consent profile UI and retention/permissions/repeat-decision policy remain unfinished. Prior treatment-link migration/browser/privacy acceptance is user-reported. TK2610-0027 remains IN PROGRESS.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
-- Next: photo-tagging integration under TK2610-0025. Family sharing/transfer/audit remain separate TK2610-0027 gaps. Neither parent is ready to close. No production access or paid mail authorized.
+- Next: integrate consent forms/events into customer profiles under TK2610-0025; resolve retention, role permissions and repeat/withdrawal policy before changing those behaviors. Family sharing/transfer/audit remain separate TK2610-0027 gaps. Neither parent is ready to close. No production access or paid mail authorized.
+
+## October 22, 2026 — Consent integrity/contracts completed
+
+- TK2610-0025 stays IN PROGRESS; this completes only the backend/contracts slice
+  selected after the audit. TK2610-0027 stays IN PROGRESS. Neither external ID is
+  ready for closure. Existing uncommitted photo changes were preserved.
+- Fixed active-form parameter schema and shared list-filter validation (including
+  repeated/invalid filter refusal). Event requests no longer require/trust a client
+  witness; JWT remains authoritative, and the URL owns the treatment ID. Non-null
+  signature submissions now return validation errors rather than silently losing
+  data. Signature capture is still not implemented; null remains compatible.
+- Event creation checks tenant-scoped customer/record/form existence, matching
+  customer and treatment type, and active-form eligibility within a transaction.
+  Treatment and form row locks serialize clinical edits/publication against consent
+  creation. Duplicate decisions return CONSENT_EVENT_EXISTS, including concurrent
+  requests; existing one-decision-per-treatment/form policy is unchanged.
+- Form version allocation, deactivation and insertion are atomic. A tenant-row
+  FOR NO KEY UPDATE lock serializes publishers even for the first version without
+  blocking tenant foreign-key checks during concurrent consent insertion. This is
+  intentionally coarse per tenant; no new dependency or migration. Failed insertion
+  rolls back deactivation. Version numbers remain server-assigned.
+- Treatment detail and event responses preserve original form text/version with
+  serialized timestamps; history has stable date/id ordering. Missing/foreign
+  parent history returns 404. Form hooks now separate type/active filter caches.
+- Added dedicated treatment-consent acceptance, shared schema and hook cache tests.
+  Passed fresh: isolated PostgreSQL consent HTTP/service acceptance 1/1 and existing
+  session/photo acceptance 1/1 (none skipped); full shared 146/146; full web 507/507;
+  full production build, API typecheck and root lint. Final format/diff checks at
+  handoff. Acceptance covers same/cross-tenant refusals, grants/declines, witness and
+  URL spoofing, unsupported signatures, auth/entitlement/suspended-write boundaries,
+  original evidence, concurrent first/later publication, duplicate decisions,
+  publication-versus-recording and failed-publication rollback.
+- Reused only approved disposable loopback 55440/package_expiry_test. Both acceptance
+  fixtures cleaned (zero matching tenants); existing pg concurrent-query deprecation
+  warning remains. Full API suite and browser walkthrough were not run. Manual
+  acceptance is standing user-granted, not agent-executed. No application/production
+  database changes, schema migration, deployment or commit.
+- Remaining: consent profile UI, retention (deletion still cascades), narrower role
+  permissions, repeat/withdrawal policy, history pagination and treatment-status
+  consent requirements. Historical audit findings below are superseded only for the
+  fixes above. No retention or clinical-policy changes are implied by this slice.
+  Logs: /tmp/glampro-consent-{db-final,session,shared,web,build,api-types,lint}.log.
+
+## October 22, 2026 — Treatment-consent/customer-profile audit
+
+- Audit only; no application code or schema changes. Both TK2610-0025 and
+  TK2610-0027 remain IN PROGRESS, not ready for external closure. Existing
+  uncommitted photo-tagging changes were preserved. Prior acceptance is not
+  evidence that the consent workflow below is implemented or verified.
+- Confirmed foundation: four treatment models are tenant-scoped; consent routes
+  require authentication/treatment entitlement and writes require a writable tenant.
+  Event actor is taken from JWT, not the submitted actor. Form content has no API
+  update/delete route; each version is a separate row. CustomerProfile mounts the
+  treatment list only when entitled, but none of the four consent hooks has a UI
+  caller. Profile privacy/photo consent is not a treatment-consent interface.
+- High-priority integrity gaps (source inspection): recordTreatmentConsentEvent
+  verifies record/form/customer existence separately, but not customer equality,
+  treatment-type equality or active-form eligibility. A different customer in the
+  same tenant or unrelated/inactive form can therefore be recorded. Cross-tenant
+  lookup filtering exists; fresh consent-specific HTTP/DB isolation tests were not
+  run. No grant/decline requirement gates treatment status changes.
+- Retention gap: deleteTreatmentRecord hard-deletes; the event foreign key uses
+  ON DELETE CASCADE, so deleting clinical documentation deletes consent evidence.
+  Customer/form deletion also cascades. Append-only comments do not establish
+  retention. All authenticated salon roles can publish forms, record consent and
+  delete treatments under current routes; no narrower clinical role check exists.
+  Resolve desired retention/access policy before implementing a migration.
+- Executable contract probes confirmed four defects: active-form URL supplies
+  treatmentType but idParamSchema requires id; treatmentRecordSchema omits and
+  strips consentEvents despite the detail include; treatmentConsentEventSchema
+  omits and strips included form title/content/version; request schema requires
+  consentedById although the route uses JWT actor. Signature input is accepted but
+  the service always stores/returns null (source inspection), not signature capture.
+- Publication/race gaps (source inspection, not reproduced under concurrency):
+  latest-version read, active-version deactivation and form insert are separate
+  operations. An insert failure can leave no active form; concurrent publication
+  can collide on the version unique key. Event precheck/insert also races; no P2002
+  mapping provides a stable duplicate conflict. Unique treatment/form constraint
+  prevents a second decision for that pair; no withdrawal/correction workflow exists.
+- Client gaps: useConsentForms uses the same domain key for every type/active
+  filter. Form list query uses unchecked casts; invalid/repeated filters have no
+  shared validation. History is unpaginated; missing/foreign treatment IDs return
+  an empty event list rather than checking parent existence. These need explicit
+  contract choices and coverage, not inferred completion from passing older suites.
+- Remediation order: (1) ownership/type/eligibility checks, route/request/response
+  contracts and safe publication/duplicate handling with dedicated HTTP/DB tests;
+  (2) resolve retention, permissions and repeated-decision policy; (3) profile form
+  authoring/version preview, explicit grant/decline, original-form evidence history,
+  filter-specific keys, read-only controls and retryable failures; (4) rerun relevant
+  automated acceptance before reassessing parent readiness. No new task IDs added.
+- Passed fresh: focused web 28/28 (CustomerProfile, CustomerTreatmentList,
+  TreatmentRecordForm, TreatmentPhotoTagger); shared customer/session contracts
+  19/19, none skipped; four temporary contract probes (exit 0). These confirm the
+  existing adjacent UI and the reproduced contract defects, not consent acceptance.
+  Profile tests mock the treatment child; no end-to-end consent coverage is claimed.
+  Logs: /tmp/glampro-consent-audit-{web,shared,probes}.log; probe script remains
+  outside the repository at /tmp/glampro-consent-audit-probes.ts.
+- No database commands, migrations, browser walkthrough, full API suite, application
+  deployment, commit or external tracker changes. Documentation checks recorded at
+  handoff; user-granted manual acceptance does not close missing implementation.
+
+## October 22, 2026 — Before/after photo-tagging integration completed
+
+- Treatment history now opens a before/after drawer using fresh treatment details.
+  Shared contracts retain photo metadata and list/detail/create/update serialize
+  timestamps. Tagged photos remain visible independently of gallery pagination;
+  one-before/one-after controls, read-only viewing and retryable load/mutation errors
+  are wired. Private authenticated blobs are revoked on unmount.
+- API rejects photos belonging to another customer, scopes removal to the URL
+  treatment and maps duplicate-type races to 409. Removed unnecessary full photo
+  byte fetch on tagging. Untagging and treatment deletion preserve original photos.
+  Existing upload-consent and retained-photo rules are disclosed, not changed.
+- Passed: full web 506/506, shared 143/143, expanded isolated PostgreSQL linkage/photo
+  HTTP acceptance 1/1 with none skipped, final full production build, API/web
+  typechecks and root lint. Six added UI tests; DB coverage includes customer/tenant
+  refusal, duplicate races, retained metadata on edit, scoped untag, auth, suspended
+  writes and original-photo preservation. Initial checks passed; final inspection
+  caught create/update timestamp serialization, fixed and rerun successfully.
+- Reused only approved disposable loopback 55440/package_expiry_test; tests clean
+  fixtures. Existing pg concurrent-client deprecation warning remains. No full API
+  suite or agent browser walkthrough; manual acceptance is standing user-granted.
+  No migration, application database change, commit or deployment.
+- Both external parents remain IN PROGRESS. Next is consent-workflow audit under
+  TK2610-0025, not an assumption that historical consent work meets completion.
+  Logs: /tmp/glampro-photo-{web-full,shared,db-final,build-final,lint}.log.
 
 ## October 22, 2026 — Usable POS redemption selector completed
 

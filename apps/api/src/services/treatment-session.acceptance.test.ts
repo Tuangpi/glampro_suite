@@ -21,6 +21,8 @@ test(
       deleteTreatmentRecord,
       getTreatmentRecord,
       listTreatmentRedemptions,
+      addTreatmentPhoto,
+      removeTreatmentPhoto,
     } = await import("./treatment.service.js");
     const tenantId = "treatment-session-a";
     const foreignId = "treatment-session-b";
@@ -206,6 +208,72 @@ test(
           realm: "web",
           tokenVersion: user.tokenVersion,
         }).token;
+        const photoRecord = await createTreatmentRecord({
+          customerId: customer.id,
+          treatmentType: "Photos",
+          status: "COMPLETED",
+          quantityConsumed: 0,
+        });
+        const otherRecord = await createTreatmentRecord({
+          customerId: customer.id,
+          treatmentType: "Other photos",
+          status: "COMPLETED",
+          quantityConsumed: 0,
+        });
+        const photo = await prisma.customerPhoto.create({
+          data: {
+            tenantId,
+            customerId: customer.id,
+            caption: "Before",
+            mimeType: "image/png",
+            content: Buffer.from("private-image"),
+            createdById: user.id,
+          },
+        });
+        const otherPhoto = await prisma.customerPhoto.create({
+          data: {
+            tenantId,
+            customerId: other.id,
+            caption: "Other",
+            mimeType: "image/png",
+            content: Buffer.from("other-private-image"),
+            createdById: user.id,
+          },
+        });
+        const photoInput = {
+          treatmentRecordId: photoRecord.id,
+          customerPhotoId: photo.id,
+          photoType: "BEFORE" as const,
+        };
+        await assert.rejects(
+          addTreatmentPhoto({ ...photoInput, customerPhotoId: otherPhoto.id }),
+          code("PHOTO_NOT_FOUND"),
+        );
+        await assert.rejects(
+          runAsTenant(foreignId, () => addTreatmentPhoto(photoInput)),
+          code("TREATMENT_NOT_FOUND"),
+        );
+        const photoAttempts = await Promise.allSettled([
+          addTreatmentPhoto(photoInput),
+          addTreatmentPhoto(photoInput),
+        ]);
+        assert.equal(photoAttempts.filter((result) => result.status === "fulfilled").length, 1);
+        const photoFailure = photoAttempts.find((result) => result.status === "rejected");
+        assert.ok(
+          photoFailure?.status === "rejected" && code("PHOTO_TYPE_EXISTS")(photoFailure.reason),
+        );
+        const tagged = (await getTreatmentRecord(photoRecord.id)).photos!;
+        assert.equal(tagged.length, 1);
+        assert.equal(tagged[0].customerPhotoId, photo.id);
+        assert.equal(
+          (await updateTreatmentRecord(photoRecord.id, { notes: "Photo follow-up" })).photos
+            ?.length,
+          1,
+        );
+        await assert.rejects(
+          removeTreatmentPhoto(otherRecord.id, tagged[0].id),
+          code("TREATMENT_PHOTO_NOT_FOUND"),
+        );
         const server = createApp().listen(0, "127.0.0.1");
         await once(server, "listening");
         try {
@@ -222,6 +290,44 @@ test(
           const response = await fetch(`${base}?customerId=${customer.id}`, { headers });
           assert.equal(response.status, 200);
           assert.equal(((await response.json()) as { data: { total: number } }).data.total, 1);
+          const photoBase = base.replace("/redemptions", `/${photoRecord.id}/photos`);
+          const postPhoto = () =>
+            fetch(photoBase, {
+              method: "POST",
+              headers: { ...headers, "Content-Type": "application/json" },
+              body: JSON.stringify({ ...photoInput, photoType: "AFTER" }),
+            });
+          assert.equal((await fetch(photoBase, { method: "POST" })).status, 401);
+          assert.equal((await postPhoto()).status, 201);
+          assert.equal((await postPhoto()).status, 409);
+          assert.equal((await getTreatmentRecord(photoRecord.id)).photos?.length, 2);
+          assert.equal(
+            (
+              await fetch(photoBase.replace(photoRecord.id, otherRecord.id) + `/${tagged[0].id}`, {
+                method: "DELETE",
+                headers,
+              })
+            ).status,
+            404,
+          );
+          await runAsPlatform(() =>
+            prisma.tenant.update({ where: { id: tenantId }, data: { status: "SUSPENDED" } }),
+          );
+          assert.equal((await postPhoto()).status, 403);
+          assert.equal(
+            (await fetch(`${photoBase}/${tagged[0].id}`, { method: "DELETE", headers })).status,
+            403,
+          );
+          await runAsPlatform(() =>
+            prisma.tenant.update({ where: { id: tenantId }, data: { status: "ACTIVE" } }),
+          );
+          assert.equal(
+            (await fetch(`${photoBase}/${tagged[0].id}`, { method: "DELETE", headers })).status,
+            204,
+          );
+          assert.ok(await prisma.customerPhoto.findFirst({ where: { id: photo.id } }));
+          await deleteTreatmentRecord(photoRecord.id);
+          assert.ok(await prisma.customerPhoto.findFirst({ where: { id: photo.id } }));
         } finally {
           await runAsPlatform(() =>
             prisma.module.update({ where: { id: module.id }, data: { isCore: module.isCore } }),

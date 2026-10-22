@@ -633,10 +633,50 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Verification: isolated PostgreSQL sale/linkage/HTTP acceptance 56/56, web 500/500,
   shared 143/143, full build and root lint passed. No application database changes,
   commit or deployment. See PROGRESS.md for verification details.
-- Remaining / next: before/after photo-tagging integration. Standalone
-  TreatmentPhotoTagger exists but is not integrated. Earlier component-only claims
-  are not end-to-end evidence. Parent task remains IN PROGRESS; TK2610-0027 family,
-  transfer and audit gaps remain independent.
+- October 22 photo-tagging integration: DONE for this slice. Treatment history opens
+  a fresh-detail before/after drawer, including read-only viewing, private blob
+  previews, gallery pagination, persistent tagged-photo visibility across pages,
+  one-before/one-after controls and retryable failures. Untagging/deleting treatment
+  documentation preserves original customer photos. Shared contracts retain photo
+  metadata; all treatment response paths serialize photo timestamps.
+- API now rejects other-customer photos and scopes untagging to the URL treatment;
+  concurrent duplicate types return 409. Existing tenant/module/write boundaries
+  and upload-consent rules are preserved; no migration or balance mutation.
+- Verification: web 506/506, shared 143/143, expanded isolated PostgreSQL linkage/photo
+  HTTP acceptance 1/1 (none skipped), full build, root lint, format/diff checks.
+  Standing user-granted manual acceptance applies; no agent browser walkthrough,
+  application database change, commit or deployment.
+- October 22 consent audit: COMPLETE as an audit only; consent implementation is
+  NOT complete. Existing models/routes/hooks are foundations, not a usable verified
+  customer-profile workflow. Fresh findings and verification are in PROGRESS.md.
+  Earlier consent-review acceptance does not complete these implementation gaps.
+- Confirmed gaps: no UI callers for consent hooks; active-form route validates `id`
+  instead of `treatmentType`; detail schema strips consent events and event schema
+  strips included form text/version; event creation does not match customer/type to
+  treatment or reject inactive forms; treatment deletion cascades consent evidence.
+  Form publication is nontransactional and races on version allocation; event
+  duplicate races lack conflict mapping. Form query keys omit filters. Client actor
+  is unnecessarily required (JWT actor is used); supplied signatures are discarded.
+- October 22 consent integrity/contracts: DONE for this slice. Fixed active-form
+  params/list-filter validation, customer/type/active-form checks, atomic serialized
+  version publication and stable duplicate conflicts. JWT witness/URL treatment are
+  authoritative; actor no longer required in input; unsupported signature data is
+  refused. Detail/history retain original form text/version and serialized times;
+  missing/foreign parent history returns 404. Filter-specific form cache keys added.
+  Tenant-scoped PostgreSQL row locks cover publication/event races; no migration.
+- Verification: isolated consent HTTP/database acceptance 1/1, existing session/photo
+  acceptance 1/1 (none skipped), shared 146/146, web 507/507, full production build,
+  API typecheck and root lint pass. Only approved disposable loopback 55440 used;
+  fixtures cleaned. Full API suite/browser not run; manual acceptance is standing
+  user-granted. No application database changes, deployment or commit.
+- Next: wire form versioning, preview, grant/decline and original-form evidence
+  history into the entitled customer profile with read-only/error handling. Resolve
+  retention, role permissions and repeat/withdrawal behavior explicitly before
+  changing policy. Deletion cascades, signature capture, history pagination and
+  treatment-status consent requirements remain unresolved; audit findings above
+  are historical where superseded by this implementation.
+  Both TK2610-0025 and TK2610-0027 remain IN PROGRESS and are not ready for external
+  closure; family, transfer and audit gaps remain independent under TK2610-0027.
 
 ### TK2610-0027 — P2-03 Family/shared prepaid credit, package transfer, expiry rules
 
