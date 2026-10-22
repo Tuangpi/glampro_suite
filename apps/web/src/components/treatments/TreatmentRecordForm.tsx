@@ -19,6 +19,8 @@ import Select from "@/components/ui/Select";
 import { useCreateTreatment, useUpdateTreatment } from "@/hooks/useTreatments";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
 import { formatDateInputValue } from "@/lib/utils";
+import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
+import { instantFromSalonDate, toSalonDate } from "@/lib/salon-time";
 
 const STATUS_OPTIONS: { value: TreatmentStatusValue; label: string }[] = [
   { value: "SCHEDULED", label: "Scheduled" },
@@ -61,6 +63,7 @@ interface TreatmentRecordFormProps {
   open: boolean;
   record: CreateTreatmentRecordInput | null;
   recordId: string | null;
+  lockCustomer?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -69,11 +72,15 @@ export default function TreatmentRecordForm({
   open,
   record,
   recordId,
+  lockCustomer = false,
   onClose,
   onSaved,
 }: TreatmentRecordFormProps) {
   const isEditing = recordId !== null;
-  const [form, setForm] = useState<FormState>(() => (record ? toForm(record) : EMPTY_FORM));
+  const { timeZone } = useSalonFormatting();
+  const [form, setForm] = useState<FormState>(() =>
+    record ? toForm(record, timeZone) : EMPTY_FORM,
+  );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -101,8 +108,12 @@ export default function TreatmentRecordForm({
       treatmentType: form.treatmentType.trim(),
       status: (form.status as TreatmentStatusValue) || "SCHEDULED",
       notes: form.notes.trim() || null,
-      startedAt: form.startedAt || null,
-      endedAt: form.endedAt || null,
+      startedAt: form.startedAt
+        ? instantFromSalonDate(new Date(form.startedAt), timeZone).toISOString()
+        : null,
+      endedAt: form.endedAt
+        ? instantFromSalonDate(new Date(form.endedAt), timeZone).toISOString()
+        : null,
       appointmentId: form.appointmentId.trim() || undefined,
       staffId: form.staffId.trim() || undefined,
       serviceId: form.serviceId.trim() || undefined,
@@ -117,8 +128,12 @@ export default function TreatmentRecordForm({
             treatmentType: input.treatmentType,
             status: input.status,
             notes: input.notes,
-            startedAt: input.startedAt,
-            endedAt: input.endedAt,
+            ...(form.startedAt !== toDateTimeInput(record?.startedAt, timeZone)
+              ? { startedAt: input.startedAt }
+              : {}),
+            ...(form.endedAt !== toDateTimeInput(record?.endedAt, timeZone)
+              ? { endedAt: input.endedAt }
+              : {}),
             ...(input.packageRedemptionId !== (record?.packageRedemptionId ?? null)
               ? { packageRedemptionId: input.packageRedemptionId }
               : {}),
@@ -167,7 +182,7 @@ export default function TreatmentRecordForm({
             required
             value={form.customerId}
             onChange={set("customerId")}
-            disabled={isEditing}
+            disabled={isEditing || lockCustomer}
             error={fieldError("customerId")}
             hint="Existing customer ID. The customer cannot change after creation."
           />
@@ -212,6 +227,7 @@ export default function TreatmentRecordForm({
 
           <Input
             label="Staff reference"
+            disabled={isEditing}
             value={form.staffId}
             onChange={set("staffId")}
             error={fieldError("staffId")}
@@ -221,6 +237,7 @@ export default function TreatmentRecordForm({
 
           <Input
             label="Service reference"
+            disabled={isEditing}
             value={form.serviceId}
             onChange={set("serviceId")}
             error={fieldError("serviceId")}
@@ -230,6 +247,7 @@ export default function TreatmentRecordForm({
 
           <Input
             label="Appointment reference"
+            disabled={isEditing}
             value={form.appointmentId}
             onChange={set("appointmentId")}
             error={fieldError("appointmentId")}
@@ -269,7 +287,14 @@ export default function TreatmentRecordForm({
   );
 }
 
-function toForm(input: CreateTreatmentRecordInput): FormState {
+function toDateTimeInput(value: string | null | undefined, timeZone: string): string {
+  if (!value) return "";
+  const local = toSalonDate(value, timeZone);
+  if (!local) return "";
+  return `${formatDateInputValue(local)}T${String(local.getHours()).padStart(2, "0")}:${String(local.getMinutes()).padStart(2, "0")}`;
+}
+
+function toForm(input: CreateTreatmentRecordInput, timeZone: string): FormState {
   return {
     packageRedemptionId: input.packageRedemptionId ?? "",
     customerId: input.customerId,
@@ -280,8 +305,8 @@ function toForm(input: CreateTreatmentRecordInput): FormState {
     treatmentType: input.treatmentType,
     status: input.status,
     notes: input.notes ?? "",
-    startedAt: input.startedAt ? formatDateInputValue(new Date(input.startedAt)) : "",
-    endedAt: input.endedAt ? formatDateInputValue(new Date(input.endedAt)) : "",
+    startedAt: toDateTimeInput(input.startedAt, timeZone),
+    endedAt: toDateTimeInput(input.endedAt, timeZone),
     quantityConsumed: input.quantityConsumed?.toString() ?? "",
   };
 }

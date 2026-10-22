@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => ({
   getPaginated: vi.fn(),
   post: vi.fn(),
   readOnly: false,
+  modules: vi.fn(),
+}));
+vi.mock("@/hooks/useSettings", () => ({ useModules: mocks.modules }));
+vi.mock("@/pages/CustomerTreatmentList", () => ({
+  default: ({ customerId }: { customerId: string }) => <div>Treatments for {customerId}</div>,
 }));
 vi.mock("@/hooks/useCustomers", () => ({
   useCustomer: mocks.customer,
@@ -44,6 +49,7 @@ function renderProfile() {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.readOnly = false;
+  mocks.modules.mockReturnValue({ data: [], isPending: false });
   mocks.customer.mockReturnValue({
     data: {
       id: "c1",
@@ -80,6 +86,18 @@ beforeEach(() => {
   }));
 });
 describe("customer profile", () => {
+  it("mounts treatments only with the treatment entitlement", () => {
+    mocks.modules.mockReturnValue({
+      data: [{ code: "treatments", entitled: true }],
+      isPending: false,
+    });
+    renderProfile();
+    expect(screen.getByText("Treatments for c1")).toBeInTheDocument();
+  });
+  it("does not mount treatments for unentitled salons", () => {
+    renderProfile();
+    expect(screen.queryByText("Treatments for c1")).not.toBeInTheDocument();
+  });
   it("shows notes, visits, void labels and correctly scaled balances", async () => {
     renderProfile();
     expect(screen.getByText("Sensitive skin")).toBeInTheDocument();

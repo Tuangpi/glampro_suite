@@ -257,8 +257,8 @@ export const createTreatmentRecordSchema = z.object({
   treatmentType: z.string().trim().min(1, "Treatment type is required").max(100),
   status: treatmentStatusSchema.default("SCHEDULED"),
   notes: z.string().trim().max(2000).nullable().optional(),
-  startedAt: z.iso.date().nullable().optional(),
-  endedAt: z.iso.date().nullable().optional(),
+  startedAt: z.union([z.iso.date(), z.iso.datetime()]).nullable().optional(),
+  endedAt: z.union([z.iso.date(), z.iso.datetime()]).nullable().optional(),
   quantityConsumed: z.number().int().min(0).default(0),
 });
 
@@ -270,8 +270,8 @@ export const updateTreatmentRecordSchema = z.object({
   treatmentType: z.string().trim().min(1).max(100).optional(),
   status: treatmentStatusSchema.optional(),
   notes: z.string().trim().max(2000).nullable().optional(),
-  startedAt: z.iso.date().nullable().optional(),
-  endedAt: z.iso.date().nullable().optional(),
+  startedAt: z.union([z.iso.date(), z.iso.datetime()]).nullable().optional(),
+  endedAt: z.union([z.iso.date(), z.iso.datetime()]).nullable().optional(),
   quantityConsumed: z.number().int().min(0).optional(),
 });
 

@@ -2,11 +2,30 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — treatment-session integration (IN PROGRESS: application migration/browser acceptance pending)**. POS-owned linkage implemented and automatically verified. Most recently completed slice: **TK2610-0027 purchase-based package expiry**, accepted by user; parent TK2610-0027 remains IN PROGRESS.
+- Current task: **TK2610-0025 — treatment-session integration (IN PROGRESS: application migration/browser acceptance pending)**. POS-owned linkage and customer-profile create/edit/delete workflow automatically verified. Most recently completed accepted slice: **TK2610-0027 purchase-based package expiry**; parent TK2610-0027 remains IN PROGRESS.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
-- Next: authorized treatment-link application migration/browser acceptance, then remaining treatment UI/access review. Family sharing/transfer/audit remain separate gaps. No production access or paid mail authorized.
+- Next: authorized treatment-link application migration/browser acceptance; redemption picker, photo-tagging integration and privacy/access review remain. Family sharing/transfer/audit are separate gaps. No production access or paid mail authorized.
+
+## October 22, 2026 — Customer-profile treatment workflow wired
+
+- Mounted treatment history only after successful treatment-module entitlement lookup.
+  Added create/edit drawers, confirmed selected-record deletion with failure/retry,
+  server pagination, salon-local display and read-only write controls. Profile
+  creation locks the selected customer. Unsupported edit reference fields are disabled.
+  Removed the inert photo-tagging button; integration remains unfinished.
+- Fixed date/time contract mismatch: accept UTC instants alongside legacy dates;
+  form converts salon-local input to UTC and omits unchanged times from patches
+  to preserve seconds and historical values. No balance service changes.
+- Passed: focused web tests 17/17, full web 495/495, shared 141/141, full build
+  (including API/web compilation) and API typecheck. Initial build exposed nullable
+  API references incompatible with create input; explicit normalization fixed it.
+  Scoped lint/format and final diff checks recorded with verification logs under
+  `/tmp/glampro-treatment-ui-*`.
+- No application database migration, live browser acceptance, commits or deployment.
+  Parent task remains IN PROGRESS; redemption picker, photo-tagging wiring and broader
+  clinical privacy/consent review remain, in addition to linkage rollout acceptance.
 
 ## October 22, 2026 — POS-owned treatment session linkage implemented
 
@@ -160,7 +179,6 @@ automated acceptance completed below. Earlier evidence is retained historically.
   audit/disable of test accounts remains an explicit operator action, consistent
   with the earlier recorded decision to retain them. Coordinate web/API rollout;
   owners need accessible email and SMTP before enabling this release.
-
 
 ## October 20, 2026 — TK2610-0020 UAT acceptance and local migration status
 

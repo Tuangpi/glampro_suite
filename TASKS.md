@@ -319,14 +319,14 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - UAT-accepted scope: voucher/refund and loyalty/refund-accounting policy slice
   per ADR-0020. Confirmed complete October 21, 2026 milestone sign-off.
 - Remaining scope (addressed in follow-up work starting this session):
-  * Hold retry idempotency / current-catalogue resume pricing
-  * Backend reversal/receipt retention integrity
-  * Barcode scanning UAT (save/clear/duplicate/leading-zero/stock/unknown/inactive)
-  * Physical scanner Enter behavior
-  * Direct-to-staff tip recording / history / manager return
-  * Unchanged sale totals verification
-  * Tips policy approval and implementation
-  * Historical browsing (no longer unimplemented)
+  - Hold retry idempotency / current-catalogue resume pricing
+  - Backend reversal/receipt retention integrity
+  - Barcode scanning UAT (save/clear/duplicate/leading-zero/stock/unknown/inactive)
+  - Physical scanner Enter behavior
+  - Direct-to-staff tip recording / history / manager return
+  - Unchanged sale totals verification
+  - Tips policy approval and implementation
+  - Historical browsing (no longer unimplemented)
 - Priority: barcode & tips first (blocking other POS work), then hold integrity,
   reversal/retention, and pricing. Do not start TK2610-0018 until core scope is
   resolved.
@@ -563,8 +563,6 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Completion check / dependencies: Public booking endpoints and page implemented (config, availability, create booking) with tenant resolution, PDPA consent, deposit/no-show fields, settings UI. Manual payments accepted; no payment provider integration. API/web tests and typecheck/lint pass.
 - Next: None for this task; operational verification and product decisions recorded as assumptions.
 
-
-
 ### TK2610-0023 — MILESTONE – Final launch readiness review (22 Oct)
 
 - Status: DONE
@@ -614,7 +612,8 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Expected result: Aesthetics/spa: consent forms, before/after photos, treatment records, session tracking, package expiry
 - Completion check / dependencies: Verify consent forms, before/after photos, treatment records, session tracking and package expiry with privacy/access controls.
 - Done: Prisma schema models (TreatmentRecord, TreatmentPhoto, TreatmentConsentForm, TreatmentConsentEvent, TreatmentStatus, TreatmentPhotoType); opposite relations on User/Customer/CustomerPackageHolding; TENANT_SCOPED_MODELS updated; shared Zod schemas; API service + routes; router mounted; module added to MODULE_CODES/MODULE_NAMES/CORE_MODULE_CODES + seed categories. Prisma migration `20261021120000_treatment_records_and_consent` created and applied; Prisma client regenerated. Build passes; all existing tests pass (474 API + 130 shared).
-- Remaining: web UI for treatment records and before/after photo tagging — [DONE] Created TreatmentRecordForm, TreatmentPhotoTagger, and CustomerTreatmentList components; treatments index/export file; all toast contexts standardized.
+- October 22 UI follow-up: mounted treatment list in customer profile behind treatment entitlement. Wired create/edit/delete with confirmation, error retry, read-only controls and server pagination. Profile customer locked; immutable reference fields disabled in edit. Corrected date/time input to salon-local/UTC conversion, retained legacy date contract and preserved unchanged historical instants. Web 495/495, shared 141/141, full build and API typecheck passed. No application migration or browser acceptance performed.
+- Remaining: usable POS redemption selector, before/after photo-tagging integration, clinical privacy/access/consent review, and treatment-link application migration/browser acceptance. Standalone TreatmentPhotoTagger exists but is not integrated; removed inert list action rather than claiming it works. Earlier component-only completion claims are not end-to-end evidence. Parent task remains IN PROGRESS.
 
 ### TK2610-0027 — P2-03 Family/shared prepaid credit, package transfer, expiry rules
 
@@ -624,7 +623,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Verification: disposable PostgreSQL migration and endpoint acceptance 1/1; sale/package/customer service regression 80/80; shared 139/139; web 483/483; full build, API/web typechecks, scoped lint/format and diff check passed. Older package/report route suites have 11 authentication-helper failures after mandatory owner 2FA; not fixed or bypassed. Migration not applied to application/production database; browser acceptance remains pending.
 - Completion check for expiry slice: verify purchase-time expiry snapshots, exact expiry-boundary refusal, null/no-expiry compatibility, held-sale completion timing, and consistent customer holdings/liability filtering. Treatment session consumption remains a separate unresolved integration gap under TK2610-0025.
 - Expected result: Family/shared prepaid credit, package transfer, expiry rules with auditable balance changes and liability reporting
-- Completion check / dependencies: 
+- Completion check / dependencies:
   1. ✅ Audit current implementation against full expected result - Completed: existing prepaid credit from TK2610-0011 provides foundation (PREPAID_CREDIT tender, CustomerValuePackageHolding model with amountRemaining/expiresAt, redeemCredit(), assertHoldingLive(), liability reporting). Gaps identified: family/shared credit sharing logic, package transfer between customers/tenants, audit tracking for balance changes (who/when), enhanced expiry rules for shared credit.
   2. ✅ Add family/shared prepaid credit sharing logic - Completed: Added `familyId String?` to `CustomerValuePackageHolding` model; updated `redeemCredit()` to handle family shared credit pool — when `familyId` is set, redemptions draw from aggregate family balance, redistribute proportionally across all family members, and trigger family-wide expiry when balance reaches zero. Individual holdings (no `familyId`) behave exactly as before for backward compatibility.
   3. ✅ Implement package transfer between customers/tenants - Completed: Created transferPackageCredit service method that moves holdings between customers or across tenants, preserving family association and audit fields
@@ -642,6 +641,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Next: TK2610-0029 — P2-04 AI assistant: owner summary, rebooking nudges, slow-day promos
 
 ### TK2610-0029 — P2-04 AI assistant: owner summary, rebooking nudges, slow-day promos
+
 - ✅ Status: DONE — owner summary, rebooking nudges (with consent checks), and slow-day promos implemented
 - Expected result: AI assistant: daily owner summary, rebooking nudges, slow-day promos
 - Expected result: AI assistant: daily owner summary, rebooking nudges and slow-day promos against tenant data, access and consent; require approval for outbound actions

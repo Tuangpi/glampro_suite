@@ -11,6 +11,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useCustomer, useCustomerHoldings } from "@/hooks/useCustomers";
 import api, { del, getErrorMessage, getPaginated, post } from "@/lib/api";
+import { useModules } from "@/hooks/useSettings";
+import CustomerTreatmentList from "@/pages/CustomerTreatmentList";
 
 export default function CustomerProfile() {
   const { id } = useParams();
@@ -117,6 +119,7 @@ function Profile({ id }: { id: string }) {
       </section>
       <History id={id} kind="visits" />
       <History id={id} kind="purchases" />
+      <Treatments id={id} />
       <Photos id={id} readOnly={isReadOnly} />
       {editing ? (
         <CustomerFormDrawer
@@ -128,6 +131,21 @@ function Profile({ id }: { id: string }) {
       ) : null}
     </div>
   );
+}
+
+function Treatments({ id }: { id: string }) {
+  const modules = useModules();
+  if (modules.isPending) return <p role="status">Loading treatment access…</p>;
+  if (modules.isError)
+    return (
+      <div role="alert">
+        Treatment access could not be loaded.
+        <Button onClick={() => void modules.refetch()}>Retry treatment access</Button>
+      </div>
+    );
+  return modules.data?.some((module) => module.code === "treatments" && module.entitled) ? (
+    <CustomerTreatmentList key={id} customerId={id} />
+  ) : null;
 }
 
 function History({ id, kind }: { id: string; kind: "visits" | "purchases" }) {

@@ -81,3 +81,40 @@ it("explicitly clears linkage without asking POS to restore sessions", async () 
     ),
   );
 });
+
+it("shows salon-local date/time and leaves unchanged instants out of clinical patches", async () => {
+  const user = userEvent.setup();
+  render(
+    <TreatmentRecordForm
+      open
+      record={{ ...record, startedAt: "2026-10-22T01:30:45.000Z" }}
+      recordId="treatment-1"
+      onClose={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  expect(screen.getByLabelText("Started at")).toHaveValue("2026-10-22T09:30");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(update).toHaveBeenCalled());
+  expect(update.mock.calls[0]![0].input).not.toHaveProperty("startedAt");
+});
+
+it("converts salon-local treatment times into UTC instants", async () => {
+  const user = userEvent.setup();
+  render(
+    <TreatmentRecordForm
+      open
+      record={record}
+      recordId={null}
+      onClose={vi.fn()}
+      onSaved={vi.fn()}
+    />,
+  );
+  await user.type(screen.getByLabelText("Started at"), "2026-10-22T09:30");
+  await user.click(screen.getByRole("button", { name: "Create record" }));
+  await waitFor(() =>
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ startedAt: "2026-10-22T01:30:00.000Z" }),
+    ),
+  );
+});
