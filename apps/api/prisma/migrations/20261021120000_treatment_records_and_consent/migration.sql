@@ -111,7 +111,7 @@ CREATE INDEX "treatment_consent_forms_tenantId_idx" ON "treatment_consent_forms"
 CREATE INDEX "treatment_consent_forms_tenantId_treatmentType_isActive_idx" ON "treatment_consent_forms"("tenantId", "treatmentType", "isActive");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "treatment_consent_events_treatmentRecordId_treatmentConsentFormId_key" ON "treatment_consent_events"("treatmentRecordId", "treatmentConsentFormId");
+CREATE UNIQUE INDEX "treatment_consent_events_treatmentRecordId_treatmentConsent_key" ON "treatment_consent_events"("treatmentRecordId", "treatmentConsentFormId");
 
 -- CreateIndex
 CREATE INDEX "treatment_consent_events_tenantId_idx" ON "treatment_consent_events"("tenantId");
