@@ -41,6 +41,7 @@ const PACKAGE_SELECT = {
   name: true,
   status: true,
   sessionCount: true,
+  validityDays: true,
   memberPrice: true,
   nonmemberPrice: true,
   description: true,
@@ -77,6 +78,7 @@ function toPackage(row: PackageRow): PackageSummary {
     name: row.name,
     status: row.status,
     sessionCount: row.sessionCount,
+    validityDays: row.validityDays,
     memberPrice: money(row.memberPrice),
     nonmemberPrice: money(row.nonmemberPrice),
     description: row.description,
@@ -143,6 +145,18 @@ export async function getPackage(id: string): Promise<PackageDetail> {
   if (!row) throw notFound("That package does not exist.", "PACKAGE_NOT_FOUND");
 
   return toPackageDetail(row);
+}
+
+/** Prepaid credit has no general catalogue editor; configure future grants only. */
+export async function updatePrepaidValidity(id: string, validityDays: number | null) {
+  const updated = await prisma.valuePackage.updateMany({
+    where: { id },
+    data: { validityDays },
+  });
+  if (updated.count === 0) {
+    throw notFound("That prepaid package does not exist.", "VALUE_PACKAGE_NOT_FOUND");
+  }
+  return { id, validityDays };
 }
 
 export async function createPackage(input: CreatePackageInput): Promise<PackageDetail> {

@@ -2205,6 +2205,108 @@ describe(
       );
     });
 
+    it("snapshots package and prepaid expiry at completion, leaving prior holdings unchanged", async () => {
+      await grant(TENANT_A, "packages");
+      await runAsTenant(TENANT_A, async () => {
+        const bundle = await prisma.package.create({
+          data: {
+            tenantId: TENANT_A,
+            name: "Expiry fixture",
+            sessionCount: 2,
+            memberPrice: 10,
+            nonmemberPrice: 10,
+            validityDays: 30,
+          },
+        });
+        const prepaid = await prisma.valuePackage.create({
+          data: {
+            tenantId: TENANT_A,
+            name: "Expiry credit fixture",
+            price: 10,
+            credit: 12,
+            validityDays: 60,
+          },
+        });
+        const customerId = await customerIdOf(TENANT_A, false);
+        const prior = await prisma.customerPackageHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId,
+            packageId: bundle.id,
+            quantity: 2,
+            quantityRemaining: 2,
+          },
+        });
+        const lines = [
+          { itemType: "PACKAGE" as const, itemId: bundle.id, quantity: 1 },
+          { itemType: "VALUE_PACKAGE" as const, itemId: prepaid.id, quantity: 1 },
+        ];
+        const held = await createSale({ customerId, lines, payments: [], hold: true });
+        assert.equal(
+          await prisma.customerPackageHolding.count({ where: { saleLine: { saleId: held.id } } }),
+          0,
+        );
+        // Simulate an old parked cart. Expiry must start on completion, not hold time.
+        await prisma.sale.update({
+          where: { id: held.id },
+          data: { soldAt: new Date("2020-01-01Z") },
+        });
+        const completed = await completeSale(held.id, {
+          customerId,
+          lines,
+          payments: [{ method: "CASH", amount: 20 }],
+        });
+        const sessions = await prisma.customerPackageHolding.findFirstOrThrow({
+          where: { saleLine: { saleId: held.id } },
+        });
+        const credit = await prisma.customerValuePackageHolding.findFirstOrThrow({
+          where: { saleLine: { saleId: held.id } },
+        });
+        assert.equal(sessions.expiresAt?.getTime(), +new Date(completed.soldAt) + 30 * 86_400_000);
+        assert.equal(credit.expiresAt?.getTime(), +new Date(completed.soldAt) + 60 * 86_400_000);
+        await prisma.package.update({ where: { id: bundle.id }, data: { validityDays: null } });
+        await prisma.valuePackage.update({ where: { id: prepaid.id }, data: { validityDays: 1 } });
+        assert.equal(
+          (await prisma.customerPackageHolding.findFirstOrThrow({ where: { id: prior.id } }))
+            .expiresAt,
+          null,
+        );
+        assert.equal(
+          (
+            await prisma.customerPackageHolding.findFirstOrThrow({ where: { id: sessions.id } })
+          ).expiresAt?.getTime(),
+          sessions.expiresAt?.getTime(),
+        );
+        assert.equal(
+          (
+            await prisma.customerValuePackageHolding.findFirstOrThrow({ where: { id: credit.id } })
+          ).expiresAt?.getTime(),
+          credit.expiresAt?.getTime(),
+        );
+        const direct = await createSale({
+          customerId,
+          lines,
+          payments: [{ method: "CASH", amount: 20 }],
+        });
+        assert.equal(
+          (
+            await prisma.customerPackageHolding.findFirstOrThrow({
+              where: { saleLine: { saleId: direct.id } },
+            })
+          ).expiresAt,
+          null,
+        );
+        assert.equal(
+          (
+            await prisma.customerValuePackageHolding.findFirstOrThrow({
+              where: { saleLine: { saleId: direct.id } },
+            })
+          ).expiresAt?.getTime(),
+          +new Date(direct.soldAt) + 86_400_000,
+        );
+      });
+    });
+
     it("refuses a redemption on a walk-in cart, which has nobody to spend for", async () => {
       await grant(TENANT_A, "packages");
       const bundle = await packageIdOf(TENANT_A, nameOf(TENANT_A, "Aloha Bundle"));

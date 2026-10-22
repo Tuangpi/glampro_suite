@@ -62,6 +62,17 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- Package expiry (October 22, 2026, user approved): optional validity days on session
+  and prepaid package catalogue entries, measured as exact 24-hour periods from
+  completed purchase (`soldAt`). Null means no expiry. Held carts start validity
+  only on completion using the current catalogue rule. Each new holding snapshots
+  its expiry; catalogue edits do not change existing holdings. No historical
+  backfill, family-wide expiry propagation, balance write-off or extension workflow.
+  Validity supports 1–36500 whole days. Prepaid configuration is manager/owner-only
+  via `PATCH /api/packages/prepaid/:id/validity`; session configuration uses the
+  existing package editor/API. Migration `20261022120000_package_validity_days`
+  verified only on a disposable local database; application rollout remains pending.
+
 - Authentication follow-up (SEC-01, October 22, 2026): SUPER_ADMIN is the owner/admin
   role. Password-verified owner login always requires an email code; successful
   verification enrolls the account. Unenrolled legacy owner sessions are refused.

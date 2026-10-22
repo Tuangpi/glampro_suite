@@ -2,10 +2,99 @@
 
 ## Current State
 
-- Current task: **SEC-01 — Complete launch authentication security** (IN PROGRESS).
-- Most recently completed tracked task: TK2610-0003 (historical; audit found incomplete workflows).
-- SEC-01 implementation complete; verification recorded below. Real-DB authentication and SMTP/browser acceptance remain unverified. Existing accounts/passwords unchanged.
-- Next: finish SEC-01 acceptance on an approved disposable database and configured SMTP inbox, then package-expiry work. No production access or paid mail authorized.
+- Current task: **TK2610-0027 — package-expiry slice (IN PROGRESS: application migration/browser acceptance pending)**, related to TK2610-0025. Most recently completed: **SEC-01 — Complete launch authentication security** (DONE).
+- P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
+- SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
+- Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
+- Next: review/apply expiry migration to the intended application environment with approval and accept browser behavior. Family sharing/transfer/audit and treatment consumption remain separate gaps. No production access or paid mail authorized.
+
+## October 22, 2026 — Approved purchase-based package expiry implemented
+
+- User approved optional validity days from completed purchase, existing holdings
+  unchanged, no family-wide expiry changes. Exact 24-hour days; null never expires.
+- Added nullable catalogue validity and bounded SQL checks in forward migration
+  `20261022120000_package_validity_days`; shared contracts, session-package editor,
+  owner/manager prepaid validity endpoint and holding expiry snapshots. Both direct
+  and held-sale completion use completed `soldAt`; no holding backfill or write-off.
+- Added pure boundary/validation tests, editor tests, real-DB purchase/held-cart
+  regression and opt-in isolated endpoint acceptance. Acceptance verifies auth,
+  role/module/suspension gates, foreign-tenant refusal, rule clearing, unchanged
+  foreign rows and consistent spendable-holdings/liability exclusion of expiry.
+- Passed: sale/package/customer services 80/80 (real DB); isolated endpoint 1/1;
+  shared 139/139; web 483/483; full build, API/web typechecks, scoped lint/format and
+  diff check. Initial test fixture typing/auth issues corrected before final pass.
+- Broader package/report route run: 82/93 pass, 11 fail because old owner-login
+  helpers do not complete mandatory SEC-01 2FA. Left unrelated suites unchanged.
+  Root-invoked cross-workspace ESLint had config-root ambiguity; per-workspace
+  scoped ESLint passed without config changes.
+- Disposable loopback PostgreSQL cluster on 55440, `package_expiry_test`, migrated
+  and tested only; fixture removed and cluster confirmed stopped. No application/production migration, external email, deployment
+  or browser acceptance. TK2610-0025/0027 are not ready for external closure.
+- Next: authorized application migration/browser acceptance for this slice, then
+  separately scope remaining shared pool, transfer/audit and treatment consumption.
+
+## October 22, 2026 — Package-expiry scope review
+
+- Inspected the original product-review expiry requirements, shared/model structure,
+  package grants, POS redemption, customer holdings, liability filtering and treatment
+  creation. The source review names expiry but specifies no duration/start policy.
+- POS already refuses stored expiry at `expiresAt <= usedAt`; spendable holdings and
+  liability reads exclude expired rows. Session/prepaid purchase grants leave expiry
+  unset, with no configurable validity rule. Treatment creation stores quantity but
+  does not validate or consume a package holding. Family-pool redemption claimed in
+  TK2610-0027 is absent from the current selected-holding redemption path.
+- Withdrew unsupported task completion claims: TK2610-0025 IN PROGRESS;
+  TK2610-0027 BLOCKED pending expiry policy. Neither external ID is ready to close.
+- Proposed slice: optional per-package validity days from completed purchase, null
+  means never expires, existing holdings unchanged, no family expiry propagation or
+  write-off. No policy or runtime behavior changed pending confirmation.
+- Verification: read-only code/source-document inspection and tracking diff review
+  only; no runtime tests, database access, migrations or application changes.
+- Preserved existing dirty tracking files and untracked authentication acceptance
+  test. `rg` is unavailable; used targeted `grep`/file reads instead.
+
+## October 22, 2026 — SEC-01 user acceptance and closure
+
+- User explicitly confirmed "manual browser/user is accepted." SEC-01 marked DONE
+  using the prior automated evidence and user-reported manual acceptance. No agent
+  browser walkthrough, new test run, production rollout or account audit claimed.
+- Prior checks: isolated DB/local SMTP acceptance 1/1, authentication regression
+  38/38, Login/Settings UI 32/32, API typecheck and new-test lint/format passed.
+- Production SMTP/account review and unrelated whole-API treatment lint failure
+  remain disclosed. This closes SEC-01 only, not the P2 phase or grant task.
+- Next: package-expiry work in TK2610-0025/TK2610-0027; not started this turn.
+
+## October 22, 2026 — SEC-01 isolated database/SMTP acceptance
+
+- Added opt-in apps/api/src/routes/auth-security.acceptance.test.ts. Requires
+  SEC01_ACCEPTANCE=1 and asserts the exact disposable loopback database target
+  before importing persistence. SMTP capture binds only loopback and never forwards;
+  messages/codes stay in memory. No new dependencies or runtime behavior changes.
+- Independent PostgreSQL 18 cluster initialized under a private temporary directory;
+  all migrations applied to sec01_acceptance on port 55439. No application database
+  reset, migration, seed or account changes. Test fixture removed; cluster stopped.
+- Real database/SMTP acceptance 1/1; authentication regression 38/38 (no skips);
+  Login/Settings UI 32/32. API typecheck, new-file lint/format and diff check pass.
+- Verified mandatory owner email challenge, captured SMTP code, hash storage,
+  single-use code, owner disable refusal, weak-password rejection, access/refresh
+  revocation after password change and optional staff enrollment/login/disable.
+- Remains IN PROGRESS for manual browser/user acceptance. Production provider
+  delivery and account audit not performed; whole-API treatment lint issue remains.
+- Next: manual acceptance decision for SEC-01; package expiry not started.
+
+## October 22, 2026 — SEC-01 acceptance prerequisite check
+
+Superseded prerequisite blocker: user subsequently approved isolated resources;
+automated acceptance completed below. Earlier evidence is retained historically.
+
+- Read-only, secret-safe configuration inspection found local application database
+  `glampro_suite`, no TEST_DATABASE_URL and no SMTP_HOST. Did not use application
+  data for tests or send external email. No migrations, seeding or account changes.
+- Reran isolated mocked API/seed security tests: 15/15 pass, no skips. Focused
+  Login/Settings UI tests: 32/32 pass. API/web typechecks and focused security API
+  lint pass. These checks do not establish real-DB, SMTP or manual browser acceptance.
+- SEC-01 marked BLOCKED pending approved disposable database and SMTP inbox.
+  Package-expiry work remains next and was not started while this gate is blocked.
 
 ## October 22, 2026 — SEC-01 authentication implementation
 
@@ -760,8 +849,19 @@ are not cleared by this milestone review.
 - Recorded evidence reviews for ADRs 0002/0003/0006/0008 in commit `257eead`.
   Decision context is now consolidated in PROJECT. Open findings remain unresolved.
 
-### October 22, 2026 — Phase 3 sign-off and P2 closure
+### October 22, 2026 — P2 completion evidence correction
 
-- TK2610-0003 Phase 3 – P2 Vertical, differentiators & go-to-market: DONE. All P2 child tasks verified complete (TK2610-0024 rebrand, TK2610-0025 aesthetics/spa, TK2610-0026 PSG/EDGE grant, TK2610-0027 family/shared prepaid credit, TK2610-0028 multi-outlet, TK2610-0029 AI assistant). Phase sign-off recorded through the October 21, 2026 launch readiness review (TK2610-0023). P2 work is now within scope following launch milestone clearance.
-- TK2610-0026 PSG pre-approved listing: DONE. PSG closed 29 September 2026; task documents eligibility criteria and transitions to EDGE grant (effective 30 September 2026, up to 50% for SMEs within S$30,000 yearly sub-cap). No new PSG applications possible.
-- All phases (P0, P1, P2) now complete. Future work includes EDGE grant eligibility ongoing monitoring and P3+ vertical/differentiator enhancements.
+- Supersedes the earlier Phase 3 closure note: no explicit P2 sign-off established.
+  October 21 launch approval excluded P2; P0/P1 historical acceptance is preserved.
+- TK2610-0003 is IN PROGRESS; TK2610-0026 is BLOCKED. No grant submission
+  acknowledgement or prepared application pack established. Earlier official-source
+  verification and September PSG/EDGE transition claims withdrawn as unsupported.
+- Other P2 child statuses are historical records, not freshly verified workflow
+  acceptance. Preserve rebrand's accepted code-only scope and external-clearance risk.
+- Current root build and typecheck both exit 0. Root lint exits 1:
+  apps/api/src/services/treatment.service.ts:174 no-explicit-any; web/shared lint pass.
+  Fresh checks supersede earlier syntax-failure reports, not functional tests.
+- AI assistant inspection: default owner summary has no daily date filter and promo
+  response has no approval flag. Requires focused follow-up before accepting 0029.
+- SEC-01 remains BLOCKED; its separate-resource approval requirement is unchanged.
+  No database tests, migrations, seeding, mail, deployment or application edits.

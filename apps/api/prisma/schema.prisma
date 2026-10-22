@@ -728,6 +728,8 @@ model Package {
   status         CatalogStatus @default(ACTIVE)
   /// Sessions included. Legacy `no_of_time`.
   sessionCount   Int           @default(0)
+  /// Optional 24-hour periods from completed purchase; null never expires.
+  validityDays   Int?
   memberPrice    Decimal       @db.Decimal(12, 2)
   nonmemberPrice Decimal       @db.Decimal(12, 2)
   description    String?
@@ -770,6 +772,8 @@ model ValuePackage {
   status      CatalogStatus @default(ACTIVE)
   price       Decimal       @db.Decimal(12, 2)
   credit      Decimal       @db.Decimal(12, 2)
+  /// Optional 24-hour periods from completed purchase; null never expires.
+  validityDays Int?
   description String?
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt

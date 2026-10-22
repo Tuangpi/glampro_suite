@@ -214,6 +214,12 @@ export type UpdateServiceInput = z.infer<typeof updateServiceSchema>;
  */
 const sessionCountSchema = z.coerce.number().int().min(0).max(10_000);
 
+/** Whole 24-hour periods from completed purchase. Null means no expiry. */
+export const packageValidityDaysSchema = z.number().int().min(1).max(36_500).nullable();
+
+export const updatePrepaidValiditySchema = z.object({ validityDays: packageValidityDaysSchema });
+export type UpdatePrepaidValidityInput = z.infer<typeof updatePrepaidValiditySchema>;
+
 /** A bundle of sessions. Legacy `packages`. */
 export const packageSummarySchema = z.object({
   id: z.string(),
@@ -221,6 +227,7 @@ export const packageSummarySchema = z.object({
   status: catalogStatusSchema,
   /** Sessions the bundle contains. Legacy `no_of_time`. */
   sessionCount: z.number().int(),
+  validityDays: packageValidityDaysSchema.optional(),
   memberPrice: z.string(),
   nonmemberPrice: z.string(),
   description: z.string().nullable(),
@@ -243,6 +250,7 @@ export const packageDetailSchema = packageSummarySchema.extend({
 export type PackageDetail = z.infer<typeof packageDetailSchema>;
 
 export const createPackageSchema = z.object({
+  validityDays: packageValidityDaysSchema.optional(),
   familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200),
   sessionCount: sessionCountSchema.min(1, "A package has to include at least one session"),
@@ -266,6 +274,7 @@ export type CreatePackageInput = z.infer<typeof createPackageSchema>;
  * "covers nothing", because `[]` is a value an absent key is not.
  */
 export const updatePackageSchema = z.object({
+  validityDays: packageValidityDaysSchema.optional(),
   familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200).optional(),
   sessionCount: sessionCountSchema.optional(),

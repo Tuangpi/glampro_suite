@@ -44,6 +44,7 @@ const STATUS_OPTIONS = [
 ];
 
 interface FormState {
+  validityDays: string;
   name: string;
   sessionCount: string;
   memberPrice: string;
@@ -53,6 +54,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
+  validityDays: "",
   name: "",
   sessionCount: "",
   memberPrice: "",
@@ -63,6 +65,7 @@ const EMPTY_FORM: FormState = {
 
 function toForm(bundle: PackageDetail): FormState {
   return {
+    validityDays: bundle.validityDays == null ? "" : String(bundle.validityDays),
     name: bundle.name,
     // A zero-session bundle is a migrated row, and `0` is what it should read — not
     // an empty box, which would claim the number is unknown.
@@ -140,6 +143,13 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
 
     // The contract's own rules, caught here so nobody waits for a round trip.
     const localErrors: Record<string, string> = {};
+    const validityDays = form.validityDays.trim() === "" ? null : Number(form.validityDays);
+    if (
+      validityDays !== null &&
+      (!Number.isInteger(validityDays) || validityDays < 1 || validityDays > 36_500)
+    ) {
+      localErrors["validityDays"] = "Enter 1–36500 whole days, or leave blank for no expiry";
+    }
     if (name === "") localErrors["name"] = "Name is required";
 
     if (form.sessionCount.trim() === "" || !Number.isInteger(sessionCount) || sessionCount < 0) {
@@ -159,6 +169,7 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
     }
 
     const shared = {
+      validityDays,
       name,
       sessionCount,
       memberPrice: Number(form.memberPrice),
@@ -275,6 +286,18 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
             options={STATUS_OPTIONS}
           />
         </div>
+
+        <Input
+          label="Validity (days)"
+          type="number"
+          min="1"
+          max="36500"
+          step="1"
+          value={form.validityDays}
+          onChange={(event) => set("validityDays")(event.target.value)}
+          error={fieldError("validityDays")}
+          hint="24-hour days from completed purchase. Blank means no expiry. Existing holdings are unchanged."
+        />
 
         <Input
           label="Description"

@@ -57,6 +57,7 @@ import {
 } from "@glampro_suite/shared";
 
 import { moduleEntitlements } from "../lib/entitlements.js";
+import { assertHoldingLive, packageExpiry } from "../lib/package-expiry.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
@@ -496,6 +497,7 @@ async function assertStaffExist(input: {
  * and the customer, which is the whole point of the asymmetry the contract documents.
  */
 interface ResolvedLine {
+  validityDays?: number | null;
   itemType: SaleItemKind;
   itemId: string;
   itemName: string;
@@ -621,6 +623,7 @@ async function loadKind(
           memberPrice: true,
           nonmemberPrice: true,
           sessionCount: true,
+          validityDays: true,
         },
       })) {
         if (row.status !== "ACTIVE") notSellable(indexOf(row.id), row.name, "it is archived");
@@ -631,6 +634,7 @@ async function loadKind(
           unitPrice: priceLine(kind, row.memberPrice, row.nonmemberPrice, isMember),
           // One unit grants its sessions, which is what a holding counts in.
           grant: row.sessionCount,
+          validityDays: row.validityDays,
           expiresAt: null,
           points: 0,
           stock: null,
@@ -642,7 +646,14 @@ async function loadKind(
     case "VALUE_PACKAGE": {
       for (const row of await prisma.valuePackage.findMany({
         where: { id: { in: ids } },
-        select: { id: true, name: true, status: true, price: true, credit: true },
+        select: {
+          id: true,
+          name: true,
+          status: true,
+          price: true,
+          credit: true,
+          validityDays: true,
+        },
       })) {
         if (row.status !== "ACTIVE") notSellable(indexOf(row.id), row.name, "it is archived");
         rows.set(row.id, {
@@ -653,6 +664,7 @@ async function loadKind(
           // The credit granted, deliberately **not** the price paid: a salon can sell
           // credit at a discount, and a holding that recorded the price would be wrong.
           grant: row.credit,
+          validityDays: row.validityDays,
           expiresAt: null,
           points: 0,
           stock: null,
@@ -1291,6 +1303,7 @@ async function writeSale(
       priced,
       totals.paymentStatus,
       totals.outstandingAmount,
+      soldAt,
     );
 
     return sale.id;
@@ -1439,16 +1452,6 @@ async function redeemPayments(
     } else {
       await redeemCredit(tx, tenantId, saleId, customerId, tender, holdingId, usedAt);
     }
-  }
-}
-
-/** Refuses a holding whose expiry has passed. Null never expires. */
-function assertHoldingLive(expiresAt: Date | null, name: string, at: Date): void {
-  if (expiresAt !== null && expiresAt.getTime() <= at.getTime()) {
-    throw conflict(
-      `${name} expired on ${expiresAt.toISOString().slice(0, 10)}, so it cannot pay for this sale.`,
-      "HOLDING_EXPIRED",
-    );
   }
 }
 
@@ -1671,10 +1674,7 @@ export async function transferPackageCredit(
   });
 
   if (!holding) {
-    throw notFound(
-      "That credit holding does not exist.",
-      "HOLDING_NOT_FOUND",
-    );
+    throw notFound("That credit holding does not exist.", "HOLDING_NOT_FOUND");
   }
 
   // Preserve family grouping if the holding is part of a shared pool
@@ -1693,10 +1693,7 @@ export async function transferPackageCredit(
   });
 
   if (result.count === 0) {
-    throw conflict(
-      "Failed to transfer credit holding: no row updated.",
-      "TRANSFER_FAILED",
-    );
+    throw conflict("Failed to transfer credit holding: no row updated.", "TRANSFER_FAILED");
   }
 
   // Return the updated holding for verification
@@ -1729,6 +1726,7 @@ async function fillLedgers(
   priced: PricedLine[],
   paymentStatus: "PAID" | "UNPAID",
   outstandingAmount: Prisma.Decimal,
+  soldAt: Date,
 ): Promise<void> {
   // Stock, per product line. `updateMany` with a `gte` guard rather than a bare
   // decrement, so a second till that read the same stock cannot take it below zero:
@@ -1748,7 +1746,7 @@ async function fillLedgers(
   }
 
   if (customerId !== null) {
-    await grantHoldings(tx, tenantId, saleId, customerId, priced);
+    await grantHoldings(tx, tenantId, saleId, customerId, priced, soldAt);
   }
 
   // A point row needs a customer; a walk-in earns nothing, which is why the contract
@@ -1827,6 +1825,7 @@ async function grantHoldings(
   saleId: string,
   customerId: string,
   priced: PricedLine[],
+  soldAt: Date,
 ): Promise<void> {
   const granting = priced.filter((line) => GRANTING_KINDS.has(line.item.itemType));
   if (granting.length === 0) return;
@@ -1857,6 +1856,7 @@ async function grantHoldings(
             saleLineId: lineId,
             quantity: sessions,
             quantityRemaining: sessions,
+            expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },
         });
         break;
@@ -1872,6 +1872,7 @@ async function grantHoldings(
             saleLineId: lineId,
             amount: credit,
             amountRemaining: credit,
+            expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },
         });
         break;
@@ -2376,6 +2377,7 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
       priced,
       totals.paymentStatus,
       totals.outstandingAmount,
+      soldAt,
     );
   });
 
