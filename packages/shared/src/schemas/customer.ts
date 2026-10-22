@@ -95,6 +95,7 @@ export const customerEmailSchema = z
   .pipe(z.email().max(255).nullable());
 
 export const createCustomerSchema = z.object({
+  familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200),
   code: z.string().trim().max(64).optional(),
   email: customerEmailSchema.optional(),
@@ -122,6 +123,7 @@ export type CreateCustomerInput = z.infer<typeof createCustomerSchema>;
  * value is an explicit `null`.
  */
 export const updateCustomerSchema = z.object({
+  familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200).optional(),
   code: z.string().trim().max(64).nullable().optional(),
   email: customerEmailSchema.nullable().optional(),

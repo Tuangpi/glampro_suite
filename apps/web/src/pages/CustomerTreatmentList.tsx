@@ -8,76 +8,35 @@
  * Photo tagging opens a separate view that lists the customer's photos and
  * lets the user tag them as before/after for the selected treatment.
  */
-import { useEffect, useState } from "react";
-
-import type { Customer } from "@glampro_suite/shared";
+import type { TreatmentRecord } from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
 import { useCustomer } from "@/hooks/useCustomers";
-import { useTreatments } from "@/hooks/useTreatments";
-import { useQueryClient } from "@tanstack/react-query";
-import Table from "@/components/ui/Table";
-import Drawer from "@/components/ui/Drawer";
-import toast from "@/components/ui/toast-store";
-import { queryKeys } from "@/constants/queryKeys";
-import { format } from "date-fns";
-
-export interface TreatmentRecord {
-  id: string;
-  customerId: string;
-  treatmentType: string;
-  status: string;
-  startedAt: string | null;
-  endedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+import { useTreatmentList } from "@/hooks/useTreatments";
+import { showToast } from "@/components/ui/toast-store";
 
 interface CustomerTreatmentListProps {
   customerId: string;
-export default function CustomerTreatmentList({
-  customerId,
-}: CustomerTreatmentListProps) {
-  const [records, setRecords] = useState<TreatmentRecord[]>([]);
-  const { data: customer } = useCustomer({ customerId });
-  const { data: all, isPending, isError, refetch } = useTreatments({ customerId });
-  const queryClient = useQueryClient();
+}
+export default function CustomerTreatmentList({ customerId }: CustomerTreatmentListProps) {
+  const { data: customer } = useCustomer(customerId);
+  const {
+    data: all,
+    isPending,
+    isError,
+    refetch,
+  } = useTreatmentList({
+    customerId,
+    page: 1,
+    pageSize: 20,
+  });
+  const records: TreatmentRecord[] = all?.data ?? [];
 
-  // Filter records for this customer
-  useEffect(() => {
-    if (!all || !customerId) {
-      setRecords([]);
-      return;
-    }
-    const custRecords = all.data?.data ?? [];
-    const filtered = custRecords.filter(
-      (r: { customerId: string }) => r.customerId === customerId,
-    );
-    setRecords(filtered);
-  }, [all, customerId]);
-
-  const handleDelete = async (recordId: string) => {
-    const confirmed = window.confirm(
-      "Are you sure you want to delete this treatment record?",
-    );
+  const handleDelete = () => {
+    const confirmed = window.confirm("Are you sure you want to delete this treatment record?");
     if (!confirmed) return;
 
-    try {
-      await queryClient
-        .invalidateQueries({ queryKey: queryKeys.treatments.all() });
-      // We don't have a delete mutation yet, just show info
-      toast({
-        title: "Delete not implemented",
-        description: "Treatment record deletion is not yet implemented.",
-        variant: "destructive",
-      });
-    } catch (cause) {
-      toast({
-        title: "Error",
-        description: "Error deleting treatment record",
-        variant: "destructive",
-      });
-    }
+    showToast("info", "Treatment record deletion is not yet implemented.");
   };
 
   const handleNew = () => {
@@ -91,7 +50,9 @@ export default function CustomerTreatmentList({
     return (
       <div role="alert">
         <p>Treatments could not be loaded.</p>
-        <Button type="button" onClick={() => void refetch()}>Retry</Button>
+        <Button type="button" onClick={() => void refetch()}>
+          Retry
+        </Button>
       </div>
     );
   }
@@ -99,31 +60,28 @@ export default function CustomerTreatmentList({
   return (
     <section className="rounded-card border border-line p-4">
       <h2 className="font-bold mb-3">
-        {customer?.name
-          ? `${customer.name}'s treatment records`
-          : "Treatment records"}
+        {customer?.name ? `${customer.name}'s treatment records` : "Treatment records"}
       </h2>
 
       {records.length === 0 ? (
         <p className="text-ink-muted">
           No treatment records found.{" "}
-          <Button
-            variant="secondary"
-            onClick={handleNew}
-            className="flex items-center gap-1"
-          >
+          <Button variant="secondary" onClick={handleNew} className="flex items-center gap-1">
             Create first record
           </Button>
         </p>
       ) : (
-        <Table>
+        <table className="w-full text-sm">
+          <caption className="sr-only">Customer treatment records</caption>
           <thead>
             <tr>
               <th className="text-left">Type</th>
               <th className="text-left">Status</th>
               <th className="text-left">Period</th>
               <th className="text-left">Created</th>
-              <th className="text-right" style={{ width: "140px" }}>Actions</th>
+              <th className="text-right" style={{ width: "140px" }}>
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -139,22 +97,18 @@ export default function CustomerTreatmentList({
                       record.status === "COMPLETED"
                         ? "bg-success/10 text-success"
                         : record.status === "CANCELLED"
-                        ? "bg-danger/10 text-danger"
-                        : record.status === "IN_PROGRESS"
-                        ? "bg-warning/10 text-warning"
-                        : "",
+                          ? "bg-danger/10 text-danger"
+                          : record.status === "IN_PROGRESS"
+                            ? "bg-warning/10 text-warning"
+                            : "",
                     ].join(" ")}
                   >
                     {record.status}
                   </span>
                 </td>
                 <td>
-                  {record.startedAt
-                    ? `${format(new Date(record.startedAt), "MMM dd, yyyy")}`
-                    : "—"}
-                  {record.endedAt
-                    ? ` — ${format(new Date(record.endedAt), "MMM dd, yyyy")}`
-                    : ""}
+                  {record.startedAt ? new Date(record.startedAt).toLocaleDateString() : "—"}
+                  {record.endedAt ? ` — ${new Date(record.endedAt).toLocaleDateString()}` : ""}
                 </td>
                 <td className="text-sm text-ink-muted">
                   {new Date(record.createdAt).toLocaleDateString()}
@@ -169,16 +123,11 @@ export default function CustomerTreatmentList({
                   >
                     Edit
                   </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => handleDelete(record.id)}
-                  >
+                  <Button variant="danger" size="sm" onClick={handleDelete}>
                     Delete
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     onClick={() => {
                       // TODO: open photo tagging
@@ -190,9 +139,8 @@ export default function CustomerTreatmentList({
               </tr>
             ))}
           </tbody>
-        </Table>
+        </table>
       )}
-</section>
+    </section>
   );
-}
 }

@@ -5,7 +5,7 @@
  */
 
 import { Router, type Request, type Response } from "express";
-import { aiAssistantService, type OwnerSummary, type RebookingNudge, type SlowDayPromo } from "../services/ai-assistant.service.js";
+import { aiAssistantService, type OwnerSummary, type SlowDayPromo } from "../services/ai-assistant.service.js";
 
 const router = Router();
 

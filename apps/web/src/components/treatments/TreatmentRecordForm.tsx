@@ -10,16 +10,12 @@
  */
 import { useState } from "react";
 
-import type {
-  CreateTreatmentRecordInput,
-  TreatmentStatusValue,
-} from "@glampro_suite/shared";
+import type { CreateTreatmentRecordInput, TreatmentStatusValue } from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
 import Drawer from "@/components/ui/Drawer";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
-import { showToast } from "@/components/ui/toast-store";
 import { useCreateTreatment, useUpdateTreatment } from "@/hooks/useTreatments";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
 import { formatDateInputValue } from "@/lib/utils";
@@ -53,6 +49,11 @@ const EMPTY_FORM: FormState = {
   serviceId: "",
   treatmentType: "",
   status: "SCHEDULED",
+  notes: "",
+  startedAt: "",
+  endedAt: "",
+  quantityConsumed: "",
+};
 
 interface TreatmentRecordFormProps {
   open: boolean;
@@ -70,9 +71,7 @@ export default function TreatmentRecordForm({
   onSaved,
 }: TreatmentRecordFormProps) {
   const isEditing = recordId !== null;
-  const [form, setForm] = useState<FormState>(
-    () => (record ? toForm(record) : EMPTY_FORM),
-  );
+  const [form, setForm] = useState<FormState>(() => (record ? toForm(record) : EMPTY_FORM));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -80,7 +79,8 @@ export default function TreatmentRecordForm({
   const update = useUpdateTreatment();
 
   const set =
-    (field: keyof FormState) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    (field: keyof FormState) =>
+    (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
       setFormError(null);
       setFieldErrors({});
       setForm((prev) => ({ ...prev, [field]: event.target.value }));
@@ -103,8 +103,29 @@ export default function TreatmentRecordForm({
       staffId: form.staffId.trim() || undefined,
       serviceId: form.serviceId.trim() || undefined,
       quantityConsumed:
-        form.quantityConsumed.trim() !== ""
-          ? Number.parseInt(form.quantityConsumed, 10)
+        form.quantityConsumed.trim() !== "" ? Number.parseInt(form.quantityConsumed, 10) : 0,
+    };
+
+    try {
+      if (isEditing && recordId) {
+        await update.mutateAsync({ id: recordId, input });
+      } else {
+        await create.mutateAsync(input);
+      }
+      onSaved();
+      onClose();
+    } catch (cause) {
+      const details = getValidationDetails(cause);
+      if (Object.keys(details).length > 0) {
+        setFieldErrors(details);
+      } else {
+        setFormError(getErrorMessage(cause));
+      }
+    }
+  }
+
+  const disabled =
+    create.isPending || update.isPending || !form.customerId || !form.treatmentType.trim();
 
   return (
     <Drawer
@@ -113,10 +134,12 @@ export default function TreatmentRecordForm({
       title={isEditing ? "Edit treatment record" : "New treatment record"}
       widthClassName="max-w-lg"
     >
-      <form onSubmit={(event) => {
-        event.preventDefault();
-        void save();
-      }}>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save();
+        }}
+      >
         {formError ? (
           <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
             {formError}
@@ -219,12 +242,7 @@ export default function TreatmentRecordForm({
         </div>
 
         <div className="flex items-center justify-end gap-3 mt-6">
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={onClose}
-            disabled={disabled}
-          >
+          <Button type="button" variant="secondary" onClick={onClose} disabled={disabled}>
             Cancel
           </Button>
           <Button type="submit" disabled={disabled}>
@@ -235,37 +253,6 @@ export default function TreatmentRecordForm({
     </Drawer>
   );
 }
-          : undefined,
-    };
-
-    try {
-      if (isEditing && recordId) {
-        await update.mutateAsync({ id: recordId, input });
-      } else {
-        await create.mutateAsync(input);
-      }
-      onSaved();
-      onClose();
-    } catch (cause) {
-      const details = getValidationDetails(cause);
-      if (Object.keys(details).length > 0) {
-        setFieldErrors(details);
-      } else {
-        setFormError(getErrorMessage(cause));
-      }
-    }
-  }
-
-  const disabled =
-    create.isPending ||
-    update.isPending ||
-    !form.customerId ||
-    !form.treatmentType.trim();
-  notes: "",
-  startedAt: "",
-  endedAt: "",
-  quantityConsumed: "",
-};
 
 function toForm(input: CreateTreatmentRecordInput): FormState {
   return {
@@ -277,9 +264,7 @@ function toForm(input: CreateTreatmentRecordInput): FormState {
     treatmentType: input.treatmentType,
     status: input.status,
     notes: input.notes ?? "",
-    startedAt: input.startedAt
-      ? formatDateInputValue(new Date(input.startedAt))
-      : "",
+    startedAt: input.startedAt ? formatDateInputValue(new Date(input.startedAt)) : "",
     endedAt: input.endedAt ? formatDateInputValue(new Date(input.endedAt)) : "",
     quantityConsumed: input.quantityConsumed?.toString() ?? "",
   };

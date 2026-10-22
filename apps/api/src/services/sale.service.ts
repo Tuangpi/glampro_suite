@@ -1649,7 +1649,7 @@ async function redeemCredit(
  * @param targetTenantId Optional: override the tenant (e.g. cross-branch transfer)
  * @param transferredBy The actor/cashier ID initiating the transfer
  */
-async function transferPackageCredit(
+export async function transferPackageCredit(
   tx: SaleTransaction,
   holdingId: string,
   targetCustomerId: string,

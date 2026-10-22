@@ -14,6 +14,10 @@ import {
 } from "./catalogue.js";
 
 describe("catalogueListQuerySchema", () => {
+  it("preserves and validates the family filter", () => {
+    assert.equal(catalogueListQuerySchema.parse({ familyId: "family-1" }).familyId, "family-1");
+    assert.equal(catalogueListQuerySchema.safeParse({ familyId: "" }).success, false);
+  });
   it("coerces the lowStock flag from either boolean or query-string form", () => {
     assert.equal(catalogueListQuerySchema.parse({ lowStock: "true" }).lowStock, true);
     assert.equal(catalogueListQuerySchema.parse({ lowStock: true }).lowStock, true);
@@ -168,6 +172,22 @@ describe("createPackageSchema", () => {
 });
 
 describe("updatePackageSchema", () => {
+  it("distinguishes an absent family from assigning or clearing one", () => {
+    assert.equal(updatePackageSchema.parse({}).familyId, undefined);
+    assert.equal(updatePackageSchema.parse({ familyId: "family-1" }).familyId, "family-1");
+    assert.equal(updatePackageSchema.parse({ familyId: null }).familyId, null);
+    assert.equal(updatePackageSchema.safeParse({ familyId: "" }).success, false);
+    assert.equal(
+      createPackageSchema.parse({
+        name: "Bundle",
+        sessionCount: 1,
+        memberPrice: 10,
+        nonmemberPrice: 12,
+        familyId: "family-1",
+      }).familyId,
+      "family-1",
+    );
+  });
   it("accepts an empty serviceIds as a value, distinct from omitting it", () => {
     // `[]` means "this bundle covers nothing now"; an absent key means "do not touch
     // the list". Both must parse, and they must stay distinguishable.

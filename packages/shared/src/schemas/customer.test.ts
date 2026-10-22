@@ -31,6 +31,17 @@ describe("customerListQuerySchema", () => {
 });
 
 describe("createCustomerSchema", () => {
+  it("preserves family assignment and allows explicitly clearing it on update", () => {
+    assert.equal(
+      createCustomerSchema.parse({ name: "A", familyId: "family-1" }).familyId,
+      "family-1",
+    );
+    assert.equal(updateCustomerSchema.parse({}).familyId, undefined);
+    assert.equal(updateCustomerSchema.parse({ familyId: "family-1" }).familyId, "family-1");
+    assert.equal(updateCustomerSchema.parse({ familyId: null }).familyId, null);
+    assert.equal(createCustomerSchema.safeParse({ name: "A", familyId: "" }).success, false);
+    assert.equal(updateCustomerSchema.safeParse({ familyId: "x".repeat(65) }).success, false);
+  });
   it("accepts a name on its own, because a walk-in has no other detail yet", () => {
     assert.equal(createCustomerSchema.safeParse({ name: "Mrs Loi" }).success, true);
   });

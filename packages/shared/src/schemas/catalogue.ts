@@ -42,6 +42,7 @@ export type CatalogStatusValue = z.infer<typeof catalogStatusSchema>;
  * whole catalogue, which a single paginated page cannot compute.
  */
 export const catalogueListQuerySchema = paginationQuerySchema.extend({
+  familyId: z.string().min(1).max(64).optional(),
   search: z.string().trim().max(200).optional(),
   status: catalogStatusSchema.optional(),
   departmentId: z.string().min(1).max(64).optional(),
@@ -242,6 +243,7 @@ export const packageDetailSchema = packageSummarySchema.extend({
 export type PackageDetail = z.infer<typeof packageDetailSchema>;
 
 export const createPackageSchema = z.object({
+  familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200),
   sessionCount: sessionCountSchema.min(1, "A package has to include at least one session"),
   memberPrice: moneySchema,
@@ -264,6 +266,7 @@ export type CreatePackageInput = z.infer<typeof createPackageSchema>;
  * "covers nothing", because `[]` is a value an absent key is not.
  */
 export const updatePackageSchema = z.object({
+  familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200).optional(),
   sessionCount: sessionCountSchema.optional(),
   memberPrice: moneySchema.optional(),

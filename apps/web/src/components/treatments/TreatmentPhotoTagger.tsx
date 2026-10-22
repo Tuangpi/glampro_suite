@@ -14,7 +14,11 @@ import { useEffect, useState } from "react";
 import type { TreatmentPhoto } from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
-import { useAddTreatmentPhoto, useCustomerPhotos, useRemoveTreatmentPhoto } from "@/hooks/useTreatments";
+import {
+  useAddTreatmentPhoto,
+  useCustomerPhotos,
+  useRemoveTreatmentPhoto,
+} from "@/hooks/useTreatments";
 import api from "@/lib/api";
 
 interface TreatmentPhotoTaggerProps {
@@ -39,7 +43,9 @@ export default function TreatmentPhotoTagger({
   const taggedIds = new Set(existingPhotos.map((photo) => photo.customerPhotoId));
   const rows = photos.data?.data ?? [];
 
-  const alreadyTagged = rows.filter((photo) => taggedIds.has(photo.id));
+  const alreadyTagged = existingPhotos.filter((photo) =>
+    rows.some((row) => row.id === photo.customerPhotoId),
+  );
   const untagged = rows.filter((photo) => !taggedIds.has(photo.id));
 
   function tagAs(photoId: string, photoType: "BEFORE" | "AFTER") {
@@ -51,41 +57,19 @@ export default function TreatmentPhotoTagger({
         photoType,
       })
       .then(() => {
-  // Fetch the blob URL for a photo on demand, revoking when the component unmounts.
-  function PhotoThumbnail({ photo }: { photo: { id: string; caption: string | null } }) {
-    const [url, setUrl] = useState<string | null>(null);
-    const [failed, setFailed] = useState(false);
+        onChange();
+        setTagging(null);
+      })
+      .catch(() => {
+        setTagging(null);
+      });
+  }
 
-    useEffect(() => {
-      let active = true;
-      let objectUrl: string | undefined;
-      void api
-        .get<Blob>(`/customers/${customerId}/photos/${photo.id}`, {
-          responseType: "blob",
-        })
-        .then((res) => {
-          if (!active) return;
-          objectUrl = URL.createObjectURL(res.data);
-          setUrl(objectUrl);
-        })
-        .catch(() => {
-          if (active) setFailed(true);
-        });
-      return () => {
-        active = false;
-        if (objectUrl) URL.revokeObjectURL(objectUrl);
-      };
-    }, [customerId, photo.id]);
-
-    if (failed) return <p role="alert">Photo could not be loaded.</p>;
-    if (!url) return <p role="status">Loading photo…</p>;
-    return (
-      <img
-        src={url}
-        alt={photo.caption || "Customer photo"}
-        className="h-40 w-full rounded-md object-cover border border-line"
-      />
-    );
+  async function untag(photoId: string) {
+    setTagging(photoId);
+    await removePhoto.mutateAsync({ recordId: treatmentRecordId, photoId });
+    onChange();
+    setTagging(null);
   }
 
   if (photos.isPending) {
@@ -101,25 +85,16 @@ export default function TreatmentPhotoTagger({
       </div>
     );
   }
-        onChange();
-        setTagging(null);
-      })
-      .catch(() => {
-        setTagging(null);
-      });
-  }
 
-  async function untag(photoId: string) {
-    setTagging(photoId);
-    await removePhoto.mutateAsync({ recordId: treatmentRecordId, photoId });
-    onChange();
-    setTagging(null);
-return (
-    <section className="flex flex-col gap-4 rounded-card border border-line p-4" aria-label="Before/after photos">
+  return (
+    <section
+      className="flex flex-col gap-4 rounded-card border border-line p-4"
+      aria-label="Before/after photos"
+    >
       <h3 className="font-bold">Before & after photos</h3>
       <p className="text-sm text-ink-muted">
-        Tag the customer's existing photos as before or after for this
-        treatment. A photo can be tagged on one record at a time.
+        Tag the customer's existing photos as before or after for this treatment. A photo can be
+        tagged on one record at a time.
       </p>
 
       {alreadyTagged.length > 0 ? (
@@ -134,13 +109,11 @@ return (
                   key={tp.id}
                   className="flex flex-col gap-2 rounded-md border border-line-soft p-3 relative"
                 >
-                  <PhotoThumbnail photo={photo} />
+                  <PhotoThumbnail customerId={customerId} photo={photo} />
                   <figcaption className="text-sm font-medium">
                     {tp.photoType === "BEFORE" ? "Before" : "After"}
                   </figcaption>
-                  <p className="text-xs text-ink-muted">
-                    {photo.caption || "Customer photo"}
-                  </p>
+                  <p className="text-xs text-ink-muted">{photo.caption || "Customer photo"}</p>
                   <Button
                     variant="danger"
                     size="sm"
@@ -165,10 +138,8 @@ return (
                 key={photo.id}
                 className="flex flex-col gap-2 rounded-md border border-line-soft p-3"
               >
-                <PhotoThumbnail photo={photo} />
-                <p className="text-xs text-ink-muted">
-                  {photo.caption || "Customer photo"}
-                </p>
+                <PhotoThumbnail customerId={customerId} photo={photo} />
+                <p className="text-xs text-ink-muted">{photo.caption || "Customer photo"}</p>
                 <div className="flex gap-2">
                   <Button
                     variant="secondary"
@@ -197,10 +168,10 @@ return (
         <p className="text-sm text-ink-muted">No photos to tag.</p>
       ) : null}
 
-      {photos.data?.pageCount ?? 0 > 1 && (
+      {(photos.data?.pageCount ?? 0) > 1 && (
         <div className="flex items-center justify-between gap-3 border-t border-line-soft pt-3">
           <p className="text-xs text-ink-muted">
-            Page {page} of {photos.data.pageCount}
+            Page {page} of {photos.data?.pageCount}
           </p>
           <div className="flex gap-2">
             <Button
@@ -225,4 +196,45 @@ return (
     </section>
   );
 }
-  }
+// Fetch the blob URL for a photo on demand, revoking when the component unmounts.
+function PhotoThumbnail({
+  customerId,
+  photo,
+}: {
+  customerId: string;
+  photo: { id: string; caption: string | null };
+}) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | undefined;
+    void api
+      .get<Blob>(`/customers/${customerId}/photos/${photo.id}`, {
+        responseType: "blob",
+      })
+      .then((res) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(res.data);
+        setUrl(objectUrl);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [customerId, photo.id]);
+
+  if (failed) return <p role="alert">Photo could not be loaded.</p>;
+  if (!url) return <p role="status">Loading photo…</p>;
+  return (
+    <img
+      src={url}
+      alt={photo.caption || "Customer photo"}
+      className="h-40 w-full rounded-md object-cover border border-line"
+    />
+  );
+}

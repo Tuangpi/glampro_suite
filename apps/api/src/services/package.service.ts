@@ -158,7 +158,7 @@ export async function createPackage(input: CreatePackageInput): Promise<PackageD
       // `null`, not `undefined`: a new bundle with no description has none, which
       // is a real state the editor renders as an empty box.
       description: fields.description ?? null,
-      ...(familyId !== undefined ? { familyId } : {},
+      ...(familyId !== undefined ? { familyId } : {}),
     },
     select: { id: true },
   });
@@ -184,8 +184,11 @@ export async function updatePackage(id: string, input: UpdatePackageInput): Prom
 
   // Guarded because `serviceIds` alone is a legitimate patch body, and an empty
   // `data` object is a write that changes nothing.
-  if (Object.keys(fields).length > 0) {
-    await prisma.package.update({ where: { id }, data: { ...fields, ...(familyId !== undefined ? { familyId } : {} ) });
+  if (Object.keys(fields).length > 0 || familyId !== undefined) {
+    await prisma.package.update({
+      where: { id },
+      data: { ...fields, ...(familyId !== undefined ? { familyId } : {}) },
+    });
   }
 
   await replaceServices(id, serviceIds);

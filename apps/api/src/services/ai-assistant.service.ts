@@ -151,6 +151,7 @@ async function rebookingNudges(
 
   for (const appt of appointments) {
     const customer = appt.customer;
+    if (!customer) continue;
     const service = appt.service;
     const lastServiceDate = appt.startsAt;
 
