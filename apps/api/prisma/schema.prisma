@@ -1071,6 +1071,9 @@ model TreatmentRecord {
   service         Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
   packageHolding  CustomerPackageHolding? @relation(fields: [packageHoldingId], references: [id], onDelete: SetNull)
   packageHoldingId String?
+  /// POS owns the deduction. One clinical record documents the whole redemption.
+  packageRedemptionId String? @unique
+  packageRedemption CustomerRedemption? @relation(fields: [packageRedemptionId], references: [id], onDelete: Restrict)
   photos          TreatmentPhoto[]
   consentEvents   TreatmentConsentEvent[]
 
@@ -1813,6 +1816,7 @@ model CustomerRedemption {
   tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   sale     Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  treatmentRecord TreatmentRecord?
 
   @@index([tenantId, customerId])
   @@index([tenantId, itemType, itemId])

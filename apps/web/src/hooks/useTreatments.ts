@@ -12,6 +12,7 @@ import type {
   TreatmentPhoto,
   TreatmentRecord,
   TreatmentRecordListQuery,
+  UpdateTreatmentRecordInput,
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
@@ -21,7 +22,9 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const PAGE_SIZE = 20;
 
-export function useTreatmentList(filters: TreatmentRecordListQuery & { page: number; pageSize: number }) {
+export function useTreatmentList(
+  filters: TreatmentRecordListQuery & { page: number; pageSize: number },
+) {
   return useQuery({
     queryKey: [...queryKeys.treatments.list(), filters],
     queryFn: () =>
@@ -49,8 +52,7 @@ export function useCreateTreatment() {
   const { isReadOnly } = useAuth();
 
   return useMutation({
-    mutationFn: (input: CreateTreatmentRecordInput) =>
-      post<TreatmentRecord>("/treatments", input),
+    mutationFn: (input: CreateTreatmentRecordInput) => post<TreatmentRecord>("/treatments", input),
     onMutate: () => {
       if (isReadOnly) showToast("error", "This salon is suspended — changes are disabled.");
     },
@@ -69,7 +71,7 @@ export function useUpdateTreatment() {
   const { isReadOnly } = useAuth();
 
   return useMutation({
-    mutationFn: ({ id, input }: { id: string; input: Partial<CreateTreatmentRecordInput> }) =>
+    mutationFn: ({ id, input }: { id: string; input: UpdateTreatmentRecordInput }) =>
       patch<TreatmentRecord>(`/treatments/${id}`, input),
     onMutate: () => {
       if (isReadOnly) showToast("error", "This salon is suspended — changes are disabled.");

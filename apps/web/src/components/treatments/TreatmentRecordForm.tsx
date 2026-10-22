@@ -28,6 +28,7 @@ const STATUS_OPTIONS: { value: TreatmentStatusValue; label: string }[] = [
 ];
 
 interface FormState {
+  packageRedemptionId: string;
   customerId: string;
   customerName: string;
   appointmentId: string;
@@ -42,6 +43,7 @@ interface FormState {
 }
 
 const EMPTY_FORM: FormState = {
+  packageRedemptionId: "",
   customerId: "",
   customerName: "",
   appointmentId: "",
@@ -93,6 +95,8 @@ export default function TreatmentRecordForm({
     setFieldErrors({});
 
     const input: CreateTreatmentRecordInput = {
+      quantityConsumed: 0,
+      packageRedemptionId: form.packageRedemptionId.trim() || null,
       customerId: form.customerId,
       treatmentType: form.treatmentType.trim(),
       status: (form.status as TreatmentStatusValue) || "SCHEDULED",
@@ -102,13 +106,24 @@ export default function TreatmentRecordForm({
       appointmentId: form.appointmentId.trim() || undefined,
       staffId: form.staffId.trim() || undefined,
       serviceId: form.serviceId.trim() || undefined,
-      quantityConsumed:
-        form.quantityConsumed.trim() !== "" ? Number.parseInt(form.quantityConsumed, 10) : 0,
     };
 
     try {
       if (isEditing && recordId) {
-        await update.mutateAsync({ id: recordId, input });
+        // Historical unlinked quantities are preserved unless the user links or clears evidence.
+        await update.mutateAsync({
+          id: recordId,
+          input: {
+            treatmentType: input.treatmentType,
+            status: input.status,
+            notes: input.notes,
+            startedAt: input.startedAt,
+            endedAt: input.endedAt,
+            ...(input.packageRedemptionId !== (record?.packageRedemptionId ?? null)
+              ? { packageRedemptionId: input.packageRedemptionId }
+              : {}),
+          },
+        });
       } else {
         await create.mutateAsync(input);
       }
@@ -148,12 +163,13 @@ export default function TreatmentRecordForm({
 
         <div className="space-y-4">
           <Input
-            label="Customer"
+            label="Customer reference"
             required
-            value={form.customerName}
-            onChange={set("customerName")}
+            value={form.customerId}
+            onChange={set("customerId")}
+            disabled={isEditing}
             error={fieldError("customerId")}
-            hint="Type to search customers. Required."
+            hint="Existing customer ID. The customer cannot change after creation."
           />
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -222,13 +238,12 @@ export default function TreatmentRecordForm({
           />
 
           <Input
-            label="Package sessions consumed"
-            type="number"
-            value={form.quantityConsumed}
-            onChange={set("quantityConsumed")}
-            error={fieldError("quantityConsumed")}
-            hint="Optional — sessions deducted from a package holding"
-            min="0"
+            label="POS package redemption reference"
+            value={form.packageRedemptionId}
+            onChange={set("packageRedemptionId")}
+            error={fieldError("packageRedemptionId")}
+            hint="Optional POS redemption ID. POS owns deductions; linking the whole redemption here never deducts again. One treatment per redemption."
+            maxLength={64}
           />
 
           <Input
@@ -256,6 +271,7 @@ export default function TreatmentRecordForm({
 
 function toForm(input: CreateTreatmentRecordInput): FormState {
   return {
+    packageRedemptionId: input.packageRedemptionId ?? "",
     customerId: input.customerId,
     customerName: "",
     appointmentId: input.appointmentId ?? "",

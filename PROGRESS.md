@@ -2,11 +2,52 @@
 
 ## Current State
 
-- Current task: **TK2610-0027 — package-expiry slice (IN PROGRESS: application migration/browser acceptance pending)**, related to TK2610-0025. Most recently completed: **SEC-01 — Complete launch authentication security** (DONE).
+- Current task: **TK2610-0025 — treatment-session integration (IN PROGRESS: application migration/browser acceptance pending)**. POS-owned linkage implemented and automatically verified. Most recently completed slice: **TK2610-0027 purchase-based package expiry**, accepted by user; parent TK2610-0027 remains IN PROGRESS.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
-- Next: review/apply expiry migration to the intended application environment with approval and accept browser behavior. Family sharing/transfer/audit and treatment consumption remain separate gaps. No production access or paid mail authorized.
+- Next: authorized treatment-link application migration/browser acceptance, then remaining treatment UI/access review. Family sharing/transfer/audit remain separate gaps. No production access or paid mail authorized.
+
+## October 22, 2026 — POS-owned treatment session linkage implemented
+
+- User selected POS-only deductions. Added unique whole-redemption treatment link,
+  derived quantity and holding, same-customer/tenant/service validation, reversal
+  refusal and duplicate protection. No linking/editing/deleting balance mutation.
+  Reversed evidence stays visible; unlinked historical quantities are preserved.
+- Typed PATCH contract replaces the unsafe cast; explicit null clears notes/link.
+  Form requests POS evidence instead of a deduction quantity. Fixed empty required
+  customer-name blocker using an honest customer-reference input. List discloses
+  POS-linked/reversed versus historical unverified quantities.
+- Added forward migration `20261022160000_treatment_pos_redemption_link`; no backfill.
+  Added shared/form tests and opt-in exact-target isolated DB acceptance covering
+  ownership, service mismatch, duplicate/concurrent linking, quantity mismatch,
+  reversal, cancellation/unlink/delete and historical preservation.
+- Passed: DB sale/linkage 56/56; final isolated acceptance 1/1; shared 140/140;
+  web 486/486; full build, API/web typechecks, scoped ESLint/Prettier, diff check.
+  Concurrent test emits pg driver query-serialization deprecation warning; tests
+  pass, no dependencies changed. Earlier form failures fixed, not suppressed.
+- Migration verified only on disposable loopback 55440/package_expiry_test.
+  Application migration/browser acceptance pending for this new linkage slice.
+  No application/production DB writes, external mail, commits or deployment.
+- Remaining: treatment-list action buttons are not wired, no redemption picker,
+  broader aesthetics privacy/access claims still need review. Do not mark either
+  full external TK2610-0025 or TK2610-0027 complete on this slice's evidence.
+
+## October 22, 2026 — Expiry accepted; treatment-session follow-up scoped
+
+- User explicitly confirmed application migration and browser checks are complete
+  and accepted the expiry slice. This is user-reported verification, not an agent
+  migration/application inspection or browser walkthrough. Expiry slice is DONE;
+  full external TK2610-0025/0027 scope remains unfinished, not ready for closure.
+- Read current treatment create/update, form, contracts, package relation and POS
+  redemption paths. Treatment stores an editable quantity without decrementing a
+  holding; form hint claims deduction. POS already consumes package sessions.
+- Next bounded deliverable: treatment-session integration under TK2610-0025.
+  Blocked on ownership policy: link treatments to existing POS redemptions versus
+  independent treatment deduction. Must avoid consuming the same session twice;
+  independent deduction also needs cancellation/edit/retry behavior defined.
+- No runtime changes or new test runs in this handoff; code inspection and tracking
+  validation only. Existing automated expiry results remain historical evidence.
 
 ## October 22, 2026 — Approved purchase-based package expiry implemented
 

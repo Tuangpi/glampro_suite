@@ -27,6 +27,10 @@ import {
   updateTreatmentRecord,
 } from "../services/treatment.service.js";
 import { auth, requireWritableTenant } from "../middleware/auth.js";
+import {
+  updateTreatmentRecordSchema,
+  type UpdateTreatmentRecordInput,
+} from "@glampro_suite/shared";
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
@@ -99,12 +103,12 @@ treatmentRouter.patch(
   requireModule("treatments"),
   requireWritableTenant(),
   validate(idParamSchema, "params"),
-  validate(createTreatmentRecordSchema.partial()),
+  validate(updateTreatmentRecordSchema),
   async (req, res, next) => {
     try {
       const { id } = validated<{ id: string }>(req, "params");
-      const input = validated<Partial<CreateTreatmentRecordInput>>(req, "body");
-      res.json({ data: await updateTreatmentRecord(id, input as never) });
+      const input = validated<UpdateTreatmentRecordInput>(req, "body");
+      res.json({ data: await updateTreatmentRecord(id, input) });
     } catch (error) {
       next(error);
     }
@@ -149,26 +153,21 @@ treatmentRouter.post(
 );
 
 /** GET /api/treatments/consent/forms — list active consent forms. */
-treatmentRouter.get(
-  "/consent/forms",
-  auth,
-  requireModule("treatments"),
-  async (req, res, next) => {
-    try {
-      const { treatmentType, isActive } = req.query as {
-        treatmentType?: string;
-        isActive?: string;
-      };
-      const forms = await listTreatmentConsentForms({
-        treatmentType,
-        isActive: isActive === "true" ? true : isActive === "false" ? false : undefined,
-      });
-      res.json({ data: forms });
-    } catch (error) {
-      next(error);
-    }
-  },
-);
+treatmentRouter.get("/consent/forms", auth, requireModule("treatments"), async (req, res, next) => {
+  try {
+    const { treatmentType, isActive } = req.query as {
+      treatmentType?: string;
+      isActive?: string;
+    };
+    const forms = await listTreatmentConsentForms({
+      treatmentType,
+      isActive: isActive === "true" ? true : isActive === "false" ? false : undefined,
+    });
+    res.json({ data: forms });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /** GET /api/treatments/consent/forms/active/:treatmentType — latest active form for a type. */
 treatmentRouter.get(

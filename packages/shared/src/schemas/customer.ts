@@ -237,6 +237,10 @@ export const treatmentRecordSchema = z.object({
   startedAt: z.string().nullable(),
   endedAt: z.string().nullable(),
   quantityConsumed: z.number().int().min(0),
+  packageRedemptionId: z.string().nullable().optional(),
+  packageHoldingId: z.string().nullable().optional(),
+  /** POS reversal is disclosed without changing the clinical record or balance. */
+  packageRedemptionRevertedAt: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -245,6 +249,7 @@ export type TreatmentRecord = z.infer<typeof treatmentRecordSchema>;
 
 /** Creating a treatment record. */
 export const createTreatmentRecordSchema = z.object({
+  packageRedemptionId: z.string().min(1).max(64).nullable().optional(),
   customerId: z.string().min(1),
   appointmentId: z.string().optional(),
   staffId: z.string().optional(),
@@ -261,6 +266,7 @@ export type CreateTreatmentRecordInput = z.infer<typeof createTreatmentRecordSch
 
 /** Updating a treatment record. */
 export const updateTreatmentRecordSchema = z.object({
+  packageRedemptionId: z.string().min(1).max(64).nullable().optional(),
   treatmentType: z.string().trim().min(1).max(100).optional(),
   status: treatmentStatusSchema.optional(),
   notes: z.string().trim().max(2000).nullable().optional(),

@@ -62,6 +62,17 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- Treatment session evidence (October 22, 2026, user approved): POS alone owns
+  package deductions/reversals. A treatment may link one existing, unreversed POS
+  package redemption belonging to its customer/tenant; one treatment documents
+  the whole redemption, with quantity derived server-side and unique linkage.
+  Service must be covered by the package and present on the POS sale. Linking,
+  unlinking, clinical status edits and deletion never change balances. POS reversal
+  remains disclosed on clinical reads; historical unlinked quantities stay
+  unverified and are not backfilled. No partial allocation or new treatment-led
+  deduction workflow. Migration `20261022160000_treatment_pos_redemption_link`
+  verified only on disposable PostgreSQL; application migration/UAT pending.
+
 - Package expiry (October 22, 2026, user approved): optional validity days on session
   and prepaid package catalogue entries, measured as exact 24-hour periods from
   completed purchase (`soldAt`). Null means no expiry. Held carts start validity
@@ -71,7 +82,10 @@ not establish full roadmap compliance. Consult the decision sections and task fi
   Validity supports 1–36500 whole days. Prepaid configuration is manager/owner-only
   via `PATCH /api/packages/prepaid/:id/validity`; session configuration uses the
   existing package editor/API. Migration `20261022120000_package_validity_days`
-  verified only on a disposable local database; application rollout remains pending.
+  agent-verified on a disposable local database. User subsequently confirmed
+  application migration and browser checks complete and accepted the expiry slice
+  on October 22, 2026; application rollout/browser verification is user-reported,
+  not an agent walkthrough or production verification.
 
 - Authentication follow-up (SEC-01, October 22, 2026): SUPER_ADMIN is the owner/admin
   role. Password-verified owner login always requires an email code; successful

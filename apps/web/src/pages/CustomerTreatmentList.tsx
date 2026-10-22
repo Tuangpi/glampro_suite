@@ -77,6 +77,7 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
             <tr>
               <th className="text-left">Type</th>
               <th className="text-left">Status</th>
+              <th className="text-left">Package sessions</th>
               <th className="text-left">Period</th>
               <th className="text-left">Created</th>
               <th className="text-right" style={{ width: "140px" }}>
@@ -105,6 +106,13 @@ export default function CustomerTreatmentList({ customerId }: CustomerTreatmentL
                   >
                     {record.status}
                   </span>
+                </td>
+                <td>
+                  {record.packageRedemptionId
+                    ? `${record.quantityConsumed} — ${record.packageRedemptionRevertedAt ? "POS reversed" : "POS linked"}`
+                    : record.quantityConsumed > 0
+                      ? `${record.quantityConsumed} — historical, unverified`
+                      : "—"}
                 </td>
                 <td>
                   {record.startedAt ? new Date(record.startedAt).toLocaleDateString() : "—"}
