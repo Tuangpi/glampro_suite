@@ -3,6 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ReportOverview, ZReport } from "@glampro_suite/shared";
+import { createSalonFormatters, DEFAULT_SALON_FORMATTING } from "@/lib/utils";
+
+const { formatDateTime } = createSalonFormatters(DEFAULT_SALON_FORMATTING);
 
 const { useReportOverview, useZReport, getErrorMessage } = vi.hoisted(() => ({
   useReportOverview: vi.fn(),
@@ -67,7 +70,8 @@ const OVERVIEW: ReportOverview = {
     prepaidCredit: { holdings: 2, balance: "40.00" },
     giftCards: { holdings: 1, balance: "15.00" },
     outstanding: { customers: 2, balance: "15.00" },
-    totalMoney: "70.00",
+    totalMoney: "55.00",
+    asOf: "2026-10-23T05:00:00.000Z",
   },
   refundTenders: [],
   asOf: "2026-10-03T23:59:59.999Z",
@@ -151,6 +155,44 @@ describe("Reports", () => {
     expect(screen.getAllByText("Credit redeemed").length).toBeGreaterThan(0);
   });
 
+  it("separates current liabilities, receivables and unvalued sessions", () => {
+    render(<Reports />);
+    const balances = screen.getByRole("region", { name: "Current customer balances" });
+    expect(
+      within(balances).getByText(/independent of the selected sales range/),
+    ).toBeInTheDocument();
+    expect(within(balances).getByText(/not historical closing balances/)).toBeInTheDocument();
+    expect(
+      within(balances).getByText(
+        `Snapshot as of ${formatDateTime(OVERVIEW.liability.asOf)} (Asia/Singapore).`,
+      ),
+    ).toBeInTheDocument();
+    const liability = within(balances).getByText(/Total monetary liability:/);
+    expect(liability).toHaveTextContent("S$55.00");
+    expect(liability).not.toHaveTextContent("70.00");
+    const owed = within(balances).getByText("Amount owed to salon").closest("div")!;
+    expect(owed).toHaveTextContent("S$15.00");
+    expect(within(balances).getByText(/12 across 3 holdings/)).toBeInTheDocument();
+    expect(
+      within(balances).getByText(/not a complete accounting or deferred-revenue valuation/),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the snapshot timestamp independent when the sales period changes", async () => {
+    const user = userEvent.setup();
+    render(<Reports />);
+    await user.clear(screen.getByLabelText("From"));
+    await user.type(screen.getByLabelText("From"), "2000-01-01");
+    await user.clear(screen.getByLabelText("To"));
+    await user.type(screen.getByLabelText("To"), "2000-01-02");
+    expect(
+      screen.getByText(
+        `Snapshot as of ${formatDateTime(OVERVIEW.liability.asOf)} (Asia/Singapore).`,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Total monetary liability:/)).toHaveTextContent("S$55.00");
+  });
+
   it("turns selected local dates into one range query", async () => {
     const user = userEvent.setup();
     render(<Reports />);
@@ -211,6 +253,7 @@ describe("Reports", () => {
             giftCards: { holdings: 0, balance: "0.00" },
             outstanding: { customers: 0, balance: "0.00" },
             totalMoney: "0.00",
+            asOf: "2026-10-23T05:00:00.000Z",
           },
         },
       }),
@@ -222,7 +265,7 @@ describe("Reports", () => {
     expect(screen.getByText("No attributed sales")).toBeInTheDocument();
     expect(screen.getByText("No services sold")).toBeInTheDocument();
     expect(screen.getByText("No payments")).toBeInTheDocument();
-    expect(screen.getByText("Customer liability")).toBeInTheDocument();
+    expect(screen.getByText("Current customer balances")).toBeInTheDocument();
   });
 
   it("distinguishes a failed report from a zero report", () => {

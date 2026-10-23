@@ -83,7 +83,7 @@ function Figure({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function Reports() {
-  const { formatDate, formatPrice, timeZone } = useSalonFormatting();
+  const { formatDate, formatPrice, formatDateTime, timeZone } = useSalonFormatting();
   const [dates, setDates] = useState(initialDates);
   const range = useMemo(
     () => rangeInstants(dates.from, dates.to, timeZone),
@@ -166,7 +166,7 @@ export default function Reports() {
         <div>
           <h2 className="text-xl">Reports</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Sales, the daily close, tenders and what customers can still spend.
+            Sales and daily close reports, plus current customer credit and receivables.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-3 rounded-card border border-line bg-surface p-4">
@@ -428,40 +428,70 @@ export default function Reports() {
               className="rounded-none border-0"
             />
           </Card>
-          <Card
-            title="Customer liability"
-            description="What customers can still spend, excluding expired credit."
-            className="xl:col-span-2"
-          >
-            <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              <Figure
-                label="Package sessions"
-                value={`${data?.liability.packageSessions.sessionsRemaining ?? 0} across ${
-                  data?.liability.packageSessions.holdings ?? 0
-                } holdings`}
-              />
-              <Figure
-                label="Prepaid credit"
-                value={formatPrice(data?.liability.prepaidCredit.balance ?? "0.00")}
-              />
-              <Figure
-                label="Gift cards"
-                value={formatPrice(data?.liability.giftCards.balance ?? "0.00")}
-              />
-              <Figure
-                label="Outstanding"
-                value={formatPrice(data?.liability.outstanding.balance ?? "0.00")}
-              />
-            </dl>
-            <p className="mt-3 text-sm text-ink-muted">
-              Monetary liability:{" "}
-              <span className="font-heavy text-ink">
-                {formatPrice(data?.liability.totalMoney ?? "0.00")}
-              </span>{" "}
-              · Package sessions are counted, not valued, because the catalogue has member and
-              non-member prices.
+          <section aria-label="Current customer balances" className="xl:col-span-2">
+            <h3 className="text-lg font-bold">Current customer balances</h3>
+            <p className="mt-1 text-sm text-ink-muted">
+              Current snapshot, independent of the selected sales range. These are not historical
+              closing balances for that period.
             </p>
-          </Card>
+            <p className="mt-1 text-sm text-ink-muted">
+              Snapshot as of {formatDateTime(data?.liability.asOf)} ({timeZone}).
+            </p>
+            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+              <Card
+                title="Prepaid credit and gift-card liabilities"
+                description="Unexpired balances customers can still spend; excludes customer debt."
+              >
+                <dl className="grid grid-cols-2 gap-3">
+                  <Figure
+                    label="Prepaid credit"
+                    value={formatPrice(data?.liability.prepaidCredit.balance ?? "0.00")}
+                  />
+                  <Figure
+                    label="Gift cards"
+                    value={formatPrice(data?.liability.giftCards.balance ?? "0.00")}
+                  />
+                </dl>
+                <p className="mt-3 text-sm text-ink-muted">
+                  Total monetary liability:{" "}
+                  <span className="font-heavy text-ink">
+                    {formatPrice(data?.liability.totalMoney ?? "0.00")}
+                  </span>
+                </p>
+              </Card>
+              <Card
+                title="Customer receivables"
+                description="Money customers owe the salon; not prepaid credit and not included in liabilities."
+              >
+                <dl className="grid grid-cols-2 gap-3">
+                  <Figure
+                    label="Amount owed to salon"
+                    value={formatPrice(data?.liability.outstanding.balance ?? "0.00")}
+                  />
+                  <Figure
+                    label="Customers with debt"
+                    value={data?.liability.outstanding.customers ?? 0}
+                  />
+                </dl>
+              </Card>
+              <Card
+                title="Remaining package sessions"
+                description="Unexpired session entitlements, counted but not valued in money."
+                className="lg:col-span-2"
+              >
+                <dl>
+                  <Figure
+                    label="Sessions remaining"
+                    value={`${data?.liability.packageSessions.sessionsRemaining ?? 0} across ${data?.liability.packageSessions.holdings ?? 0} holdings`}
+                  />
+                </dl>
+                <p className="mt-3 text-sm text-ink-muted">
+                  Session packages are excluded from the monetary total. These operational balances
+                  are not a complete accounting or deferred-revenue valuation.
+                </p>
+              </Card>
+            </div>
+          </section>
         </div>
       )}
     </div>

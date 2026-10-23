@@ -63,6 +63,7 @@ interface OverviewBody {
     giftCards: { holdings: number; balance: string };
     outstanding: { customers: number; balance: string };
     totalMoney: string;
+    asOf: string;
   };
 }
 
@@ -536,8 +537,27 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
       prepaidCredit: { holdings: 1, balance: "40.00" },
       giftCards: { holdings: 1, balance: "15.00" },
       outstanding: { customers: 2, balance: "15.00" },
-      totalMoney: "70.00",
+      totalMoney: "55.00",
+      asOf: body.liability.asOf,
     });
+    assert.ok(Number.isFinite(Date.parse(body.liability.asOf)));
+  });
+
+  it("returns current balances even for a historical range with no sales", async () => {
+    const before = Date.now();
+    const response = await request(
+      "/api/reports/overview?from=2000-01-01T00:00:00.000Z&to=2000-01-02T00:00:00.000Z&timeZone=UTC",
+      token,
+    );
+    const body = await dataOf<OverviewBody>(response);
+    assert.equal(response.status, 200);
+    assert.equal(body.totals.sales, 0);
+    assert.equal(body.liability.prepaidCredit.balance, "40.00");
+    assert.equal(body.liability.giftCards.balance, "15.00");
+    assert.equal(body.liability.outstanding.balance, "15.00");
+    assert.equal(body.liability.totalMoney, "55.00");
+    assert.ok(Date.parse(body.liability.asOf) >= before);
+    assert.ok(Date.parse(body.liability.asOf) <= Date.now());
   });
 
   it("draws the daily close in the salon's zone and separates collected from redeemed", async () => {
@@ -577,5 +597,86 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
     assert.equal(badDate.status, 422);
     assert.equal(badZone.status, 422);
     assert.equal(((await badZone.json()) as ErrorEnvelope).code, "VALIDATION_FAILED");
+  });
+
+  it("does not increase monetary liabilities when customer debt increases", async () => {
+    const debt = await runAsPlatform(() =>
+      prisma.customerOutstanding.findFirstOrThrow({
+        where: { tenantId: TENANT_A },
+      }),
+    );
+    try {
+      await runAsPlatform(() =>
+        prisma.customerOutstanding.update({
+          where: { id: debt.id },
+          data: { unpaidAmount: debt.unpaidAmount.add("100.01") },
+        }),
+      );
+      const response = await request(
+        "/api/reports/overview?from=2000-01-01T00:00:00.000Z&to=2000-01-02T00:00:00.000Z&timeZone=UTC",
+        token,
+      );
+      const body = await dataOf<OverviewBody>(response);
+      assert.equal(response.status, 200);
+      assert.equal(body.liability.outstanding.balance, "115.01");
+      assert.equal(body.liability.totalMoney, "55.00");
+    } finally {
+      await runAsPlatform(() =>
+        prisma.customerOutstanding.update({
+          where: { id: debt.id },
+          data: { unpaidAmount: debt.unpaidAmount },
+        }),
+      );
+    }
+  });
+
+  it("excludes expired gift cards and other tenants' debt from the snapshot", async () => {
+    const gift = await runAsPlatform(() =>
+      prisma.customerGiftCardHolding.findFirstOrThrow({
+        where: { tenantId: TENANT_A },
+      }),
+    );
+    let expiredId: string | undefined;
+    let foreignId: string | undefined;
+    try {
+      await runAsPlatform(async () => {
+        const expired = await prisma.customerGiftCardHolding.create({
+          data: {
+            tenantId: TENANT_A,
+            customerId: gift.customerId,
+            giftCardId: gift.giftCardId,
+            value: "999.99",
+            valueRemaining: "999.99",
+            expiresAt: new Date("2000-01-01"),
+          },
+        });
+        expiredId = expired.id;
+        const foreign = await prisma.customer.create({
+          data: { tenantId: TENANT_B, name: "Foreign debtor" },
+        });
+        foreignId = foreign.id;
+        await prisma.customerOutstanding.create({
+          data: {
+            tenantId: TENANT_B,
+            customerId: foreign.id,
+            unpaidAmount: "999.99",
+          },
+        });
+      });
+      const response = await request(
+        "/api/reports/overview?from=2000-01-01T00:00:00.000Z&to=2000-01-02T00:00:00.000Z&timeZone=UTC",
+        token,
+      );
+      const body = await dataOf<OverviewBody>(response);
+      assert.equal(response.status, 200);
+      assert.deepEqual(body.liability.giftCards, { holdings: 1, balance: "15.00" });
+      assert.deepEqual(body.liability.outstanding, { customers: 2, balance: "15.00" });
+      assert.equal(body.liability.totalMoney, "55.00");
+    } finally {
+      await runAsPlatform(async () => {
+        if (expiredId) await prisma.customerGiftCardHolding.delete({ where: { id: expiredId } });
+        if (foreignId) await prisma.customer.delete({ where: { id: foreignId } });
+      });
+    }
   });
 });

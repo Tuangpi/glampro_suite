@@ -167,7 +167,7 @@ function tenderSubtotals(payments: readonly TenderRow[]): ReportTender[] {
   }));
 }
 
-/** Money and sessions customers still hold, as of this request. */
+/** Current operational credit and debt balances, independent of the sales range. */
 async function liabilitySnapshot(): Promise<ReportLiability> {
   const now = new Date();
   // Expired credit cannot be spent, so counting it would overstate what the salon
@@ -218,7 +218,8 @@ async function liabilitySnapshot(): Promise<ReportLiability> {
       customers: owingCustomers.size,
       balance: centsToMoney(outstandingBalance),
     },
-    totalMoney: centsToMoney(prepaidBalance + giftCardBalance + outstandingBalance),
+    totalMoney: centsToMoney(prepaidBalance + giftCardBalance),
+    asOf: now.toISOString(),
   };
 }
 

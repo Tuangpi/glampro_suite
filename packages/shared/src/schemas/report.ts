@@ -132,10 +132,10 @@ export const reportServiceSalesSchema = z.object({
 export type ReportServiceSales = z.infer<typeof reportServiceSalesSchema>;
 
 /**
- * What customers can still spend. Package sessions are counted, not valued:
- * the catalogue stores member and non-member prices, so assigning a per-session
- * dollar value here would pick one of two real prices on the salon's behalf.
- * The three monetary liabilities are sums of what is still outstanding.
+ * Current operational balances, independent of the selected sales period.
+ * Unexpired prepaid credit and gift cards are monetary customer liabilities.
+ * Outstanding customer debt is a separate receivable, never added to liabilities.
+ * Session packages are counted only; this is not a deferred-revenue valuation.
  */
 export const reportLiabilitySchema = z.object({
   packageSessions: z.object({
@@ -154,8 +154,10 @@ export const reportLiabilitySchema = z.object({
     customers: z.number().int().min(0),
     balance: z.string(),
   }),
-  /** Prepaid credit + gift cards + unpaid balances. Sessions are not money. */
+  /** Unexpired prepaid credit + gift cards only; excludes receivables and sessions. */
   totalMoney: z.string(),
+  /** When the current balance snapshot started; not the selected period's closing date. */
+  asOf: z.iso.datetime(),
 });
 
 export type ReportLiability = z.infer<typeof reportLiabilitySchema>;
@@ -219,7 +221,7 @@ export const reportOverviewSchema = z.object({
   /** Every tender used by a completed sale in the range. */
   tenders: z.array(reportTenderSchema),
   refundTenders: z.array(reportTenderSchema).default([]),
-  /** What customers can still spend, as of the request. */
+  /** Current credit, session and receivable balances; not filtered by the sales range. */
   liability: reportLiabilitySchema,
   asOf: z.string(),
 });
