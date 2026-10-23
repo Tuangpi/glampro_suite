@@ -21,6 +21,10 @@ export const queryKeys = {
   dashboard: {
     summary: () => ["dashboard", "summary"] as const,
   },
+  ownerAssistant: {
+    summary: (tenantId: string, userId: string) =>
+      ["owner-assistant", "summary", tenantId, userId] as const,
+  },
 
   /**
    * The till. `openCart` is the odd one: the cart is client state kept in the

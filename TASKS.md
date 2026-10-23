@@ -37,11 +37,20 @@ owner-facing experience; they do not authorize deployment or outbound messages.
 
 ### OA-02 — Dashboard briefing and evidence workspace
 
-- Status: TODO
+- Status: IN PROGRESS
 - Dependencies: OA-01
 - Expected result: Owner/manager briefing with evidence links and no new main nav item.
 - Completion check: Role/module-aware UI; loading, empty, partial failure, retry and
   stale states; factual summaries and owner walkthrough.
+- Implementation/automated checks complete: owner/manager dashboard panel, read-only
+  suggested checks and evidence drawer with exact window, definitions and entitled
+  source-screen links. Scoped tenant/user cache, validated response, refresh/retry,
+  last-successful stale warning and refusal suppression. Existing tiles remain
+  independently available if the briefing fails. No new navigation, message draft,
+  approval/send action or inferred trend/capacity. Full web 646/646, focused 16/16,
+  web typecheck, workspace lint, production web build and diff/format review pass.
+- Remaining: owner walkthrough/acceptance. Keep IN PROGRESS until verified; no agent
+  browser walkthrough or live HTTP/database test performed.
 
 ### OA-03 — Service-aware rebooking recommendations
 

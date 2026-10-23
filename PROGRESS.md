@@ -2,9 +2,11 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **OA-01**, shared owner-assistant
+- Current task: **OA-02 IN PROGRESS**, dashboard briefing and evidence workspace.
+  Most recently completed: **OA-01**, shared owner-assistant
   metric definitions and contracts. Approved OA-01–OA-07 plan recorded.
-- Next: **OA-02**, dashboard briefing and evidence workspace; not started.
+- Next: OA-02 owner walkthrough/acceptance. Implementation and automated checks
+  complete; do not start OA-03 before closing the acceptance gate.
 - OA-01 verified locally: shared 170/170, API focused 31 passed / 1 opt-in live
   acceptance skipped, dashboard 3/3, typechecks/lint/production builds pass.
 - Verified: all 43 migrations replay and commission acceptance/resolver 5/5 on
@@ -17,6 +19,35 @@
   is recoverable by resend after committed creation.
 - Multi-outlet remains deferred. TK2610-0026 remains BLOCKED/deferred. Existing
   prepaid/treatment migration/schema drift remains unresolved; P2 is not complete.
+
+## October 23, 2026 — OA-02 briefing implemented; owner walkthrough pending
+
+- Added owner/manager-only dashboard briefing and existing accessible drawer for
+  evidence. No new route/nav item, database change, sending or activation. Facts
+  include paid/refund/net/average, new customers, bookings and active-stock checks.
+  Suggested checks are capped at three and filtered by destination entitlements.
+- Hook validates the shared OA-01 schema, keys cache by tenant/user, refreshes every
+  minute/on focus and supports manual retry. Role/module loss unmounts the workspace;
+  401/403 hides cached facts. Non-auth refresh failure retains explicitly stale
+  evidence. Existing dashboard tiles fetch independently, allowing partial availability.
+- Evidence shows exact half-open interval, salon timezone, timestamp and metric
+  definitions. Destination links are labelled source screens, not exact-record or
+  prefiltered evidence; owners are told the reporting window is not applied there.
+  No comparison, AI generation, legacy nudge/promo previews or capacity inference.
+- Verified: focused 16/16; full web 646/646 across 80 files; web typecheck, workspace
+  lint and production web build pass. Existing non-fatal npm unknown-config warning
+  remains. Tests cover both privileged roles, other roles, missing entitlement/
+  identity, role loss with open drawer, source links, empty/loading/error/retry,
+  stale and refusal snapshots, schema validation and tenant/user cache separation.
+- Remaining: owner walkthrough/acceptance, so OA-02 remains IN PROGRESS. No agent
+  browser UAT, live HTTP/database checks, application database changes, messaging,
+  deployment, commit or push. Logs: `/tmp/oa02-focused.log`,
+  `/tmp/oa02-web-full.log`, `/tmp/oa02-types.log`, `/tmp/oa02-lint.log`,
+  `/tmp/oa02-build.log`.
+- Manual check: sign in as owner/manager; open dashboard briefing/evidence; verify
+  figures/window/definitions and source destinations; refresh and close with Escape;
+  check unavailable modules hide links and cashier/staff cannot see the briefing.
+  After acceptance, next task is OA-03 service-aware rebooking, not automatic sending.
 
 ## October 23, 2026 — OA-01 owner-assistant metrics foundation complete
 
