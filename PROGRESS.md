@@ -2,25 +2,74 @@
 
 ## Current State
 
-- Current task: **None**; TK2610-0026 deferred by user, remains BLOCKED.
-  TK2610-0025 / TK2610-0027 DONE for local
-  development scope; user confirmed existing-owner login complete October 23.
-  This is user-reported acceptance, not an agent walkthrough or production rollout.
-- Latest runtime evidence (prior session, not rerun): assistant focused 8/8;
-  full sequential API 509 passed / 0 failed / 9 opt-in skips; web 597/597;
-  shared 157/157; workspace typecheck/lint/build pass.
-- Local database migration status/checksums, enabled guards and API health verified.
-  Backup/restore rehearsal and pre/post-migration comparisons were not performed:
-  migrations had already been applied before this session's checks.
-- P2 TK2610-0003 remains IN PROGRESS; TK2610-0026 BLOCKED on business evidence,
-  solution compliance and authorized submission. Official public route reviewed
-  October 23; company eligibility and portal access remain unverified.
-- Standing user acceptance applies, not an agent browser walkthrough. Assistant is
-  read-only deterministic advice, not an LLM, delivery/approval workflow or campaign
-  activation. Never interpret its approval flag as authorization to send.
-- Next: None selected. Skip TK2610-0026 until user requests resumption with business
-  evidence available. P2 remains IN PROGRESS; deferral is not phase completion.
-  No external submission, application data changes, commit or push authorized.
+- Current task: **None**. Most recently completed: **SAAS-02**, separate operator
+  authentication and portal shell. Next ready: **SAAS-03**, company management and
+  secure owner onboarding; not started. SAAS-04 covers subscriptions/lifecycle/audit.
+- Multi-outlet TK2610-0028 remains deferred. TK2610-0026 remains BLOCKED/deferred
+  pending business evidence; P2 is not complete.
+- Verified this session: disposable PostgreSQL/HTTP/SMTP platform acceptance passes;
+  API 537 passed / 0 failed / 11 opt-in skips; salon web 606/606; shared 161/161;
+  platform 5/5; focused auth 35/35; workspace typecheck/lint/build pass.
+- Migration and first-operator bootstrap tested only on disposable databases.
+  Application database/accounts unchanged; no production rollout, commit or push.
+  Existing worktree changes from SAAS-01 preserved.
+- Known release concern: migration/schema comparison reports existing prepaid/
+  treatment foreign-key/index drift, no platform-auth discrepancy. Not repaired.
+- Portal runs via root `npm run dev:platform` on port 5174. Actual operator use
+  requires authorized application migration/bootstrap and real SMTP configuration.
+  Memory-only sessions require sign-in after reload. Company management and
+  operator recovery/password-management UI are not implemented yet.
+
+## October 23, 2026 — SAAS-02 platform authentication and portal shell
+
+- Added separate `apps/platform` React/Vite app, shared platform contracts and
+  `/api/platform/auth` endpoints. Reused installed libraries; no new library choice.
+  Root build now includes platform; salon dev workflow unchanged.
+- Additive migration introduces platform realm, hashed password-bound MFA challenge
+  fields and a separate PlatformSession table. Platform audience/realm/session checks
+  prevent both-direction tenant/platform access; no blanket platform database scope.
+- Mandatory email code has ten-minute expiry and five-attempt atomic budget;
+  single-use challenge, atomic refresh rotation, absolute expiry and immediate
+  logout revocation. Active status/token version checked on every request.
+  Bootstrap creates only the first operator under advisory lock with audit and
+  strong credentials; never automatic and never overwrites an account.
+- Portal login/MFA/shell/logout and session check use memory-only tokens. Failed
+  logout remains retryable instead of claiming successful server revocation.
+- Checks: all 41 migrations replayed on isolated loopback PostgreSQL port 55440;
+  opt-in real HTTP/capture-only SMTP acceptance passed (including concurrent MFA
+  replay, code replacement/expiry/budget, refresh reuse, disable/version and realm
+  refusal). Bootstrap first creation passed; repeat and weak credentials refused.
+- Tests: API full sequential 537 passed / 0 failed / 11 opt-in skips; salon web
+  606/606; shared 161/161; platform 5/5; focused auth 35/35. Workspace build,
+  typecheck/lint passed. Initial mocked no-SMTP test allowed dotenv to restore SMTP;
+  explicit empty override fixed isolation and rerun passed. Initial acceptance
+  rerun hit a duplicate fixture; repeatable gated fixture setup corrected it.
+- Schema diff exits 2 for unrelated existing prepaid/treatment constraints/index
+  names after full migration replay; no platform-auth mismatch. No unrelated repair.
+- No application migration, real-account bootstrap, deployment, commit or push.
+  Standing acceptance applies, not an agent browser walkthrough. Operational setup
+  and limitations are recorded in PROJECT.md. Next: SAAS-03; stop here.
+
+## October 23, 2026 — SAAS-01 tenant boundary hardening
+
+- Approved multi-company SaaS first; multi-outlet deferred. Added SAAS-01–04
+  deliverables and corrected TK2610-0028's unsupported branch-completion claim.
+- Tenant auth now rejects unsupported realms before user lookup and refuses a
+  token whose tenant differs from the user's current tenant. Legacy tokens without
+  a tenant claim still enter only the user's own company.
+- Company-owner force-sign-out now requires writable tenant access. Its service
+  requires tenant context, updates only a matching tenant user, and revokes their
+  refresh tokens in the same transaction. Missing/foreign targets return identical
+  404 responses without refresh-token changes. This is not a platform endpoint.
+- Changed API middleware, auth route/service and added tenant-boundary tests.
+  Focused auth/token/guard/security suites: 33 passed, zero failed/skipped, including
+  seven new tests with mocked persistence. Shared build and API typecheck/lint pass;
+  actual code diff reviewed and git diff whitespace check passed.
+- No live database/HTTP test, migration, deployment, commit or push. Additional
+  schema/status/module test/build command output was unreliable; not counted.
+  Platform MFA/bootstrap, separate session model and restricted platform-plane
+  data access must be addressed in SAAS-02 before company-management APIs.
+- Next ready: SAAS-02. Stopped after the selected task per managed-task workflow.
 
 ## October 23, 2026 — TK2610-0026 deferred by user
 

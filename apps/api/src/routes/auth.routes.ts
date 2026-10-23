@@ -130,20 +130,21 @@ authRouter.post(
 );
 
 /**
- * Platform forced sign-out. Bumps the user's `tokenVersion` and revokes all
- * their refresh tokens in one atomic write. SUPER_ADMIN only — this is the
- * platform escape hatch for a compromised account (`PROJECT.md#adr-0007`).
+ * Company-owner forced sign-out, restricted to users in the owner's tenant.
+ * This is not a platform administration endpoint.
  */
 authRouter.post(
   "/force-sign-out",
   auth,
   requireRole("SUPER_ADMIN"),
+  requireWritableTenant(),
   authLimiter,
   validate(forceSignOutSchema),
   async (req, res, next) => {
     try {
       const input = validated<ForceSignOutInput>(req, "body");
-      await forceSignOut(input);
+      if (!req.user?.tenantId) throw unauthorized();
+      await forceSignOut(input, req.user.tenantId);
       res.status(200).json({ data: { success: true } });
     } catch (error) {
       next(error);

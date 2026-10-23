@@ -13,6 +13,64 @@ promoted to Done. Mark Done only when the full expected result and completion
 check are met. Preserve explicit readiness sign-off gates. Historical evidence is
 not a new test run. Assess code first; follow dependencies rather than date order.
 
+## Multi-company SaaS — approved October 23, 2026
+
+### SAAS-01 — Harden tenant authentication and session administration
+
+- Status: DONE
+- Expected result: Token company claims must match the authenticated user's
+  company; salon owners cannot revoke another company's sessions. Reject
+  unsupported realms before tenant lookups. Preserve legacy tenant-less tokens.
+- Completion check: Regression tests for matching/mismatched claims, legacy
+  tokens, unsupported realms, same-company revocation and cross-company refusal;
+  focused authentication suites, API typecheck/lint and diff review.
+- Evidence: October 23: 33/33 focused tests pass, including seven new mocked
+  persistence boundary tests; shared build, API typecheck/lint and diff check pass.
+  No database migration or application data changes. Live PostgreSQL/HTTP and full
+  workspace suites were not run for this task; transaction behavior was checked
+  through mocks, not a live rollback rehearsal. Additional schema/status/module
+  test command output could not be reliably captured and is not claimed as passed.
+
+### SAAS-02 — Platform authentication and separate portal shell
+
+- Status: DONE — implementation and disposable local verification; application
+  migration/bootstrap and production deployment are not performed or implied.
+- Dependencies: SAAS-01
+- Expected result: Separate operator identity/session surface and `apps/platform`
+  login, without granting salon owners platform privileges or unrestricted access
+  to tenant business data. Include strong credential/bootstrap and MFA design.
+- Completion check: Login/session/revocation and two-way realm rejection tests;
+  portal build and authentication tests; reviewed additive migrations on disposable
+  data before any authorized application rollout.
+- Evidence: Platform UI/client 5/5; focused API authentication 35/35; full sequential
+  API 537 passed / 0 failed / 11 opt-in skips on disposable PostgreSQL; salon web
+  606/606; shared 161/161. Workspace typecheck/lint/build pass. Separate opt-in
+  real PostgreSQL/HTTP/loopback SMTP acceptance passes, including concurrent MFA
+  replay, attempt limits/expiry, refresh reuse, logout and two-way realm isolation.
+  Bootstrap first creation succeeds; repeat initialization and weak password fail.
+  All 41 migrations replay on disposable databases. Schema diff reports unrelated
+  existing prepaid/treatment constraint/index drift, no platform-auth differences;
+  not fixed here. See PROJECT.md for operational setup and limitations.
+
+### SAAS-03 — Company management and secure owner onboarding
+
+- Status: TODO
+- Dependencies: SAAS-02
+- Expected result: Platform company list/details and atomic creation with secure,
+  expiring one-time owner invitations; no default passwords or public signup.
+- Completion check: Two-company isolation, duplicate/invalid creation, invitation
+  expiry/replay and transaction rollback tests; portal workflow verification.
+
+### SAAS-04 — Subscription, lifecycle, entitlements and audit management
+
+- Status: TODO
+- Dependencies: SAAS-03
+- Expected result: Manual subscriptions, feature access, suspend/reactivate/cancel
+  workflows and attributable audit history. No automatic billing, deletion or
+  impersonation. Verify status/session policy rather than assume foundations work.
+- Completion check: Authorized/unauthorized lifecycle and entitlement tests,
+  audit atomicity, two-company end-to-end isolation and available workspace checks.
+
 ## Documentation consolidation
 
 Standing acceptance override (October 22, 2026): the user accepts all manual
@@ -928,10 +986,16 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0028 — P2-02 Multi-outlet: shared customers, packages, stock across branches
 
-- Status: DONE
+- Status: BLOCKED — deferred by user October 23, 2026; not needed for the initial
+  multi-company SaaS milestone. Resume only on explicit request after SaaS work.
 - Expected result: Multi-outlet: shared customers, packages, stock across branches
-- Completion check / dependencies: ✅ Option 1 (Family/Shared ID Model) implemented: added `familyId String?` to Customer, Package, and Product Prisma models; updated service logic in customer.service.ts, package.service.ts, and catalogue.service.ts to support shared access within a tenant; all 130 shared tests pass. Family/shared ID enables resources (customers, packages, stock items) to be grouped across branches via `familyId`, with individual holdings (no `familyId`) behaving exactly as before for backward compatibility.
-- Next: TK2610-0029 — P2-04 AI assistant: owner summary, rebooking nudges, slow-day promos
+- Completion check / dependencies: Historical DONE claim based on family grouping
+  is superseded: the current schema has no outlet model and grouping is not
+  evidence of outlet permissions, branch stock or consolidated reporting. Full
+  branch scope and migration checks must be defined when this task is resumed.
+- Historical evidence: Earlier notes claimed familyId changes and 130 shared
+  tests; those claims were not rerun or accepted as multi-outlet verification.
+- Next: Deferred; complete SAAS-01–SAAS-04 first.
 
 ### TK2610-0029 — P2-04 AI assistant: owner summary, rebooking nudges, slow-day promos
 

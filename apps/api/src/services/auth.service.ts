@@ -17,7 +17,7 @@ import {
   WEB_REALM,
 } from "@glampro_suite/shared";
 
-import { forbidden, unauthorized, validationFailed } from "../lib/http-error.js";
+import { forbidden, notFound, unauthorized, validationFailed } from "../lib/http-error.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { sendTwoFactorCode } from "../lib/email.js";
 import { prisma } from "../lib/prisma.js";
@@ -368,25 +368,25 @@ export async function changePassword(
 }
 
 /**
- * Platform forced sign-out. Bumps the user's `tokenVersion` (invalidating every
- * outstanding access token) and revokes all their refresh tokens in one atomic
- * write. Only a platform-level actor (SUPER_ADMIN) may call this; see
- * `PROJECT.md#adr-0007`.
+ * Company-owner forced sign-out. Both writes stay inside the authenticated
+ * tenant. Unknown and foreign users produce the same response without mutations.
  */
-export async function forceSignOut(input: ForceSignOutInput): Promise<void> {
+export async function forceSignOut(input: ForceSignOutInput, tenantId: string): Promise<void> {
+  if (!tenantId) throw forbidden("A company context is required.", "TENANT_CONTEXT_REQUIRED");
   const now = new Date();
 
-  await runAsPlatform(() =>
-    prisma.$transaction([
-      prisma.user.update({
-        where: { id: input.userId },
+  await runAsTenant(tenantId, () =>
+    prisma.$transaction(async (tx) => {
+      const changed = await tx.user.updateMany({
+        where: { id: input.userId, tenantId },
         data: { tokenVersion: { increment: 1 }, twoFactorCode: null, twoFactorCodeExpiresAt: null },
-      }),
-      prisma.refreshToken.updateMany({
-        where: { userId: input.userId, revokedAt: null },
+      });
+      if (changed.count !== 1) throw notFound("User not found.");
+      await tx.refreshToken.updateMany({
+        where: { userId: input.userId, user: { tenantId }, revokedAt: null },
         data: { revokedAt: now },
-      }),
-    ]),
+      });
+    }),
   );
 }
 

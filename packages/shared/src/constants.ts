@@ -265,7 +265,7 @@ export const PASSWORD_MIN_LENGTH = 8;
 export const GLOBAL_ROLES = ["SUPER_ADMIN", "MANAGER", "STAFF", "CASHIER"] as const;
 
 /** Client surfaces that authenticate against the API. */
-export const AUTH_REALMS = ["web", "pos", "mobile"] as const;
+export const AUTH_REALMS = ["web", "pos", "mobile", "platform"] as const;
 
 /**
  * The isolation boundary's lifecycle. Mirrors the `TenantStatus` database enum.

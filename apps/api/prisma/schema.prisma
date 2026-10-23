@@ -33,6 +33,7 @@ enum AuthRealm {
   web
   pos
   mobile
+  platform
 }
 
 /// The isolation boundary's lifecycle. Drives what a tenant's users may do —
@@ -273,24 +274,43 @@ model RefreshToken {
 // ---------------------------------------------------------------------------
 
 /// An employee of the SaaS operator. Sits above every tenant and never has a
-/// `tenantId`. The `platform` realm that authenticates it lands with the console
-/// phase, not here.
+/// `tenantId`. Authenticated only through the separate platform session surface.
 model PlatformAdmin {
   id           String              @id @default(cuid())
   email        String              @unique
   name         String
   passwordHash String
   status       PlatformAdminStatus @default(ACTIVE)
-  /// Bumped on logout and password change, as on `User`.
+  /// Increment to revoke every operator session. Logout revokes one session row.
   tokenVersion Int                 @default(0)
   lastLoginAt  DateTime?
+  loginChallengeHash String? @unique
+  loginCodeHash String?
+  loginChallengeExpiresAt DateTime?
+  loginAttempts Int @default(0)
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 
   payments  Payment[]
   auditLogs AuditLog[]
+  sessions PlatformSession[]
 
   @@map("platform_admins")
+}
+
+/// Operator sessions are never linked to salon users or salon refresh tokens.
+model PlatformSession {
+  id String @id @default(cuid())
+  adminId String
+  tokenHash String @unique
+  tokenVersion Int
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  admin PlatformAdmin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@map("platform_sessions")
 }
 
 /// One salon business. The isolation boundary every domain row points at.

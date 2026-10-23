@@ -14,6 +14,62 @@ Positioning from the review: simple flat SGD pricing, local shared/transferable
 prepaid packages, WhatsApp-first engagement, owner assistance and grant readiness.
 These are product direction, not verified pricing, provider or grant commitments.
 
+## SaaS scope — accepted October 23, 2026
+
+Complete multi-company SaaS before considering multiple outlets. One company is
+one tenant, with isolated users and business data. Build the operator console in
+`apps/platform`, sharing the existing API/database per ADR 0004. Company-level
+`SUPER_ADMIN` is not a platform administrator.
+
+Initial scope: verify tenant boundaries; separate platform authentication; company
+list/details and atomic onboarding with a secure owner invitation; manual
+subscriptions, module entitlements, account lifecycle and administrative audit.
+Public signup, automatic billing, impersonation and company deletion are excluded
+from this first milestone. Multi-outlet is deferred, not required for SaaS launch.
+Original DOCX/PDF sources remain unchanged. Existing family grouping is not proof
+of branch management. See SAAS-01–SAAS-04 in TASKS.md.
+
+### Platform authentication — SAAS-02, October 23, 2026
+
+Implemented a separate React operator app at `apps/platform` using the existing
+API/database and shared contracts. Run `npm run dev:platform` from the project root;
+Vite binds port 5174 with strict-port checks and proxies `/api` to port 9000 unless
+`VITE_PROXY_TARGET` is set. Root build includes the new portal; root dev remains
+the existing salon workflow. Serve the built operator app on a separate origin
+with an `/api` reverse proxy and HTTPS in deployment; no deployment configured here.
+
+API surface: `/api/platform/auth/login`, `/verify`, `/refresh`, `/logout`, `/me`.
+Mandatory password-bound email verification expires after ten minutes with five
+attempts per challenge. Login requires actual SMTP configuration, including local
+capture SMTP for development; JSON transport is not an MFA-delivery substitute.
+Only hashed challenges/codes/refresh tokens are persisted. Operator access tokens
+have a platform audience/realm and session id, never a salon role or tenant id.
+Every authenticated request checks the session and current administrator status
+and token version. Logout immediately revokes access and refresh for that session.
+Refresh rotates atomically with an absolute expiry, not a sliding lifetime.
+
+Operator tokens stay in the portal's memory, not browser storage; reloading requires
+sign-in. Failed logout retains the session for retry and is not shown as successful
+server revocation. This milestone has no tenant-business-data endpoints, no generic
+`runAsPlatform` request context, no impersonation and no public registration.
+
+Additive migration `20261023070000_platform_auth` was exercised only on disposable
+PostgreSQL. Application rollout still requires review/backup and an authorized
+`npm run db:migrate`. No existing salon session rows are changed by this migration.
+After authorized migration, bootstrap the first operator with
+`npm run platform:bootstrap --workspace @glampro_suite/api`, supplying
+`PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_NAME`, `PLATFORM_ADMIN_PASSWORD` privately
+through the environment. Never put passwords in command arguments, git or logs.
+Bootstrap is explicit, transactional and advisory-locked, requires a strong password
+of at most 72 UTF-8 bytes, refuses existing initialization and records an audit.
+It is never invoked by server startup or seed. Additional operator provisioning,
+credential recovery/change and operator management UI are not implemented here.
+
+Verification found pre-existing migration/schema drift in prepaid/treatment foreign
+keys and index naming on a database replayed from all migrations; the diff reports
+no platform-auth discrepancies. Do not silently repair unrelated constraints during
+platform rollout. Resolve that drift separately before production release planning.
+
 ## Active records
 
 - `PROJECT.md`: scope, architecture, constraints and important decisions.

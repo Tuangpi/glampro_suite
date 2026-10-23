@@ -43,6 +43,12 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
   try {
     const claims = verifyAccessToken(token);
 
+    // Reject other surfaces before looking up a tenant user with the same id.
+    if (!TENANT_REALMS.has(claims.realm)) {
+      next(forbidden("This token is not valid for a tenant realm.", "REALM_NOT_SUPPORTED"));
+      return;
+    }
+
     // `User` is tenant-scoped, but this lookup happens before any tenant is
     // known: it is keyed on the verified token's `sub`, not on anything the
     // request supplied. `runAsPlatform` is the explicit opt-out the extension
@@ -88,10 +94,15 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
       return;
     }
 
-    // A tenant realm's subject is a `User`. A token without a tenant realm is not
-    // one this build issued for a tenant route.
-    if (!TENANT_REALMS.has(claims.realm)) {
-      next(forbidden("This token is not valid for a tenant realm.", "REALM_NOT_SUPPORTED"));
+    // A signed claim is not permission to enter a different company. This also
+    // invalidates old tokens after an account is reassigned to another tenant.
+    if (claims.tenantId !== undefined && claims.tenantId !== user.tenantId) {
+      next(
+        unauthorized(
+          "Your session is no longer valid. Please log in again.",
+          "SESSION_INVALIDATED",
+        ),
+      );
       return;
     }
 

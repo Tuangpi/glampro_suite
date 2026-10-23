@@ -7,6 +7,7 @@
   "type": "module",
   "main": "dist/src/index.js",
   "scripts": {
+    "platform:bootstrap": "node --import tsx src/platform-bootstrap.ts",
     "worker:messaging": "node --import tsx src/message-worker.ts",
     "worker:messaging:prod": "node dist/src/message-worker.js",
     "dev": "nodemon",
