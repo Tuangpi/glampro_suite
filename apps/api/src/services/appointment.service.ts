@@ -630,6 +630,25 @@ async function reserve(
   return assignResources(tx, lines, excludeAppointmentId);
 }
 
+/** Public availability uses the same per-line staff and resource rules as writes. */
+export async function isAppointmentSlotAvailable(
+  tx: Tx,
+  serviceId: string,
+  staffId: string,
+  startsAt: Date,
+): Promise<boolean> {
+  try {
+    const lines = await planLines(tx, startsAt, [{ serviceId }], staffId, {
+      requireActiveFor: () => true,
+    });
+    await reserve(tx, lines);
+    return true;
+  } catch (error) {
+    if (isSkippableOccurrence(error)) return false;
+    throw error;
+  }
+}
+
 /**
  * One page of bookings in a window, soonest first.
  *
@@ -814,7 +833,7 @@ export async function createAppointment(
   return { appointment: await getAppointment(created.id), series: created.series };
 }
 
-async function createAppointmentInTransaction(
+export async function createAppointmentInTransaction(
   tx: Tx,
   input: CreateAppointmentInput,
 ): Promise<{ id: string; series: AppointmentSeriesReport | null }> {

@@ -2,21 +2,153 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **TK2610-0029 DONE** —
-  authenticated tenant-scoped assistant, salon-local daily metrics, latest completed
-  visit nudges with both consent choices, future promo drafts and mandatory approval.
-- Checks: focused 8/8; full sequential API 509 passed / 0 failed / 9 opt-in skips;
-  web 597/597; shared 157/157; workspace typecheck/lint/build pass.
-- Outstanding operations unchanged: TK2610-0027 BLOCKED only on separately
-  authorized application rollout, and 0025 retention/history rollout unperformed.
-  Do not repeat their completed implementation or initiate migrations/deployment.
-- P2 TK2610-0003 remains IN PROGRESS; TK2610-0026 BLOCKED on vendor-route/business
-  evidence/submission. No automatic next implementation selected.
+- Current task: **None**; TK2610-0026 deferred by user, remains BLOCKED.
+  TK2610-0025 / TK2610-0027 DONE for local
+  development scope; user confirmed existing-owner login complete October 23.
+  This is user-reported acceptance, not an agent walkthrough or production rollout.
+- Latest runtime evidence (prior session, not rerun): assistant focused 8/8;
+  full sequential API 509 passed / 0 failed / 9 opt-in skips; web 597/597;
+  shared 157/157; workspace typecheck/lint/build pass.
+- Local database migration status/checksums, enabled guards and API health verified.
+  Backup/restore rehearsal and pre/post-migration comparisons were not performed:
+  migrations had already been applied before this session's checks.
+- P2 TK2610-0003 remains IN PROGRESS; TK2610-0026 BLOCKED on business evidence,
+  solution compliance and authorized submission. Official public route reviewed
+  October 23; company eligibility and portal access remain unverified.
 - Standing user acceptance applies, not an agent browser walkthrough. Assistant is
   read-only deterministic advice, not an LLM, delivery/approval workflow or campaign
   activation. Never interpret its approval flag as authorization to send.
-- Next: None automatically; reconcile remaining P2 scope/blockers before selecting
-  further work. No application DB changes, external submission, commit or push.
+- Next: None selected. Skip TK2610-0026 until user requests resumption with business
+  evidence available. P2 remains IN PROGRESS; deferral is not phase completion.
+  No external submission, application data changes, commit or push authorized.
+
+## October 23, 2026 — TK2610-0026 deferred by user
+
+- User cannot confirm company/customer information now and requested skipping.
+  Task remains BLOCKED and is no longer the immediate next action.
+- Resume only at user request; prior evidence checklist and blockers preserved.
+  No submission, completion claim, P2 sign-off or next task started.
+- Documentation-only update. Runtime tests not rerun because application code is
+  unchanged.
+
+## October 23, 2026 — TK2610-0026 official route and readiness review
+
+- Retrieved official IMDA eligibility, Stage 2, document-list, references, Corppass,
+  FAQ and Salon Management System category pages. Recorded sources and an evidence
+  checklist in PROJECT.md; updated TK2610-0026 without marking it DONE.
+- Published route is Vendor Management Portal, candidate category Personal Care
+  Services / Salon Management System. This is not a customer grant application.
+- Business eligibility, five genuine six-month customer references, operational
+  documents, category compliance and submission acknowledgement remain unverified.
+  No new code-level compliance audit or complete application pack claimed.
+- Current Corppass guide names the SMEs Go Digital e-Service. Live access was not
+  tested and must be confirmed by the company administrator.
+- No external forms, login, surveys, declarations or submissions; no application
+  code/database/account changes. Existing unrelated worktree changes preserved.
+- Checks: Prettier check passed for all three tracking files; git diff whitespace
+  check clean; tracking assertions confirm BLOCKED status and no submission claim.
+  Initial case-sensitive assertion missed a wrapped sentence; corrected check passed.
+  Runtime suites not rerun for this documentation-only review.
+- Next owner input: legal entity/UEN and incorporation date; whether five qualifying
+  local SME customers currently use this solution after at least six months.
+  Keep confidential evidence outside git. No credentials requested.
+
+## October 23, 2026 — Local rollout acceptance complete
+
+- User confirmed the existing-owner login check is done. Combined with prior
+  implementation/automated evidence, migration/checksum/guard/health checks and
+  local SMTP verification, this closes TK2610-0025 and TK2610-0027 for local scope.
+- Both external IDs are ready for the user to mark DONE. No external tracker edited.
+  Production rollout, backup/restore rehearsal and historical pre/post-migration
+  comparisons are not claimed. Earlier blockers below are superseded.
+- Records-only update; no runtime suites rerun. Next open product task is
+  TK2610-0026, blocked on official route, business evidence and authorized submission.
+  TK2610-0003 remains IN PROGRESS; no automatic P2 phase sign-off or next task start.
+
+## October 23, 2026 — Local SMTP setup and isolated owner-login acceptance
+
+- Installed standalone Mailpit v1.32.0 under
+  /home/tuangpi/.local/share/glampro-suite/mailpit/mailpit; download SHA-256 verified
+  against GitHub release asset metadata. No application dependency added.
+- Mailpit left running, SMTP 127.0.0.1:1025 and inbox 127.0.0.1:8025 only. No relay
+  configuration or inherited MP_* settings; remote CSS/fonts and version checks
+  disabled. Private inbox storage has 24-hour age retention. Not installed as an
+  auto-start service. Restart command:
+  `/home/tuangpi/.local/share/glampro-suite/mailpit/mailpit --listen 127.0.0.1:8025 --smtp 127.0.0.1:1025 --database /home/tuangpi/.local/share/glampro-suite/mailpit/messages.db --disable-version-check --block-remote-css-and-fonts --max-age 24h`.
+- Updated only SMTP settings in ignored apps/api/.env to loopback port 1025, no TLS
+  or authentication. Existing sender and database settings preserved. Built app's
+  actual sendMail transport delivered a non-secret synthetic message into Mailpit;
+  confirmed through inbox API. No external delivery or owner-account changes.
+- Existing SEC-01 acceptance passed 1/1, zero skips, on separately initialized
+  loopback 55439/sec01_acceptance after all 40 migrations. Covers SMTP-delivered
+  owner challenge/login, hash storage, replay refusal, forbidden owner disable,
+  password policy/session revocation, staff enrollment/login/disable. This suite
+  uses its own ephemeral capture SMTP, not Mailpit; checks are separate evidence.
+- Fixture tenant count zero after test; disposable PostgreSQL stopped and pg_ctl
+  status confirms no server. Mailpit remains available for the user's local login.
+- Existing application-owner password unavailable: no guessing/reset/seeding and no
+  claim of existing-account login. Parent rollout remains open only for that check.
+  Full regression/build not rerun for local tooling/configuration and records only.
+- Logs: /tmp/glampro-mailpit-delivery.log, /tmp/glampro-sec01-run.log (exit marker 0),
+  /tmp/glampro-sec01-cleanup.log. No application DB writes, commit or push.
+
+## October 23, 2026 — Local database rollout verification
+
+- User authorized proceeding locally. Fresh target checks confirmed development,
+  localhost:5432/glampro_suite and no other database sessions at inspection time.
+- Unlike the earlier preflight, all 40 migrations are now completed. Prisma status
+  reports up to date; all repository migration SHA-256 checksums match stored values.
+  The agent did not apply migrations or infer who applied them.
+- All seven expected retention/consent/prepaid evidence triggers are installed and
+  enabled. Balance-event arithmetic violations: zero. This is not a historical
+  pre/post-migration balance comparison or full ledger reconciliation.
+- Workspace typecheck, lint and build passed (exit markers 0). Current built API
+  served /health, /health/ready and /api/health with HTTP 200 on a temporary loopback
+  port; server and Prisma pool closed after checks. No persistent service started.
+- SMTP remains unset; owner 2FA delivery/login not tested or bypassed. No fixture
+  writes, seeds, backup/restore, database migration, external mail, commit or push.
+  Full regression suites were not rerun; earlier results remain historical.
+- Evidence: /tmp/glampro-local-migration-status.log,
+  /tmp/glampro-local-integrity.log, /tmp/glampro-local-health.log and
+  /tmp/glampro-local-{typecheck,lint,build}.log. Parent rollout remains open for SMTP
+  and owner-login verification; stale authorization/pending-migration blocker removed.
+
+## October 23, 2026 — Local development rollout preflight (superseded)
+
+- User selected local development. Read-only checks confirmed development mode,
+  loopback localhost:5432 database glampro_suite, API configured port 9001,
+  messaging disabled, upload directory present and SMTP unset. No API/web listeners
+  or other connections to the target database observed at inspection time.
+- Prisma status found 40 repository migrations and eight pending: package validity,
+  treatment POS link, retention protection, consent history, prepaid transfer,
+  service sets, family membership and sharing/balance ledger. Status exited 1 due
+  to pending migrations; latest completed entry is family_sharing_fields.
+- Earlier expiry/link application acceptance remains historical user-reported
+  evidence, not this local target's state. Do not assume those migrations applied.
+- Local preflight complete; execution BLOCKED pending explicit authorization for
+  backup, isolated restore/migration rehearsal and target migration. No database
+  mutation, backup, service startup or migration performed. Owner login additionally
+  needs a local SMTP inbox; no auth bypass or code logging permitted.
+
+## October 23, 2026 — Coordinated rollout checklist prepared
+
+- Planning deliverable DONE under TK2610-0025/TK2610-0027; parent statuses remain
+  IN PROGRESS/BLOCKED respectively. Added `docs/coordinated-rollout-checklist.md`;
+  linked PROJECT/TASKS and corrected the treatment audit's superseded family-work note.
+- Inspected manifests, Prisma CLI config, all six later retention/history/prepaid
+  migration SQL files, health implementation and acceptance switches. Inventory is
+  40 migrations, not verified application status. Readiness only runs SELECT 1.
+- Checklist covers explicit target/action authorization, backup/restore rehearsal,
+  all-pending migration review, old-writer suspension, coordinated artifacts,
+  OPENING/consent/balance integrity comparisons, scoped checks, observation and
+  evidence-preserving recovery. No deployment artifacts found; example Compose
+  references are not an executable deployment procedure.
+- Runtime suites not rerun for documentation-only changes. No application access,
+  DB process, migration, deployment, external mail, disposal, commit or push.
+- Verification: changed-document Prettier check and git diff whitespace check pass.
+  Static reference check passes for nine named migrations, 40 migration directories,
+  ten acceptance switches, absolute paths, npm scripts and unchecked rollout gates.
+- Next: target/environment/operator and scoped authorization; stop at planning.
 
 ## October 23, 2026 — TK2610-0029 assistant correctness complete
 

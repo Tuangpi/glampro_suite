@@ -19,6 +19,8 @@ These are product direction, not verified pricing, provider or grant commitments
 - `PROJECT.md`: scope, architecture, constraints and important decisions.
 - `TASKS.md`: the single merged task list, completion checks and dependencies.
 - `PROGRESS.md`: current state, unresolved issues and recent verification/handoffs.
+- `docs/coordinated-rollout-checklist.md`: TK2610-0025/TK2610-0027 operational
+  gates and rollout/recovery handoff; preparation does not authorize execution.
 
 Paths in these documents are relative to the project root:
 `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite`.
@@ -42,6 +44,97 @@ Paths in these documents are relative to the project root:
 Original documents remain unchanged. Read detailed sections only when relevant,
 not as mandatory startup reading. Do not silently override an accepted
 decision when requirements or behavior disagree; record and resolve the conflict.
+
+## TK2610-0026 — vendor application readiness
+
+Official public guidance reviewed October 23, 2026. Preparation only: no portal
+login, company declaration, survey dispatch, enquiry or application submission.
+The historical task name retains PSG; no September 2026 scheme-transition date,
+funding cap or automatic successor scheme is established by this review.
+
+### Verified route and sources
+
+Source URLs are retained as code for reproducibility. Recheck guidance and live
+portal requirements before submission; published guidance is not company approval.
+
+- Eligibility: `https://preapproval-guide.imda.gov.sg/pre-approval-guide/eligibility-criteria`
+- Application: `https://preapproval-guide.imda.gov.sg/pre-approval-guide/stage-2-vendor-application`
+- Upload list: `https://preapproval-guide.imda.gov.sg/pre-approval-guide/stage-2-vendor-application/preparing-submission/list-of-documents-required`
+- References: `https://preapproval-guide.imda.gov.sg/pre-approval-guide/stage-2-vendor-application/preparing-submission/create-new-draft-submission/customer-references`
+- Corppass: `https://preapproval-guide.imda.gov.sg/pre-approval-guide/stage-2-vendor-application/preparing-submission/grant-corppass-access`
+- Category: `https://preapproval-guide.imda.gov.sg/pre-approval-guide/stage-1-vendor-self-assessment/identify-suitable-solution-category/personal-care-services/salon-management-system`
+- FAQ: `https://preapproval-guide.imda.gov.sg/maintaining-your-contract-status/faq`
+
+The Stage 2 guide directs new applications to VMP,
+`https://services2.imda.gov.sg/VMP`, launched December 1, 2025. This is the vendor
+pre-approval route, not a customer's Business Grants Portal grant application.
+The current Corppass guide names the "SMEs Go Digital" e-Service. Have the company
+administrator confirm the live service assignment or seek IMDA clarification if
+the portal differs from the published guide.
+VMP authentication and access were not tested. InvoiceNow registration/declaration
+is part of company-profile preparation.
+
+### Business evidence gate — all company facts unverified
+
+Owner must establish Singapore registration and at least 18 months incorporated;
+five independent, currently active Singapore SME customers in the target sector,
+each with at least six months' solution use; qualifying customer feedback including
+at least 15% productivity gains from five customers and satisfaction with service,
+price and quality; financial stability; support coverage; government track record;
+and a functioning professional solution website. The published financial thresholds
+are positive latest-year equity and current ratio at least 1. Required support is
+8 hours on each of 5 weekdays, plus 24/7 email/contact-form reachability.
+Reference customers must not be affiliated to the vendor or each other and must
+be available for IMDA verification. No customer details or financial records were
+searched for in private files, generated, or collected in this session.
+
+Collect existing operational documents privately, not in git:
+
+- Legal entity/UEN, incorporation evidence, authorized representative and website.
+- Director-signed balance sheet/P&L for the past three years, or available years
+  since incorporation if younger; accepted management reports where applicable.
+- Five qualifying customer invoices, go-live dates and genuine survey responses.
+  Surveys use VMP-generated links; finalizing locks the solution name/link.
+- Actual package terms, support-hours proof, solution brochure and numbered
+  requirement screenshots; actual package pricing, sample quotation/invoice.
+- At least one month of genuine customer usage reporting. This does not replace
+  the separate six-month reference-customer requirement.
+- InvoiceNow declaration and category-specific compliance evidence, including
+  PDP form/approval evidence as applicable, current third-party VA/PT and reseller
+  authorization if applicable. Confirm the complete live upload list before filing.
+
+This is an evidence checklist, not a completed application pack. IMDA's upload
+guide requests actual operational documentation, not fabricated application-only
+records. Do not invent customers, support commitments, pricing or productivity.
+
+### Solution evidence gate — needs verification
+
+Personal Care Services / Salon Management System is a candidate, not an approved
+classification. Assess every mandatory question/sub-point and conditional follow-up
+in the official category page against the actual release and deployment. Pay
+particular attention to central multi-outlet operations, interactive analytics,
+appointment resources/reminders, marketing reporting, HR/payroll, data extraction,
+PDP and third-party security assessment. Optional module answers can trigger
+mandatory follow-ups. Local UAT acceptance and automated tests do not substitute
+for this assessment. No new code-level compliance audit was performed here.
+
+Do not equate tenant isolation with multi-outlet administration, recorded cashless
+tenders with a payment-gateway integration, deterministic advice with trained-model
+AI, or unit tests/dependency scans with qualified third-party VA/PT. The category
+requires a VA/PT report within the preceding 12 months; CEM is preferred at
+application and required at annual review under its published question flow.
+Do not claim all security certifications are initial mandatory uploads.
+
+### Submission and completion gate
+
+Resolve evidence/compliance gaps first. If a requirement cannot be met, use IMDA's
+enquiry route for clarification; do not answer Yes without evidence. The authorized
+company representative must review declarations and approve external submission.
+Retain the actual application reference, submission timestamp, submitted version
+and acknowledgement securely; record only a non-sensitive evidence reference here.
+A draft, interest form or successful login does not complete submission. Approval
+and listing are separate later outcomes; no pre-approved/grant-backed marketing
+claim is authorized by this preparation. TK2610-0026 remains BLOCKED.
 
 ## Stack and architecture
 

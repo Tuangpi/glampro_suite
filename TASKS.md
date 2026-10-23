@@ -607,12 +607,38 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 - Expected result: Prepare and submit an application for a pre-approved solution listing through the applicable official vendor route.
 - Completion check / dependencies: Confirm current vendor eligibility and application route from official sources; prepare required vendor/solution evidence and retain submission acknowledgement. Customer grant eligibility is not proof of vendor-listing eligibility. Code alone cannot complete submission.
 - Correction (October 22, 2026): Withdraw earlier DONE, official-confirmation and prepared-documentation claims. Official page fetches failed; a third-party article did not establish the alleged September 2026 PSG/EDGE transition, dates or funding caps. Those claims are not verified here. No application acknowledgement or completed submission pack was established.
-- Blocker: Official route/eligibility verification, company-specific supporting evidence and authorized portal access/submission remain outstanding. No submission attempted.
-- Next: Verify official vendor guidance and obtain required business evidence before preparing the submission. Do not invent a successor task ID or mark this task DONE because a scheme may have changed.
+- October 23, 2026 route review: Official IMDA onboarding pages retrieved successfully.
+  New applications use Vendor Management Portal (VMP); candidate category is Personal
+  Care Services / Salon Management System. This confirms the published route, not
+  company eligibility, solution compliance, portal access or grant entitlement.
+- Blocker: Company eligibility/customer evidence, mandatory solution compliance,
+  supporting documents and authorized portal submission remain unverified. No
+  submission attempted; no acknowledgement exists in the reviewed records.
+- Deferral (October 23, 2026): User cannot confirm company/customer information
+  now and requested skipping this task. Deferred until the user elects to resume;
+  retain BLOCKED, not DONE. This is not submission evidence or P2 phase sign-off.
+- Resume only when requested: Business owner confirms legal entity/UEN,
+  incorporation date and whether five
+  qualifying Singapore SME references have used this solution for six months and
+  still use it. Then assemble existing operational evidence privately and assess
+  every applicable category requirement before any authorized submission. See
+  PROJECT.md, "TK2610-0026 — vendor application readiness", for official sources
+  and the evidence checklist. Not ready to mark DONE externally.
 
 ### TK2610-0025 — P2-01 Aesthetics/spa module
 
-- Status: IN PROGRESS
+- Status: DONE — accepted local development scope, October 23, 2026.
+- Closure: user confirms existing-owner login complete. Prior implementation,
+  automated checks, application migration/checksum/guard/health and local SMTP
+  evidence close the recorded gates. User-reported login, not an agent walkthrough;
+  no production rollout or backup/restore rehearsal claimed. Historical pending
+  implementation/rollout notes below are superseded. Ready for external DONE.
+- October 23 local verification supersedes pending migration claims below: all 40
+  application migrations are applied and checksums match; expected guards enabled.
+  Built API health/readiness, workspace build/typecheck/lint pass. No migration
+  performed by this agent. Local Mailpit SMTP delivery now verified; isolated
+  SEC-01 owner-login acceptance passes 1/1 without skips. Existing application-owner
+  login remains outstanding; no password/account changes or application DB writes.
 - October 22 package-expiry review: prior completion claim is not sufficient. Treatment creation stores `quantityConsumed` without validating/consuming a package holding. Configurable purchase-based expiry under TK2610-0027 is DONE with user-reported application migration/browser acceptance; other aesthetics claims below are historical, not freshly verified.
 - Current follow-up: treatment-session integration IN PROGRESS, implemented pending application migration/browser acceptance. User selected POS as sole deduction owner. Unique whole-redemption linkage validates customer/tenant/service ownership and derives quantity; no treatment action mutates balances. Clinical reads expose POS reversal; historical quantities remain unverified without backfill. Migration `20261022160000_treatment_pos_redemption_link` tested only on disposable PostgreSQL.
 - Verification (October 22): real-DB sale/linkage tests 56/56, isolated linkage acceptance rerun 1/1, shared 140/140, web 486/486; full build, API/web typechecks, scoped ESLint/Prettier and diff check passed. Concurrent duplicate linking admits one record. Remaining UI gaps include list action wiring and a redemption selector; current form uses explicit customer/service/redemption references. Parent external task remains open.
@@ -788,6 +814,15 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   API typecheck, scoped ESLint and changed-code Prettier pass. Disposable database
   had 36 completed migrations, zero remaining fixture tenants/injected triggers;
   cluster stopped. See audit for evidence and non-fatal pg warnings.
+- October 23 coordinated rollout checklist: DONE as a planning deliverable with
+  TK2610-0027. See `docs/coordinated-rollout-checklist.md` for authorization gates,
+  backup/restore rehearsal, pending-migration review, writer suspension, coordinated
+  API/web activation, integrity checks and evidence-preserving recovery. No operations
+  performed; parent remains IN PROGRESS pending separately authorized rollout.
+- Local development preflight (October 23): loopback glampro_suite has eight pending
+  migrations, including expiry/link despite historical user-reported acceptance.
+  No other target connections observed; SMTP unset. Backup/rehearsal/migration scope
+  awaits explicit authorization; no migration or service startup performed.
 - Next: separately authorized application rollout. No application
   migration or deployment is authorized by the policy selection.
   Disposal scope implemented; no real-record erasure performed. Audit findings above
@@ -798,9 +833,22 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0027 — P2-03 Family/shared prepaid credit, package transfer, expiry rules
 
-- Status: BLOCKED — implementation and automated verification DONE; application
-  migration/deployment is unperformed and requires separate authorization. No further
-  feature slice or manual UAT round planned. Do not infer operational/external closure.
+- Status: DONE — accepted local development scope, October 23, 2026.
+- Closure: user confirms existing-owner login complete; prior implementation and
+  automated/local rollout evidence close all recorded local gates. This supersedes
+  the outstanding-login and rollout notes below. User-reported login, not an agent
+  walkthrough or production rollout. No backup/restore rehearsal claimed. Ready
+  for external DONE; TK2610-0003 phase sign-off remains separate.
+- Historical pre-closure state: existing application-owner login was outstanding.
+  Local Mailpit configured and application SMTP delivery verified; isolated SEC-01
+  owner-login acceptance passes 1/1 without skips. No existing-owner password known
+  or reset. Inbox is loopback 127.0.0.1:8025; see PROGRESS for restart instructions.
+  Implementation and automated verification DONE. October 23 local authorization
+  received; fresh checks confirm all 40 application migrations already applied,
+  matching checksums and enabled guards. No migration performed by this agent.
+  Workspace build/typecheck/lint and temporary built API health/readiness pass.
+  Historical rollout/pending-migration claims below are superseded by this check.
+  No further feature slice or manual UAT round planned; no external closure yet.
 - October 23 implementation completion supersedes unfinished-feature claims below:
   explicit per-holding same-salon family sharing, membership UI, pooled POS credit,
   deterministic expiry/purchase/ID allocation, exact-source void restores, private
@@ -819,6 +867,14 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   applied only to disposable loopback PostgreSQL (40 migrations). No commit/deploy.
 - Next: operational rollout only, once explicitly authorized. No more 0027 feature
   implementation is outstanding. Historical notes below retain earlier evidence.
+- October 23 coordinated rollout checklist: DONE as documentation with TK2610-0025;
+  see `docs/coordinated-rollout-checklist.md`. Target/environment/operator and explicit
+  operational authorization are still required. Parent remains BLOCKED; no migration,
+  application access or deployment performed by checklist preparation.
+- Local development selected; earlier eight-pending preflight is superseded by
+  fresh all-applied verification. No pre-migration backup/rehearsal or historical
+  baseline comparison claimed. Local SMTP setup complete; existing-owner login
+  using the owner's credentials remains unverified.
 - Active slice: tenant-scoped family membership management and append-only membership
   history. User selected explicit per-holding sharing; joining a family alone must
   not make private holdings spendable. Legacy familyId values are not membership.
