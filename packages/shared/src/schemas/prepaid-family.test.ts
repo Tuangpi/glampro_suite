@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createPrepaidFamilySchema, changePrepaidMembershipSchema } from "./prepaid.js";
+import {
+  createPrepaidFamilySchema,
+  changePrepaidMembershipSchema,
+  sharePrepaidSchema,
+} from "./prepaid.js";
 
 test("prepaid family creation requires a bounded name, reason and explicit confirmation", () => {
   assert.deepEqual(
@@ -18,6 +22,26 @@ test("prepaid family creation requires a bounded name, reason and explicit confi
     { name: "Family", reason: "Request", confirmed: false },
   ])
     assert.equal(createPrepaidFamilySchema.safeParse(input).success, false);
+});
+
+test("holding sharing requires explicit family/null, a current snapshot and confirmation", () => {
+  const input = {
+    familyId: "family-a",
+    expectedUpdatedAt: "2026-10-23T01:00:00.000Z",
+    reason: " Share ",
+    confirmed: true,
+  };
+  assert.equal(sharePrepaidSchema.parse(input).reason, "Share");
+  assert.equal(sharePrepaidSchema.safeParse({ ...input, familyId: null }).success, true);
+  for (const invalid of [
+    { ...input, familyId: undefined },
+    { ...input, familyId: "" },
+    { ...input, expectedUpdatedAt: "yesterday" },
+    { ...input, confirmed: false },
+    { ...input, actorId: "spoofed" },
+    { ...input, reason: " " },
+  ])
+    assert.equal(sharePrepaidSchema.safeParse(invalid).success, false);
 });
 
 test("membership changes require a previous membership snapshot and allow explicit leaving", () => {

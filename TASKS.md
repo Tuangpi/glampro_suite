@@ -792,15 +792,39 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   migration or deployment is authorized by the policy selection.
   Disposal scope implemented; no real-record erasure performed. Audit findings above
   are historical where superseded by this implementation.
-  Both TK2610-0025 and TK2610-0027 remain IN PROGRESS and are not ready for external
-  closure; family, transfer and audit gaps remain independent under TK2610-0027.
+  TK2610-0025 remains IN PROGRESS pending its operational rollout. TK2610-0027
+  implementation gaps were subsequently resolved below; its application rollout
+  remains separately unauthorized and unperformed.
 
 ### TK2610-0027 — P2-03 Family/shared prepaid credit, package transfer, expiry rules
 
-- Status: IN PROGRESS
+- Status: BLOCKED — implementation and automated verification DONE; application
+  migration/deployment is unperformed and requires separate authorization. No further
+  feature slice or manual UAT round planned. Do not infer operational/external closure.
+- October 23 implementation completion supersedes unfinished-feature claims below:
+  explicit per-holding same-salon family sharing, membership UI, pooled POS credit,
+  deterministic expiry/purchase/ID allocation, exact-source void restores, private
+  credit protection and automatic sharing withdrawal on owner membership change.
+  Transfer requires private credit; original purchase protection remains intact.
+- Added append-only database balance ledger for grants/spends/restores/removals,
+  ownership/sharing/expiry changes and OPENING snapshots. Actor/sale/reason carried
+  transactionally; direct database writes have unknown actor rather than invented
+  attribution. Customer profile shows paginated membership/balance history and owner/
+  manager controls. No historical reconstruction or natural-expiry write-off.
+- Final verification: API 510 tests, 509 passed, 0 failed, 1 SEC-01 SMTP opt-in skip;
+  all eight related package/prepaid/treatment acceptance checks enabled and passing.
+  Web 597/597; shared 157/157; workspace typecheck/lint/production build and scoped
+  formatting/diff checks pass. Standing user-granted acceptance applies, not an agent
+  browser walkthrough. Migration `20261023200000_prepaid_sharing_balance_ledger`
+  applied only to disposable loopback PostgreSQL (40 migrations). No commit/deploy.
+- Next: operational rollout only, once explicitly authorized. No more 0027 feature
+  implementation is outstanding. Historical notes below retain earlier evidence.
 - Active slice: tenant-scoped family membership management and append-only membership
   history. User selected explicit per-holding sharing; joining a family alone must
   not make private holdings spendable. Legacy familyId values are not membership.
+- Current implementation pass: finish explicit holding sharing, deterministic pooled
+  POS spending, exact-source reversals, balance ledger and customer controls together.
+  No further policy or manual UAT gate; application rollout remains unauthorized.
 - Membership API foundation verified October 23: separate scoped models, owner/manager
   guards, confirmed/reasoned changes with stale membership protection, customer locks
   and immutable paginated history. Shared 156/156; family acceptance 1/1, transfer
@@ -841,10 +865,9 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   5. ✅ Add audit tracking for balance changes (who, when, what changed) - Completed: Added `updatedBy String?` and `updatedAt DateTime @updatedAt` to CustomerValuePackageHolding Prisma model; updated `redeemCredit()` to set `updatedBy` when decrementing balance
   6. ✅ Verify liability reporting reflects all changes - Completed: liability report already includes prepaid credit balance (from TK2610-0011); transferPackageCredit preserves amountRemaining so liability reporting works correctly with transferred credits
 - Expiry slice: DONE. User explicitly confirmed application migration/browser checks complete and accepted expiry on October 22, 2026. This is user-reported, not freshly agent-verified application or production evidence; supersedes the pending rollout/acceptance note above.
-- Next: same-salon family/shared prepaid pool and complete append-only balance-change
-  audit. Resolve pool membership/authorization, deterministic draw allocation and
-  reversal semantics before implementation. Cross-tenant/session-package transfers
-  are outside the approved scope. Historical checklist above is not current evidence;
+- Historical next (superseded by October 23 completion): family/shared pool and audit.
+  Cross-tenant/session-package transfers remain outside the approved scope.
+  Historical checklist above is not current evidence;
   treatment/POS integration is separately implemented under TK2610-0025.
 
 ### TK2610-0028 — P2-02 Multi-outlet: shared customers, packages, stock across branches

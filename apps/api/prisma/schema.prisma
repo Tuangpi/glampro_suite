@@ -303,6 +303,7 @@ model Tenant {
   prepaidFamilies PrepaidFamily[]
   prepaidFamilyMembers PrepaidFamilyMember[]
   prepaidFamilyEvents PrepaidFamilyEvent[]
+  prepaidBalanceEvents PrepaidBalanceEvent[]
   messagingSettings MessagingSettings?
   channelConsents ChannelConsent[]
   channelConsentEvents ChannelConsentEvent[]
@@ -1671,11 +1672,12 @@ model CustomerValuePackageHolding {
   amountRemaining   Decimal           @db.Decimal(12, 2)
   expiresAt         DateTime?
 
-  /// Family/shared grouping: holdings with the same familyId share credit
-  /// and expiry. All members of a family share the same `amountRemaining`
-  /// and `expiresAt` — a redemption by any family member reduces the shared
-  /// pool and may trigger expiry for the whole family.
+  /// Legacy grouping only. Never grants prepaid access or propagates expiry;
+  /// explicit sharedFamilyId and prepaid family membership govern sharing.
   familyId          String?           /// Optional group ID linking shared credit holders
+  /// Explicit prepaid sharing authority; unrelated to legacy familyId.
+  sharedFamilyId String?
+  sharedFamily PrepaidFamily? @relation(fields: [tenantId, sharedFamilyId], references: [tenantId, id])
 
   /// Audit: who last modified this holding and when.
   updatedBy         String?           /// User ID or actor identifier (e.g. cashier ID, POS session)
@@ -1703,6 +1705,7 @@ model PrepaidFamily {
   createdAt DateTime @default(now())
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   members PrepaidFamilyMember[]
+  holdings CustomerValuePackageHolding[]
 
   @@unique([tenantId, id])
   @@map("prepaid_families")
@@ -1737,6 +1740,31 @@ model PrepaidFamilyEvent {
 
   @@index([tenantId, customerId, createdAt, id])
   @@map("prepaid_family_events")
+}
+
+/// Append-only balance/ownership/sharing snapshots; tenant removal alone cascades.
+model PrepaidBalanceEvent {
+  id String @id @default(cuid())
+  tenantId String
+  holdingId String
+  customerId String
+  previousCustomerId String?
+  actorId String?
+  saleId String?
+  kind String
+  amountBefore Decimal @db.Decimal(12, 2)
+  amountAfter Decimal @db.Decimal(12, 2)
+  delta Decimal @db.Decimal(12, 2)
+  sharedFamilyId String?
+  previousSharedFamilyId String?
+  expiresAt DateTime?
+  reason String?
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, customerId, createdAt, id])
+  @@index([tenantId, holdingId, createdAt, id])
+  @@map("prepaid_balance_events")
 }
 
 /// Append-only ownership snapshots; only tenant removal cascades evidence.

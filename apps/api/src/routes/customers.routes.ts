@@ -3,6 +3,8 @@ import multer from "multer";
 import {
   createPrepaidFamilySchema,
   changePrepaidMembershipSchema,
+  sharePrepaidSchema,
+  type SharePrepaidInput,
   type CreatePrepaidFamilyInput,
   type ChangePrepaidMembershipInput,
 } from "@glampro_suite/shared";
@@ -11,6 +13,7 @@ import {
   createPrepaidFamily,
   changePrepaidMembership,
   listPrepaidFamilyEvents,
+  sharePrepaid,
 } from "../services/prepaid-family.service.js";
 import { customerPhotoCaptionSchema, type PaginationQuery } from "@glampro_suite/shared";
 import { badRequest } from "../lib/http-error.js";
@@ -61,6 +64,7 @@ import {
   listOwnedPrepaid,
   listPrepaidTransfers,
   transferPrepaid,
+  listPrepaidBalanceEvents,
 } from "../services/prepaid.service.js";
 
 /**
@@ -132,6 +136,7 @@ for (const [path, list] of [
   ["prepaid", listOwnedPrepaid],
   ["prepaid-transfers", listPrepaidTransfers],
   ["prepaid-family-history", listPrepaidFamilyEvents],
+  ["prepaid-balance-history", listPrepaidBalanceEvents],
 ] as const) {
   customersRouter.get(
     `/:id/${path}`,
@@ -150,6 +155,33 @@ for (const [path, list] of [
     },
   );
 }
+
+customersRouter.post(
+  "/:id/prepaid/:holdingId/sharing",
+  auth,
+  requireModule("customers"),
+  requireModule("packages"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(prepaidHoldingParamsSchema, "params"),
+  validate(sharePrepaidSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id, holdingId } = validated<{ id: string; holdingId: string }>(req, "params");
+      res.json({
+        data: await sharePrepaid(
+          id,
+          holdingId,
+          validated<SharePrepaidInput>(req, "body"),
+          req.user.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 customersRouter.post(
   "/:id/prepaid/:holdingId/transfer",

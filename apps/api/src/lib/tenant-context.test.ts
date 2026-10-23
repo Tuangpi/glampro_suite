@@ -23,6 +23,27 @@ describe("tenant context", () => {
     assert.equal(currentScope(), undefined);
   });
 
+  it("carries the authenticated audit actor across await without leaking it", async () => {
+    await runAsTenant(
+      "tenant-a",
+      async () => {
+        await Promise.resolve();
+        assert.deepEqual(currentScope(), {
+          kind: "tenant",
+          tenantId: "tenant-a",
+          actorId: "actor-a",
+        });
+        runAsTenant("tenant-b", () =>
+          assert.deepEqual(currentScope(), { kind: "tenant", tenantId: "tenant-b" }),
+        );
+        const scope = currentScope();
+        assert.equal(scope?.kind === "tenant" && scope.actorId, "actor-a");
+      },
+      "actor-a",
+    );
+    assert.equal(currentScope(), undefined);
+  });
+
   it("marks an explicit platform run, which is not a tenant", () => {
     runAsPlatform(() => {
       assert.deepEqual(currentScope(), { kind: "platform" });

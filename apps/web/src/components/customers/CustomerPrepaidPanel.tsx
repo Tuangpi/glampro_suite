@@ -16,6 +16,7 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useCustomerList } from "@/hooks/useCustomers";
 import { useModules } from "@/hooks/useSettings";
 import { getErrorMessage, getPaginated, post } from "@/lib/api";
+import CustomerFamilyCreditPanel from "./CustomerFamilyCreditPanel";
 
 export default function CustomerPrepaidPanel({ customerId }: { customerId: string }) {
   const modules = useModules();
@@ -28,7 +29,10 @@ export default function CustomerPrepaidPanel({ customerId }: { customerId: strin
       </div>
     );
   return modules.data?.some((row) => row.code === "packages" && row.entitled) ? (
-    <PrepaidPanel key={customerId} customerId={customerId} />
+    <>
+      <PrepaidPanel key={customerId} customerId={customerId} />
+      <CustomerFamilyCreditPanel key={`family:${customerId}`} customerId={customerId} />
+    </>
   ) : null;
 }
 
@@ -64,7 +68,7 @@ export function PrepaidPanel({ customerId }: { customerId: string }) {
       <h3 className="font-bold">Prepaid ownership and transfers</h3>
       <p>
         Transfer an entire remaining prepaid holding to another customer in this salon. Balance,
-        expiry and original purchase are preserved. Family pooling is not yet available.
+        expiry and original purchase are preserved. Manage explicit family sharing below.
       </p>
       {holdings.isPending ? (
         <p role="status">Loading owned prepaid credit…</p>

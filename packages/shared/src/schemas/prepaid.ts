@@ -13,6 +13,7 @@ export const transferPrepaidSchema = z.strictObject({
 });
 
 export const prepaidHoldingSchema = z.object({
+  sharedFamilyId: z.string().nullable().optional(),
   id: z.string(),
   customerId: z.string(),
   name: z.string(),
@@ -69,3 +70,29 @@ export type CreatePrepaidFamilyInput = z.infer<typeof createPrepaidFamilySchema>
 export type ChangePrepaidMembershipInput = z.infer<typeof changePrepaidMembershipSchema>;
 export type PrepaidFamily = z.infer<typeof prepaidFamilySchema>;
 export type PrepaidFamilyEvent = z.infer<typeof prepaidFamilyEventSchema>;
+
+export const sharePrepaidSchema = z.strictObject({
+  familyId: familyIdSchema.nullable(),
+  expectedUpdatedAt: z.iso.datetime(),
+  reason: familyReasonSchema,
+  confirmed: z.literal(true),
+});
+export type SharePrepaidInput = z.infer<typeof sharePrepaidSchema>;
+export const prepaidBalanceEventSchema = z.object({
+  id: z.string(),
+  holdingId: z.string(),
+  customerId: z.string(),
+  previousCustomerId: z.string().nullable(),
+  actorId: z.string().nullable(),
+  saleId: z.string().nullable(),
+  kind: z.string(),
+  amountBefore: z.string(),
+  amountAfter: z.string(),
+  delta: z.string(),
+  sharedFamilyId: z.string().nullable(),
+  previousSharedFamilyId: z.string().nullable(),
+  expiresAt: z.iso.datetime().nullable(),
+  reason: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type PrepaidBalanceEvent = z.infer<typeof prepaidBalanceEventSchema>;

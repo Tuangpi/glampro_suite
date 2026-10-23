@@ -3,6 +3,8 @@ import {
   createPrepaidFamilySchema,
   prepaidFamilyEventSchema,
   prepaidFamilySchema,
+  sharePrepaidSchema,
+  type SharePrepaidInput,
   type ChangePrepaidMembershipInput,
   type CreatePrepaidFamilyInput,
   type PaginationQuery,
@@ -12,12 +14,14 @@ import { currentScope } from "../lib/tenant-context.js";
 import { conflict, forbidden, notFound } from "../lib/http-error.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
+import { lockPrepaid } from "../lib/prepaid-lock.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
-async function authorize(tx: Transaction, actorId: string) {
+async function authorize(tx: Transaction, actorId: string, reason: string) {
   const scope = currentScope();
   if (scope?.kind !== "tenant") throw new Error("Prepaid families require tenant scope.");
+  await lockPrepaid(tx, scope.tenantId, actorId, reason);
   await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${scope.tenantId} FOR SHARE`;
   await tx.$queryRaw`SELECT id FROM users WHERE id = ${actorId} AND "tenantId" = ${scope.tenantId} FOR SHARE`;
   const actor = await tx.user.findFirst({ where: { id: actorId } });
@@ -76,7 +80,7 @@ export async function createPrepaidFamily(
 ) {
   const input = createPrepaidFamilySchema.parse(raw);
   await prisma.$transaction(async (tx) => {
-    const tenantId = await authorize(tx, actorId);
+    const tenantId = await authorize(tx, actorId, input.reason);
     await lockCustomer(tx, tenantId, customerId);
     if (await tx.prepaidFamilyMember.findFirst({ where: { customerId } }))
       throw conflict("This customer already belongs to a prepaid family.", "FAMILY_ALREADY_JOINED");
@@ -103,7 +107,7 @@ export async function changePrepaidMembership(
 ) {
   const input = changePrepaidMembershipSchema.parse(raw);
   await prisma.$transaction(async (tx) => {
-    const tenantId = await authorize(tx, actorId);
+    const tenantId = await authorize(tx, actorId, input.reason);
     await lockCustomer(tx, tenantId, customerId);
     const membership = await tx.prepaidFamilyMember.findFirst({ where: { customerId } });
     const previous = membership?.familyId ?? null;
@@ -116,6 +120,12 @@ export async function changePrepaidMembership(
       throw conflict("Choose a different family membership.", "FAMILY_MEMBERSHIP_UNCHANGED");
     if (input.familyId && !(await tx.prepaidFamily.findFirst({ where: { id: input.familyId } })))
       throw notFound("That prepaid family does not exist.", "FAMILY_NOT_FOUND");
+    // Leaving/changing a family withdraws this owner's explicit sharing. Never
+    // silently enroll the holdings in the next family or move their value.
+    await tx.customerValuePackageHolding.updateMany({
+      where: { customerId, sharedFamilyId: { not: null } },
+      data: { sharedFamilyId: null, updatedBy: actorId },
+    });
     await tx.prepaidFamilyMember.deleteMany({ where: { customerId } });
     if (input.familyId)
       await tx.prepaidFamilyMember.create({
@@ -156,4 +166,55 @@ export async function listPrepaidFamilyEvents(customerId: string, query: Paginat
     total,
     paging,
   );
+}
+
+export async function sharePrepaid(
+  customerId: string,
+  holdingId: string,
+  raw: SharePrepaidInput,
+  actorId: string,
+) {
+  const input = sharePrepaidSchema.parse(raw);
+  await prisma.$transaction(async (tx) => {
+    const tenantId = await authorize(tx, actorId, input.reason);
+    await lockCustomer(tx, tenantId, customerId);
+    await tx.$queryRaw`SELECT id FROM customer_value_package_holdings WHERE id = ${holdingId} AND "tenantId" = ${tenantId} FOR UPDATE`;
+    const holding = await tx.customerValuePackageHolding.findFirst({
+      where: { id: holdingId, customerId },
+    });
+    if (!holding)
+      throw notFound("That prepaid holding is not owned by this customer.", "HOLDING_NOT_FOUND");
+    if (holding.updatedAt.toISOString() !== input.expectedUpdatedAt)
+      throw conflict("This holding changed. Reload before confirming.", "SHARING_STALE");
+    if (holding.sharedFamilyId === input.familyId)
+      throw conflict("Sharing has not changed.", "SHARING_UNCHANGED");
+    if (input.familyId) {
+      const member = await tx.prepaidFamilyMember.findFirst({
+        where: { customerId, familyId: input.familyId },
+      });
+      if (!member)
+        throw conflict(
+          "The owner must belong to the selected family.",
+          "FAMILY_MEMBERSHIP_REQUIRED",
+        );
+      if (holding.expiresAt && holding.expiresAt.getTime() <= Date.now())
+        throw conflict("Expired credit cannot be shared.", "HOLDING_EXPIRED");
+      if (holding.amountRemaining.lessThanOrEqualTo(0))
+        throw conflict("There is no credit left to share.", "HOLDING_INSUFFICIENT");
+      if (holding.familyId)
+        throw conflict(
+          "Legacy shared credit requires reconciliation first.",
+          "LEGACY_SHARING_UNAVAILABLE",
+        );
+    }
+    await tx.customerValuePackageHolding.update({
+      where: { id: holdingId },
+      data: {
+        sharedFamilyId: input.familyId,
+        updatedBy: actorId,
+        updatedAt: new Date(Math.max(Date.now(), holding.updatedAt.getTime() + 1)),
+      },
+    });
+  });
+  return getPrepaidFamily(customerId);
 }

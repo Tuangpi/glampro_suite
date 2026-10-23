@@ -2,25 +2,61 @@
 
 ## Current State
 
-- Current task: **TK2610-0027 (IN PROGRESS); family membership API verified**.
-  User selected owner/manager-managed membership with individual holdings explicitly
-  opted into sharing; private holdings must stay private. Per-holding sharing,
-  pooled spending, UI and complete balance audit are unfinished. No legacy enrollment.
-  User approved same-salon family prepaid sharing and whole-holding transfers with
-  manager/owner controls, preserved expiry and append-only audit. Transfer slice
-  verified; family pooling and complete balance audit remain unfinished. TK2610-0025
-  retention/history application rollout remains unperformed. Not ready for external closure.
-- Scope update: user explicitly included service-set redemption, with configurable
-  quantities per required service and one session per complete set. No partial
-  set redemption; preserve purchase snapshots and prevent duplicate unit coverage.
-- P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
-- SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
-- Most recently completed: explicit prepaid family membership API foundation.
-  Service-set redemption and whole-holding transfers remain verified.
-- Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
-- Next: define and implement family sharing and complete append-only
-  balance audit. Application rollout needs separate authorization. No application
-  migration, production access, real-record erasure or paid mail authorized.
+- Current task: **TK2610-0027 BLOCKED only on separately authorized application
+  rollout; implementation and automated verification DONE**. No further feature
+  slice or manual UAT round planned. Do not repeat family-sharing implementation.
+- Most recently completed: explicit holding sharing, pooled family POS spending,
+  exact-source reversals, owner/manager customer controls and append-only prepaid
+  balance history. Existing expiry, transfers and service sets remain verified.
+- Final checks: API 509 passed / 0 failed / 1 SMTP opt-in skip; web 597/597;
+  shared 157/157; workspace typecheck/lint/build pass. Disposable migration only.
+- Outstanding operations: coordinated application migrations/API/web rollout for
+  0027 and treatment retention/history 0025; neither authorized or performed.
+- P2 TK2610-0003 remains IN PROGRESS. TK2610-0026 BLOCKED on vendor-route/business
+  evidence/submission; 0029 has recorded owner-summary/promo correctness findings.
+- Standing user acceptance covers completed implementation/available automated
+  verification; no extra manual review request. Not an agent browser walkthrough.
+- Next implementation candidate: verify/fix TK2610-0029 daily owner summary and
+  promo approval findings; reconcile its stale DONE status before editing. Do not
+  silently start operational rollout, external submissions or a new task here.
+
+## October 23, 2026 — TK2610-0027 implementation complete
+
+- Completed explicit per-holding sharing, one pooled POS option, decimal-cent draws
+  ordered expiry (null last)/purchase/ID, exact holding redemption rows/restoration,
+  privacy of unshared holdings and owner exit/change sharing withdrawal. Shared
+  holdings must be made private before whole-holding transfer. Legacy familyId
+  values never grant access. Preserved each balance/expiry and liability accounting.
+- Added authenticated request actor to tenant context (not client staff attribution),
+  prepaid transaction lock shared by sale/hold completion/void/membership/sharing/
+  transfer, and DB-trigger append-only balance evidence. Grants, spend, restores,
+  removals, transfers, sharing and expiry edits recorded atomically. Existing holdings
+  get OPENING snapshots, not fabricated purchase history. Natural expiry only affects
+  eligibility, not balance. One same-salon lock favors correctness over throughput.
+- Customer profile now includes membership/sharing controls, confirmations/reasons,
+  stale-write guards, permission/read-only behavior, reload/error recovery and paginated
+  membership/balance audit. POS explains shared allocation and revalidates on pay.
+- Final full sequential API: 510 tests, 509 passed, 0 failed, 1 opt-in SEC-01 SMTP skip.
+  Enabled expiry/service-set/family/sharing/transfer and all three treatment acceptance
+  checks. Web 597/597 across 70 files; shared 157/157. Workspace typecheck/lint/build,
+  changed-file formatting and diff checks pass. Logs `/tmp/tk27-complete-api-final.log`,
+  `/tmp/tk27-complete-web-final.log`, `/tmp/tk27-complete-shared-final.log`.
+- Earlier full API run found 2 tenant-context shape regressions (undefined actorId
+  property); fixed preserving prior scope shape, added actor isolation coverage and
+  reran the whole suite. Initial new checks caught void-result deserialization in
+  advisory lock, test fixture amount typing and render-time Date.now; corrected,
+  not suppressed. New acceptance also verifies rollback on injected audit failure,
+  concurrent draws/revocation, stale snapshots, immutable evidence, transfer/void
+  interactions, archived/expired exclusion and no private/shared double offering.
+- Migration `20261023200000_prepaid_sharing_balance_ledger` applied only to approved
+  disposable loopback 55440/package_expiry_test (40 completed migrations). Fixture
+  tenants/injected triggers counted zero, cluster stopped; pg_ctl confirms no server.
+  Cleanup `/tmp/tk27-complete-cleanup.log`. No app DB access, deployment, external
+  mail, commit or push. Standing user acceptance applies, not an agent walkthrough.
+- Implementation is finished. Parent BLOCKED only for unauthorized/unperformed
+  coordinated application rollout; no further development slice planned under 0027.
+  Next code candidate: verify/fix recorded 0029 assistant findings, not another 0027
+  foundation. Earlier notes below are historical and superseded where inconsistent.
 
 ## October 23, 2026 — Explicit prepaid family membership foundation
 

@@ -1,6 +1,7 @@
 import {
   prepaidHoldingSchema,
   prepaidTransferEventSchema,
+  prepaidBalanceEventSchema,
   transferPrepaidSchema,
   type PaginationQuery,
   type TransferPrepaidInput,
@@ -10,6 +11,7 @@ import { currentScope } from "../lib/tenant-context.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
+import { lockPrepaid } from "../lib/prepaid-lock.js";
 
 export async function listOwnedPrepaid(customerId: string, query: PaginationQuery) {
   if (!(await prisma.customer.findFirst({ where: { id: customerId }, select: { id: true } })))
@@ -81,6 +83,7 @@ export async function transferPrepaid(
   if (customerId === input.targetCustomerId)
     throw badRequest("Choose a different customer.", undefined, "TRANSFER_SAME_CUSTOMER");
   return prisma.$transaction(async (tx) => {
+    await lockPrepaid(tx, scope.tenantId, actorId, input.reason);
     // Recheck the database role, enabled/2FA state and salon write state, not a body actor.
     await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${scope.tenantId} FOR SHARE`;
     await tx.$queryRaw`SELECT id FROM users WHERE id = ${actorId} AND "tenantId" = ${scope.tenantId} FOR SHARE`;
@@ -128,9 +131,9 @@ export async function transferPrepaid(
     if (holding.amountRemaining.lessThanOrEqualTo(0))
       throw conflict("There is no remaining credit to transfer.", "HOLDING_INSUFFICIENT");
     // Legacy family identifiers have no verified pool semantics. Never move one silently.
-    if (holding.familyId)
+    if (holding.familyId || holding.sharedFamilyId)
       throw conflict(
-        "Shared credit transfers need the family-pool workflow.",
+        "Make this holding private before transferring it. Legacy shared credit requires reconciliation.",
         "SHARED_TRANSFER_UNAVAILABLE",
       );
     await tx.customerValuePackageHolding.update({
@@ -155,4 +158,45 @@ export async function transferPrepaid(
     });
     return serializeEvent(event);
   });
+}
+
+export async function listPrepaidBalanceEvents(customerId: string, query: PaginationQuery) {
+  if (!(await prisma.customer.findFirst({ where: { id: customerId }, select: { id: true } })))
+    throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
+  const paging = parsePagination(query);
+  // Include incoming/outgoing ownership snapshots and this customer's family spends.
+  const redemptions = await prisma.customerRedemption.findMany({
+    where: { customerId, itemType: "VALUE_PACKAGE" },
+    select: { saleId: true },
+  });
+  const where = {
+    OR: [
+      { customerId },
+      { previousCustomerId: customerId },
+      { saleId: { in: redemptions.map((row) => row.saleId) } },
+    ],
+  };
+  const [rows, total] = await Promise.all([
+    prisma.prepaidBalanceEvent.findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      skip: paging.skip,
+      take: paging.take,
+    }),
+    prisma.prepaidBalanceEvent.count({ where }),
+  ]);
+  return paginated(
+    rows.map((row) =>
+      prepaidBalanceEventSchema.parse({
+        ...row,
+        amountBefore: row.amountBefore.toFixed(2),
+        amountAfter: row.amountAfter.toFixed(2),
+        delta: row.delta.toFixed(2),
+        expiresAt: row.expiresAt?.toISOString() ?? null,
+        createdAt: row.createdAt.toISOString(),
+      }),
+    ),
+    total,
+    paging,
+  );
 }

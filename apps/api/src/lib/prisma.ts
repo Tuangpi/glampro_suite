@@ -80,6 +80,7 @@ export const TENANT_SCOPED_MODELS = [
   "PrepaidFamily",
   "PrepaidFamilyMember",
   "PrepaidFamilyEvent",
+  "PrepaidBalanceEvent",
   "CustomerGiftCardHolding",
   "CustomerPoint",
   "CustomerOutstanding",

@@ -431,6 +431,13 @@ export default function PaymentDialog({
           ) : null}
         </div>
 
+        {credits.some((holding) => holding.id.startsWith("family:")) ? (
+          <p className="text-sm text-ink-muted">
+            Shared family credit uses only explicitly shared, unexpired holdings. Each holding keeps
+            its own expiry. The server draws earliest expiry first, then purchase date; no-expiry
+            credit is last. Balances and membership are rechecked on payment.
+          </p>
+        ) : null}
         <ul aria-label="Tenders" className="flex flex-col gap-3">
           {tenders.map((tender, index) => {
             const isRedemption = isRedemptionPaymentMethod(tender.method);

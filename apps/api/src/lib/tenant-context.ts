@@ -10,7 +10,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
  */
 export type Scope =
   /** A tenant's request. Every tenant-scoped query is filtered to this id. */
-  | { readonly kind: "tenant"; readonly tenantId: string }
+  | { readonly kind: "tenant"; readonly tenantId: string; readonly actorId?: string }
   /** An explicit opt-out: the platform console and background jobs only. */
   | { readonly kind: "platform" };
 
@@ -42,8 +42,10 @@ function startInsideScope<T>(value: T): T {
 }
 
 /** Runs `fn` with queries scoped to `tenantId`. Called by the auth middleware. */
-export function runAsTenant<T>(tenantId: string, fn: () => T): T {
-  return storage.run({ kind: "tenant", tenantId }, () => startInsideScope(fn()));
+export function runAsTenant<T>(tenantId: string, fn: () => T, actorId?: string): T {
+  return storage.run({ kind: "tenant", tenantId, ...(actorId ? { actorId } : {}) }, () =>
+    startInsideScope(fn()),
+  );
 }
 
 /**

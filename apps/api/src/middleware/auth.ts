@@ -150,7 +150,7 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
 
     // Enter the tenant scope for everything downstream. `next()` runs inside
     // `runAsTenant` so the route handlers and their continuations inherit it.
-    runAsTenant(tenant.id, next);
+    runAsTenant(tenant.id, next, user.id);
   } catch (error) {
     logger.debug("Rejected request during authentication", { error });
     next(error);

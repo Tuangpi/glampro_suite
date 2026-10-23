@@ -62,6 +62,7 @@ import { assertHoldingLive, packageExpiry } from "../lib/package-expiry.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
+import { lockPrepaid, prepaidSaleContext } from "../lib/prepaid-lock.js";
 import { resolveLowStockThreshold } from "./catalogue.service.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { holdingPackageRules } from "../lib/package-rules.js";
@@ -1211,6 +1212,7 @@ async function writeSale(
   const hold = input.hold === true;
 
   return prisma.$transaction(async (tx) => {
+    await lockPrepaid(tx, tenantId);
     if (hold) {
       const parked = await tx.sale.create({
         data: {
@@ -1280,6 +1282,7 @@ async function writeSale(
       select: { id: true },
     });
 
+    await prepaidSaleContext(tx, sale.id);
     await writeLines(tx, tenantId, sale.id, priced);
     if (voucher !== null) {
       await redeemVoucher(tx, tenantId, sale.id, voucher);
@@ -1585,12 +1588,68 @@ async function redeemCredit(
   holdingId: string,
   usedAt: Date,
 ): Promise<void> {
+  if (holdingId.startsWith("family:")) {
+    const familyId = holdingId.slice("family:".length);
+    const membership = await tx.prepaidFamilyMember.findFirst({ where: { customerId, familyId } });
+    const customer = await tx.customer.findFirst({ where: { id: customerId, archivedAt: null } });
+    if (!membership || !customer)
+      throw notFound("This family credit is not available to this customer.", "HOLDING_NOT_FOUND");
+    const members = await tx.prepaidFamilyMember.findMany({
+      where: { familyId },
+      select: { customerId: true },
+    });
+    const holdings = await tx.customerValuePackageHolding.findMany({
+      where: {
+        sharedFamilyId: familyId,
+        customerId: { in: members.map((row) => row.customerId) },
+        customer: { archivedAt: null },
+        amountRemaining: { gt: 0 },
+        OR: [{ expiresAt: null }, { expiresAt: { gt: usedAt } }],
+      },
+      orderBy: [{ expiresAt: "asc" }, { createdAt: "asc" }, { id: "asc" }],
+    });
+    let remaining = new Prisma.Decimal(tender.amount);
+    if (
+      holdings
+        .reduce((sum, row) => sum.plus(row.amountRemaining), new Prisma.Decimal(0))
+        .lessThan(remaining)
+    )
+      throw conflict(
+        "There is not enough live shared family credit. Reload balances.",
+        "HOLDING_INSUFFICIENT",
+      );
+    for (const holding of holdings) {
+      if (remaining.isZero()) break;
+      const amount = Prisma.Decimal.min(remaining, holding.amountRemaining);
+      const drawn = await tx.customerValuePackageHolding.updateMany({
+        where: { id: holding.id, amountRemaining: { gte: amount } },
+        data: { amountRemaining: { decrement: amount } },
+      });
+      if (drawn.count !== 1)
+        throw conflict("Family credit changed. Nothing was charged.", "HOLDING_INSUFFICIENT");
+      await tx.customerRedemption.create({
+        data: {
+          tenantId,
+          customerId,
+          saleId,
+          itemType: "VALUE_PACKAGE",
+          itemId: holding.valuePackageId,
+          quantity: 1,
+          amount,
+          usedAt,
+          holdingId: holding.id,
+        },
+      });
+      remaining = remaining.minus(amount);
+    }
+    return;
+  }
   await tx.customerValuePackageHolding.updateMany({
-    where: { id: holdingId, customerId },
+    where: { id: holdingId, customerId, sharedFamilyId: null },
     data: { amountRemaining: { increment: 0 } },
   });
   const holding = await tx.customerValuePackageHolding.findFirst({
-    where: { id: holdingId, customerId },
+    where: { id: holdingId, customerId, sharedFamilyId: null },
     select: {
       id: true,
       valuePackageId: true,
@@ -2272,6 +2331,8 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
   const staffId = input.staffId ?? held.staffId;
 
   await prisma.$transaction(async (tx) => {
+    await lockPrepaid(tx, tenantId);
+    await prepaidSaleContext(tx, held.id);
     // The guard comes **first**, before the counter moves: only one till may take a
     // hold, and a loser has to give its number back rather than burn it. It is the same
     // count-checked update `fillLedgers` puts on stock, applied to a status.
@@ -2652,6 +2713,8 @@ export async function voidSale(
   }
 
   await prisma.$transaction(async (tx) => {
+    await lockPrepaid(tx, tenantId, actorId, input.reason);
+    await prepaidSaleContext(tx, sale.id);
     // Serialize with refund before checking its record. Otherwise a refund could
     // commit after assertVoidable's read but before this void changes the status.
     await tx.sale.update({ where: { id: sale.id }, data: { updatedAt: new Date() } });

@@ -74,8 +74,8 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 - Prepaid sharing/transfers (October 23, 2026, user approved): same-salon family
   prepaid sharing and whole-holding prepaid transfers, manager/owner controls,
   preserved individual expiry and append-only audit. Cross-tenant transfers and
-  session-package transfers are excluded. Implement the transfer/audit foundation
-  first; family pooling remains a separate unfinished slice. A transfer moves only
+  session-package transfers are excluded. Sharing, transfer and balance-ledger
+  implementation is verified; application rollout remains unperformed. A transfer moves only
   the remaining holding, never duplicates value or changes purchase provenance.
   Family sharing is explicit opt-in per holding: owner/manager-managed family
   membership alone never exposes private credit. Shared draws use earliest expiry
@@ -83,6 +83,19 @@ not establish full roadmap compliance. Consult the decision sections and task fi
   own balance/expiry; reversals restore the exact source holdings even after
   membership changes. Legacy customer/holding `familyId` values are not authority
   for this new workflow and are not automatically enrolled.
+  POS exposes one `family:<id>` tender option; shared holdings are not also offered
+  privately. Leaving/changing family withdraws the owner's sharing atomically.
+  Shared holdings must be made private before transfer. Same-salon prepaid advisory
+  transaction locking serializes membership/sharing/transfers and sale completion/
+  voids; this favors correctness over parallel same-salon credit throughput.
+  Database triggers append balance evidence for grants, draws, restores, removals,
+  transfers, sharing and expiry edits, including non-service writes. Authenticated
+  request actor comes from tenant context, never client staff attribution. Historical
+  holdings receive explicit OPENING snapshots; earlier events/actors are not invented.
+  Natural expiry changes eligibility, not stored balance, and produces no write-off.
+  Full member/holding controls and paginated membership/balance history are on the
+  customer profile. Deploy API/web together after all pending migrations; never
+  deploy readers against an unmigrated database. No application rollout authorized.
 
 - Standing manual acceptance (October 22, 2026, user instruction): manual UAT,
   browser checks and review/sign-off gates are accepted when the agent completes

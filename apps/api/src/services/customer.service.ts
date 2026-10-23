@@ -35,6 +35,7 @@ import { assertDepartmentsExist } from "./department.service.js";
 import { withdrawMessagingChoices } from "./messaging-consent.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { holdingPackageRules } from "../lib/package-rules.js";
+import { Prisma } from "../../generated/prisma/client.js";
 
 /**
  * Columns the screen needs. `passwordHash`, `otpHash` and `otpExpiresAt` are
@@ -199,12 +200,40 @@ export async function getCustomer(id: string): Promise<CustomerDetail> {
  * refunds, reminders) belongs to P2-03, which owns value packages.
  */
 export async function getCustomerHoldings(id: string): Promise<CustomerHoldings> {
-  const customer = await prisma.customer.findFirst({ where: { id }, select: { id: true } });
+  const customer = await prisma.customer.findFirst({
+    where: { id },
+    select: { id: true, archivedAt: true },
+  });
   if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
 
   const now = new Date();
   const live = { gt: 0 };
   const notExpired = { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] };
+  const membership = customer.archivedAt
+    ? null
+    : await prisma.prepaidFamilyMember.findFirst({ where: { customerId: id } });
+  const members = membership
+    ? await prisma.prepaidFamilyMember.findMany({
+        where: { familyId: membership.familyId },
+        select: { customerId: true },
+      })
+    : [];
+  const shared = membership
+    ? await prisma.customerValuePackageHolding.findMany({
+        where: {
+          sharedFamilyId: membership.familyId,
+          customerId: { in: members.map((row) => row.customerId) },
+          customer: { archivedAt: null },
+          amountRemaining: live,
+          ...notExpired,
+        },
+        select: { amountRemaining: true },
+      })
+    : [];
+  const sharedTotal = shared.reduce(
+    (sum, row) => sum.plus(row.amountRemaining),
+    new Prisma.Decimal(0),
+  );
 
   const [packages, credits] = await Promise.all([
     prisma.customerPackageHolding.findMany({
@@ -221,7 +250,7 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
       orderBy: [{ expiresAt: "asc" }, { createdAt: "asc" }],
     }),
     prisma.customerValuePackageHolding.findMany({
-      where: { customerId: id, amountRemaining: live, ...notExpired },
+      where: { customerId: id, sharedFamilyId: null, amountRemaining: live, ...notExpired },
       select: {
         id: true,
         amountRemaining: true,
@@ -234,6 +263,19 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
 
   return customerHoldingsSchema.parse({
     holdings: [
+      ...(membership && sharedTotal.greaterThan(0)
+        ? [
+            {
+              id: `family:${membership.familyId}`,
+              kind: "PREPAID_CREDIT",
+              name: "Shared family credit (earliest expiry first)",
+              serviceIds: [],
+              quantityRemaining: 0,
+              amountRemaining: sharedTotal.toFixed(2),
+              expiresAt: null,
+            },
+          ]
+        : []),
       ...packages.map((holding) => ({
         redemptionMode: holdingPackageRules(holding.redemptionRules, holding.package.services).mode,
         serviceSet: holdingPackageRules(holding.redemptionRules, holding.package.services)
