@@ -772,7 +772,23 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   audit-failure rollback, duplicate submission, four hold races, stale record/event/
   photo previews and unchanged POS ledger/holding. Shared 150/150, web 576/576,
   workspace typecheck, root lint, production build and diff check pass. No new schema migration.
-- Next: remaining completion audit and separately authorized application rollout. No application
+- Completion audit: DONE as an audit, not parent closure. See
+  `docs/treatment-completion-audit.md` for approved coverage and rollout safeguards.
+  Fresh full API: 505 tests, 406 pass, 98 fail, 1 skip (SEC-01), 0 cancelled.
+  Treatment consent/disposal/POS and package-expiry acceptance passed. 97 route
+  failures align with obsolete password-only owner-login helpers; one messaging
+  ALREADY_REBOOKED/null failure requires root-cause triage. Full suite is not green.
+  Disposable fixture cleanup verified and cluster stopped. Docs format/diff pass.
+- October 23 owner 2FA route-test repair: DONE. Shared test-only mail capture helper
+  completes actual HTTP challenge verification in eight route suites, without
+  production auth changes or fixture-role bypass. Prior focused suites 110/110;
+  fresh full sequential API 505 tests, 504 pass, 0 fail, 1 intentional SEC-01 skip,
+  0 cancelled, exit 0. Treatment consent/disposal/POS and package-expiry acceptance
+  pass. Messaging rebooking test passes unchanged; earlier root cause unverified.
+  API typecheck, scoped ESLint and changed-code Prettier pass. Disposable database
+  had 36 completed migrations, zero remaining fixture tenants/injected triggers;
+  cluster stopped. See audit for evidence and non-fatal pg warnings.
+- Next: separately authorized application rollout. No application
   migration or deployment is authorized by the policy selection.
   Disposal scope implemented; no real-record erasure performed. Audit findings above
   are historical where superseded by this implementation.

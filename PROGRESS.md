@@ -2,12 +2,55 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. Owner-authorized per-treatment disposal implemented/verified after status gate/history/W1/S2. Earlier application migrations remain unperformed. Rollout and remaining completion checks remain open. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
+- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. Owner 2FA route-test repair DONE. October 23 full API regression: 504 pass / 0 fail / 1 intentional SEC-01 skip, exit 0. Earlier messaging failure did not reproduce; no messaging fix or root-cause claim. Retention/history application rollout remains unperformed. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
 - Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
-- Next: TK2610-0025 remaining completion audit and separately authorized application migration/rollout. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, real-record erasure or paid mail authorized.
+- Next: separately authorized application migration/rollout; no rollout task started. Treatment-link migration acceptance was previously user-reported; retention/history application rollout remains unperformed. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, real-record erasure or paid mail authorized.
+
+## October 22, 2026 — TK2610-0025 completion audit
+
+- Audit deliverable DONE; parent remains IN PROGRESS. Added approved-feature/evidence
+  matrix and coordinated migration/API/web rollout prerequisites in
+  `docs/treatment-completion-audit.md`. No runtime code changed.
+- Fresh full API run on approved disposable loopback 55440/package_expiry_test:
+  505 tests, 406 passed, 98 failed, 1 skipped, 0 cancelled, exit 1. Treatment
+  consent/disposal/POS and package-expiry acceptance passed; SEC-01 SMTP acceptance
+  intentionally skipped. Prior full web/shared/typecheck/lint/build results not rerun.
+- 97 route failures across appointments/catalogue/customers/packages/reports/resources/
+  sales/settings align with inspected password-only owner-login helpers not completing
+  mandatory 2FA. Do not relax production auth or switch fixture roles to evade it.
+  One messaging rebooking failure expected ALREADY_REBOOKED but got null; cause unverified.
+- Full log `/tmp/treatment-completion-api-rerun.log`; first interrupted attempt has no
+  completion claim. Disposable migration inventory has 36 completed migrations;
+  no application DB accessed. Fixture tenant count and injected trigger count zero;
+  cluster stopped. Documentation Prettier and diff checks pass.
+- Recommended next: repair route test authentication, then triage the messaging failure
+  before rollout. Application migration/deployment/real erasure remain unauthorized.
+
+## October 23, 2026 — Owner 2FA route-test repair DONE
+
+- User selected authentication-helper repair and full regression rerun, with messaging
+  failure reported separately. Added `apps/api/src/test-support/route-login.ts` and
+  adopted it in eight affected route suites. Actual HTTP login and verification use
+  in-memory delivered mail code capture through JSON transport; no DB code lookup,
+  minted token, fixture role changes, production auth changes or external mail.
+- Prior focused suites passed 110/110, none skipped. Fresh API typecheck, scoped
+  ESLint and changed-code Prettier pass. Fresh full sequential API run: 505 tests,
+  504 passed, 0 failed, 1 intentional SEC-01 skip, 0 cancelled, exit 0.
+- Treatment consent/disposal/POS and package-expiry acceptance pass. Messaging
+  ALREADY_REBOOKED test passes without messaging changes; earlier failure cause
+  remains unverified. pg concurrent-query deprecation warnings remain non-fatal.
+- Resumption found previous temporary logs/cluster missing; no completion inferred
+  from that interrupted run. Recreated only the approved disposable loopback
+  55440/package_expiry_test database and applied 36 migrations. Full log and exit:
+  `/tmp/route-login-full.log`, `/tmp/route-login-full.exit`; migration/cleanup:
+  `/tmp/route-login-migrations.log`, `/tmp/route-login-cleanup.log`.
+- All fixture tenants and injected disposal triggers counted zero; cluster stopped.
+  No application DB access, rollout, real erasure, external mail, commit or push.
+- Earlier partial edit/typecheck left an unused catalogue envelope helper; removed it
+  rather than suppressing noUnusedLocals. Final API typecheck passes.
 
 ## October 22, 2026 — Owner-authorized treatment disposal
 

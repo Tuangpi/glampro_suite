@@ -1,3 +1,4 @@
+import { loginForRouteTest } from "../test-support/route-login.js";
 // Static, so the `DATABASE_URL` gate below reads `.env` instead of skipping silently
 // (the reason the suite used to vanish from `npm run verify` — see `auth.routes.test.ts`).
 import "dotenv/config";
@@ -461,13 +462,7 @@ describe(
       });
       baseUrl = `http://127.0.0.1:${(server?.address() as AddressInfo).port}`;
 
-      const response = await fetch(`${baseUrl}/api/auth/login`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
-      });
-      assert.equal(response.status, 200, "could not sign in as the owner");
-      token = (await dataOf<{ accessToken: string }>(response)).accessToken;
+      token = await loginForRouteTest(baseUrl, EMAIL, PASSWORD);
       ownerId = (
         await runAsPlatform(() =>
           prisma.user.findUniqueOrThrow({ where: { email: EMAIL }, select: { id: true } }),

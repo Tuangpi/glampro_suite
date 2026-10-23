@@ -1,3 +1,4 @@
+import { loginForRouteTest } from "../test-support/route-login.js";
 // Static, so the `DATABASE_URL` gate below reads `.env` instead of skipping silently
 // (the reason the suite used to vanish from `npm run verify` — see `auth.routes.test.ts`).
 import "dotenv/config";
@@ -40,7 +41,8 @@ const { createApp } = await import("../app.js");
 const { prisma } = await import("../lib/prisma.js");
 const { runAsPlatform } = await import("../lib/tenant-context.js");
 const { hashPassword } = await import("../lib/password.js");
-const { CORE_MODULE_CODES, DEFAULT_PAGE_SIZE, MODULE_CODES } = await import("@glampro_suite/shared");
+const { CORE_MODULE_CODES, DEFAULT_PAGE_SIZE, MODULE_CODES } =
+  await import("@glampro_suite/shared");
 
 const PASSWORD = "correct-horse-1";
 const DOMAIN = "catalogue-reads-rt.test";
@@ -231,12 +233,6 @@ async function bodyOf<T>(response: Response): Promise<T> {
   return (await response.json()) as T;
 }
 
-async function dataOf<T>(response: Response): Promise<T> {
-  const body = await bodyOf<{ data?: unknown }>(response);
-  assert.ok(body.data !== undefined, `expected a data envelope, got ${JSON.stringify(body)}`);
-  return body.data as T;
-}
-
 /** The row names on a page, in the order the server sent them. */
 function namesOf(body: PageEnvelope<{ name: string }>): string[] {
   return body.data.data.map((row) => row.name);
@@ -252,14 +248,7 @@ async function request(path: string, accessToken?: string): Promise<Response> {
 }
 
 async function signIn(email: string): Promise<string> {
-  const response = await fetch(`${baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: PASSWORD }),
-  });
-
-  assert.equal(response.status, 200, `could not sign in as ${email}`);
-  return (await dataOf<{ accessToken: string }>(response)).accessToken;
+  return loginForRouteTest(baseUrl, email, PASSWORD);
 }
 
 describe(

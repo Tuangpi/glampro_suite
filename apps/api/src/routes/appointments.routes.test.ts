@@ -1,3 +1,4 @@
+import { loginForRouteTest } from "../test-support/route-login.js";
 import "dotenv/config";
 
 import assert from "node:assert/strict";
@@ -204,13 +205,7 @@ let token = "";
 let suspendedToken = "";
 
 async function login(email: string): Promise<string> {
-  const response = await fetch(`${baseUrl}/api/auth/login`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: PASSWORD }),
-  });
-  assert.equal(response.status, 200);
-  return (await dataOf<{ accessToken: string }>(response)).accessToken;
+  return loginForRouteTest(baseUrl, email, PASSWORD);
 }
 
 function request(

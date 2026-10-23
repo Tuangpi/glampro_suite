@@ -1,3 +1,4 @@
+import { loginForRouteTest } from "../test-support/route-login.js";
 import "dotenv/config";
 
 import assert from "node:assert/strict";
@@ -431,13 +432,7 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
     });
     baseUrl = `http://127.0.0.1:${(server?.address() as AddressInfo).port}`;
 
-    const response = await fetch(`${baseUrl}/api/auth/login`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
-    });
-    assert.equal(response.status, 200);
-    token = (await dataOf<{ accessToken: string }>(response)).accessToken;
+    token = await loginForRouteTest(baseUrl, EMAIL, PASSWORD);
   });
 
   after(async () => {
