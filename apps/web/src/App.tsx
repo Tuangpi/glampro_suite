@@ -1,12 +1,21 @@
-import { useRoutes } from "react-router";
+import { lazy, Suspense } from "react";
+import { Route, Routes } from "react-router";
 
 import ErrorBoundary from "@/components/ui/ErrorBoundary";
-import routes from "@/routes";
+const SalonApp = lazy(() => import("./SalonApp"));
+const PlatformApp = lazy(() => import("./platform/PlatformApp"));
 
 function App() {
-  const element = useRoutes(routes);
-
-  return <ErrorBoundary>{element}</ErrorBoundary>;
+  return (
+    <ErrorBoundary>
+      <Suspense fallback={<p role="status">Loading…</p>}>
+        <Routes>
+          <Route path="/platform/*" element={<PlatformApp />} />
+          <Route path="*" element={<SalonApp />} />
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
+  );
 }
 
 export default App;

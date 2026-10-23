@@ -36,7 +36,7 @@ not a new test run. Assess code first; follow dependencies rather than date orde
 - Status: DONE — implementation and disposable local verification; application
   migration/bootstrap and production deployment are not performed or implied.
 - Dependencies: SAAS-01
-- Expected result: Separate operator identity/session surface and `apps/platform`
+- Expected result: Separate operator identity/session surface (now integrated under `/platform/*`)
   login, without granting salon owners platform privileges or unrestricted access
   to tenant business data. Include strong credential/bootstrap and MFA design.
 - Completion check: Login/session/revocation and two-way realm rejection tests;
@@ -70,6 +70,24 @@ not a new test run. Assess code first; follow dependencies rather than date orde
   passed / 0 failed / 12 opt-in skips; web 609/609; shared 164/164; platform 9/9.
   Workspace typecheck/lint/build pass; all 42 migrations replayed on disposable DB.
   No application migration/accounts/deployment, commit or push.
+
+### SAAS-05 — Integrate platform portal into the main frontend
+
+- Status: DONE — implementation and local automated verification; no deployment.
+- Dependencies: SAAS-03
+- Expected result: Salon `/login` and operator `/platform/login` share port 5173
+  and the existing API, without a separate platform dev command. Preserve separate
+  platform credentials, MFA, sessions and API authorization; isolate salon providers
+  and platform styles.
+- Completion check: Portal routing/provider isolation, login/MFA/logout regression
+  tests; web suite, lint/typecheck/build and local URL checks. No database changes.
+- Evidence: October 23: 625/625 web tests, web lint and root build (including API
+  and web TypeScript checks) pass. Focused API authentication suites 40/40 pass.
+  Disposable Vite on 55173 serves `/login`, `/platform/login`, `/platform` and both
+  source entry modules with HTTP 200; stopped afterward. UI redirects/MFA/logout
+  exercised through component tests, not live account/SMTP or browser acceptance.
+  Platform API client/company workflows moved unchanged; separate workspace and
+  startup/build scripts removed. No migrations, accounts, deployment, commit or push.
 
 ### SAAS-04 — Subscription, lifecycle, entitlements and audit management
 

@@ -2,8 +2,8 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **SAAS-03**, company management
-  and secure owner onboarding. Next ready: **SAAS-04**, subscriptions, lifecycle,
+- Current task: **None**. Most recently completed: **SAAS-05**, integrated platform
+  routes and single frontend workflow. Next ready: **SAAS-04**, subscriptions, lifecycle,
   entitlements and audit management; not started.
 - Verified: real PostgreSQL/HTTP/loopback SMTP company onboarding/isolation passes;
   full API 537 passed / 0 failed / 12 opt-in skips; web 609/609; shared 164/164;
@@ -11,10 +11,30 @@
 - Migration tested only on isolated database port 55441 (42 migrations replayed).
   Application database/accounts unchanged; no deployment, commit or push.
 - Actual onboarding needs authorized migration plus configured SMTP and trusted
-  `SALON_PORTAL_ORIGIN`. Platform runs on port 5174, salon invitation page on the
-  salon web origin. Email failure is recoverable by resend after committed creation.
+  `SALON_PORTAL_ORIGIN`. Both logins now use web port 5173: `/login` for salons,
+  `/platform/login` for operators. No separate platform dev server. Email failure
+  is recoverable by resend after committed creation.
 - Multi-outlet remains deferred. TK2610-0026 remains BLOCKED/deferred. Existing
   prepaid/treatment migration/schema drift remains unresolved; P2 is not complete.
+
+## October 23, 2026 — SAAS-05 integrated platform routes
+
+- User approved replacing separate `apps/platform` with lazy-loaded screens in
+  `apps/web/src/platform`. Operator login `/platform/login`, workspace `/platform`;
+  unauthenticated platform paths redirect to operator login. Salon `/login` unchanged.
+- Moved salon query/auth/toast/formatting providers into `apps/web/src/SalonApp.tsx`,
+  outside platform routes. Platform CSS scoped to `.platform-portal`; company UI/API
+  client and their tests moved byte-for-byte. Separate platform workspace/configs
+  and root platform dev/build scripts removed; lockfile refreshed offline.
+- Same frontend origin/build/server; backend realms, MFA, memory-only platform
+  tokens and session authorization unchanged. ADR 0004 updated for approved design.
+  API directory `npm run dev` remains API-only; root `npm run dev` starts all services.
+- Checks: web 625/625, web lint, root build (shared/API/web TypeScript and Vite) pass.
+  Focused API auth/security/guard/routes 40/40 pass. Disposable Vite on port 55173
+  returned 200 for both logins, workspace and source modules; stopped afterward.
+  Redirect/MFA/logout/provider isolation tested in components, not live browser
+  or actual SMTP/account login. No migration, accounts, deployment, commit or push.
+- Next ready: SAAS-04. No automatic continuation.
 
 ## October 23, 2026 — SAAS-03 company management and owner invitations
 

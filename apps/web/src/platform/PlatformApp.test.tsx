@@ -1,6 +1,19 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import { MemoryRouter, useLocation } from "react-router";
+import PlatformApp from "./PlatformApp";
+
+function Location() {
+  return <output aria-label="Current path">{useLocation().pathname}</output>;
+}
+function App({ path = "/platform/login" }: { path?: string }) {
+  return (
+    <MemoryRouter initialEntries={[path]}>
+      <PlatformApp />
+      <Location />
+    </MemoryRouter>
+  );
+}
 import { platformApi } from "./api";
 
 vi.mock("./api", () => ({
@@ -29,8 +42,21 @@ async function verify() {
   fireEvent.change(screen.getByLabelText("Verification code"), { target: { value: "123456" } });
   fireEvent.click(screen.getByRole("button", { name: "Verify and sign in" }));
   await screen.findByText("Welcome, Operator");
+  await waitFor(() =>
+    expect(screen.getByLabelText("Current path")).toHaveTextContent(/^\/platform$/),
+  );
 }
 describe("operator portal", () => {
+  it.each(["/platform", "/platform/companies", "/platform/unknown"])(
+    "redirects unauthenticated %s to platform login",
+    async (path) => {
+      render(<App path={path} />);
+      await waitFor(() =>
+        expect(screen.getByLabelText("Current path")).toHaveTextContent("/platform/login"),
+      );
+      expect(platformApi.profile).not.toHaveBeenCalled();
+    },
+  );
   it("requires verification before showing the operator shell and signs out", async () => {
     render(<App />);
     await login();
@@ -41,6 +67,7 @@ describe("operator portal", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { name: "Operator sign in" });
     expect(platformApi.logout).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("Current path")).toHaveTextContent("/platform/login");
   });
   it("shows a verification error without entering the shell", async () => {
     render(<App />);

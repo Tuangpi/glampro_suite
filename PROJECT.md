@@ -18,7 +18,8 @@ These are product direction, not verified pricing, provider or grant commitments
 
 Complete multi-company SaaS before considering multiple outlets. One company is
 one tenant, with isolated users and business data. Build the operator console in
-`apps/platform`, sharing the existing API/database per ADR 0004. Company-level
+`apps/web/src/platform` under `/platform/*`, sharing the existing API/database per
+the October 23 revision to ADR 0004. Company-level
 `SUPER_ADMIN` is not a platform administrator.
 
 Initial scope: verify tenant boundaries; separate platform authentication; company
@@ -31,12 +32,17 @@ of branch management. See SAAS-01–SAAS-04 in TASKS.md.
 
 ### Platform authentication — SAAS-02, October 23, 2026
 
-Implemented a separate React operator app at `apps/platform` using the existing
-API/database and shared contracts. Run `npm run dev:platform` from the project root;
-Vite binds port 5174 with strict-port checks and proxies `/api` to port 9000 unless
-`VITE_PROXY_TARGET` is set. Root build includes the new portal; root dev remains
-the existing salon workflow. Serve the built operator app on a separate origin
-with an `/api` reverse proxy and HTTPS in deployment; no deployment configured here.
+The operator UI now lives in `apps/web/src/platform`, lazy-loaded outside salon
+authentication/query/formatting providers. Salon login is `/login`; operator login
+is `/platform/login`, with authenticated workspace at `/platform`. Both use port
+5173 and the existing API/database/shared contracts. Root `npm run dev` starts
+shared/API/web; no separate platform command or server is needed. Alternatively,
+run `npm run dev` in `apps/api` and `apps/web` separately; the API command remains
+API-only. Web proxies `/api` to port 9000 unless `VITE_PROXY_TARGET` is set.
+Root build includes both interfaces in the single web artifact. Deployment needs
+SPA fallback for `/platform/*`, an `/api` reverse proxy and HTTPS; not deployed here.
+Styles are scoped to `.platform-portal`. Paths are not a security boundary: these
+interfaces now share an origin, while backend realms/sessions remain separate.
 
 API surface: `/api/platform/auth/login`, `/verify`, `/refresh`, `/logout`, `/me`.
 Mandatory password-bound email verification expires after ten minutes with five
@@ -591,21 +597,20 @@ data rather than assuming a safe cleanup-free import. Sources: `packages/shared/
 
 ### ADR 0004
 
-**Accepted October 1, 2026 — the platform console is a separate, unscheduled app.**
-If scheduled, place it in `apps/platform`, not in the salon bundle or a second web
-build. Use shared contracts and the same API/database; do not create another API.
-Historical dev port reservation is 5174 (web 5173); confirm availability before use.
-Add the platform auth realm to constants, the database enum and login only when
-building that app, with a reviewed migration. Existing web routes must reject other
-realms. This decision does not schedule console work or prove an app/endpoint exists.
+**Accepted October 1, 2026; revised October 23, 2026 — one frontend, separate authentication.**
+The user approved replacing the separate `apps/platform` server with lazy-loaded
+`apps/web/src/platform` screens at `/platform/login` and `/platform`. Use the same
+web build/dev server (5173), shared contracts and API/database; no second API.
+Platform routes sit outside salon providers/guards and use scoped CSS. Preserve
+the implemented platform realm, MFA and separate sessions and both-direction API
+realm rejection. Same-origin hosting no longer provides origin-level UI isolation.
 
 Platform bypass must be restricted to platform-plane models: PlatformAdmin (no tenantId),
 Tenant, TenantModule, Subscription, Payment and AuditLog, using the controlled
 `runAsPlatform()` boundary. Preserve frozen mobile contracts. Rationale: isolate the
-privileged UI/session surface without duplicating auth/audit infrastructure. Costs:
-another app and a future choice about shared UI primitives, not decided here.
-Workspace separation is intent, not proof that cross-app relative imports are
-impossible; no placement enforcement test was established. Historical container/CI
+privileged session surface without duplicating auth/audit infrastructure. The
+integrated UI avoids another dev process; API authorization remains the security
+boundary, not frontend route placement. Historical container/CI
 assumptions do not authorize Docker/Actions work. Source: workspace manifests and
 `packages/shared/src/constants.ts`; confirm current realm/schema before implementation.
 

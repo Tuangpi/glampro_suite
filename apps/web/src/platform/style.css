@@ -1,66 +1,64 @@
-:root {
+.platform-portal {
+  min-height: 100vh;
   font-family: system-ui, sans-serif;
   color: #242039;
   background: #f6f5fa;
 }
-* {
+.platform-portal * {
   box-sizing: border-box;
 }
-body {
-  margin: 0;
-}
-main {
+.platform-portal main {
   max-width: 760px;
   margin: 0 auto;
   padding: 32px 20px;
 }
-header {
+.platform-portal header {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
   align-items: center;
   margin-bottom: 40px;
 }
-.brand {
+.platform-portal .brand {
   font-size: 24px;
   font-weight: 750;
 }
-.badge {
+.platform-portal .badge {
   padding: 6px 12px;
   background: #ebe4fa;
   border-radius: 20px;
   font-size: 13px;
 }
-section {
+.platform-portal section {
   background: white;
   padding: 32px;
   border: 1px solid #ddd8e8;
   border-radius: 16px;
 }
-h1 {
+.platform-portal h1 {
   margin-top: 0;
 }
-p {
+.platform-portal p {
   line-height: 1.6;
 }
-form {
+.platform-portal form {
   display: grid;
   gap: 20px;
   margin-top: 24px;
 }
-label {
+.platform-portal label {
   display: grid;
   gap: 8px;
   font-weight: 600;
 }
-input {
+.platform-portal input {
   width: 100%;
   padding: 12px;
   border: 1px solid #8b819e;
   border-radius: 8px;
   font: inherit;
 }
-button {
+.platform-portal button {
   padding: 12px 18px;
   border: 0;
   border-radius: 8px;
@@ -69,60 +67,60 @@ button {
   font: inherit;
   cursor: pointer;
 }
-button:disabled {
+.platform-portal button:disabled {
   opacity: 0.6;
   cursor: wait;
 }
-button:focus-visible,
-input:focus-visible {
+.platform-portal button:focus-visible,
+.platform-portal input:focus-visible {
   outline: 3px solid #a28fc6;
   outline-offset: 3px;
 }
-[role="alert"] {
+.platform-portal [role="alert"] {
   color: #8b1827;
   background: #ffedf0;
   padding: 14px;
   border-radius: 8px;
 }
-.note {
+.platform-portal .note {
   font-size: 13px;
   color: #655c73;
 }
-.actions {
+.platform-portal .actions {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
 }
-.companies {
+.platform-portal .companies {
   margin: 28px 0;
 }
-.company-list {
+.platform-portal .company-list {
   padding: 0;
   list-style: none;
 }
-.company-list li {
+.platform-portal .company-list li {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   margin: 12px 0;
 }
-article {
+.platform-portal article {
   margin: 24px 0;
   padding: 20px;
   border: 1px solid #ddd8e8;
   border-radius: 12px;
 }
-dt {
+.platform-portal dt {
   font-weight: 600;
   margin-top: 12px;
 }
-dd {
+.platform-portal dd {
   margin: 4px 0;
   overflow-wrap: anywhere;
 }
 @media (max-width: 480px) {
-  section {
+  .platform-portal section {
     padding: 22px;
   }
 }
