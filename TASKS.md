@@ -879,7 +879,7 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0029 — P2-04 AI assistant: owner summary, rebooking nudges, slow-day promos
 
-- ✅ Status: DONE — owner summary, rebooking nudges (with consent checks), and slow-day promos implemented
-- Expected result: AI assistant: daily owner summary, rebooking nudges, slow-day promos
+- Status: DONE — October 23, 2026 correctness follow-up verified; supersedes the unsupported earlier DONE claim.
 - Expected result: AI assistant: daily owner summary, rebooking nudges and slow-day promos against tenant data, access and consent; require approval for outbound actions
-- Completion check / dependencies: ✅ Owner summaries verified against tenant data; rebooking nudges include consent validation (marketingOptIn/PDPA); slow-day promos generated with approval flag; all functions run inside tenant scope via middleware/auth.ts
+- Completion check / dependencies: Verify authenticated tenant-scoped owner/manager access, salon-local daily totals and completed-sale average ticket, validated ranges, latest completed-service nudges with both consent choices, and future promo drafts with mandatory approval. Read-only suggestions must not send messages or activate campaigns. Run focused regression tests and available workspace checks.
+- Evidence: Focused 8/8 including disposable PostgreSQL/HTTP isolation and refusal checks; full sequential API 509 passed / 0 failed / 9 unrelated opt-in skips, web 597/597, shared 157/157. Workspace typecheck/lint/build pass. Default local-day/DST and decimal metrics, latest completed-visit/consent/upcoming exclusion, valid future drafts and approval flags verified. Deterministic read-only recommendations, not an LLM or outbound execution/approval workflow; no UI expansion or deployment. Standing user acceptance applies; external ID ready for DONE. See October 23 assistant handoff in PROGRESS.md.

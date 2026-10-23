@@ -1,19 +1,52 @@
-/** AI Assistant — owner summary, rebooking nudges, slow-day promos.
- *
- * All functions run inside the tenant scope `middleware/auth.ts` opened, so
- * none of them takes a tenant id. Rows are serialised through the shared Zod
- * schemas, so a column added to a model and forgotten here throws instead of
- * reaching the browser outside its contract (AGENTS.md rule 6).
- */
-
-/** Shared imports */
+/** Read-only, deterministic assistant drafts. No sending or campaign activation. */
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
-import { resolveLowStockThreshold } from "./catalogue.service.js";
+import { currentScope } from "../lib/tenant-context.js";
+import { badRequest, notFound } from "../lib/http-error.js";
+import { salonDayBounds } from "../lib/wall-clock.js";
+import {
+  assistantRangeSchema,
+  rebookingQuerySchema,
+  promoQuerySchema,
+  type AssistantRange,
+  type RebookingQuery,
+  type PromoQuery,
+} from "../schemas/ai-assistant.js";
 
-/** ---------- Owner Summary ---------- */
-
-/** Daily aggregated metrics for the owner dashboard. */
+const DAY = 86_400_000;
+function localDate(instant: Date, timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(instant);
+}
+async function salon() {
+  const scope = currentScope();
+  if (scope?.kind !== "tenant") throw new Error("Assistant requires a tenant scope.");
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: scope.tenantId },
+    select: { timeZone: true, lowStockThreshold: true },
+  });
+  if (!tenant) throw notFound("Salon not found.", "TENANT_NOT_FOUND");
+  return tenant;
+}
+/** Date-only edges include the whole salon-local day; instant edges are inclusive. */
+function range(query: AssistantRange, timeZone: string, fallback: { from: Date; to: Date }) {
+  const from = query.from
+    ? query.from.length === 10
+      ? salonDayBounds(query.from, timeZone).from
+      : new Date(query.from)
+    : fallback.from;
+  const to = query.to
+    ? query.to.length === 10
+      ? salonDayBounds(query.to, timeZone).to
+      : new Date(new Date(query.to).getTime() + 1)
+    : fallback.to;
+  if (from >= to) throw badRequest("from must not be after to.");
+  return { gte: from, lt: to };
+}
 export interface OwnerSummary {
   incomeToday: string;
   appointmentsToday: number;
@@ -22,183 +55,101 @@ export interface OwnerSummary {
   refundsToday: string;
   averageTicket: string;
 }
-
-/** Query parameters for owner summary (optional date range). */
-interface OwnerSummaryQuery {
-  from?: string;
-  to?: string;
-}
-
-/** Compute the owner summary for a given window. */
-async function ownerSummary(query: OwnerSummaryQuery): Promise<OwnerSummary> {
-  const { from, to } = query;
-
-  const window = from || to
-    ? {
-        gte: from ? new Date(from) : undefined,
-        lte: to ? new Date(to) : undefined,
-      }
-    : undefined;
-
-  const [sales, appointments, newCustomers, refunds] = await Promise.all([
+async function ownerSummary(input: AssistantRange): Promise<OwnerSummary> {
+  const query = assistantRangeSchema.parse(input);
+  const { timeZone, lowStockThreshold } = await salon();
+  const window = range(query, timeZone, salonDayBounds(localDate(new Date(), timeZone), timeZone));
+  const [sales, appointments, customers, refunds, lowStock] = await Promise.all([
     prisma.sale.aggregate({
-      where: {
-        status: "COMPLETED",
-        ...(window && { soldAt: window }),
-      },
+      where: { status: "COMPLETED", soldAt: window },
       _sum: { paidAmount: true },
       _count: { _all: true },
     }),
-    prisma.appointment.count({
-      where: {
-        ...(window && { startsAt: window }),
-        status: { not: "CANCELLED" },
-      },
-    }),
+    prisma.appointment.count({ where: { startsAt: window, status: { not: "CANCELLED" } } }),
     prisma.customer.count({ where: { createdAt: window } }),
-    prisma.saleRefund.aggregate({
-      where: { refundedAt: window },
-      _sum: { amount: true },
-    }),
+    prisma.saleRefund.aggregate({ where: { refundedAt: window }, _sum: { amount: true } }),
+    prisma.product.count({ where: { status: "ACTIVE", quantity: { lte: lowStockThreshold } } }),
   ]);
-
-  const lowStock = await prisma.product.count({
-    where: { quantity: { lte: await resolveLowStockThreshold() } },
-  });
-
-  // Prisma _sum returns Decimal | null; coerce to number safely
-  const totalIncome = Number(sales._sum?.paidAmount ?? new Prisma.Decimal(0));
-  const appointmentCount = appointments;
-  const avgTicket = appointmentCount > 0 ? totalIncome / appointmentCount : 0;
-
+  const income = sales._sum.paidAmount ?? new Prisma.Decimal(0);
   return {
-    incomeToday: totalIncome.toFixed(2),
-    appointmentsToday: appointmentCount,
-    newCustomersToday: newCustomers ?? 0,
+    incomeToday: income.toFixed(2),
+    appointmentsToday: appointments,
+    newCustomersToday: customers,
     lowStockCount: lowStock,
-    refundsToday: (refunds._sum?.amount ?? new Prisma.Decimal(0)).toFixed(2),
-    averageTicket: avgTicket.toFixed(2),
+    refundsToday: (refunds._sum.amount ?? new Prisma.Decimal(0)).toFixed(2),
+    averageTicket: sales._count._all ? income.div(sales._count._all).toFixed(2) : "0.00",
   };
 }
-
-/** ---------- Rebooking Nudges ---------- */
-
-/** A rebooking recommendation for a customer. */
 export interface RebookingNudge {
   customerId: string;
   customerName: string;
   email: string;
-  lastServiceDate: string | null;
+  lastServiceDate: string;
   serviceName: string;
   suggestedRebookDate: string;
   daysSinceLastService: number;
   message: string;
 }
-
-/** Query parameters for rebooking nudges. */
-interface RebookingNudgesQuery {
-  from?: string;
-  to?: string;
-  daysThreshold?: number; // nudge if last service was > this many days ago
-}
-
-/** Check if a customer has consent for rebooking nudges. */
-async function hasRebookingConsent(customerId: string): Promise<boolean> {
-  const customer = await prisma.customer.findUnique({
-    where: { id: customerId },
-    select: { marketingOptIn: true, pdpaConsent: true },
-  });
-  if (!customer) return false;
-  // Require either marketing opt-in or PDPA consent for rebooking nudge
-  return customer.marketingOptIn || customer.pdpaConsent;
-}
-
-/** Query parameters for rebooking nudges with consent. */
-interface RebookingNudgesQuery {
-  from?: string;
-  to?: string;
-  daysThreshold?: number; // nudge if last service was > this many days ago
-}
-
-/** Generate rebooking nudges for customers whose last service was too long ago. */
-async function rebookingNudges(
-  query: RebookingNudgesQuery,
-): Promise<{ nudges: RebookingNudge[]; requiresApproval: boolean }> {
-  const threshold = query.daysThreshold ?? 60; // nudge if > 60 days since last service
-
-  const from = query.from ? new Date(query.from) : undefined;
-  const to = query.to ? new Date(query.to) : undefined;
-
-  // Find appointments that are not cancelled and are in the window
-  const appointments = await prisma.appointment.findMany({
+async function rebookingNudges(input: RebookingQuery) {
+  const query = rebookingQuerySchema.parse(input);
+  const { timeZone } = await salon();
+  const now = new Date();
+  const window = range(query, timeZone, { from: new Date(0), to: new Date(now.getTime() + 1) });
+  // Select the actual latest completed visit BEFORE applying the history window.
+  // An old visit must not hide a recent completion outside that window.
+  const customers = await prisma.customer.findMany({
     where: {
-      ...(from || to ? { startsAt: { gte: from, lte: to } } : {}),
-      status: { not: "CANCELLED" },
+      archivedAt: null,
+      marketingOptIn: true,
+      pdpaConsent: true,
+      email: { not: null },
+      appointments: { none: { status: { in: ["SCHEDULED", "IN_PROGRESS"] }, endsAt: { gt: now } } },
     },
-    include: {
-      customer: {
-        select: { id: true, name: true, email: true },
-      },
-      service: {
-        select: { id: true, name: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      appointments: {
+        where: { status: "COMPLETED", endsAt: { lte: now } },
+        orderBy: [{ startsAt: "desc" }, { id: "asc" }],
+        take: 1,
+        select: { startsAt: true, service: { select: { name: true } } },
       },
     },
-    take: 200, // limit for performance
   });
-
+  const today = Date.parse(localDate(now, timeZone));
+  const suggestedRebookDate = new Date(today + 30 * DAY).toISOString().slice(0, 10);
   const nudges: RebookingNudge[] = [];
-  let requiresApproval = false;
-
-  for (const appt of appointments) {
-    const customer = appt.customer;
-    if (!customer) continue;
-    const service = appt.service;
-    const lastServiceDate = appt.startsAt;
-
-    // Calculate days since last service
-    if (lastServiceDate) {
-      const lastDate = typeof lastServiceDate === "object" ? lastServiceDate : new Date(String(lastServiceDate));
-      const today = new Date();
-      const diffDays = Math.floor(
-        (today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24),
-      );
-
-      if (diffDays > threshold) {
-        // Check consent before adding nudge
-        const hasConsent = await hasRebookingConsent(customer.id);
-        if (!hasConsent) {
-          requiresApproval = true; // Outbound action requires approval
-          continue; // Skip this customer until consent is verified
-        }
-
-        // Suggest rebooking - aim for about 30 days from now
-        const suggestedDate = new Date();
-        suggestedDate.setDate(suggestedDate.getDate() + 30);
-
-        nudges.push({
-          customerId: customer?.id || "",
-          customerName: customer?.name || "",
-          email: customer?.email || "",
-          lastServiceDate:
-            lastDate.getTime() !== undefined
-              ? lastDate.toISOString().split("T")[0]
-              : null,
-          serviceName: service?.name || "Unknown Service",
-          suggestedRebookDate: suggestedDate.toISOString().split("T")[0],
-          daysSinceLastService: diffDays,
-          message: `It's been ${diffDays} days since your ${service?.name || "service"}. Would you like to rebook?`,
-        });
-      }
-    }
+  for (const customer of customers) {
+    const last = customer.appointments[0];
+    if (
+      !last ||
+      !customer.email?.trim() ||
+      last.startsAt < window.gte ||
+      last.startsAt >= window.lt
+    )
+      continue;
+    const lastServiceDate = localDate(last.startsAt, timeZone);
+    const days = Math.floor((today - Date.parse(lastServiceDate)) / DAY);
+    if (days <= (query.daysThreshold ?? 60)) continue;
+    const serviceName = last.service?.name ?? "service";
+    nudges.push({
+      customerId: customer.id,
+      customerName: customer.name,
+      email: customer.email,
+      lastServiceDate,
+      serviceName,
+      suggestedRebookDate,
+      daysSinceLastService: days,
+      message: `It's been ${days} days since your ${serviceName}. Would you like to rebook?`,
+    });
   }
-
-  // Sort by days since last service (most urgent first)
-  nudges.sort((a, b) => b.daysSinceLastService - a.daysSinceLastService);
-
-  return { nudges, requiresApproval };
+  nudges.sort(
+    (a, b) =>
+      b.daysSinceLastService - a.daysSinceLastService || a.customerId.localeCompare(b.customerId),
+  );
+  return { nudges, requiresApproval: true as const };
 }
-
-/** ---------- Slow-Day Promos ---------- */
 export interface SlowDayPromo {
   id: string;
   name: string;
@@ -209,108 +160,58 @@ export interface SlowDayPromo {
   validTo: string;
   appliesTo: "service" | "product" | "both";
 }
-
-/** Query parameters for slow-day promos. */
-interface SlowDayPromosQuery {
-  from?: string;
-  to?: string;
-  discountPercentage?: number;
-}
-
-/** Identify slow days and generate promotional offers. */
-async function slowDayPromos(
-  query: SlowDayPromosQuery,
-): Promise<SlowDayPromo[]> {
-  const { from, to, discountPercentage: DiscountPct } = query;
-  const discount = DiscountPct ?? 15; // default 15% off
-
-  const dateFrom = from ? new Date(from) : undefined;
-  const dateTo = to ? new Date(to) : undefined;
-
-  // Determine the date range to analyze (default to last 30 days)
-  const analysisFrom = dateFrom || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  const analysisTo = dateTo || new Date();
-
-  // Count appointments per day in the analysis window
-  const appointmentsByDay = await prisma.appointment.aggregate({
-    where: {
-      startsAt: {
-        gte: analysisFrom,
-        lte: analysisTo,
-        not: "CANCELLED",
-      },
-    },
-    _count: true,
+async function slowDayPromos(input: PromoQuery): Promise<SlowDayPromo[]> {
+  const query = promoQuerySchema.parse(input);
+  const { timeZone } = await salon();
+  const today = localDate(new Date(), timeZone);
+  const todayBounds = salonDayBounds(today, timeZone);
+  // Historical low-volume heuristic, not a claim about specific future capacity.
+  const monthAgo = new Date(Date.parse(today) - 30 * DAY).toISOString().slice(0, 10);
+  const window = range(query, timeZone, {
+    from: salonDayBounds(monthAgo, timeZone).from,
+    to: todayBounds.from,
   });
-
-  // Calculate average daily appointments
-  const daysInRange = Math.max(
+  const count = await prisma.appointment.count({
+    where: { startsAt: window, status: { not: "CANCELLED" } },
+  });
+  const days = Math.max(
     1,
-    Math.floor((analysisTo.getTime() - analysisFrom.getTime()) / (1000 * 60 * 60 * 24)),
+    Math.round(
+      (Date.parse(localDate(new Date(window.lt.getTime() - 1), timeZone)) -
+        Date.parse(localDate(window.gte, timeZone))) /
+        DAY,
+    ) + 1,
   );
-
-  const avgAppointmentsPerDay = (appointmentsByDay._count || 0) / daysInRange;
-
-  // A day is "slow" if it has below average appointments
-  const IS_SLOW = avgAppointmentsPerDay < 3; // threshold: less than 3 appointments per day on average
-
-  if (!IS_SLOW) {
-    return []; // No slow days detected
-  }
-
-  // Generate promos for slow days
-  const promos: SlowDayPromo[] = [];
-
-  // Find services that can be promoted
-  const services = await prisma.service.findMany({
-    where: { status: "ACTIVE" },
-    select: { id: true, name: true },
-    take: 10,
-  });
-
-  // Find products that can be promoted
-  const products = await prisma.product.findMany({
-    where: { status: "ACTIVE" },
-    select: { id: true, name: true },
-    take: 10,
-  });
-
-  // Create service promos
-  for (const service of services) {
-    const promoId = `promo-${service.id}-${Date.now()}`;
-    promos.push({
-      id: promoId,
-      name: `Special on ${service.name}`,
-      description: `Enjoy ${discount}% off ${service.name} this week`,
-      discountPercentage: discount,
-      minBookingValue: "0.00",
-      validFrom: analysisFrom.toISOString().split("T")[0],
-      validTo: analysisTo.toISOString().split("T")[0],
-      appliesTo: "service",
-    });
-  }
-
-  // Create product promos
-  for (const product of products) {
-    const promoId = `promo-${product.id}-${Date.now()}`;
-    promos.push({
-      id: promoId,
-      name: `Special on ${product.name}`,
-      description: `Enjoy ${discount}% off ${product.name} this week`,
-      discountPercentage: discount,
-      minBookingValue: "0.00",
-      validFrom: analysisFrom.toISOString().split("T")[0],
-      validTo: analysisTo.toISOString().split("T")[0],
-      appliesTo: "product",
-    });
-  }
-
-  return promos;
+  if (count / days >= 3) return [];
+  const [services, products] = await Promise.all([
+    prisma.service.findMany({
+      where: { status: "ACTIVE" },
+      select: { id: true, name: true },
+      orderBy: { id: "asc" },
+      take: 10,
+    }),
+    prisma.product.findMany({
+      where: { status: "ACTIVE", quantity: { gt: 0 } },
+      select: { id: true, name: true },
+      orderBy: { id: "asc" },
+      take: 10,
+    }),
+  ]);
+  const discount = query.discountPercentage ?? 15;
+  const validFrom = localDate(todayBounds.to, timeZone);
+  const validTo = new Date(Date.parse(validFrom) + 6 * DAY).toISOString().slice(0, 10);
+  return [
+    ...services.map((item) => ({ ...item, appliesTo: "service" as const })),
+    ...products.map((item) => ({ ...item, appliesTo: "product" as const })),
+  ].map((item) => ({
+    id: `draft-${item.appliesTo}-${item.id}-${validFrom}`,
+    name: `Special on ${item.name}`,
+    description: `Draft: ${discount}% off ${item.name}, ${validFrom} to ${validTo}. Based on historical low booking volume; approval required.`,
+    discountPercentage: discount,
+    minBookingValue: "0.00",
+    validFrom,
+    validTo,
+    appliesTo: item.appliesTo,
+  }));
 }
-
-/** Export all functions. */
-export const aiAssistantService = {
-  ownerSummary,
-  rebookingNudges,
-  slowDayPromos,
-};
+export const aiAssistantService = { ownerSummary, rebookingNudges, slowDayPromos };

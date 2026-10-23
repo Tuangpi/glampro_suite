@@ -2,23 +2,58 @@
 
 ## Current State
 
-- Current task: **TK2610-0027 BLOCKED only on separately authorized application
-  rollout; implementation and automated verification DONE**. No further feature
-  slice or manual UAT round planned. Do not repeat family-sharing implementation.
-- Most recently completed: explicit holding sharing, pooled family POS spending,
-  exact-source reversals, owner/manager customer controls and append-only prepaid
-  balance history. Existing expiry, transfers and service sets remain verified.
-- Final checks: API 509 passed / 0 failed / 1 SMTP opt-in skip; web 597/597;
-  shared 157/157; workspace typecheck/lint/build pass. Disposable migration only.
-- Outstanding operations: coordinated application migrations/API/web rollout for
-  0027 and treatment retention/history 0025; neither authorized or performed.
-- P2 TK2610-0003 remains IN PROGRESS. TK2610-0026 BLOCKED on vendor-route/business
-  evidence/submission; 0029 has recorded owner-summary/promo correctness findings.
-- Standing user acceptance covers completed implementation/available automated
-  verification; no extra manual review request. Not an agent browser walkthrough.
-- Next implementation candidate: verify/fix TK2610-0029 daily owner summary and
-  promo approval findings; reconcile its stale DONE status before editing. Do not
-  silently start operational rollout, external submissions or a new task here.
+- Current task: **None**. Most recently completed: **TK2610-0029 DONE** —
+  authenticated tenant-scoped assistant, salon-local daily metrics, latest completed
+  visit nudges with both consent choices, future promo drafts and mandatory approval.
+- Checks: focused 8/8; full sequential API 509 passed / 0 failed / 9 opt-in skips;
+  web 597/597; shared 157/157; workspace typecheck/lint/build pass.
+- Outstanding operations unchanged: TK2610-0027 BLOCKED only on separately
+  authorized application rollout, and 0025 retention/history rollout unperformed.
+  Do not repeat their completed implementation or initiate migrations/deployment.
+- P2 TK2610-0003 remains IN PROGRESS; TK2610-0026 BLOCKED on vendor-route/business
+  evidence/submission. No automatic next implementation selected.
+- Standing user acceptance applies, not an agent browser walkthrough. Assistant is
+  read-only deterministic advice, not an LLM, delivery/approval workflow or campaign
+  activation. Never interpret its approval flag as authorization to send.
+- Next: None automatically; reconcile remaining P2 scope/blockers before selecting
+  further work. No application DB changes, external submission, commit or push.
+
+## October 23, 2026 — TK2610-0029 assistant correctness complete
+
+- Reopened stale DONE; confirmed routes had no auth, default summary queried all
+  history, average ticket divided by appointments, consent used OR, arbitrary old
+  visits produced duplicate nudges, promo status filter targeted a date column and
+  promo responses lacked approval metadata. Replaced those paths with scoped reads.
+- Owner/manager-only routes use existing authentication, tenant/module guards and
+  validation/error middleware. Date-only edges include full salon-local days;
+  inclusive explicit instants preserved; default daily windows are half-open with
+  tenant timezone/DST. Decimal average ticket divides by completed receipts. Active
+  low-stock products use the tenant threshold; refunds remain separately reported.
+- Nudges require PDPA AND marketing choices, active customers and nonblank email,
+  latest completed visit, no future/in-progress booking; optional history filters
+  apply after latest selection. No arbitrary 200-appointment cap or duplicate visits.
+  Both nudge and promo HTTP responses always require approval, including empty lists.
+- Promos fix the Prisma filter, use 30 complete local days by default and the existing
+  below-three-bookings/day heuristic; active stocked products/services only. Stable
+  draft IDs, next-day seven-day validity and explicit historical heuristic wording.
+  No message, voucher/campaign writes or delivery added. No UI expansion.
+- Focused 8/8, including real PostgreSQL/HTTP isolation, role/auth refusal, disabled
+  user/expired tenant refusal, invalid/repeated/reversed queries, cancelled/no-show/
+  recent/upcoming/archived/consent exclusion and no writes to messaging/vouchers.
+  Unit coverage includes exact default windows, decimal average and 25-hour DST day.
+- Full sequential API: 518 tests, 509 passed, 0 failed, 9 opt-in skips (unrelated
+  SMTP/prepaid/treatment acceptance flags not enabled). Assistant acceptance enabled.
+  Web 597/597, shared 157/157; workspace typecheck/lint/build pass. Final focused rerun
+  8/8 after expired-account/future-validity assertions; final API typecheck/lint pass.
+  Initial acceptance typecheck caught an inferred any[] fixture; fixed explicitly.
+- Logs: `/tmp/tk29-api-full.log`, `/tmp/tk29-focused-final.log`,
+  `/tmp/tk29-workspace-typecheck.log`, `/tmp/tk29-workspace-lint.log`,
+  `/tmp/tk29-build.log`, `/tmp/tk29-web.log`, `/tmp/tk29-shared.log`.
+  Existing disposable loopback 55440/package_expiry_test only, 40 completed migrations,
+  no new migration. Fixture tenants zero and cluster stopped, pg_ctl confirms no
+  server (`/tmp/tk29-cleanup.log`). No application DB access/deployment/external mail.
+- TK2610-0029 is ready to mark DONE externally under standing user acceptance.
+  No further task started; existing operational and P2 blockers remain.
 
 ## October 23, 2026 — TK2610-0027 implementation complete
 

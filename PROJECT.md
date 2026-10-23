@@ -62,6 +62,17 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- AI assistant correctness (October 23, 2026, TK2610-0029): owner/manager-only,
+  authenticated tenant/module-scoped deterministic read-only advice. Default metrics
+  use the salon timezone's current day; date-only query edges include full local days,
+  explicit instant edges are inclusive. Average ticket uses completed receipts and
+  decimal arithmetic; refunds reported separately. Rebooking requires both PDPA and
+  marketing choices, active customer/email, latest completed visit and no upcoming
+  booking. Promo drafts use historical volume below three bookings/day (30 complete
+  local days by default), not a future-capacity forecast; validity is next seven days
+  starting tomorrow. Both suggestion responses always require approval. No LLM,
+  outbound sending, approval execution, campaign activation or new UI is included.
+
 - Service-set packages (October 23, 2026, user approved, TK2610-0027): configurable
   required quantity per service ID; one complete set consumes one session. Match
   complete sets only, extra service units need other tenders, and no service unit
