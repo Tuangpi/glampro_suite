@@ -32,79 +32,18 @@ import {
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
-import { resolveLowStockThreshold } from "./catalogue.service.js";
+import { ownerMetrics } from "./owner-metrics.service.js";
 
-/** A `Decimal(12,2)` on the wire is a string, so no cent is lost to a float. */
-function money(value: { toFixed: (digits: number) => string } | null): string {
-  return value ? value.toFixed(2) : "0.00";
-}
-
-/**
- * The server's current day, for a caller that sent no edges — a `curl` against
- * the endpoint still answers. The browser always sends its own edges (see
- * `dashboardQuerySchema`), so this fallback is the unusual case rather than
- * the one the dashboard depends on.
- */
-function serverDay(): { from: Date; to: Date } {
-  const now = new Date();
-  const from = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const to = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-  return { from, to };
-}
-
-function windowOf(query: DashboardQuery): { from: Date | undefined; to: Date | undefined } {
-  const fallback = serverDay();
-  return {
-    from: query.from ? new Date(query.from) : fallback.from,
-    to: query.to ? new Date(query.to) : fallback.to,
-  };
-}
-
-/**
- * The four tiles, counted in one pass.
- *
- * All three windowed counts use the same `gte`/`lte` pair, because the client's
- * `to` is the last instant of the day rather than the next midnight, and one
- * rule across all three is what stops the income tile and the appointment tile
- * from disagreeing about whether 23:59:59 falls inside the day.
- */
+/** Shared salon-local metrics, retaining the dashboard's legacy net-paid alias. */
 export async function dashboardSummary(query: DashboardQuery): Promise<DashboardSummary> {
-  const { from, to } = windowOf(query);
-
-  const window = {
-    ...(from ? { gte: from } : {}),
-    ...(to ? { lte: to } : {}),
-  };
-
-  const [sales, appointments, newCustomers, threshold, refunds] = await Promise.all([
-    prisma.sale.aggregate({
-      where: { status: "COMPLETED", soldAt: window },
-      _sum: { paidAmount: true },
-      _count: { _all: true },
-    }),
-    prisma.appointment.count({
-      // A cancelled booking did not happen; everything else in the window —
-      // including a no-show — is a slot the salon held and is shown as one.
-      where: { startsAt: window, status: { not: "CANCELLED" } },
-    }),
-    prisma.customer.count({ where: { createdAt: window } }),
-    resolveLowStockThreshold(),
-    prisma.saleRefund.aggregate({ where: { refundedAt: window }, _sum: { amount: true } }),
-  ]);
-
-  const lowStock = await prisma.product.count({
-    where: { quantity: { lte: threshold } },
-  });
-
+  const metrics = await ownerMetrics(query);
   return dashboardSummarySchema.parse({
-    incomeToday: money(
-      (sales._sum.paidAmount ?? new Prisma.Decimal(0)).minus(refunds._sum.amount ?? 0),
-    ),
-    salesToday: sales._count._all,
-    appointmentsToday: appointments,
-    newCustomersToday: newCustomers,
-    lowStock,
-    asOf: new Date().toISOString(),
+    incomeToday: metrics.netPaid,
+    salesToday: metrics.salesToday,
+    appointmentsToday: metrics.appointmentsToday,
+    newCustomersToday: metrics.newCustomersToday,
+    lowStock: metrics.lowStockCount,
+    asOf: metrics.asOf,
   });
 }
 

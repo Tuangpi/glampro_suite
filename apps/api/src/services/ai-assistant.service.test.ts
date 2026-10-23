@@ -7,6 +7,7 @@ const { prisma } = await import("../lib/prisma.js");
 const { Prisma } = await import("../../generated/prisma/client.js");
 const { runAsTenant } = await import("../lib/tenant-context.js");
 const { aiAssistantService: assistant } = await import("./ai-assistant.service.js");
+const { dashboardSummary } = await import("./report.service.js");
 const { assistantRangeSchema, rebookingQuerySchema, promoQuerySchema } =
   await import("../schemas/ai-assistant.js");
 
@@ -97,6 +98,14 @@ describe("owner summary", () => {
     });
     assert.deepEqual(await scoped(() => assistant.ownerSummary({})), {
       incomeToday: "100.01",
+      completedSalePaid: "100.01",
+      netPaid: "94.76",
+      salesToday: 3,
+      lowStockThreshold: 4,
+      timeZone: "Asia/Singapore",
+      from: window.gte.toISOString(),
+      to: window.lt.toISOString(),
+      asOf: now.toISOString(),
       appointmentsToday: 8,
       newCustomersToday: 2,
       lowStockCount: 1,
@@ -123,6 +132,47 @@ describe("owner summary", () => {
         .averageTicket,
       "0.00",
     );
+  });
+  it("reconciles dashboard net income and stock with the assistant without changing legacy meanings", async () => {
+    metrics();
+    const owner = await scoped(() => assistant.ownerSummary({}));
+    const dashboard = await scoped(() => dashboardSummary({}));
+    assert.equal(owner.incomeToday, "100.01");
+    assert.equal(dashboard.incomeToday, owner.netPaid);
+    assert.equal(dashboard.salesToday, owner.salesToday);
+    assert.equal(dashboard.lowStock, owner.lowStockCount);
+    assert.equal(dashboard.appointmentsToday, owner.appointmentsToday);
+    assert.equal(dashboard.newCustomersToday, owner.newCustomersToday);
+    assert.equal(dashboard.asOf, owner.asOf);
+  });
+  it("supports refund-only days and zero receipts without attributing refunds to today's sales", async () => {
+    metrics();
+    replace(prisma.sale, "aggregate", async () => ({
+      _sum: { paidAmount: null },
+      _count: { _all: 0 },
+    }));
+    const owner = await scoped(() => assistant.ownerSummary({}));
+    assert.equal(owner.completedSalePaid, "0.00");
+    assert.equal(owner.netPaid, "-5.25");
+    assert.equal(owner.averageTicket, "0.00");
+    assert.equal((await scoped(() => dashboardSummary({}))).incomeToday, "-5.25");
+  });
+  it("shares inclusive instant boundaries with the dashboard and returns zero for empty money aggregates", async () => {
+    metrics();
+    replace(prisma.sale, "aggregate", async (args: unknown) => {
+      assert.deepEqual((args as { where: { soldAt: unknown } }).where.soldAt, {
+        gte: new Date("2026-10-23T00:00:00Z"),
+        lt: new Date("2026-10-24T00:00:00Z"),
+      });
+      return { _sum: { paidAmount: null }, _count: { _all: 0 } };
+    });
+    replace(prisma.saleRefund, "aggregate", async () => ({ _sum: { amount: null } }));
+    const query = { from: "2026-10-23T00:00:00Z", to: "2026-10-23T23:59:59.999Z" };
+    const owner = await scoped(() => assistant.ownerSummary(query));
+    assert.equal(owner.completedSalePaid, "0.00");
+    assert.equal(owner.refundsToday, "0.00");
+    assert.equal(owner.netPaid, "0.00");
+    assert.equal((await scoped(() => dashboardSummary(query))).incomeToday, "0.00");
   });
   it("rejects missing tenant scope and resolved reversed mixed edges", async () => {
     await assert.rejects(assistant.ownerSummary({}), /tenant scope/);

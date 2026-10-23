@@ -41,11 +41,9 @@ const reportTimeZoneSchema = z
  * in one pass over the same window, so the income figure and the count behind
  * it can never be observed a minute apart and disagree.
  *
- * `from`/`to` are the day's edges as the browser's clock draws them (the same
- * rule the appointment list keeps): "today" is the salon's day, and the
- * salon's timezone is not a column the schema has, so the screen sends the
- * instants rather than asking the server to guess them. Omitted, they default
- * to the server's current day — a `curl` against the endpoint still answers.
+ * `from`/`to` are inclusive instants. Omitted edges default to the salon's
+ * current local day, using the tenant timezone. Internally the resolved window
+ * is half-open, shared with owner-assistant metrics.
  *
  * `salesToday` counts the receipts `incomeToday` sums — the tile draws "$X in
  * N sales" from one row, and a count computed in the browser would be N−1
@@ -59,7 +57,7 @@ export const dashboardQuerySchema = z.object({
 export type DashboardQuery = z.infer<typeof dashboardQuerySchema>;
 
 export const dashboardSummarySchema = z.object({
-  /** Takings for today, `paidAmount` over completed sales. `"0.00"` when none. */
+  /** Completed-sale paid amounts minus refunds recorded in the window; may be negative. */
   incomeToday: z.string(),
   /** Receipts behind `incomeToday`. */
   salesToday: z.number().int().min(0),
@@ -67,7 +65,7 @@ export const dashboardSummarySchema = z.object({
   appointmentsToday: z.number().int().min(0),
   /** Customers whose row was created today. */
   newCustomersToday: z.number().int().min(0),
-  /** Products at or below the tenant's own threshold (ADR 0010). */
+  /** Current active products at or below the tenant's own threshold (ADR 0010). */
   lowStock: z.number().int().min(0),
   /** When the API counted — ISO 8601, so the screen can say "as of 14:02". */
   asOf: z.string(),

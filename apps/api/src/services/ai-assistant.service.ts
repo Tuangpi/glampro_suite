@@ -1,11 +1,11 @@
 /** Read-only, deterministic assistant drafts. No sending or campaign activation. */
-import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { badRequest, notFound } from "../lib/http-error.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
+import { ownerMetrics } from "./owner-metrics.service.js";
+export type { OwnerSummary } from "@glampro_suite/shared";
 import {
-  assistantRangeSchema,
   rebookingQuerySchema,
   promoQuerySchema,
   type AssistantRange,
@@ -47,39 +47,7 @@ function range(query: AssistantRange, timeZone: string, fallback: { from: Date; 
   if (from >= to) throw badRequest("from must not be after to.");
   return { gte: from, lt: to };
 }
-export interface OwnerSummary {
-  incomeToday: string;
-  appointmentsToday: number;
-  newCustomersToday: number;
-  lowStockCount: number;
-  refundsToday: string;
-  averageTicket: string;
-}
-async function ownerSummary(input: AssistantRange): Promise<OwnerSummary> {
-  const query = assistantRangeSchema.parse(input);
-  const { timeZone, lowStockThreshold } = await salon();
-  const window = range(query, timeZone, salonDayBounds(localDate(new Date(), timeZone), timeZone));
-  const [sales, appointments, customers, refunds, lowStock] = await Promise.all([
-    prisma.sale.aggregate({
-      where: { status: "COMPLETED", soldAt: window },
-      _sum: { paidAmount: true },
-      _count: { _all: true },
-    }),
-    prisma.appointment.count({ where: { startsAt: window, status: { not: "CANCELLED" } } }),
-    prisma.customer.count({ where: { createdAt: window } }),
-    prisma.saleRefund.aggregate({ where: { refundedAt: window }, _sum: { amount: true } }),
-    prisma.product.count({ where: { status: "ACTIVE", quantity: { lte: lowStockThreshold } } }),
-  ]);
-  const income = sales._sum.paidAmount ?? new Prisma.Decimal(0);
-  return {
-    incomeToday: income.toFixed(2),
-    appointmentsToday: appointments,
-    newCustomersToday: customers,
-    lowStockCount: lowStock,
-    refundsToday: (refunds._sum.amount ?? new Prisma.Decimal(0)).toFixed(2),
-    averageTicket: sales._count._all ? income.div(sales._count._all).toFixed(2) : "0.00",
-  };
-}
+const ownerSummary = ownerMetrics;
 export interface RebookingNudge {
   customerId: string;
   customerName: string;

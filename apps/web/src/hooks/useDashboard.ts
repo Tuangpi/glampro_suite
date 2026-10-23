@@ -1,11 +1,9 @@
 /**
  * Dashboard data — handoff screen 05 (`GET /api/reports/dashboard`).
  *
- * One hook for one request: the four tiles are answered together so they share
- * one window and can never be observed a moment apart (see `report.ts`). The
- * window itself is **the browser's day**, sent as instants — the salon's
- * timezone lives in the clock in front of the screen, and asking the server to
- * guess it would put "today" somewhere the salon is not.
+ * One hook for one request: the four tiles share one reporting window (see
+ * `report.ts`). The window is the salon's day in its configured timezone,
+ * sent as explicit instants to agree with the server's default local-day policy.
  *
  * The window key is stable across renders because both edges are derived from
  * calendar midnight rather than from `Date.now()`, so a dashboard that re-renders

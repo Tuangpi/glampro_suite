@@ -13,6 +13,82 @@ promoted to Done. Mark Done only when the full expected result and completion
 check are met. Preserve explicit readiness sign-off gates. Historical evidence is
 not a new test run. Assess code first; follow dependencies rather than date order.
 
+## Owner assistant — approved October 23, 2026
+
+Preserve TK2610-0029's backend-correctness history. These follow-ups implement the
+owner-facing experience; they do not authorize deployment or outbound messages.
+
+### OA-01 — Shared metric definitions and assistant contracts
+
+- Status: DONE — local implementation and focused verification; live database/HTTP
+  acceptance not rerun.
+- Expected result: Shared dashboard/assistant calculations, explicit paid/refund/net
+  definitions, receipt-based average, salon-local windows and consistent stock policy;
+  preserve legacy fields and publish shared validated contracts.
+- Completion check: Focused decimal/date/DST/empty/reconciliation tests, existing
+  assistant boundary coverage, shared tests, typecheck/lint and diff review. Record
+  any database/HTTP checks not run rather than claiming live verification.
+- Evidence: Shared 170/170; focused API unit/tenant-boundary/isolation 31 passed,
+  0 failed, 1 opt-in live acceptance skipped; dashboard UI 3/3. Shared build,
+  API/web typechecks, workspace lint, API/web production builds and scoped
+  formatting/diff checks pass. Existing authentication/module route guards are
+  unchanged and inspected, not newly HTTP-verified. No database access/migration,
+  outbound messages, deployment or external AI provider.
+
+### OA-02 — Dashboard briefing and evidence workspace
+
+- Status: TODO
+- Dependencies: OA-01
+- Expected result: Owner/manager briefing with evidence links and no new main nav item.
+- Completion check: Role/module-aware UI; loading, empty, partial failure, retry and
+  stale states; factual summaries and owner walkthrough.
+
+### OA-03 — Service-aware rebooking recommendations
+
+- Status: TODO
+- Dependencies: OA-01, OA-02
+- Expected result: Company/service intervals, channel consent eligibility, editable
+  drafts, contact limits and deduplication against existing rebooking automation.
+- Completion check: Interval fallback, consent/destination changes, upcoming bookings,
+  existing jobs and duplicate contact tests; no implicit sending.
+
+### OA-04 — Future quiet-day opportunities
+
+- Status: TODO
+- Dependencies: OA-01, OA-02
+- Expected result: Bounded future opportunities using existing staff/resource booking
+  checks, non-discount suggestions first and explicit capacity-data limitations.
+- Completion check: Suggested slots agree with booking checks; no unsupported
+  utilisation/profit claims; discount limits and offer interactions verified.
+
+### OA-05 — Draft approvals and controlled delivery
+
+- Status: TODO
+- Dependencies: OA-03, OA-04
+- Expected result: Versioned review/approval, explicit recipients/content/channel,
+  execution-time rechecks, audit and existing queue integration. Promotion sending
+  remains gated on supported offers/provider templates.
+- Completion check: Stale/concurrent edits, opt-outs, tenant/role changes, duplicate
+  sends, retries and uncertain delivery; preview matches actual provider payload.
+
+### OA-06 — Bounded conversational explanations
+
+- Status: TODO
+- Dependencies: OA-01, OA-02, OA-03, OA-04
+- Expected result: Supported business questions backed by verified facts; optional
+  language provider only after separate data/cost/provider decision.
+- Completion check: Evidence/period fidelity, ambiguous and unsupported requests,
+  injection resistance, restricted data, budgets and factual fallback on AI failure.
+
+### OA-07 — Outcomes and release readiness
+
+- Status: TODO
+- Dependencies: OA-05, OA-06
+- Expected result: Delivery/booking/sale outcomes without causal overclaims, usage
+  controls, audit/retention policy and authorized rollout/rollback checklist.
+- Completion check: Outcome attribution limits, failure recovery, retention/security
+  review, realistic owner UAT and separate provider/operational readiness evidence.
+
 ## Multi-company SaaS — approved October 23, 2026
 
 ### SAAS-01 — Harden tenant authentication and session administration

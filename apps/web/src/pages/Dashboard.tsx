@@ -10,9 +10,8 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
  * The four stat tiles are **server-side aggregates** from one request
  * (`GET /api/reports/dashboard`), so the tiles and any later report read the
  * same counted figures rather than a count of rows the browser happens to hold
- * (ADR 0010). The window they count is the browser's own day, sent as
- * instants, because the salon's timezone lives in the clock in front of the
- * screen (see `hooks/useDashboard.ts`).
+ * (ADR 0010). The window is the salon-local day sent as explicit instants
+ * (see `hooks/useDashboard.ts`), matching the server's default timezone policy.
  *
  * When the summary request fails every figure reads "—": the screen never
  * invents a zero, because "no income today" and "the server did not answer"

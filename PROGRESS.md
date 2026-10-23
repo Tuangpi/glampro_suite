@@ -2,8 +2,11 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **COMM-01**, service/product
-  commission rules. Prior SaaS tasks remain complete. No next approved task started.
+- Current task: **None**. Most recently completed: **OA-01**, shared owner-assistant
+  metric definitions and contracts. Approved OA-01–OA-07 plan recorded.
+- Next: **OA-02**, dashboard briefing and evidence workspace; not started.
+- OA-01 verified locally: shared 170/170, API focused 31 passed / 1 opt-in live
+  acceptance skipped, dashboard 3/3, typechecks/lint/production builds pass.
 - Verified: all 43 migrations replay and commission acceptance/resolver 5/5 on
   disposable PostgreSQL 55443; API 541 passed / 0 failed / 14 opt-in skips; web
   633/633; shared 168/168. Root build, API/web typechecks, lint, formatting/diff pass.
@@ -14,6 +17,34 @@
   is recoverable by resend after committed creation.
 - Multi-outlet remains deferred. TK2610-0026 remains BLOCKED/deferred. Existing
   prepaid/treatment migration/schema drift remains unresolved; P2 is not complete.
+
+## October 23, 2026 — OA-01 owner-assistant metrics foundation complete
+
+- Recorded approved OA-01–OA-07 scope. Preserved TK2610-0029's correctness history.
+  Stopped after OA-01; no UI feature, approval workflow or messaging changes.
+- Added shared owner summary schema/type with explicit completed-sale paid,
+  refund/net amounts, receipt count, threshold, timezone, resolved half-open range
+  and as-of evidence. Legacy assistant income remains pre-refund; dashboard income
+  remains net. Money is not relabelled as cash-only receipts, revenue or profit.
+- Extracted common owner metrics; dashboard and assistant now use the same decimal
+  calculations, salon-local default day, inclusive explicit instant end boundaries,
+  cancelled-booking exclusion and active-product tenant-threshold stock rule.
+  Dashboard no longer counts inactive stock; default API day no longer uses server
+  timezone. Existing route auth/module/role guards remain unchanged.
+- Tests: shared 170/170; focused API service/tenant boundary/isolation 31 passed,
+  0 failed, 1 live assistant acceptance skipped (fixture not enabled); dashboard
+  UI 3/3. Includes reconciliation, refunds without receipts, empty sums, decimal
+  averages, inclusive boundaries, DST and response contract validation. Shared
+  build, API/web typechecks, workspace lint, API/web production builds, changed-code
+  Prettier and diff checks pass. Initial typecheck/lint caught a refactor's unused
+  helper; removed and reran successfully.
+- Live PostgreSQL/HTTP, full API/web suites and browser UAT not run. No application
+  database access, migration, mail, AI provider, deployment, commit or push.
+  Logs: `/tmp/oa01-focused.log`, `/tmp/oa01-shared-tests.log`,
+  `/tmp/oa01-web-tests.log`, `/tmp/oa01-api-types.log`, `/tmp/oa01-web-types.log`,
+  `/tmp/oa01-lint.log`, `/tmp/oa01-api-build.log`, `/tmp/oa01-web-build.log`.
+- Next ready task: OA-02. Later service-aware rebooking must share eligibility and
+  deduplication with existing automatic rebooking jobs, not add a second sender.
 
 ## October 23, 2026 — COMM-01 advanced commissions complete locally
 

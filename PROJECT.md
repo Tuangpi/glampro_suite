@@ -331,6 +331,35 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+### Owner assistant expansion — approved October 23, 2026
+
+Follow-ups OA-01–OA-07 extend, rather than erase, TK2610-0029's correctness work.
+Deliver a dashboard briefing/evidence workspace, service-aware rebooking, future
+quiet-day opportunities, controlled approvals/delivery, bounded business questions
+and outcome/readiness checks. Reuse existing reporting, booking availability,
+channel consent and messaging jobs; never create independent duplicate outreach.
+Do not add a main navigation entry initially. Owner/manager and tenant/module
+boundaries remain mandatory; no new billing entitlement is assumed.
+
+Calculations and eligibility remain deterministic. Optional language generation
+must use validated evidence, not arbitrary SQL or direct action tools. No provider
+is selected. Clinical notes/photos/signatures, secrets and payment references are
+excluded from model context. Before persistence/delivery, define retention, usage
+limits and approved content/recipient versions. Edits invalidate approval; sending
+rechecks eligibility and preserves uncertain outcomes without blind retries.
+Existing promotion delivery/template support must be extended explicitly.
+
+OA-01 definitions: completed-sale paid amounts are not cash-only takings, revenue
+or profit (they may include prepaid redemption). Refunds are counted by refund
+time, independently of original sale date. Net paid is completed-sale paid minus
+refunds and can be negative. Average ticket is pre-refund completed-sale paid divided
+by completed receipts. Preserve assistant `incomeToday` as pre-refund paid and
+dashboard `incomeToday` as net; explicit assistant fields avoid ambiguous labels.
+All metrics use one half-open window, defaulting to the salon's current local day;
+explicit end instants are inclusive. Stock is a current snapshot of active products
+at/below the existing tenant threshold, not historical stock or a per-item override.
+No migration, automatic sending, deployment or external AI authorization is implied.
+
 - AI assistant correctness (October 23, 2026, TK2610-0029): owner/manager-only,
   authenticated tenant/module-scoped deterministic read-only advice. Default metrics
   use the salon timezone's current day; date-only query edges include full local days,
