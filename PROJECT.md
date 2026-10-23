@@ -77,6 +77,12 @@ not establish full roadmap compliance. Consult the decision sections and task fi
   session-package transfers are excluded. Implement the transfer/audit foundation
   first; family pooling remains a separate unfinished slice. A transfer moves only
   the remaining holding, never duplicates value or changes purchase provenance.
+  Family sharing is explicit opt-in per holding: owner/manager-managed family
+  membership alone never exposes private credit. Shared draws use earliest expiry
+  (no-expiry last), then purchase time and holding ID. Each holding retains its
+  own balance/expiry; reversals restore the exact source holdings even after
+  membership changes. Legacy customer/holding `familyId` values are not authority
+  for this new workflow and are not automatically enrolled.
 
 - Standing manual acceptance (October 22, 2026, user instruction): manual UAT,
   browser checks and review/sign-off gates are accepted when the agent completes

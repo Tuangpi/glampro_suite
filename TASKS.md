@@ -798,6 +798,15 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 ### TK2610-0027 — P2-03 Family/shared prepaid credit, package transfer, expiry rules
 
 - Status: IN PROGRESS
+- Active slice: tenant-scoped family membership management and append-only membership
+  history. User selected explicit per-holding sharing; joining a family alone must
+  not make private holdings spendable. Legacy familyId values are not membership.
+- Membership API foundation verified October 23: separate scoped models, owner/manager
+  guards, confirmed/reasoned changes with stale membership protection, customer locks
+  and immutable paginated history. Shared 156/156; family acceptance 1/1, transfer
+  regression 1/1, workspace typecheck/lint/build pass. Migration tested only on the
+  disposable database. Sharing enrollment, pooled draws/reversals, customer/POS UI
+  and complete balance audit remain unfinished; this is not parent completion.
 - October 23 transfer slice DONE (implementation/automated verification): same-salon whole-holding prepaid transfers
   and append-only transfer history, with manager/owner controls, explicit reason,
   stale-owner protection, expiry preservation and original-purchase void protection.

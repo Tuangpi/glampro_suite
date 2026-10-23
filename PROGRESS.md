@@ -2,7 +2,10 @@
 
 ## Current State
 
-- Current task: **TK2610-0027 (IN PROGRESS); service-set implementation verified**.
+- Current task: **TK2610-0027 (IN PROGRESS); family membership API verified**.
+  User selected owner/manager-managed membership with individual holdings explicitly
+  opted into sharing; private holdings must stay private. Per-holding sharing,
+  pooled spending, UI and complete balance audit are unfinished. No legacy enrollment.
   User approved same-salon family prepaid sharing and whole-holding transfers with
   manager/owner controls, preserved expiry and append-only audit. Transfer slice
   verified; family pooling and complete balance audit remain unfinished. TK2610-0025
@@ -12,12 +15,39 @@
   set redemption; preserve purchase snapshots and prevent duplicate unit coverage.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
-- Most recently completed: service-set package redemption, purchase-rule snapshots,
-  shared POS/API allocation and quantity editor. Whole-holding transfers remain verified.
+- Most recently completed: explicit prepaid family membership API foundation.
+  Service-set redemption and whole-holding transfers remain verified.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
 - Next: define and implement family sharing and complete append-only
   balance audit. Application rollout needs separate authorization. No application
   migration, production access, real-record erasure or paid mail authorized.
+
+## October 23, 2026 — Explicit prepaid family membership foundation
+
+- Separate tenant-scoped family/membership models; legacy familyId values do not
+  authorize access. Owner/manager-only creation and join/change/leave endpoints
+  require confirmation/reason and expected previous family. Customer locks serialize
+  changes; recheck enabled actor, owner 2FA, tenant write state, customer archival
+  and same-tenant target. Membership alone changes no balances or spending access.
+- Append-only membership events commit atomically with changes. Database trigger
+  rejects history update/delete except tenant removal. Paginated customer history.
+  Migration `20261023180000_prepaid_family_membership` applied only to disposable
+  loopback 55440/package_expiry_test (39 completed migrations).
+- Shared 156/156; explicit family HTTP/database acceptance 1/1 and transfer acceptance
+  1/1 pass. Covers isolation/permissions/entitlement, concurrent stale writes,
+  private-credit preservation, archived/read-only refusal, immutable history and
+  rollback on injected evidence failure. Initial test assertion used status instead
+  of statusCode; corrected and rerun. Workspace typecheck, lint and production build
+  pass; scoped formatting/diff checks pass.
+- Full sequential API regression: 508 tests, 500 passed, 0 failed, 8 opt-in skips,
+  exit 0 (`/tmp/family-api-full.log`). Family/transfer opt-in acceptance ran separately
+  without skips. No web suite rerun; no web files changed. Fixture tenants and injected
+  trigger counted zero; 39 completed disposable migrations, cluster stopped and
+  pg_ctl confirms no server (`/tmp/family-final-cleanup.log`).
+- No web UI, shared holding enrollment, pooled allocation, complete balance audit or
+  rollout claimed. TK2610-0027 remains IN PROGRESS; do not close the external task.
+  Next: per-holding sharing with membership/spend locking, exact-source reversals,
+  full balance events and customer/POS UI. No application migration/deployment/commit.
 
 ## October 23, 2026 — Service-set redemption slice
 

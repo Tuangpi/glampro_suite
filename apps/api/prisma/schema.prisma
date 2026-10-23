@@ -300,6 +300,9 @@ model PlatformAdmin {
 /// `company_id` is already a valid `tenantId` — see ADR 0002.
 model Tenant {
   prepaidTransferEvents PrepaidTransferEvent[]
+  prepaidFamilies PrepaidFamily[]
+  prepaidFamilyMembers PrepaidFamilyMember[]
+  prepaidFamilyEvents PrepaidFamilyEvent[]
   messagingSettings MessagingSettings?
   channelConsents ChannelConsent[]
   channelConsentEvents ChannelConsentEvent[]
@@ -1692,8 +1695,51 @@ model CustomerValuePackageHolding {
 }
 
 
-/// Append-only ownership evidence; identifiers are snapshots, not cascading links
-/// to mutable customers, staff or holdings. Tenant removal is the only cascade.
+/// Explicit same-salon prepaid family; membership alone grants no credit access.
+model PrepaidFamily {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  members PrepaidFamilyMember[]
+
+  @@unique([tenantId, id])
+  @@map("prepaid_families")
+}
+
+/// Explicit prepaid membership, independent of legacy customer.familyId.
+model PrepaidFamilyMember {
+  id String @id @default(cuid())
+  tenantId String
+  familyId String
+  customerId String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  family PrepaidFamily @relation(fields: [tenantId, familyId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, customerId])
+  @@index([tenantId, familyId])
+  @@map("prepaid_family_members")
+}
+
+/// Immutable membership snapshots survive later account or customer deletion.
+model PrepaidFamilyEvent {
+  id String @id @default(cuid())
+  tenantId String
+  customerId String
+  fromFamilyId String?
+  toFamilyId String?
+  actorId String
+  reason String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, customerId, createdAt, id])
+  @@map("prepaid_family_events")
+}
+
+/// Append-only ownership snapshots; only tenant removal cascades evidence.
 model PrepaidTransferEvent {
   id String @id @default(cuid())
   tenantId String

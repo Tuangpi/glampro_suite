@@ -1,5 +1,17 @@
 import { Router } from "express";
 import multer from "multer";
+import {
+  createPrepaidFamilySchema,
+  changePrepaidMembershipSchema,
+  type CreatePrepaidFamilyInput,
+  type ChangePrepaidMembershipInput,
+} from "@glampro_suite/shared";
+import {
+  getPrepaidFamily,
+  createPrepaidFamily,
+  changePrepaidMembership,
+  listPrepaidFamilyEvents,
+} from "../services/prepaid-family.service.js";
 import { customerPhotoCaptionSchema, type PaginationQuery } from "@glampro_suite/shared";
 import { badRequest } from "../lib/http-error.js";
 import {
@@ -64,9 +76,62 @@ import {
  */
 export const customersRouter = Router();
 
+customersRouter.get(
+  "/:id/prepaid-family",
+  auth,
+  requireModule("customers"),
+  requireModule("packages"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      res.json({ data: await getPrepaidFamily(validated<{ id: string }>(req, "params").id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+for (const [path, schema, action] of [
+  ["prepaid-family", createPrepaidFamilySchema, createPrepaidFamily],
+  ["prepaid-family-membership", changePrepaidMembershipSchema, changePrepaidMembership],
+] as const) {
+  customersRouter.post(
+    `/:id/${path}`,
+    auth,
+    requireModule("customers"),
+    requireModule("packages"),
+    requireWritableTenant(),
+    requireRole("SUPER_ADMIN", "MANAGER"),
+    validate(idParamSchema, "params"),
+    validate<unknown>(schema),
+    async (req, res, next) => {
+      try {
+        if (!req.user) throw unauthorized();
+        const id = validated<{ id: string }>(req, "params").id;
+        const data =
+          action === createPrepaidFamily
+            ? await createPrepaidFamily(
+                id,
+                validated<CreatePrepaidFamilyInput>(req, "body"),
+                req.user.id,
+              )
+            : await changePrepaidMembership(
+                id,
+                validated<ChangePrepaidMembershipInput>(req, "body"),
+                req.user.id,
+              );
+        res.json({ data });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+}
+
 for (const [path, list] of [
   ["prepaid", listOwnedPrepaid],
   ["prepaid-transfers", listPrepaidTransfers],
+  ["prepaid-family-history", listPrepaidFamilyEvents],
 ] as const) {
   customersRouter.get(
     `/:id/${path}`,
