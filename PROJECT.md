@@ -14,6 +14,42 @@ Positioning from the review: simple flat SGD pricing, local shared/transferable
 prepaid packages, WhatsApp-first engagement, owner assistance and grant readiness.
 These are product direction, not verified pricing, provider or grant commitments.
 
+## Advanced commissions — COMM-01, accepted October 23, 2026
+
+Extend the completed basic commission policy, without tiers, shared attribution,
+package-selling incentives or payout/payroll processing. Each salon manages its
+own service/product rules in Settings → Company commission defaults and Staff →
+Edit → Advanced commissions. Existing SUPER_ADMIN/MANAGER permissions apply;
+platform operators do not configure a salon's commission policy.
+
+Priority: staff/item → staff/department → staff/type default → company/type
+default → zero. One rate only; null explicitly inherits, while 0% blocks earnings.
+Reuse catalogue departments, not a new category system. Until an explicit staff
+default event exists, preserve the user's legacy service rate, including zero;
+products inherit the company rate or zero. New staff may still receive an initial
+service rate at creation. Later changes use the new publication API; the old staff
+PATCH refuses changed rates but accepts unchanged legacy values for compatibility.
+
+Rule events are append-only, attributed and reasoned, effective immediately or in
+the future. No backdating or historical recalculation. Latest effective time wins
+within each scope; publication order breaks ties. To supersede a scheduled event,
+publish a replacement at the same effective time; an immediate rule does not cancel
+later scheduled rules. A tenant-wide revision rejects stale/concurrent publishers.
+History is paginated independently of effective-policy selection.
+
+Preserve post-discount, tax-exclusive, line-attributed commission at sale completion,
+including package/credit-paid services but excluding package/prepaid purchases and
+tips. Product commission is opt-in through rules. Sale lines snapshot the selected
+rate, source, rule, basis, amount and evaluation time, including zero decisions;
+positive earnings also carry line/rule/basis references. Old rows remain unchanged.
+Refunds reverse stored values, not current policy; paid earnings retain manual
+reconciliation and voids preserve existing behavior. No money is sent to staff.
+
+Migration: `20261023180000_advanced_commission_rules`; deployment requires applying
+the migration before running the new API. Verified only on disposable databases
+until rollout is explicitly recorded. No automatic module entitlement was added:
+this extends existing staff management, rather than creating an unapproved add-on.
+
 ## SaaS scope — accepted October 23, 2026
 
 Complete multi-company SaaS before considering multiple outlets. One company is

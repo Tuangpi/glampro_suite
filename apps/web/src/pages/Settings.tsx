@@ -22,6 +22,7 @@ import { useState } from "react";
 import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
 import MessagingCard from "@/components/settings/MessagingCard";
 import ResourcesCard from "@/components/settings/ResourcesCard";
+import CommissionRules from "@/components/settings/CommissionRules";
 
 import { Link } from "react-router";
 
@@ -75,6 +76,9 @@ export default function Settings() {
       </header>
 
       <ProfileCard canEdit={canEdit} />
+      {(user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER") && (
+        <CommissionRules canEdit={canEdit} />
+      )}
       <TwoFactorCard />
       <ModulesCard modules={modules.data} isPending={modules.isPending} isError={modules.isError} />
       <OperatingHoursCard canEdit={canEdit} />

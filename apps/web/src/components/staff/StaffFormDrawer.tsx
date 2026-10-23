@@ -32,6 +32,8 @@ import Drawer from "@/components/ui/Drawer";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import StaffRoster from "@/components/staff/StaffRoster";
+import CommissionRules from "@/components/settings/CommissionRules";
+import { useAuth } from "@/contexts/AuthContext";
 import { showToast } from "@/components/ui/toast-store";
 import { ROLE_OPTIONS } from "@/constants/staff";
 import { useDepartments } from "@/hooks/useDepartments";
@@ -125,6 +127,9 @@ export interface StaffFormDrawerProps {
 }
 
 export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawerProps) {
+  const { user, isReadOnly } = useAuth();
+  const canConfigureCommission =
+    user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER";
   // Seeded once, at mount. The page gives this component a `key` that changes when
   // the record or the open state changes, so a cancelled edit cannot leak its
   // unsaved text into the next one — without an effect copying props into state,
@@ -197,7 +202,6 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
             globalRole: form.globalRole,
             phone: clearable(form.phone),
             position: clearable(form.position),
-            commissionRate,
             ...(form.removePin ? { posPin: null } : form.posPin ? { posPin: form.posPin } : {}),
             startDate: clearable(form.startDate),
             endDate: clearable(form.endDate),
@@ -365,17 +369,19 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
             hint="Immediately ends existing PIN verifications. A new PIN can be set later."
           />
         )}
-        <Input
-          label="Service commission (%)"
-          type="number"
-          min="0"
-          max="100"
-          step="0.01"
-          value={form.commissionRate}
-          onChange={(event) => setField("commissionRate", event.target.value)}
-          error={fieldError("commissionRate")}
-          hint="Service revenue after discounts, excluding tax. Includes redeemed services; excludes package purchases and direct tips."
-        />
+        {!isEditing && (
+          <Input
+            label="Service commission (%)"
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value={form.commissionRate}
+            onChange={(event) => setField("commissionRate", event.target.value)}
+            error={fieldError("commissionRate")}
+            hint="Service revenue after discounts, excluding tax. Includes redeemed services; excludes package purchases and direct tips."
+          />
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
@@ -435,6 +441,9 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
         ) : null}
         {staff && open ? <StaffRoster staffId={staff.id} /> : null}
       </form>
+      {staff && open && canConfigureCommission ? (
+        <CommissionRules staffId={staff.id} canEdit={!isReadOnly} />
+      ) : null}
     </Drawer>
   );
 }

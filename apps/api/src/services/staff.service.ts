@@ -269,14 +269,18 @@ export async function createStaff(input: CreateStaffInput): Promise<StaffDetail>
  * not for this.
  */
 export async function updateStaff(id: string, input: UpdateStaffInput): Promise<StaffDetail> {
-  const { departmentIds, startDate, endDate, disabled, posPin, ...fields } = input;
+  const { departmentIds, startDate, endDate, disabled, posPin, commissionRate, ...fields } = input;
   await assertDepartmentsExist(departmentIds);
 
   const existing = await prisma.user.findFirst({
     where: { id },
-    select: { id: true, email: true },
+    select: { id: true, email: true, commissionRate: true },
   });
   if (!existing) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
+  if (commissionRate !== undefined && !existing.commissionRate.equals(commissionRate))
+    throw badRequest(
+      "Publish commission changes through the commission rules settings so effective dates and history are retained.",
+    );
   if (!existing.email && fields.globalRole && !["STAFF", "CASHIER"].includes(fields.globalRole))
     throw badRequest("PIN-only staff cannot have a management role.");
 

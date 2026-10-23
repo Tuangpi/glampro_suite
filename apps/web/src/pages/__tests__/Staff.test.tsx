@@ -50,6 +50,9 @@ vi.mock("@/hooks/useDepartments", () => ({ useDepartments }));
 vi.mock("@/components/staff/StaffRoster", () => ({
   default: () => <section aria-label="Working hours" />,
 }));
+vi.mock("@/components/settings/CommissionRules", () => ({
+  default: () => <section aria-label="Advanced commissions" />,
+}));
 
 /** The signed-in member of the salon. Only the role and the suspension matter here. */
 const auth = vi.hoisted(() => ({

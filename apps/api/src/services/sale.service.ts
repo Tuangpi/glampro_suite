@@ -24,6 +24,8 @@
  * **through** the shared Zod schemas, so a column added to a model and forgotten here
  * throws instead of reaching the browser outside its contract (AGENTS.md rule 6).
  */
+import { resolveCommission } from "./commission-rules.js";
+import { lockCommissionConfiguration } from "./commission.service.js";
 import {
   allocatePackage,
   GST_INCLUSIVE_DIVISOR_STRING,
@@ -1788,18 +1790,93 @@ async function fillLedgers(
   if (attributed.length > 0) {
     // Tender does not change service revenue: package/credit-paid service lines
     // earn identically to cash-paid lines. Package purchase lines never qualify.
+    await lockCommissionConfiguration(tx, tenantId);
     const staff = await tx.user.findMany({
       where: { id: { in: attributed.map((line) => line.input.staffId as string) } },
       select: { id: true, commissionRate: true },
     });
+    const evaluatedAt = new Date();
+    const [rules, storedLines, services, products] = await Promise.all([
+      tx.commissionRule.findMany({
+        where: {
+          effectiveAt: { lte: evaluatedAt },
+          OR: [{ staffId: null }, { staffId: { in: staff.map((person) => person.id) } }],
+        },
+      }),
+      tx.saleLine.findMany({ where: { saleId }, select: { id: true, position: true } }),
+      tx.service.findMany({
+        where: {
+          id: {
+            in: attributed
+              .filter((line) => line.item.itemType === "SERVICE")
+              .map((line) => line.item.itemId),
+          },
+        },
+        select: { id: true, departmentId: true },
+      }),
+      tx.product.findMany({
+        where: {
+          id: {
+            in: attributed
+              .filter((line) => line.item.itemType === "PRODUCT")
+              .map((line) => line.item.itemId),
+          },
+        },
+        select: { id: true, departmentId: true },
+      }),
+    ]);
     const rates = new Map(staff.map((person) => [person.id, person.commissionRate]));
-    const commissions = attributed.flatMap((line) => {
-      const rate = rates.get(line.input.staffId as string);
-      if (line.item.itemType !== "SERVICE" || !rate || rate.isZero()) return [];
-      const amount = line.netLineTotal.minus(line.taxAmount).mul(rate).div(100).toDecimalPlaces(2);
-      if (amount.isZero()) return [];
-      return [{ tenantId, userId: line.input.staffId as string, saleId, rate, amount }];
-    });
+    const positions = new Map(storedLines.map((line) => [line.position, line.id]));
+    const departments = new Map(
+      [...services, ...products].map((item) => [item.id, item.departmentId]),
+    );
+    const commissions = [];
+    for (const line of attributed) {
+      if (line.item.itemType !== "SERVICE" && line.item.itemType !== "PRODUCT") continue;
+      const userId = line.input.staffId as string;
+      const selected = resolveCommission(
+        rules,
+        {
+          staffId: userId,
+          itemKind: line.item.itemType,
+          itemId: line.item.itemId,
+          departmentId: departments.get(line.item.itemId) ?? null,
+          legacyServiceRate: rates.get(userId)?.toString() ?? "0",
+        },
+        evaluatedAt,
+      );
+      const rate = new Prisma.Decimal(selected.rate);
+      const basis = line.netLineTotal.minus(line.taxAmount);
+      const amount = basis.mul(rate).div(100).toDecimalPlaces(2);
+      const saleLineId = positions.get(priced.indexOf(line));
+      if (!saleLineId) throw new Error("Commission sale line snapshot is missing.");
+      await tx.saleLine.update({
+        where: { id: saleLineId },
+        data: {
+          commissionSnapshot: {
+            staffId: userId,
+            rate: rate.toFixed(2),
+            basis: basis.toFixed(2),
+            amount: amount.toFixed(2),
+            ruleId: selected.ruleId,
+            source: selected.source,
+            evaluatedAt: evaluatedAt.toISOString(),
+          },
+        },
+      });
+      if (amount.isZero()) continue;
+      commissions.push({
+        tenantId,
+        userId,
+        saleId,
+        rate,
+        amount,
+        basis,
+        saleLineId,
+        ruleId: selected.ruleId,
+        ruleSource: selected.source,
+      });
+    }
     if (commissions.length > 0) await tx.employeeCommission.createMany({ data: commissions });
 
     await tx.employeePerformance.createMany({
@@ -2918,6 +2995,10 @@ export async function refundSale(
               userId: commission.userId,
               saleId: sale.id,
               rate: commission.rate,
+              saleLineId: commission.saleLineId,
+              basis: commission.basis?.negated() ?? null,
+              ruleId: commission.ruleId,
+              ruleSource: commission.ruleSource,
               amount: commission.amount.negated(),
               refundAdjustment: true,
             },

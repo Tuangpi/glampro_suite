@@ -50,6 +50,9 @@ vi.mock("@/hooks/useSettings", () => ({
   useUpdateSalonOperatingHours,
 }));
 vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
+vi.mock("@/components/settings/CommissionRules", () => ({
+  default: () => <section aria-label="Company commission defaults" />,
+}));
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
     isReadOnly: auth.readOnly,

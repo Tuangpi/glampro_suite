@@ -113,6 +113,28 @@ not a new test run. Assess code first; follow dependencies rather than date orde
   UI tests, not agent browser UAT. Initial parallel web lazy-import timeout passed
   with two workers and unchanged assertions. No new migration or real account changes.
 
+## Advanced commissions — approved October 23, 2026
+
+### COMM-01 — Service and product commission rules
+
+- Status: DONE — implementation and disposable verification; application migration
+  and deployment not performed.
+- Dependencies: TK2610-0019 (completed basic commission)
+- Expected result: Tenant-isolated company defaults and staff item/department/default
+  overrides for services/products. Explicit inheritance versus zero; prospective
+  effective dates, append-only attributed history, preview and sale-line snapshots.
+  Preserve existing rates, tax/discount basis, redemption and reversal policies.
+- Completion check: Disposable migration replay and legacy compatibility; precedence,
+  zero/inheritance, effective dates, permissions/isolation, rounding, retries and
+  refund tests; web controls/tests; lint/typecheck/build and diff review.
+- Excludes: tiers, shared attribution, package-selling incentives, payouts/payroll.
+- Evidence (October 23): all 43 migrations replay on disposable PostgreSQL 55443.
+  Commission HTTP/database acceptance plus resolver tests 5/5; API sequential
+  541 passed / 0 failed / 14 opt-in skips; web 633/633; shared 168/168. Root build,
+  API/web typechecks, workspace lint, changed-file formatting and diff checks pass.
+  UI exercised through component tests, not a browser walkthrough. Standing user
+  acceptance applies; no application database changes, deployment, commit or push.
+
 ## Documentation consolidation
 
 Standing acceptance override (October 22, 2026): the user accepts all manual

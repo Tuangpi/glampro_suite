@@ -2,20 +2,47 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **SAAS-04**, manual subscription
-  periods, lifecycle, module grants and company audit. SAAS-01–05 are locally complete.
-  Next ready task: **None** in the approved SaaS scope; stop before new scope/rollout.
-- Verified: real PostgreSQL/HTTP SAAS-04 isolation, sessions, audit rollback and
-  concurrent-period checks pass; full API 537 passed / 0 failed / 13 opt-in skips;
-  web 629/629; shared 167/167. Workspace typecheck/lint/build and formatting pass.
-- Migrations tested only on isolated databases, latest port 55442 (42 replayed).
-  Application database/accounts unchanged; no deployment, commit or push.
+- Current task: **None**. Most recently completed: **COMM-01**, service/product
+  commission rules. Prior SaaS tasks remain complete. No next approved task started.
+- Verified: all 43 migrations replay and commission acceptance/resolver 5/5 on
+  disposable PostgreSQL 55443; API 541 passed / 0 failed / 14 opt-in skips; web
+  633/633; shared 168/168. Root build, API/web typechecks, lint, formatting/diff pass.
+- Application database/accounts unchanged; no deployment, commit or push.
 - Actual onboarding needs authorized migration plus configured SMTP and trusted
   `SALON_PORTAL_ORIGIN`. Both logins now use web port 5173: `/login` for salons,
   `/platform/login` for operators. No separate platform dev server. Email failure
   is recoverable by resend after committed creation.
 - Multi-outlet remains deferred. TK2610-0026 remains BLOCKED/deferred. Existing
   prepaid/treatment migration/schema drift remains unresolved; P2 is not complete.
+
+## October 23, 2026 — COMM-01 advanced commissions complete locally
+
+- Added company defaults and staff/type, department and item overrides, explicit
+  zero/inheritance, prospective dates, immutable publication events and audit records.
+  Tenant locks/revisions serialize policy publication with sale snapshots and reject
+  stale writes. History paging does not truncate effective policy. Existing staff
+  service rates remain the fallback until explicitly replaced/inherited.
+- Settings and staff editor expose current/scheduled/history, search, rate preview,
+  reason, effective time and refresh/retry. Read-only salons cannot publish. Staff
+  PATCH no longer silently changes commission rates; unchanged old clients accepted.
+- Sales snapshot zero decisions on lines without zero earnings entries; positive
+  entries carry basis/line/rule/source. Refund adjustments preserve original values.
+  Additive transactional migration; original rows are not backfilled/recalculated.
+- Real HTTP/database acceptance covers permissions, two tenants, stale/concurrent
+  publication, future dates, zero/inheritance, history pages, duplicate sale retries,
+  tax/discount/product calculations, refunds, immutable rules and suspended writes.
+  All 43 migrations replay; commission acceptance/resolver 5/5. Final sequential API
+  541 passed / 0 failed / 14 opt-in skips; separate commission acceptance not skipped.
+  Web 633/633; shared 168/168; root build, API/web typechecks, workspace lint,
+  changed-file formatting and diff checks pass. Initial API run overlapped a
+  schema/client update and failed; clean replay/regenerated-client rerun above
+  supersedes it. Existing pg concurrent-query deprecation warning remains.
+- UI verification is automated component coverage, not agent browser UAT; standing
+  user acceptance applies. Schema replay was on a fresh disposable database; no
+  rehearsal against a copy of the application dataset. Legacy calculation,
+  idempotency, redemption and void/refund tests pass in the full API suite.
+- No application migration, production changes, deployment, commit or push. Payment
+  provider and multi-outlet work remain deferred. No new independent task started.
 
 ## October 23, 2026 — SAAS-04 subscriptions, lifecycle, entitlements and audit
 
