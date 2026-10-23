@@ -9,7 +9,11 @@ vi.mock("@/hooks/usePackages", () => ({
   useUpdatePackage: () => ({ mutateAsync: update, isPending: false }),
 }));
 vi.mock("@/hooks/useServices", () => ({
-  useServiceList: () => ({ data: { data: [], pageCount: 0 }, isPending: false, isError: false }),
+  useServiceList: () => ({
+    data: { data: [{ id: "cut", name: "Haircut" }], pageCount: 1 },
+    isPending: false,
+    isError: false,
+  }),
 }));
 vi.mock("@/components/ui/toast-store", () => ({ showToast: vi.fn() }));
 
@@ -37,6 +41,35 @@ beforeEach(() => {
 });
 
 describe("package validity editor", () => {
+  it("configures the quantity required per complete service set", async () => {
+    const user = userEvent.setup();
+    render(<PackageFormDrawer open bundle={bundle} onClose={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText("Session redemption"), "SERVICE_SET");
+    await user.click(screen.getByLabelText("Haircut"));
+    const quantity = screen.getByLabelText("Units of Haircut per set");
+    await user.clear(quantity);
+    await user.type(quantity, "2");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        id: bundle.id,
+        input: expect.objectContaining({
+          redemptionMode: "SERVICE_SET",
+          serviceSet: [{ serviceId: "cut", quantity: 2 }],
+          serviceIds: ["cut"],
+        }),
+      }),
+    );
+  });
+
+  it("refuses an empty service set before submitting", async () => {
+    const user = userEvent.setup();
+    render(<PackageFormDrawer open bundle={bundle} onClose={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText("Session redemption"), "SERVICE_SET");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+    expect(await screen.findByText(/Choose services and enter/)).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
   it("loads a rule and explicitly clears it without changing existing holdings", async () => {
     const user = userEvent.setup();
     render(<PackageFormDrawer open bundle={bundle} onClose={vi.fn()} />);

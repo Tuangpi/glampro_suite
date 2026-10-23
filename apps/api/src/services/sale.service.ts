@@ -25,6 +25,7 @@
  * throws instead of reaching the browser outside its contract (AGENTS.md rule 6).
  */
 import {
+  allocatePackage,
   GST_INCLUSIVE_DIVISOR_STRING,
   GST_RATE_DECIMAL_STRING,
   GST_RATE_PERCENT,
@@ -63,6 +64,7 @@ import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { resolveLowStockThreshold } from "./catalogue.service.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import { holdingPackageRules } from "../lib/package-rules.js";
 
 /**
  * Which module each kind belongs to. A kind is searchable when its module is
@@ -1443,12 +1445,23 @@ async function redeemPayments(
   }
 
   const usedAt = new Date();
+  const allocated = priced.map(() => 0);
   for (const tender of redemptions) {
     // `salePaymentInputSchema` requires a holding on a redemption tender, and the
     // service only ever sees a parsed body, so the field is present here.
     const holdingId = tender.holdingId as string;
     if (tender.method === "PACKAGE") {
-      await redeemPackage(tx, tenantId, saleId, customerId, priced, tender, holdingId, usedAt);
+      await redeemPackage(
+        tx,
+        tenantId,
+        saleId,
+        customerId,
+        priced,
+        tender,
+        holdingId,
+        usedAt,
+        allocated,
+      );
     } else {
       await redeemCredit(tx, tenantId, saleId, customerId, tender, holdingId, usedAt);
     }
@@ -1465,6 +1478,7 @@ async function redeemPackage(
   tender: SalePaymentInput,
   holdingId: string,
   usedAt: Date,
+  allocated: number[],
 ): Promise<void> {
   // Lock before reading: a granting-sale reversal must not validate an unspent
   // holding while this transaction is about to consume it.
@@ -1479,6 +1493,7 @@ async function redeemPackage(
       packageId: true,
       quantityRemaining: true,
       expiresAt: true,
+      redemptionRules: true,
       package: { select: { name: true, services: { select: { serviceId: true } } } },
     },
   });
@@ -1497,21 +1512,19 @@ async function redeemPackage(
     throw conflict(`${name} has no sessions left.`, "HOLDING_INSUFFICIENT");
   }
 
-  const eligible = new Set(holding.package.services.map((link) => link.serviceId));
-  let sessions = 0;
-  let covered = new Prisma.Decimal(0);
-
-  // Cart order, one unit at a time, until the sessions run out. A line the package
-  // does not list is skipped rather than refused: a cart with a shampoo and a haircut
-  // is exactly what a haircut package is for.
-  for (const line of priced) {
-    if (line.item.itemType !== "SERVICE" || !eligible.has(line.item.itemId)) continue;
-    for (let unit = 0; unit < line.input.quantity && sessions < holding.quantityRemaining; unit++) {
-      covered = covered.plus(line.unitPrice);
-      sessions += 1;
-    }
-    if (sessions >= holding.quantityRemaining) break;
-  }
+  const allocation = allocatePackage(
+    holdingPackageRules(holding.redemptionRules, holding.package.services),
+    holding.quantityRemaining,
+    priced.map((line) => ({
+      itemType: line.item.itemType,
+      itemId: line.item.itemId,
+      quantity: line.input.quantity,
+      totalCents: line.netLineTotal.mul(100).toNumber(),
+    })),
+    allocated,
+  );
+  const sessions = allocation.sessions;
+  const covered = new Prisma.Decimal(allocation.cents).div(100);
 
   if (sessions === 0) {
     throw badRequest(
@@ -1533,6 +1546,7 @@ async function redeemPackage(
       "HOLDING_NOT_COVERED",
     );
   }
+  allocated.splice(0, allocated.length, ...allocation.units);
 
   const drawn = await tx.customerPackageHolding.updateMany({
     where: { id: holding.id, quantityRemaining: { gte: sessions } },
@@ -1777,6 +1791,21 @@ async function grantHoldings(
 
     switch (line.item.itemType) {
       case "PACKAGE": {
+        await tx.package.updateMany({
+          where: { id: line.item.itemId },
+          data: { sessionCount: { increment: 0 } },
+        });
+        const catalogue = await tx.package.findFirstOrThrow({
+          where: { id: line.item.itemId },
+          include: { services: { select: { serviceId: true } } },
+        });
+        const redemptionRules = {
+          mode: catalogue.redemptionMode,
+          requirements:
+            catalogue.redemptionMode === "SERVICE_SET"
+              ? catalogue.serviceSet
+              : catalogue.services.map(({ serviceId }) => ({ serviceId, quantity: 1 })),
+        };
         // Sessions granted scale with the quantity sold, and the remaining balance
         // starts equal to it — the whole grant is unspent at the moment of sale.
         const sessions = Number(line.item.grant) * quantity;
@@ -1788,6 +1817,7 @@ async function grantHoldings(
             saleLineId: lineId,
             quantity: sessions,
             quantityRemaining: sessions,
+            redemptionRules,
             expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },
         });
@@ -2015,6 +2045,7 @@ export async function previewVoucher(input: VoucherPreviewInput): Promise<Vouche
   }
 
   return voucherPreviewSchema.parse({
+    lineNetAmounts: priced.map((line) => amount(line.netLineTotal)),
     code: voucher.voucher.code,
     description: voucher.voucher.description,
     discountType: voucher.voucher.discountType,

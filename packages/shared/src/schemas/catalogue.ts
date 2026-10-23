@@ -222,6 +222,16 @@ export type UpdatePrepaidValidityInput = z.infer<typeof updatePrepaidValiditySch
 
 /** A bundle of sessions. Legacy `packages`. */
 export const packageSummarySchema = z.object({
+  redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
+  serviceSet: z
+    .array(
+      z.object({
+        serviceId: z.string().min(1).max(64),
+        quantity: z.number().int().min(1).max(100),
+      }),
+    )
+    .max(200)
+    .optional(),
   id: z.string(),
   name: z.string(),
   status: catalogStatusSchema,
@@ -250,6 +260,16 @@ export const packageDetailSchema = packageSummarySchema.extend({
 export type PackageDetail = z.infer<typeof packageDetailSchema>;
 
 export const createPackageSchema = z.object({
+  redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
+  serviceSet: z
+    .array(
+      z.object({
+        serviceId: z.string().min(1).max(64),
+        quantity: z.number().int().min(1).max(100),
+      }),
+    )
+    .max(200)
+    .optional(),
   validityDays: packageValidityDaysSchema.optional(),
   familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200),
@@ -274,6 +294,16 @@ export type CreatePackageInput = z.infer<typeof createPackageSchema>;
  * "covers nothing", because `[]` is a value an absent key is not.
  */
 export const updatePackageSchema = z.object({
+  redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
+  serviceSet: z
+    .array(
+      z.object({
+        serviceId: z.string().min(1).max(64),
+        quantity: z.number().int().min(1).max(100),
+      }),
+    )
+    .max(200)
+    .optional(),
   validityDays: packageValidityDaysSchema.optional(),
   familyId: z.string().min(1).max(64).nullable().optional(),
   name: z.string().trim().min(1, "Name is required").max(200).optional(),

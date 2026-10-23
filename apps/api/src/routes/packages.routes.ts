@@ -14,7 +14,7 @@ import {
 import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
-import { unauthorized } from "../lib/http-error.js";
+import { forbidden, unauthorized } from "../lib/http-error.js";
 import {
   createPackage,
   getPackage,
@@ -100,6 +100,11 @@ packagesRouter.post(
       if (!req.user) throw unauthorized();
 
       const input = validated<CreatePackageInput>(req, "body");
+      if (
+        (input.redemptionMode === "SERVICE_SET" || input.serviceSet !== undefined) &&
+        !["SUPER_ADMIN", "MANAGER"].includes(req.user.globalRole)
+      )
+        throw forbidden("Only an owner or manager can configure service sets.");
       res.status(201).json({ data: await createPackage(input) });
     } catch (error) {
       next(error);
@@ -120,6 +125,13 @@ packagesRouter.patch(
 
       const { id } = validated<{ id: string }>(req, "params");
       const input = validated<UpdatePackageInput>(req, "body");
+      if (
+        (input.redemptionMode !== undefined ||
+          input.serviceSet !== undefined ||
+          (await getPackage(id)).redemptionMode === "SERVICE_SET") &&
+        !["SUPER_ADMIN", "MANAGER"].includes(req.user.globalRole)
+      )
+        throw forbidden("Only an owner or manager can configure service sets.");
       res.status(200).json({ data: await updatePackage(id, input) });
     } catch (error) {
       next(error);

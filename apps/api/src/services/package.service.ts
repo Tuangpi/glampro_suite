@@ -24,7 +24,7 @@ import {
   type UpdatePackageInput,
 } from "@glampro_suite/shared";
 
-import { notFound } from "../lib/http-error.js";
+import { badRequest, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertServicesExist } from "./catalogue.service.js";
@@ -37,6 +37,8 @@ import { assertServicesExist } from "./catalogue.service.js";
  * can never disagree about what a bundle covers.
  */
 const PACKAGE_SELECT = {
+  redemptionMode: true,
+  serviceSet: true,
   id: true,
   name: true,
   status: true,
@@ -74,6 +76,8 @@ function coveredServices(row: PackageRow): Array<{ id: string; name: string }> {
 
 function toPackage(row: PackageRow): PackageSummary {
   return packageSummarySchema.parse({
+    redemptionMode: row.redemptionMode,
+    serviceSet: row.serviceSet,
     id: row.id,
     name: row.name,
     status: row.status,
@@ -162,22 +166,30 @@ export async function updatePrepaidValidity(id: string, validityDays: number | n
 export async function createPackage(input: CreatePackageInput): Promise<PackageDetail> {
   const { serviceIds, familyId, ...fields } = input;
   await assertServicesExist(serviceIds);
+  await validateServiceSet(
+    input.redemptionMode ?? "PER_UNIT",
+    input.serviceSet ?? [],
+    serviceIds ?? [],
+  );
 
-  const created = await prisma.package.create({
-    data: {
-      // Placeholder: `scopeCreateData` overwrites it with the scope's tenant, so a
-      // handler cannot place a row in another salon even if it tried.
-      tenantId: "",
-      ...fields,
-      // `null`, not `undefined`: a new bundle with no description has none, which
-      // is a real state the editor renders as an empty box.
-      description: fields.description ?? null,
-      ...(familyId !== undefined ? { familyId } : {}),
-    },
-    select: { id: true },
+  const created = await prisma.$transaction(async (tx) => {
+    const created = await tx.package.create({
+      data: {
+        // Placeholder: `scopeCreateData` overwrites it with the scope's tenant, so a
+        // handler cannot place a row in another salon even if it tried.
+        tenantId: "",
+        ...fields,
+        // `null`, not `undefined`: a new bundle with no description has none, which
+        // is a real state the editor renders as an empty box.
+        description: fields.description ?? null,
+        ...(familyId !== undefined ? { familyId } : {}),
+      },
+      select: { id: true },
+    });
+
+    await replaceServices(created.id, serviceIds, tx);
+    return created;
   });
-
-  await replaceServices(created.id, serviceIds);
 
   return getPackage(created.id);
 }
@@ -193,21 +205,55 @@ export async function updatePackage(id: string, input: UpdatePackageInput): Prom
   const { serviceIds, familyId, ...fields } = input;
   await assertServicesExist(serviceIds);
 
-  const existing = await prisma.package.findFirst({ where: { id }, select: { id: true } });
-  if (!existing) throw notFound("That package does not exist.", "PACKAGE_NOT_FOUND");
+  await prisma.$transaction(async (tx) => {
+    await tx.package.updateMany({ where: { id }, data: { sessionCount: { increment: 0 } } });
+    const existing = await tx.package.findFirst({ where: { id }, select: PACKAGE_SELECT });
+    if (!existing) throw notFound("That package does not exist.", "PACKAGE_NOT_FOUND");
+    const prior = packageSummarySchema.parse({ ...toPackage(existing) });
+    await validateServiceSet(
+      input.redemptionMode ?? prior.redemptionMode ?? "PER_UNIT",
+      input.serviceSet ?? prior.serviceSet ?? [],
+      serviceIds ?? existing.services.map((row) => row.service.id),
+    );
 
-  // Guarded because `serviceIds` alone is a legitimate patch body, and an empty
-  // `data` object is a write that changes nothing.
-  if (Object.keys(fields).length > 0 || familyId !== undefined) {
-    await prisma.package.update({
-      where: { id },
-      data: { ...fields, ...(familyId !== undefined ? { familyId } : {}) },
-    });
-  }
+    // Guarded because `serviceIds` alone is a legitimate patch body, and an empty
+    // `data` object is a write that changes nothing.
+    if (Object.keys(fields).length > 0 || familyId !== undefined) {
+      await tx.package.update({
+        where: { id },
+        data: { ...fields, ...(familyId !== undefined ? { familyId } : {}) },
+      });
+    }
 
-  await replaceServices(id, serviceIds);
+    await replaceServices(id, serviceIds, tx);
+  });
 
   return getPackage(id);
+}
+
+async function validateServiceSet(
+  mode: string,
+  set: { serviceId: string; quantity: number }[],
+  serviceIds: string[],
+) {
+  if (new Set(set.map((row) => row.serviceId)).size !== set.length)
+    throw badRequest(
+      "A service can appear only once in a service set.",
+      undefined,
+      "PACKAGE_SET_INVALID",
+    );
+  await assertServicesExist(set.map((row) => row.serviceId));
+  if (
+    mode === "SERVICE_SET" &&
+    (set.length === 0 ||
+      set.length !== new Set(serviceIds).size ||
+      set.some((row) => !serviceIds.includes(row.serviceId)))
+  )
+    throw badRequest(
+      "A service-set package needs a positive required quantity for every covered service.",
+      undefined,
+      "PACKAGE_SET_INVALID",
+    );
 }
 
 /**
@@ -223,15 +269,19 @@ export async function updatePackage(id: string, input: UpdatePackageInput): Prom
  * way). Duplicates are collapsed first: the join table is unique on
  * `[packageId, serviceId]`, and double-ticking a service in the form is not a 500.
  */
-async function replaceServices(packageId: string, serviceIds: string[] | undefined): Promise<void> {
+async function replaceServices(
+  packageId: string,
+  serviceIds: string[] | undefined,
+  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+): Promise<void> {
   if (serviceIds === undefined) return;
 
-  await prisma.packageService.deleteMany({ where: { packageId } });
+  await tx.packageService.deleteMany({ where: { packageId } });
 
   const unique = [...new Set(serviceIds)];
   if (unique.length === 0) return;
 
-  await prisma.packageService.createMany({
+  await tx.packageService.createMany({
     data: unique.map((serviceId) => ({ tenantId: "", packageId, serviceId })),
   });
 }

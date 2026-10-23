@@ -2,19 +2,50 @@
 
 ## Current State
 
-- Current task: **TK2610-0027 (IN PROGRESS); prepaid transfer slice DONE**.
+- Current task: **TK2610-0027 (IN PROGRESS); service-set implementation verified**.
   User approved same-salon family prepaid sharing and whole-holding transfers with
   manager/owner controls, preserved expiry and append-only audit. Transfer slice
   verified; family pooling and complete balance audit remain unfinished. TK2610-0025
   retention/history application rollout remains unperformed. Not ready for external closure.
+- Scope update: user explicitly included service-set redemption, with configurable
+  quantities per required service and one session per complete set. No partial
+  set redemption; preserve purchase snapshots and prevent duplicate unit coverage.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
-- Most recently completed: same-salon whole-holding prepaid transfers with
-  append-only transfer evidence, customer-profile UI and purchase-void protection.
+- Most recently completed: service-set package redemption, purchase-rule snapshots,
+  shared POS/API allocation and quantity editor. Whole-holding transfers remain verified.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
 - Next: define and implement family sharing and complete append-only
   balance audit. Application rollout needs separate authorization. No application
   migration, production access, real-record erasure or paid mail authorized.
+
+## October 23, 2026 — Service-set redemption slice
+
+- User reversed the service-set deferral and approved configurable quantities per
+  required service ID. One complete set consumes one session; incomplete sets do
+  not redeem; extras use other tenders. Matching spans cart lines in cart order,
+  and package tenders allocate units in tender order without double coverage.
+- Implemented explicit PER_UNIT/SERVICE_SET catalogue modes, quantity editor,
+  manager/owner configuration guards, same-salon service validation and transactional
+  catalogue updates. New purchases snapshot rules; legacy null snapshots retain
+  per-unit catalogue coverage. A shared catalogue row lock serializes edits and
+  purchase snapshots. Treatment eligibility reads snapshots, not edited templates.
+- Shared integer-cent allocation prices matched units after discounts. Voucher
+  previews now expose net line amounts; residual cents go to earliest units.
+  Existing holding locks and reversal rows preserve exact consumed sessions.
+- Verified shared 154/154; web 585/585; full API 502 passed, 0 failed, 5 opt-in
+  skips. Explicit expiry, transfer and service-set acceptance: 3 passed, no skips.
+  Workspace typecheck and lint passed. Logs: `/tmp/tk27-api-final.log`,
+  `/tmp/tk27-web-final.log`, `/tmp/tk27-shared-test.log`,
+  `/tmp/tk27-related-acceptance.log`. No agent browser walkthrough.
+- Family pooling and complete prepaid balance audit are NOT implemented in this
+  slice. An unfinished scaffold was removed, including its unapplied migration;
+  legacy familyId semantics are unchanged. Parent task remains IN PROGRESS.
+- Service-set migration applied only to disposable loopback PostgreSQL on port 55440. Application migration/deployment and commits were not performed.
+
+- Production build passed (exit 0); changed-file formatting and diff checks passed.
+  Disposable cluster stopped successfully after verification. Build and cleanup logs:
+  `/tmp/tk27-final-build.log`, `/tmp/tk27-cleanup.log`.
 
 ## October 23, 2026 — Same-salon prepaid transfer foundation
 

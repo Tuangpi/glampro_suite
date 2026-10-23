@@ -62,6 +62,15 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- Service-set packages (October 23, 2026, user approved, TK2610-0027): configurable
+  required quantity per service ID; one complete set consumes one session. Match
+  complete sets only, extra service units need other tenders, and no service unit
+  may be covered twice. Use matched payable amounts after discounts. Snapshot new
+  holdings' redemption rules at purchase; legacy holdings retain per-unit behavior.
+  Catalogue changes cannot change purchased service-set entitlements. Voids restore
+  exact consumed sessions. Treatment evidence links the whole POS redemption and
+  never deducts again. This supersedes the proposed service-set deferral.
+
 - Prepaid sharing/transfers (October 23, 2026, user approved): same-salon family
   prepaid sharing and whole-holding prepaid transfers, manager/owner controls,
   preserved individual expiry and append-only audit. Cross-tenant transfers and

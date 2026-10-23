@@ -33,7 +33,7 @@ describe("packageCoverage", () => {
   it("covers eligible service units in cart order, up to the sessions left", () => {
     const coverage = packageCoverage(packageHolding(["cut"], 2), [serviceLine("cut", 3, 5000)]);
 
-    expect(coverage).toEqual({ cents: 10000, sessions: 2 });
+    expect(coverage).toMatchObject({ cents: 10000, sessions: 2 });
   });
 
   it("skips lines the package does not list, and products entirely", () => {
@@ -44,19 +44,19 @@ describe("packageCoverage", () => {
     ]);
 
     // One haircut covered; the colour and the product are paid another way.
-    expect(coverage).toEqual({ cents: 5000, sessions: 1 });
+    expect(coverage).toMatchObject({ cents: 5000, sessions: 1 });
   });
 
   it("covers nothing when the cart holds no eligible service", () => {
     const coverage = packageCoverage(packageHolding(["cut"], 8), [serviceLine("colour", 1, 9500)]);
 
     // The sheet turns this into its "covers nothing in this cart" refusal.
-    expect(coverage).toEqual({ cents: 0, sessions: 0 });
+    expect(coverage).toMatchObject({ cents: 0, sessions: 0 });
   });
 
   it("stops at the exhausted holding rather than promising a session it does not have", () => {
     const coverage = packageCoverage(packageHolding(["cut"], 0), [serviceLine("cut", 1, 5000)]);
 
-    expect(coverage).toEqual({ cents: 0, sessions: 0 });
+    expect(coverage).toMatchObject({ cents: 0, sessions: 0 });
   });
 });

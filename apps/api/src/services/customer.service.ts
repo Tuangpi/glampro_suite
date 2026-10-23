@@ -34,6 +34,7 @@ import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertDepartmentsExist } from "./department.service.js";
 import { withdrawMessagingChoices } from "./messaging-consent.js";
 import { currentScope } from "../lib/tenant-context.js";
+import { holdingPackageRules } from "../lib/package-rules.js";
 
 /**
  * Columns the screen needs. `passwordHash`, `otpHash` and `otpExpiresAt` are
@@ -212,6 +213,7 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
         id: true,
         quantityRemaining: true,
         expiresAt: true,
+        redemptionRules: true,
         package: { select: { name: true, services: { select: { serviceId: true } } } },
       },
       // `NULLS LAST` is Postgres' default for `asc`, which is what we want: dated
@@ -233,10 +235,16 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
   return customerHoldingsSchema.parse({
     holdings: [
       ...packages.map((holding) => ({
+        redemptionMode: holdingPackageRules(holding.redemptionRules, holding.package.services).mode,
+        serviceSet: holdingPackageRules(holding.redemptionRules, holding.package.services)
+          .requirements,
         id: holding.id,
         kind: "PACKAGE",
         name: holding.package.name,
-        serviceIds: holding.package.services.map((link) => link.serviceId),
+        serviceIds: holdingPackageRules(
+          holding.redemptionRules,
+          holding.package.services,
+        ).requirements.map((row) => row.serviceId),
         quantityRemaining: holding.quantityRemaining,
         amountRemaining: null,
         expiresAt: holding.expiresAt ? holding.expiresAt.toISOString() : null,

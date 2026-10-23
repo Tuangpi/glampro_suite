@@ -812,6 +812,13 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   audit remain unfinished; no cross-tenant transfers. Shared-family holdings are
   explicitly refused until pool semantics are implemented. Original purchase void
   is refused after any recorded transfer, even if credit is subsequently returned.
+- October 23 scope expanded by user: service-set redemption included, not deferred.
+  Configurable quantities per required service; one complete set consumes one session.
+  Incomplete sets cannot redeem, extras require other tenders, no double coverage,
+  purchase snapshots and exact reversal required. Service-set implementation and
+  automated verification completed: shared 154, web 585, API 502 passes plus
+  explicit expiry/transfer/service-set acceptance 3/3. Application rollout pending;
+  parent remains IN PROGRESS for family pooling and complete balance-change audit.
 - October 22 initial review supersedes the completion claims below: stored expiry was enforced but no configurable validity rule existed (resolved by the expiry slice below). Current `redeemCredit()` draws only the selected customer's holding; the claimed family-pool redemption logic is absent. Transfer implementation and audit completeness remain unverified. Do not mark this external task complete.
 - October 22 approved expiry slice implemented: optional 1–36500 validity days from completed purchase (exact 24-hour days), null means no expiry, existing holdings unchanged, no family-wide expiry propagation/write-off. Session editor/API configure validity; manager/owner prepaid endpoint is `PATCH /api/packages/prepaid/:id/validity`. Holding grants snapshot expiry from completed `soldAt`, including resumed carts; later catalogue changes do not alter holdings.
 - Verification: disposable PostgreSQL migration and endpoint acceptance 1/1; sale/package/customer service regression 80/80; shared 139/139; web 483/483; full build, API/web typechecks, scoped lint/format and diff check passed. Older package/report route suites have 11 authentication-helper failures after mandatory owner 2FA; not fixed or bypassed. Migration not applied to application/production database; browser acceptance remains pending.

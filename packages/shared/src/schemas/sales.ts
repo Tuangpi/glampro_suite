@@ -844,6 +844,7 @@ export const voucherPreviewInputSchema = z.object({
 export type VoucherPreviewInput = z.infer<typeof voucherPreviewInputSchema>;
 
 export const voucherPreviewSchema = z.object({
+  lineNetAmounts: z.array(z.string()).optional(),
   code: z.string(),
   description: z.string().nullable(),
   discountType: voucherDiscountTypeSchema,

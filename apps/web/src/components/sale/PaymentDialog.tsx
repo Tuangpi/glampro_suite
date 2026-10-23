@@ -145,6 +145,7 @@ export default function PaymentDialog({
    * derived from the holding it spends, so the sheet never asks for a number the
    * server would have to correct.
    */
+  const allocated = lines.map(() => 0);
   function amountFor(tender: TenderDraft, alreadyPaid: number): number {
     if (!isRedemptionPaymentMethod(tender.method)) return priceToCents(tender.amount);
 
@@ -157,7 +158,19 @@ export default function PaymentDialog({
       return Math.min(priceToCents(holding.amountRemaining), Math.max(dueCents - alreadyPaid, 0));
     }
 
-    return packageCoverage(holding, lines).cents;
+    const coverage = packageCoverage(
+      holding,
+      lines.map((line, index) => ({
+        ...line,
+        totalCents:
+          voucher?.lineNetAmounts?.[index] !== undefined
+            ? priceToCents(voucher.lineNetAmounts[index])
+            : (line.totalCents ?? line.unitPriceCents * line.quantity),
+      })),
+      allocated,
+    );
+    allocated.splice(0, allocated.length, ...coverage.units);
+    return coverage.cents;
   }
 
   // Rows in order, so a second credit tender only sees what the first left owing.

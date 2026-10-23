@@ -111,6 +111,14 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
     () => bundle?.services.map((service) => service.id) ?? [],
   );
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [redemptionMode, setRedemptionMode] = useState<"PER_UNIT" | "SERVICE_SET">(
+    bundle?.redemptionMode ?? "PER_UNIT",
+  );
+  const [required, setRequired] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      (bundle?.serviceSet ?? []).map((row) => [row.serviceId, String(row.quantity)]),
+    ),
+  );
   const [formError, setFormError] = useState<string | null>(null);
 
   const services = useServiceList({ page: 1, pageSize: SERVICE_PICKER_PAGE_SIZE });
@@ -143,6 +151,18 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
 
     // The contract's own rules, caught here so nobody waits for a round trip.
     const localErrors: Record<string, string> = {};
+    if (
+      redemptionMode === "SERVICE_SET" &&
+      (serviceIds.length === 0 ||
+        serviceIds.some(
+          (id) =>
+            !Number.isInteger(Number(required[id] ?? "1")) ||
+            Number(required[id] ?? "1") < 1 ||
+            Number(required[id] ?? "1") > 100,
+        ))
+    ) {
+      localErrors.serviceIds = "Choose services and enter 1–100 whole units for each complete set.";
+    }
     const validityDays = form.validityDays.trim() === "" ? null : Number(form.validityDays);
     if (
       validityDays !== null &&
@@ -169,6 +189,18 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
     }
 
     const shared = {
+      ...(redemptionMode === "SERVICE_SET" || bundle?.redemptionMode === "SERVICE_SET"
+        ? {
+            redemptionMode,
+            serviceSet:
+              redemptionMode === "SERVICE_SET"
+                ? serviceIds.map((serviceId) => ({
+                    serviceId,
+                    quantity: Number(required[serviceId] ?? "1"),
+                  }))
+                : [],
+          }
+        : {}),
       validityDays,
       name,
       sessionCount,
@@ -307,6 +339,19 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
           maxLength={2000}
         />
 
+        <Select
+          label="Session redemption"
+          value={redemptionMode}
+          onChange={(event) => setRedemptionMode(event.target.value as "PER_UNIT" | "SERVICE_SET")}
+          options={[
+            { value: "PER_UNIT", label: "One session per service unit" },
+            { value: "SERVICE_SET", label: "One session per complete service set" },
+          ]}
+        />
+        <p>
+          New purchases snapshot these rules. Existing holdings do not change. A service set must be
+          complete; extras are paid separately.
+        </p>
         <fieldset className="flex flex-col gap-2 rounded-card border border-line p-4">
           <legend className="px-1 text-sm font-bold text-ink">Services this bundle covers</legend>
           <p className="text-xs text-ink-muted">
@@ -333,12 +378,30 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
           ) : (
             <div className="flex flex-col gap-2">
               {(services.data?.data ?? []).map((service) => (
-                <Checkbox
-                  key={service.id}
-                  label={service.name}
-                  checked={serviceIds.includes(service.id)}
-                  onChange={(event) => toggleService(service.id, event.target.checked)}
-                />
+                <div key={service.id}>
+                  <Checkbox
+                    key={service.id}
+                    label={service.name}
+                    checked={serviceIds.includes(service.id)}
+                    onChange={(event) => toggleService(service.id, event.target.checked)}
+                  />
+                  {redemptionMode === "SERVICE_SET" && serviceIds.includes(service.id) ? (
+                    <Input
+                      label={`Units of ${service.name} per set`}
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      value={required[service.id] ?? "1"}
+                      onChange={(event) =>
+                        setRequired((previous) => ({
+                          ...previous,
+                          [service.id]: event.target.value,
+                        }))
+                      }
+                    />
+                  ) : null}
+                </div>
               ))}
             </div>
           )}

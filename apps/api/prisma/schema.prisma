@@ -723,6 +723,8 @@ model Product {
 
 /// A bundle of service sessions. Legacy `packages`.
 model Package {
+  redemptionMode String @default("PER_UNIT")
+  serviceSet Json @default("[]")
   id             String        @id @default(cuid())
   tenantId       String
   name           String
@@ -1624,6 +1626,8 @@ model SaleLine {
 /// holding counts money, and the gift-card holding is money plus a code that
 /// identifies it at the till. One table would be nullable in every column.
 model CustomerPackageHolding {
+  /// Null keeps legacy per-unit catalogue coverage. New purchases snapshot rules.
+  redemptionRules Json?
   id         String  @id @default(cuid())
   tenantId   String
   customerId String
@@ -1686,6 +1690,7 @@ model CustomerValuePackageHolding {
   @@index([familyId])
   @@map("customer_value_package_holdings")
 }
+
 
 /// Append-only ownership evidence; identifiers are snapshots, not cascading links
 /// to mutable customers, staff or holdings. Tenant removal is the only cascade.

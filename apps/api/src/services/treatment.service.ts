@@ -23,6 +23,7 @@ import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js"
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { currentScope } from "../lib/tenant-context.js";
+import { holdingPackageRules } from "../lib/package-rules.js";
 
 /** Lists treatment records for a tenant, optionally filtered by customer/type/status. */
 export async function listTreatmentRecords(query: {
@@ -160,11 +161,27 @@ export async function listTreatmentRedemptions(query: TreatmentRedemptionQuery) 
       },
     },
   });
+  const snapshotServices = await prisma.service.findMany({
+    where: {
+      id: {
+        in: holdings.flatMap((holding) =>
+          holdingPackageRules(holding.redemptionRules, holding.package.services).requirements.map(
+            (row) => row.serviceId,
+          ),
+        ),
+      },
+    },
+    select: { id: true, name: true },
+  });
   const eligible = holdings
     .map((holding) => ({
       holding,
-      services: holding.package.services
-        .map((link) => link.service)
+      services: snapshotServices
+        .filter((service) =>
+          holdingPackageRules(holding.redemptionRules, holding.package.services).requirements.some(
+            (row) => row.serviceId === service.id,
+          ),
+        )
         .filter((service) => !query.serviceId || service.id === query.serviceId),
     }))
     .filter(({ services }) => services.length > 0);
@@ -276,7 +293,9 @@ async function resolvePackageLink(
   if (!holding) throw notFound("That package holding does not exist.", "HOLDING_NOT_FOUND");
   if (
     !serviceId ||
-    !holding.package.services.some((link) => link.serviceId === serviceId) ||
+    !holdingPackageRules(holding.redemptionRules, holding.package.services).requirements.some(
+      (row) => row.serviceId === serviceId,
+    ) ||
     !redemption.sale.lines.some((line) => line.itemType === "SERVICE" && line.itemId === serviceId)
   ) {
     throw badRequest(
