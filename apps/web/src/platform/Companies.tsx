@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { createCompanySchema, type CompanyList, type CompanyDetail } from "@glampro_suite/shared";
 import { platformApi } from "./api";
+import CompanyAdministration from "./CompanyAdministration";
 
 export default function Companies() {
   const [list, setList] = useState<CompanyList | null>(null);
@@ -168,6 +169,14 @@ export default function Companies() {
               </>
             )}
           </dl>
+          <CompanyAdministration
+            key={detail.id}
+            id={detail.id}
+            onChange={async () => {
+              setDetail(await platformApi.company(detail.id));
+              setRevision((value) => value + 1);
+            }}
+          />
           {detail.owner?.disabled &&
             detail.status === "ACTIVE" &&
             detail.invitation &&

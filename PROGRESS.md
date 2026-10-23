@@ -2,13 +2,13 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **SAAS-05**, integrated platform
-  routes and single frontend workflow. Next ready: **SAAS-04**, subscriptions, lifecycle,
-  entitlements and audit management; not started.
-- Verified: real PostgreSQL/HTTP/loopback SMTP company onboarding/isolation passes;
-  full API 537 passed / 0 failed / 12 opt-in skips; web 609/609; shared 164/164;
-  platform 9/9. Workspace typecheck/lint/build pass.
-- Migration tested only on isolated database port 55441 (42 migrations replayed).
+- Current task: **None**. Most recently completed: **SAAS-04**, manual subscription
+  periods, lifecycle, module grants and company audit. SAAS-01–05 are locally complete.
+  Next ready task: **None** in the approved SaaS scope; stop before new scope/rollout.
+- Verified: real PostgreSQL/HTTP SAAS-04 isolation, sessions, audit rollback and
+  concurrent-period checks pass; full API 537 passed / 0 failed / 13 opt-in skips;
+  web 629/629; shared 167/167. Workspace typecheck/lint/build and formatting pass.
+- Migrations tested only on isolated databases, latest port 55442 (42 replayed).
   Application database/accounts unchanged; no deployment, commit or push.
 - Actual onboarding needs authorized migration plus configured SMTP and trusted
   `SALON_PORTAL_ORIGIN`. Both logins now use web port 5173: `/login` for salons,
@@ -16,6 +16,34 @@
   is recoverable by resend after committed creation.
 - Multi-outlet remains deferred. TK2610-0026 remains BLOCKED/deferred. Existing
   prepaid/treatment migration/schema drift remains unresolved; P2 is not complete.
+
+## October 23, 2026 — SAAS-04 subscriptions, lifecycle, entitlements and audit
+
+- Added shared administration contracts, platform-only company administration/audit
+  reads and manual subscription/lifecycle/module writes, plus controls in platform
+  company details. Audit is company-specific, paginated, `company.*` events only.
+- Current periods require decimal string amounts, explicit currency and reason;
+  serialized company locks prevent overlaps. No payment collection/ledger change,
+  future schedule, history editing, cap editing, deletion or impersonation.
+- Lifecycle updates atomically audit, bump company/user versions, clear MFA codes
+  and revoke company refresh tokens. Suspended users can sign in read-only; cancelled
+  and expired blocked. Reactivation needs a current period when previous one lapsed;
+  recording never changes stored lifecycle. New no-period provisioning stays active.
+- Login/access/profile ignore pending/cancelled/not-started periods and expire at the
+  exact paid-period end. Add-on expiry/grants enforced on existing sessions; core
+  modules cannot change. Grant audit records actual entitlement id and before/after.
+- Disposable PostgreSQL on 55442 replayed 42 migrations; real HTTP verifies platform
+  auth, two-company isolation, concurrent overlap, session revocation/read-only policy,
+  module expiry/revoke, renewal and audit-FK rollback including user/session writes.
+  Fixture operator session; no fresh actual SMTP/MFA delivery or browser walkthrough.
+- Full API sequential 537 passed / 0 failed / 13 opt-in skips; separate gated SAAS-04
+  acceptance passed. Web 629/629; shared 167/167. Root build, workspace typecheck/lint,
+  final web typecheck/lint, formatting and diff checks pass. Initial parallel web
+  lazy-import timeout resolved by rerunning two workers without weakening assertions.
+- No schema/new migrations, application account changes, deployment, commit or push.
+  Initial API runner ended before completion; detached rerun completed successfully.
+  All approved SaaS tasks locally complete. No next task started; rollout and existing
+  unrelated migration drift remain separate concerns.
 
 ## October 23, 2026 — SAAS-05 integrated platform routes
 

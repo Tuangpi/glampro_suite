@@ -107,13 +107,52 @@ returns successful company creation with `invitationDelivery: failed`; portal
 instructs the operator to resend rather than create a duplicate. `sent` means
 transport acceptance, not confirmed inbox delivery. A process/network failure
 after commit remains recoverable through company search/details and resend; do
-not blindly retry creation. Subscription/lifecycle/module administration remains
-SAAS-04. No public signup, company deletion or arbitrary owner replacement added.
+not blindly retry creation. Subscription/lifecycle/module administration is described
+under SAAS-04 below. No public signup, company deletion or arbitrary owner replacement added.
 
 Migration and full onboarding/isolation/rollback verification ran only against
 disposable PostgreSQL with loopback capture-only SMTP. Application database and
 accounts were not changed. Existing prepaid/treatment migration drift remains a
 separate release concern recorded under SAAS-02.
+
+### Company administration — SAAS-04, October 23, 2026
+
+Platform company details include current effective status, the latest 100 subscription
+periods, module access and paginated company-administration audit history. Platform-only
+API endpoints under `/api/platform/companies/:id`: GET `/administration` and `/audit`,
+POST `/subscriptions`, `/lifecycle` and `/modules`. Each change requires a 3–500 character
+reason and takes its actor from the authenticated operator, never a request body.
+
+Manual subscription recording accepts a current period only (start at/before now,
+end after now), exact two-decimal amount and three-uppercase-letter currency. This
+is a contract-period record, not payment collection or a payment-ledger entry.
+Overlapping ACTIVE periods are refused under a company-row lock; renewal after a
+lapsed period is supported. No historical correction, future scheduling, automatic
+billing, subscription deletion or separate plan catalogue is implemented.
+
+Lifecycle actions suspend/reactivate/cancel change stored company status. Each
+transition atomically increments company and user versions, clears pending email
+codes, revokes company refresh tokens and writes the actor/reason/before/after audit.
+Existing sessions are invalid on their next request; suspension permits a fresh
+read-only sign-in (existing policy for all company users), cancellation blocks access.
+Reactivation refuses lapsed paid periods until a current period is recorded. Period
+recording never automatically reactivates a stored suspended/cancelled/expired company.
+An already stored ACTIVE company becomes effectively active again on valid renewal.
+New provisioned companies without any effective paid-period history remain ACTIVE.
+Access/profile/login checks ignore PENDING/CANCELLED and not-yet-started periods;
+consider started ACTIVE/EXPIRED periods and expire exactly at endDate.
+
+Module grants use only the seeded catalogue, with optional future expiry. Core modules
+cannot be changed; grant/update/revoke is per company and checked on every module API
+request, including existing sessions. Existing JSON caps are preserved but no new cap
+editing/enforcement is claimed. Each subscription/lifecycle/grant write and its audit
+entry share one transaction and company lock. Audit listing is company-specific and
+restricted to `company.*` administrative events; no salon customer records or tokens.
+
+No schema/migration changes were needed. Real PostgreSQL/HTTP verification uses only
+the gated disposable database `saas04_acceptance` on loopback port 55442; fixture operator
+sessions exercise real platform middleware, not actual SMTP/MFA delivery (SAAS-02 covered
+that). No application data, accounts, deployment, commit or push changed.
 
 ## Active records
 

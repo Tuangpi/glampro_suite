@@ -79,7 +79,12 @@ async function assertTenantMaySignIn(tenantId: string): Promise<void> {
       where: { id: tenantId },
       select: {
         status: true,
-        subscriptions: { orderBy: { endDate: "desc" }, take: 1, select: { endDate: true } },
+        subscriptions: {
+          where: { status: { in: ["ACTIVE", "EXPIRED"] }, startDate: { lte: new Date() } },
+          orderBy: { endDate: "desc" },
+          take: 1,
+          select: { endDate: true },
+        },
       },
     }),
   );
@@ -658,7 +663,11 @@ export async function loadProfile(user: AuthenticatedUser): Promise<AuthProfile>
     const [modules, held, latestSubscription] = await Promise.all([
       prisma.module.findMany({ orderBy: { sortOrder: "asc" } }),
       prisma.tenantModule.findMany(),
-      prisma.subscription.findFirst({ orderBy: { endDate: "desc" }, select: { endDate: true } }),
+      prisma.subscription.findFirst({
+        where: { status: { in: ["ACTIVE", "EXPIRED"] }, startDate: { lte: new Date() } },
+        orderBy: { endDate: "desc" },
+        select: { endDate: true },
+      }),
     ]);
 
     const now = new Date();

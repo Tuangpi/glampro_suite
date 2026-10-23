@@ -119,6 +119,7 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
           slug: true,
           status: true,
           subscriptions: {
+            where: { status: { in: ["ACTIVE", "EXPIRED"] }, startDate: { lte: new Date() } },
             orderBy: { endDate: "desc" },
             take: 1,
             select: { endDate: true },

@@ -51,7 +51,8 @@
   gap: 8px;
   font-weight: 600;
 }
-.platform-portal input {
+.platform-portal input,
+.platform-portal select {
   width: 100%;
   padding: 12px;
   border: 1px solid #8b819e;
@@ -75,6 +76,10 @@
 .platform-portal input:focus-visible {
   outline: 3px solid #a28fc6;
   outline-offset: 3px;
+}
+.platform-portal pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .platform-portal [role="alert"] {
   color: #8b1827;

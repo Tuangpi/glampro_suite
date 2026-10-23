@@ -91,13 +91,27 @@ not a new test run. Assess code first; follow dependencies rather than date orde
 
 ### SAAS-04 — Subscription, lifecycle, entitlements and audit management
 
-- Status: TODO
+- Status: DONE — local implementation and automated/disposable verification;
+  application rollout and deployment not performed.
 - Dependencies: SAAS-03
 - Expected result: Manual subscriptions, feature access, suspend/reactivate/cancel
   workflows and attributable audit history. No automatic billing, deletion or
   impersonation. Verify status/session policy rather than assume foundations work.
 - Completion check: Authorized/unauthorized lifecycle and entitlement tests,
   audit atomicity, two-company end-to-end isolation and available workspace checks.
+- Evidence: October 23: real PostgreSQL/HTTP acceptance passes on disposable loopback
+  port 55442 after replaying all 42 migrations. Verified platform-only access,
+  concurrent subscription overlap rejection, decimal/date validation, tenant isolation,
+  grant/expiry/revoke on existing sessions, lifecycle access/refresh revocation,
+  suspended read-only login, cancelled/expired refusal, renewal/reactivation and
+  transaction rollback when audit FK fails. Audit actor/reason/paging/isolation pass.
+  Full sequential API: 537 passed / 0 failed / 13 opt-in skips; separate SAAS-04
+  gated acceptance passed. Web 629/629, shared 167/167; root build, workspace
+  typecheck/lint, final web typecheck/lint, formatting and diff checks pass.
+- Scope: Current manual subscription periods only; no payment collection/ledger,
+  future scheduling/history editing, cap administration, deletion or impersonation.
+  UI tests, not agent browser UAT. Initial parallel web lazy-import timeout passed
+  with two workers and unchanged assertions. No new migration or real account changes.
 
 ## Documentation consolidation
 

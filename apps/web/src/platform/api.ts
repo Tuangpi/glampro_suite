@@ -9,6 +9,11 @@ import {
   companyDetailSchema,
   companyOnboardingSchema,
   type CreateCompanyInput,
+  companyAdministrationSchema,
+  companyAuditSchema,
+  type CompanyLifecycleInput,
+  type RecordSubscriptionInput,
+  type CompanyModuleInput,
 } from "@glampro_suite/shared";
 
 // Operator tokens never enter salon localStorage. They live only in this app's
@@ -48,6 +53,25 @@ async function operatorRequest(path: string, body?: unknown) {
 }
 
 export const platformApi = {
+  async administration(id: string) {
+    return companyAdministrationSchema.parse(
+      await operatorRequest(`/${encodeURIComponent(id)}/administration`),
+    );
+  },
+  async audit(id: string, page = 1) {
+    return companyAuditSchema.parse(
+      await operatorRequest(`/${encodeURIComponent(id)}/audit?page=${page}&pageSize=20`),
+    );
+  },
+  async lifecycle(id: string, input: CompanyLifecycleInput) {
+    await operatorRequest(`/${encodeURIComponent(id)}/lifecycle`, input);
+  },
+  async recordSubscription(id: string, input: RecordSubscriptionInput) {
+    await operatorRequest(`/${encodeURIComponent(id)}/subscriptions`, input);
+  },
+  async changeModule(id: string, input: CompanyModuleInput) {
+    await operatorRequest(`/${encodeURIComponent(id)}/modules`, input);
+  },
   async companies(search = "", page = 1) {
     return companyListSchema.parse(
       await operatorRequest(

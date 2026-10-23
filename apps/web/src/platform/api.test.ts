@@ -12,6 +12,42 @@ function response(data: unknown, status = 200) {
   });
 }
 describe("operator API sessions", () => {
+  it("sends administrative writes only to the selected company's platform endpoints", async () => {
+    const fetcher = vi
+      .fn()
+      .mockImplementation((url: string) =>
+        Promise.resolve(
+          response(
+            url.endsWith("/verify") || url.endsWith("/refresh") ? session : { success: true },
+          ),
+        ),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    const { platformApi } = await import("./api");
+    await platformApi.verify({ challenge: "a".repeat(64), code: "123456" });
+    await platformApi.lifecycle("company/a", { action: "suspend", reason: "Manual review" });
+    await platformApi.recordSubscription("company/a", {
+      startDate: "2026-10-01T00:00:00Z",
+      endDate: "2026-11-01T00:00:00Z",
+      amount: "99.00",
+      currency: "SGD",
+      reason: "Manual period",
+    });
+    await platformApi.changeModule("company/a", {
+      code: "packages",
+      enabled: false,
+      expiresAt: null,
+      reason: "Contract ended",
+    });
+    expect(
+      fetcher.mock.calls.filter(([url]) => url.includes("/companies/")).map(([url]) => url),
+    ).toEqual([
+      "/api/platform/companies/company%2Fa/lifecycle",
+      "/api/platform/companies/company%2Fa/subscriptions",
+      "/api/platform/companies/company%2Fa/modules",
+    ]);
+    expect(fetcher.mock.calls.every(([, options]) => options.credentials === "omit")).toBe(true);
+  });
   it("waits for a company request's refresh before revoking the current token", async () => {
     let resolveRefresh!: (value: Response) => void;
     const pending = new Promise<Response>((resolve) => {

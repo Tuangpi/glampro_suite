@@ -21,7 +21,7 @@ export function resolveTenantStatus(
   // Stored ACTIVE: a lapsed subscription makes it expired in effect. A tenant with
   // no subscription rows at all is left ACTIVE, because provisioning may legitimately
   // precede the first plan (see the seed).
-  if (latestSubscriptionEndDate !== null && latestSubscriptionEndDate < now) {
+  if (latestSubscriptionEndDate !== null && latestSubscriptionEndDate <= now) {
     return "EXPIRED";
   }
 

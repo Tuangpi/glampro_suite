@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import Companies from "./Companies";
 import { platformApi } from "./api";
+vi.mock("./CompanyAdministration", () => ({ default: () => <p>Administration controls</p> }));
 
 vi.mock("./api", () => ({
   platformApi: {
