@@ -12,6 +12,35 @@ function response(data: unknown, status = 200) {
   });
 }
 describe("operator API sessions", () => {
+  it("waits for a company request's refresh before revoking the current token", async () => {
+    let resolveRefresh!: (value: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce(response(session))
+      .mockReturnValueOnce(pending)
+      .mockImplementation((url: string) =>
+        Promise.resolve(
+          response(
+            url.includes("companies")
+              ? { items: [], total: 0, page: 1, pageSize: 20 }
+              : { success: true },
+          ),
+        ),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    const { platformApi } = await import("./api");
+    await platformApi.verify({ challenge: "a".repeat(64), code: "123456" });
+    const companies = platformApi.companies();
+    const logout = platformApi.logout();
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    resolveRefresh(response({ ...session, refreshToken: "refresh-two" }));
+    await Promise.all([companies, logout]);
+    const call = fetcher.mock.calls.find(([url]) => url.endsWith("/logout"));
+    expect(JSON.parse(call![1].body).refreshToken).toBe("refresh-two");
+  });
   it("uses only platform routes, rotates refresh and keeps credentials out of browser storage", async () => {
     const fetcher = vi
       .fn()

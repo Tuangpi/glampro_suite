@@ -9,6 +9,7 @@ export * from "./package-allocation.js";
 export * from "./types.js";
 export * from "./schemas/auth.js";
 export * from "./schemas/platform.js";
+export * from "./schemas/company.js";
 export * from "./schemas/common.js";
 export * from "./schemas/customer.js";
 export * from "./schemas/prepaid.js";

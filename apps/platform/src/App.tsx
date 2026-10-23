@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { PlatformAdminProfile } from "@glampro_suite/shared";
 import { platformApi } from "./api";
+import Companies from "./Companies";
 import "./style.css";
 
 export default function App() {
@@ -62,11 +63,7 @@ export default function App() {
           <h1>Welcome, {admin.name}</h1>
           <p>Signed in as {admin.email}</p>
           <p>This is your operator workspace, separate from company-owner accounts.</p>
-          <h2>Company management</h2>
-          <p>
-            Company onboarding, subscriptions and account management are not available in this
-            milestone.
-          </p>
+          <Companies />
           <div className="actions">
             <button disabled={busy} onClick={() => void sessionAction("check")}>
               Check session

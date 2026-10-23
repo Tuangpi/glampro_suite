@@ -70,6 +70,45 @@ keys and index naming on a database replayed from all migrations; the diff repor
 no platform-auth discrepancies. Do not silently repair unrelated constraints during
 platform rollout. Resolve that drift separately before production release planning.
 
+### Company onboarding — SAAS-03, October 23, 2026
+
+Operator portal now lists/searches/pages companies, shows company/owner/invitation
+metadata, creates a company and resends pending owner invitations. APIs under
+`/api/platform/companies` require a live platform session and never return salon
+customer data or invitation secrets. Company creation is transactional across
+company, disabled owner, ownership, invitation and audit. Owner emails are normalized
+to lowercase for new onboarding; existing global user-email uniqueness remains.
+
+Additive migration `20261023090000_owner_invitations` adds tenant-scoped invitation
+rows. Each invitation stores only a random token's SHA-256 hash, expires after
+48 hours and is accepted once. Resend revokes earlier links and is restricted to
+owners with onboarding history who have not accepted. It is not password recovery.
+Company-row locks serialize acceptance/resend; accepted owner activation, token
+claim and audit are one transaction. The owner chooses a strong password (at most
+72 UTF-8 bytes), then uses the existing salon login and mandatory owner email MFA;
+invitation acceptance never issues a session.
+
+Configure `SALON_PORTAL_ORIGIN` in the API environment to the trusted salon web
+origin, not the operator app. HTTPS required except localhost/127.0.0.1 HTTP for
+local development. API `.env.example` documents this setting. Actual SMTP must be
+configured. Email links use `/accept-invitation#<token>` on the salon web app; token
+is posted in a request body, not sent in URLs or platform API responses/audits.
+Successful acceptance clears the fragment and password fields. Serve SPA fallback
+for the invitation route; no external deployment was performed.
+
+Email delivery occurs after the creation transaction commits. Provider failure
+returns successful company creation with `invitationDelivery: failed`; portal
+instructs the operator to resend rather than create a duplicate. `sent` means
+transport acceptance, not confirmed inbox delivery. A process/network failure
+after commit remains recoverable through company search/details and resend; do
+not blindly retry creation. Subscription/lifecycle/module administration remains
+SAAS-04. No public signup, company deletion or arbitrary owner replacement added.
+
+Migration and full onboarding/isolation/rollback verification ran only against
+disposable PostgreSQL with loopback capture-only SMTP. Application database and
+accounts were not changed. Existing prepaid/treatment migration drift remains a
+separate release concern recorded under SAAS-02.
+
 ## Active records
 
 - `PROJECT.md`: scope, architecture, constraints and important decisions.

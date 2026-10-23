@@ -2,23 +2,45 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **SAAS-02**, separate operator
-  authentication and portal shell. Next ready: **SAAS-03**, company management and
-  secure owner onboarding; not started. SAAS-04 covers subscriptions/lifecycle/audit.
-- Multi-outlet TK2610-0028 remains deferred. TK2610-0026 remains BLOCKED/deferred
-  pending business evidence; P2 is not complete.
-- Verified this session: disposable PostgreSQL/HTTP/SMTP platform acceptance passes;
-  API 537 passed / 0 failed / 11 opt-in skips; salon web 606/606; shared 161/161;
-  platform 5/5; focused auth 35/35; workspace typecheck/lint/build pass.
-- Migration and first-operator bootstrap tested only on disposable databases.
-  Application database/accounts unchanged; no production rollout, commit or push.
-  Existing worktree changes from SAAS-01 preserved.
-- Known release concern: migration/schema comparison reports existing prepaid/
-  treatment foreign-key/index drift, no platform-auth discrepancy. Not repaired.
-- Portal runs via root `npm run dev:platform` on port 5174. Actual operator use
-  requires authorized application migration/bootstrap and real SMTP configuration.
-  Memory-only sessions require sign-in after reload. Company management and
-  operator recovery/password-management UI are not implemented yet.
+- Current task: **None**. Most recently completed: **SAAS-03**, company management
+  and secure owner onboarding. Next ready: **SAAS-04**, subscriptions, lifecycle,
+  entitlements and audit management; not started.
+- Verified: real PostgreSQL/HTTP/loopback SMTP company onboarding/isolation passes;
+  full API 537 passed / 0 failed / 12 opt-in skips; web 609/609; shared 164/164;
+  platform 9/9. Workspace typecheck/lint/build pass.
+- Migration tested only on isolated database port 55441 (42 migrations replayed).
+  Application database/accounts unchanged; no deployment, commit or push.
+- Actual onboarding needs authorized migration plus configured SMTP and trusted
+  `SALON_PORTAL_ORIGIN`. Platform runs on port 5174, salon invitation page on the
+  salon web origin. Email failure is recoverable by resend after committed creation.
+- Multi-outlet remains deferred. TK2610-0026 remains BLOCKED/deferred. Existing
+  prepaid/treatment migration/schema drift remains unresolved; P2 is not complete.
+
+## October 23, 2026 — SAAS-03 company management and owner invitations
+
+- Added platform-only company list/search/pagination/details/create/resend, separate
+  authenticated middleware and portal company workflows. No customer business data
+  is returned by platform company endpoints. Added public token-bound salon owner
+  invitation page; not public registration.
+- Transaction creates company, disabled owner, ownership, 48-hour hashed invitation
+  and audit. Email sent after commit with explicit sent/failed result. Resend revokes
+  previous links; accepted owners and accounts without onboarding history refused.
+  Acceptance and resend lock the company; token claim, owner activation/password
+  and audit atomic. Owner completes existing email MFA login after enrollment.
+- Tokens use URL fragments in emailed links and request bodies for acceptance; not
+  returned by platform APIs or audit. Strong password limits account for bcrypt's
+  72-byte limit. Origin restricted to HTTPS or local loopback HTTP.
+- Live gated acceptance: two-company isolation, owner/platform refusal, duplicate
+  and audit-FK transaction rollback, malformed input, expired/replaced/replayed links,
+  concurrent acceptance and post-commit SMTP failure all pass. Initial disposable
+  test omitted the core customers module fixture; added fixture and rerun passed.
+- Full sequential API 537 passed / 0 failed / 12 opt-in skips; web 609/609; shared
+  164/164. Platform 9/9 including company UI/create/delivery-failure and background
+  refresh/logout race. Workspace typecheck/lint/build pass after final code change.
+- All 42 migrations applied only to isolated PostgreSQL with capture-only SMTP.
+  No application data/account changes or deployment. Standing user acceptance is
+  not an agent browser walkthrough. Prior unrelated drift remains untouched.
+- Next ready: SAAS-04. Stopped after selected task; no commit/push.
 
 ## October 23, 2026 — SAAS-02 platform authentication and portal shell
 

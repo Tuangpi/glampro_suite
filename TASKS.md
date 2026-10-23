@@ -54,12 +54,22 @@ not a new test run. Assess code first; follow dependencies rather than date orde
 
 ### SAAS-03 — Company management and secure owner onboarding
 
-- Status: TODO
+- Status: DONE — local implementation/disposable verification; application rollout
+  not performed.
 - Dependencies: SAAS-02
 - Expected result: Platform company list/details and atomic creation with secure,
   expiring one-time owner invitations; no default passwords or public signup.
 - Completion check: Two-company isolation, duplicate/invalid creation, invitation
   expiry/replay and transaction rollback tests; portal workflow verification.
+
+- Evidence: Real PostgreSQL/HTTP/loopback SMTP acceptance passes for two companies,
+  owner activation plus existing MFA login, isolated customer reads, platform access
+  refusal for owners, invalid input, duplicate slug/email rollback, audit-FK failure
+  rollback, resend invalidation, expiry, replay and concurrent acceptance. Closed
+  SMTP test confirms committed company plus failed delivery result. Full API 537
+  passed / 0 failed / 12 opt-in skips; web 609/609; shared 164/164; platform 9/9.
+  Workspace typecheck/lint/build pass; all 42 migrations replayed on disposable DB.
+  No application migration/accounts/deployment, commit or push.
 
 ### SAAS-04 — Subscription, lifecycle, entitlements and audit management
 

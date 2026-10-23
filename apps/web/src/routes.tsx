@@ -7,6 +7,7 @@ import { lazyRoute } from "@/components/layouts/RouteWrapper";
 
 // ── Lazy-loaded pages ──────────────────────────────────────────────
 const Login = lazy(() => import("@/pages/Login"));
+const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Sale = lazy(() => import("@/pages/Sale"));
 const Appointments = lazy(() => import("@/pages/Appointments"));
@@ -19,12 +20,11 @@ const Settings = lazy(() => import("@/pages/Settings"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const PublicBooking = lazy(() => import("@/pages/PublicBooking"));
 
-
-
 // ── Route tree ─────────────────────────────────────────────────────
 // Every rail destination is here. There is no /services route: services are a tab on the
 // products screen and a step in the sale and appointment flows (ADR 0005).
 const routes: RouteObject[] = [
+  { path: "/accept-invitation", element: lazyRoute(<AcceptInvitation />) },
   {
     path: "/book/:slug",
     element: lazyRoute(<PublicBooking />),

@@ -244,6 +244,7 @@ model User {
   leaves       EmployeeLeave[]
   shifts       StaffShift[]
   treatmentRecords TreatmentRecord[]
+  ownerInvitations OwnerInvitation[]
 
   @@index([globalRole])
   @@index([tenantId])
@@ -369,8 +370,8 @@ model Tenant {
   /// be inserted first. A tenant is created with no owner and given one in the
   /// immediately following statement, which is also honest about the bootstrap step
   /// where the first tenant's owner is an administrator account that does not exist
-  /// yet. Every path that creates a tenant from the API or the console sets it in the
-  /// same request; only the seed writes it in two steps.
+  /// yet. Console onboarding sets ownership and a disabled owner in one transaction;
+  /// the owner chooses a password through an expiring invitation afterward.
   ownerUserId String?   @unique
   /// Online booking (TK2610-0022). Off by default; a salon opts in from Settings.
   onlineBookingEnabled Boolean @default(false)
@@ -386,6 +387,7 @@ model Tenant {
   subscriptions Subscription[]
   payments      Payment[]
   auditLogs     AuditLog[]
+  ownerInvitations OwnerInvitation[]
 
   // Every domain model below points back here. ADR 0002 wants `tenantId` to be a
   // real foreign key, so a row that names a tenant that does not exist fails the
@@ -439,13 +441,25 @@ model Tenant {
   @@map("tenants")
 }
 
-/// The salon's published operating hours, one row per day of the week
-/// (`0 = Sunday` ... `6 = Saturday`). Used to generate available appointment
-/// slots and to tell customers when the salon is open.
-///
-/// P0-03 stores one tenant-wide schedule. Multi-outlet hours land in P2-02,
-/// which introduces the `outlet` model; until then there is exactly one schedule
-/// per salon and `tenantId` is the scope.
+/// One-time company-owner enrollment. Tokens are stored only as SHA-256 hashes.
+model OwnerInvitation {
+  id String @id @default(cuid())
+  tenantId String
+  userId String
+  tokenHash String @unique
+  expiresAt DateTime
+  acceptedAt DateTime?
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([userId])
+  @@map("owner_invitations")
+}
+
+/// Tenant-wide operating hours. Multi-outlet scheduling remains deferred.
 model TenantOperatingHours {
   id        String   @id @default(cuid())
   tenantId  String   @unique

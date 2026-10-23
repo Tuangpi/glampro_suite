@@ -11,6 +11,7 @@ vi.mock("./api", () => ({
     profile: vi.fn(),
   },
 }));
+vi.mock("./Companies", () => ({ default: () => <h2>Company management</h2> }));
 const admin = { id: "operator", name: "Operator", email: "operator@example.test" };
 beforeEach(() => vi.resetAllMocks());
 async function login() {

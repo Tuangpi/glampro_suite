@@ -93,6 +93,34 @@ input:focus-visible {
   gap: 12px;
   flex-wrap: wrap;
 }
+.companies {
+  margin: 28px 0;
+}
+.company-list {
+  padding: 0;
+  list-style: none;
+}
+.company-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+article {
+  margin: 24px 0;
+  padding: 20px;
+  border: 1px solid #ddd8e8;
+  border-radius: 12px;
+}
+dt {
+  font-weight: 600;
+  margin-top: 12px;
+}
+dd {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 480px) {
   section {
     padding: 22px;
