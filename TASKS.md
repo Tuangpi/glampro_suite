@@ -798,6 +798,20 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 ### TK2610-0027 — P2-03 Family/shared prepaid credit, package transfer, expiry rules
 
 - Status: IN PROGRESS
+- October 23 transfer slice DONE (implementation/automated verification): same-salon whole-holding prepaid transfers
+  and append-only transfer history, with manager/owner controls, explicit reason,
+  stale-owner protection, expiry preservation and original-purchase void protection.
+  Verified HTTP/database acceptance for isolation, permissions, concurrent
+  transfer/spend safety, history immutability, liability conservation, reversal and
+  atomic audit-write rollback. UI confirmation/error/role tests pass. Full API:
+  504 pass / 0 fail / 2 skips; treatment-session acceptance separately enabled and
+  passed (SEC-01 SMTP remains intentionally skipped). Full web 583/583; shared
+  151/151; workspace typecheck, lint and production build passed. Migration
+  `20261023120000_prepaid_transfer_history` applied only to disposable PostgreSQL.
+  Application rollout unperformed. Family pooling and complete balance-change
+  audit remain unfinished; no cross-tenant transfers. Shared-family holdings are
+  explicitly refused until pool semantics are implemented. Original purchase void
+  is refused after any recorded transfer, even if credit is subsequently returned.
 - October 22 initial review supersedes the completion claims below: stored expiry was enforced but no configurable validity rule existed (resolved by the expiry slice below). Current `redeemCredit()` draws only the selected customer's holding; the claimed family-pool redemption logic is absent. Transfer implementation and audit completeness remain unverified. Do not mark this external task complete.
 - October 22 approved expiry slice implemented: optional 1–36500 validity days from completed purchase (exact 24-hour days), null means no expiry, existing holdings unchanged, no family-wide expiry propagation/write-off. Session editor/API configure validity; manager/owner prepaid endpoint is `PATCH /api/packages/prepaid/:id/validity`. Holding grants snapshot expiry from completed `soldAt`, including resumed carts; later catalogue changes do not alter holdings.
 - Verification: disposable PostgreSQL migration and endpoint acceptance 1/1; sale/package/customer service regression 80/80; shared 139/139; web 483/483; full build, API/web typechecks, scoped lint/format and diff check passed. Older package/report route suites have 11 authentication-helper failures after mandatory owner 2FA; not fixed or bypassed. Migration not applied to application/production database; browser acceptance remains pending.
@@ -811,7 +825,11 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   5. ✅ Add audit tracking for balance changes (who, when, what changed) - Completed: Added `updatedBy String?` and `updatedAt DateTime @updatedAt` to CustomerValuePackageHolding Prisma model; updated `redeemCredit()` to set `updatedBy` when decrementing balance
   6. ✅ Verify liability reporting reflects all changes - Completed: liability report already includes prepaid credit balance (from TK2610-0011); transferPackageCredit preserves amountRemaining so liability reporting works correctly with transferred credits
 - Expiry slice: DONE. User explicitly confirmed application migration/browser checks complete and accepted expiry on October 22, 2026. This is user-reported, not freshly agent-verified application or production evidence; supersedes the pending rollout/acceptance note above.
-- Next: treatment-session integration under TK2610-0025, then resolve family/shared pool, transfer and audit gaps separately before closing this external task. Historical checklist above is not current completion evidence.
+- Next: same-salon family/shared prepaid pool and complete append-only balance-change
+  audit. Resolve pool membership/authorization, deterministic draw allocation and
+  reversal semantics before implementation. Cross-tenant/session-package transfers
+  are outside the approved scope. Historical checklist above is not current evidence;
+  treatment/POS integration is separately implemented under TK2610-0025.
 
 ### TK2610-0028 — P2-02 Multi-outlet: shared customers, packages, stock across branches
 

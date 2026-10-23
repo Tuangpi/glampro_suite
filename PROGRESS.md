@@ -2,12 +2,57 @@
 
 ## Current State
 
-- Current task: **TK2610-0025 — aesthetics/spa module (IN PROGRESS)**. Owner 2FA route-test repair DONE. October 23 full API regression: 504 pass / 0 fail / 1 intentional SEC-01 skip, exit 0. Earlier messaging failure did not reproduce; no messaging fix or root-cause claim. Retention/history application rollout remains unperformed. TK2610-0027 remains IN PROGRESS. Not ready for external closure.
+- Current task: **TK2610-0027 (IN PROGRESS); prepaid transfer slice DONE**.
+  User approved same-salon family prepaid sharing and whole-holding transfers with
+  manager/owner controls, preserved expiry and append-only audit. Transfer slice
+  verified; family pooling and complete balance audit remain unfinished. TK2610-0025
+  retention/history application rollout remains unperformed. Not ready for external closure.
 - P2 phase TK2610-0003: IN PROGRESS; previous completion/sign-off claims withdrawn. TK2610-0026: BLOCKED pending official vendor-route verification, business evidence and submission.
 - SEC-01 complete: real-DB/local SMTP automated checks passed and user explicitly accepted manual browser testing October 22, 2026. Acceptance is user-reported, not an agent walkthrough. Production SMTP/account audit remains unverified. Existing application accounts/passwords unchanged.
-- Resources: approved disposable PostgreSQL cluster (loopback 55439, sec01_acceptance) migrated and tested; fixture removed, SMTP capture closed and cluster stopped. No application/production database or external mail used.
+- Most recently completed: same-salon whole-holding prepaid transfers with
+  append-only transfer evidence, customer-profile UI and purchase-void protection.
 - Standing instruction: user grants manual acceptance on completion of implementation and available automated verification; do not request another manual UAT/review round. This is not agent-executed testing or completion of unperformed operational actions.
-- Next: separately authorized application migration/rollout; no rollout task started. Treatment-link migration acceptance was previously user-reported; retention/history application rollout remains unperformed. Family sharing/transfer/audit remain separate TK2610-0027 gaps. No application migration, production access, real-record erasure or paid mail authorized.
+- Next: define and implement family sharing and complete append-only
+  balance audit. Application rollout needs separate authorization. No application
+  migration, production access, real-record erasure or paid mail authorized.
+
+## October 23, 2026 — Same-salon prepaid transfer foundation
+
+- Transfer slice DONE; parent TK2610-0027 remains IN PROGRESS, not ready for external
+  closure. User approved same-salon prepaid scope, manager/owner controls, preserved
+  expiry and append-only audit. Family pooling and full balance audit remain next;
+  cross-tenant and session-package transfers are excluded.
+- Added shared strict request/response contracts; tenant-scoped PrepaidTransferEvent
+  and migration `20261023120000_prepaid_transfer_history`; prepaid service and
+  customer-owned holdings/history/transfer routes. Customer profile has paginated
+  holdings/history, recipient search, reason and explicit confirmation, role/read-only
+  guards, preserved failed drafts and cache refresh. No new dependencies.
+- Holding row locks serialize transfer with spend/void; current owner and version,
+  database actor permissions, salon write state, archived customers, expiry and
+  positive balance rechecked. Legacy family holdings explicitly refused. Balance,
+  expiry and purchase provenance unchanged. Transfer and evidence are atomic;
+  history UPDATE/DELETE refused (parent tenant cascade remains possible). Snapshot
+  IDs preserve evidence independently of customer/account/holding relations.
+- Removed unused unsafe transferPackageCredit helper; no callers existed. Purchase
+  void now refuses any granted credit with recorded transfer evidence, including
+  returned holdings. Prior redemption void restores the same holding under its
+  current owner. Audit covers transfers only, not all grants/draws/reversals.
+- Verified disposable PostgreSQL migration deploy; transfer HTTP/service acceptance
+  1/1, none skipped; full API 506 tests: 504 pass, 0 fail, 2 skips, exit 0. Incorrect
+  TREATMENT_POS_ACCEPTANCE switch left session acceptance skipped in that run;
+  reran with TREATMENT_SESSION_ACCEPTANCE=1: 1/1 passed, exit 0. SEC-01 SMTP was
+  intentionally not run. Full web 583/583 (68 files), shared 151/151, workspace
+  typecheck, root lint and production build passed. pg query concurrency
+  deprecation warnings remain non-fatal. No agent browser walkthrough performed.
+- Logs: `/tmp/prepaid-acceptance.log`, `/tmp/prepaid-api-full.log`,
+  `/tmp/prepaid-treatment-session.log`, `/tmp/prepaid-web-full.log`,
+  `/tmp/prepaid-shared.log`, `/tmp/prepaid-build.log`; matching exit files are zero.
+- Application migration/deployment, real-record erasure, external mail and commit
+  were not performed. Disposable loopback 55440/package_expiry_test has 37 completed
+  migrations; transfer fixture tenants, transfer events and injected test triggers
+  counted zero. Cluster stopped; pg_ctl confirms no server and port no longer
+  listens. Cleanup log: `/tmp/prepaid-cleanup.log`. Changed-file formatting and
+  diff checks passed. Standing user acceptance applies, not an agent walkthrough.
 
 ## October 22, 2026 — TK2610-0025 completion audit
 

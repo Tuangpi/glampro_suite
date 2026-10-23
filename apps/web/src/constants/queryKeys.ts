@@ -73,6 +73,8 @@ export const queryKeys = {
      * taking a payment invalidates the one list it moved rather than every customer's.
      */
     holdings: (id: string) => ["customers", "detail", id, "holdings"] as const,
+    ownedPrepaid: (id: string) => ["customers", "detail", id, "owned-prepaid"] as const,
+    prepaidTransfers: (id: string) => ["customers", "detail", id, "prepaid-transfers"] as const,
   },
 
   /**

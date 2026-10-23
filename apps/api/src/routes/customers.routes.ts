@@ -40,6 +40,16 @@ import {
   listCustomers,
   updateCustomer,
 } from "../services/customer.service.js";
+import {
+  prepaidHoldingParamsSchema,
+  transferPrepaidSchema,
+  type TransferPrepaidInput,
+} from "@glampro_suite/shared";
+import {
+  listOwnedPrepaid,
+  listPrepaidTransfers,
+  transferPrepaid,
+} from "../services/prepaid.service.js";
 
 /**
  * Customers — handoff screen 07.
@@ -53,6 +63,55 @@ import {
  * that exists passes it.
  */
 export const customersRouter = Router();
+
+for (const [path, list] of [
+  ["prepaid", listOwnedPrepaid],
+  ["prepaid-transfers", listPrepaidTransfers],
+] as const) {
+  customersRouter.get(
+    `/:id/${path}`,
+    auth,
+    requireModule("customers"),
+    requireModule("packages"),
+    validate(idParamSchema, "params"),
+    validate(paginationQuerySchema, "query"),
+    async (req, res, next) => {
+      try {
+        const { id } = validated<{ id: string }>(req, "params");
+        res.json({ data: await list(id, validated<PaginationQuery>(req, "query")) });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+}
+
+customersRouter.post(
+  "/:id/prepaid/:holdingId/transfer",
+  auth,
+  requireModule("customers"),
+  requireModule("packages"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(prepaidHoldingParamsSchema, "params"),
+  validate(transferPrepaidSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id, holdingId } = validated<{ id: string; holdingId: string }>(req, "params");
+      res.status(201).json({
+        data: await transferPrepaid(
+          id,
+          holdingId,
+          validated<TransferPrepaidInput>(req, "body"),
+          req.user.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 customersRouter.post(
   "/:id/archive",

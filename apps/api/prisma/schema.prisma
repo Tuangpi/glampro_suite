@@ -299,6 +299,7 @@ model PlatformAdmin {
 /// the legacy database keeps its owner's legacy `users.id` verbatim, so every
 /// `company_id` is already a valid `tenantId` — see ADR 0002.
 model Tenant {
+  prepaidTransferEvents PrepaidTransferEvent[]
   messagingSettings MessagingSettings?
   channelConsents ChannelConsent[]
   channelConsentEvents ChannelConsentEvent[]
@@ -1684,6 +1685,27 @@ model CustomerValuePackageHolding {
   @@index([customerId])
   @@index([familyId])
   @@map("customer_value_package_holdings")
+}
+
+/// Append-only ownership evidence; identifiers are snapshots, not cascading links
+/// to mutable customers, staff or holdings. Tenant removal is the only cascade.
+model PrepaidTransferEvent {
+  id String @id @default(cuid())
+  tenantId String
+  holdingId String
+  fromCustomerId String
+  toCustomerId String
+  actorId String
+  amount Decimal @db.Decimal(12, 2)
+  expiresAt DateTime?
+  reason String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, holdingId])
+  @@index([tenantId, fromCustomerId, createdAt, id])
+  @@index([tenantId, toCustomerId, createdAt, id])
+  @@map("prepaid_transfer_events")
 }
 
 /// A gift card a customer holds. Legacy `customer_giftcards`.

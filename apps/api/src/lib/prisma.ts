@@ -76,6 +76,7 @@ export const TENANT_SCOPED_MODELS = [
   // right: a redemption is read per customer, not only through its sale.
   "CustomerPackageHolding",
   "CustomerValuePackageHolding",
+  "PrepaidTransferEvent",
   "CustomerGiftCardHolding",
   "CustomerPoint",
   "CustomerOutstanding",

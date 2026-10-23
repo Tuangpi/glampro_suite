@@ -1634,74 +1634,6 @@ async function redeemCredit(
 
 /**
  * The ledgers the sale fills.
-/**
- * Transfer a value package credit holding from one customer to another,
- * optionally across tenants.
- *
- * - If the holding has a `familyId`, the transfer moves the entire shared pool.
- *   All family members' holdings retain their links, but the `customerId` and
- *   `tenantId` are updated to the new owner; the family aggregate balance carries
- *   forward under the new owner.
- * - If the holding has no `familyId`, it is a single customer holding and moves
- *   entirely with no redistribution.
- * - Audit fields (`updatedBy`, `updatedAt`) are set to reflect the transfer.
- *
- * @param tx Prisma transaction
- * @param holdingId The holding to transfer
- * @param targetCustomerId The customer receiving the holding
- * @param targetTenantId Optional: override the tenant (e.g. cross-branch transfer)
- * @param transferredBy The actor/cashier ID initiating the transfer
- */
-export async function transferPackageCredit(
-  tx: SaleTransaction,
-  holdingId: string,
-  targetCustomerId: string,
-  targetTenantId?: string,
-  transferredBy?: string,
-) {
-  // Read the current holding with its family context
-  const holding = await tx.customerValuePackageHolding.findFirst({
-    where: { id: holdingId },
-    select: {
-      id: true,
-      customerId: true,
-      tenantId: true,
-      amountRemaining: true,
-      expiresAt: true,
-      valuePackage: { select: { id: true, name: true } },
-      familyId: true,
-    },
-  });
-
-  if (!holding) {
-    throw notFound("That credit holding does not exist.", "HOLDING_NOT_FOUND");
-  }
-
-  // Preserve family grouping if the holding is part of a shared pool
-  const familyId = holding.familyId;
-
-  // Update the holding to belong to the new customer/tenant
-  const result = await tx.customerValuePackageHolding.updateMany({
-    where: { id: holdingId },
-    data: {
-      customerId: targetCustomerId,
-      tenantId: targetTenantId || holding.tenantId,
-      amountRemaining: holding.amountRemaining, // transfer the remaining balance
-      familyId: familyId, // keep family association if any
-      updatedBy: transferredBy || "system",
-    },
-  });
-
-  if (result.count === 0) {
-    throw conflict("Failed to transfer credit holding: no row updated.", "TRANSFER_FAILED");
-  }
-
-  // Return the updated holding for verification
-  return result;
-}
-
-/**
- * The ledgers the sale fills.
  *
  * Five things, and each exists because legacy wrote it in the same request as the sale:
  *
@@ -2480,13 +2412,23 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
       }),
       tx.customerValuePackageHolding.findMany({
         where: { saleLineId: { in: lineIds } },
-        select: { amount: true, amountRemaining: true },
+        select: { id: true, amount: true, amountRemaining: true },
       }),
       tx.customerGiftCardHolding.findMany({
         where: { saleLineId: { in: lineIds } },
         select: { value: true, valueRemaining: true },
       }),
     ]);
+
+    const transferred = await tx.prepaidTransferEvent.findFirst({
+      where: { holdingId: { in: credits.map((holding) => holding.id) } },
+      select: { id: true },
+    });
+    if (transferred)
+      throw conflict(
+        "Credit this sale granted has been transferred. Its ownership history must be preserved; the purchase cannot be voided.",
+        "HOLDING_ALREADY_TRANSFERRED",
+      );
 
     const spent =
       packages.some((holding) => holding.quantityRemaining < holding.quantity) ||

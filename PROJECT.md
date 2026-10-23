@@ -62,6 +62,13 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ## Decisions and constraints
 
+- Prepaid sharing/transfers (October 23, 2026, user approved): same-salon family
+  prepaid sharing and whole-holding prepaid transfers, manager/owner controls,
+  preserved individual expiry and append-only audit. Cross-tenant transfers and
+  session-package transfers are excluded. Implement the transfer/audit foundation
+  first; family pooling remains a separate unfinished slice. A transfer moves only
+  the remaining holding, never duplicates value or changes purchase provenance.
+
 - Standing manual acceptance (October 22, 2026, user instruction): manual UAT,
   browser checks and review/sign-off gates are accepted when the agent completes
   the relevant implementation and available automated verification. Do not request
