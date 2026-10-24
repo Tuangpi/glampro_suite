@@ -10,7 +10,12 @@ import { AsyncLocalStorage } from "node:async_hooks";
  */
 export type Scope =
   /** A tenant's request. Every tenant-scoped query is filtered to this id. */
-  | { readonly kind: "tenant"; readonly tenantId: string; readonly actorId?: string }
+  | {
+      readonly kind: "tenant";
+      readonly tenantId: string;
+      readonly actorId?: string;
+      readonly outletId?: string;
+    }
   /** An explicit opt-out: the platform console and background jobs only. */
   | { readonly kind: "platform" };
 
@@ -46,6 +51,18 @@ export function runAsTenant<T>(tenantId: string, fn: () => T, actorId?: string):
   return storage.run({ kind: "tenant", tenantId, ...(actorId ? { actorId } : {}) }, () =>
     startInsideScope(fn()),
   );
+}
+
+/** A validated operational branch, not a second tenant or customer identity. */
+export function runAtOutlet<T>(outletId: string, fn: () => T): T {
+  const scope = requireScope("Outlet");
+  if (scope.kind !== "tenant") throw new Error("Outlet context requires a tenant scope");
+  return storage.run({ ...scope, outletId }, () => startInsideScope(fn()));
+}
+
+export function currentOutletId(): string | undefined {
+  const scope = currentScope();
+  return scope?.kind === "tenant" ? scope.outletId : undefined;
 }
 
 /**

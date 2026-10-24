@@ -571,6 +571,7 @@ export type SalePayment = z.infer<typeof salePaymentSchema>;
  * totalAmount`), and a client that subtracts two strings gets a float.
  */
 export const saleDetailSchema = z.object({
+  outletId: z.string().nullable().optional(),
   id: z.string(),
   /**
    * The receipt number, unique per salon. Nullable because a row that predates the

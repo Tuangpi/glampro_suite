@@ -63,7 +63,7 @@ import { moduleEntitlements } from "../lib/entitlements.js";
 import { assertHoldingLive, packageExpiry } from "../lib/package-expiry.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
-import { currentScope } from "../lib/tenant-context.js";
+import { currentScope, runAsTenant } from "../lib/tenant-context.js";
 import { lockPrepaid, prepaidSaleContext } from "../lib/prepaid-lock.js";
 import { resolveLowStockThreshold } from "./catalogue.service.js";
 import { Prisma } from "../../generated/prisma/client.js";
@@ -2010,6 +2010,7 @@ type SaleTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 /** The receipt's own columns, plus the names a printed receipt shows. */
 const SALE_SELECT = {
   id: true,
+  outletId: true,
   receiptNumber: true,
   status: true,
   paymentStatus: true,
@@ -2081,6 +2082,7 @@ const SALE_SELECT = {
 function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>): SaleDetail {
   return saleDetailSchema.parse({
     id: row.id,
+    outletId: row.outletId,
     receiptNumber: row.receiptNumber,
     status: row.status,
     paymentStatus: row.paymentStatus,
@@ -2205,8 +2207,21 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /** The sale a key already produced, or `null`. Scoped, so it is this salon's own. */
-function findByIdempotencyKey(key: string) {
-  return prisma.sale.findFirst({ where: { idempotencyKey: key }, select: { id: true } });
+async function findByIdempotencyKey(key: string) {
+  const scope = currentScope();
+  if (scope?.kind !== "tenant") throw new Error("Sale lookup requires a tenant scope.");
+  // Keys are tenant-unique. A key used in another branch must be a conflict,
+  // not a raw unique-constraint failure or a replay of another branch's receipt.
+  const replay = await runAsTenant(scope.tenantId, () =>
+    prisma.sale.findFirst({
+      where: { idempotencyKey: key },
+      select: { id: true, outletId: true },
+    }),
+  );
+  if (replay && scope.outletId && replay.outletId !== scope.outletId) {
+    throw conflict("This attempt belongs to another outlet.", "IDEMPOTENCY_OUTLET_MISMATCH");
+  }
+  return replay;
 }
 
 /**

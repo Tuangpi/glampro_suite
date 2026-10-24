@@ -8,6 +8,7 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useSaleCart } from "@/hooks/useSale";
 import { useLowStockCount } from "@/hooks/useProducts";
 import { cn, getInitials } from "@/lib/utils";
+import OutletPicker from "./OutletPicker";
 
 /**
  * The Salon Pro application frame (handoff screens 05–11):
@@ -137,6 +138,7 @@ export default function AppShell() {
               />
             </label>
 
+            <OutletPicker />
             <button
               type="button"
               className="flex h-control w-control items-center justify-center rounded-md bg-surface-2 text-ink-body transition hover:bg-line-soft"

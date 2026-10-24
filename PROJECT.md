@@ -66,6 +66,24 @@ from this first milestone. Multi-outlet is deferred, not required for SaaS launc
 Original DOCX/PDF sources remain unchanged. Existing family grouping is not proof
 of branch management. See SAAS-01–SAAS-04 in TASKS.md.
 
+October 24, 2026: TK2610-0028 resumed by explicit request. Option A adds optional
+outlet references; null remains tenant-wide and family grouping is unchanged.
+The schema foundation uses tenant-bound outlet foreign keys, tenant-local slugs,
+and restricted deletion of referenced outlets. Customer email uniqueness stays
+tenant-wide until authentication/lookup behavior is reviewed. Branch APIs,
+permissions, stock and consolidated reporting were unfinished at that checkpoint.
+
+October 24 completion: TK2610-0028 now provides tenant-validated active outlet
+selection, role-guarded management, optional product/package availability,
+branch-attributed sales/holds/reversals and branch/consolidated sale reporting.
+Customer identity/credit/family groups and product stock quantities remain shared
+tenant-wide; existing company roles apply at all outlets. Per-user branch ACLs,
+separate warehouse quantities/transfers and branch calendars are not introduced.
+The browser picker reloads after confirmed cart clearing to isolate cached data.
+All 45 migrations replay and focused live acceptance passes on disposable
+PostgreSQL. Application rollout is not performed. Detailed policy and migration
+instructions: docs/multi-outlet.md. Unrelated owner-assistant errors remain.
+
 ### Platform authentication — SAAS-02, October 23, 2026
 
 The operator UI now lives in `apps/web/src/platform`, lazy-loaded outside salon

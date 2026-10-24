@@ -51,6 +51,9 @@ owner-facing experience; they do not authorize deployment or outbound messages.
   web typecheck, workspace lint, production web build and diff/format review pass.
 - Remaining: owner walkthrough/acceptance. Keep IN PROGRESS until verified; no agent
   browser walkthrough or live HTTP/database test performed.
+- Acceptance follow-up October 23: focused briefing/hook/dashboard tests rerun,
+  16/16 pass. Local web/API did not respond on ports 5173/9000; live figures and
+  destination navigation remain unverified. No acceptance recorded; OA-03 not started.
 
 ### OA-03 — Service-aware rebooking recommendations
 
@@ -1135,16 +1138,26 @@ phase, use the listed order unless dependencies or unresolved policy block it.
 
 ### TK2610-0028 — P2-02 Multi-outlet: shared customers, packages, stock across branches
 
-- Status: BLOCKED — deferred by user October 23, 2026; not needed for the initial
-  multi-company SaaS milestone. Resume only on explicit request after SaaS work.
+- Status: DONE — October 24, 2026 implementation and disposable acceptance verified.
 - Expected result: Multi-outlet: shared customers, packages, stock across branches
-- Completion check / dependencies: Historical DONE claim based on family grouping
-  is superseded: the current schema has no outlet model and grouping is not
-  evidence of outlet permissions, branch stock or consolidated reporting. Full
-  branch scope and migration checks must be defined when this task is resumed.
+- Completion check / dependencies: Verify tenant-safe outlet management and active
+  request selection, company-role authorization, shared customer/credit identity,
+  optional product/package availability, shared stock concurrency and reversals,
+  branch-bound sales/holds/idempotency, branch/consolidated reporting, browser
+  selection/cache reset and all migrations replaying on disposable PostgreSQL.
+  Scope: shared tenant stock pool and existing company roles at every outlet;
+  no per-user outlet allowlist, warehouse quantities/transfers or branch calendars.
+  See docs/multi-outlet.md for API and operational boundaries.
 - Historical evidence: Earlier notes claimed familyId changes and 130 shared
   tests; those claims were not rerun or accepted as multi-outlet verification.
-- Next: Deferred; complete SAAS-01–SAAS-04 first.
+- Evidence: All 45 migrations replayed from empty PostgreSQL October 24;
+  23/23 focused/live checks, web 653/653 and shared 171/171 pass. Web production
+  build/typecheck and focused API/web/shared lint pass. Full disposable API:
+  547 passed / 1 unrelated owner-assistant failure / 16 opt-in skips. API typecheck
+  retains six pre-existing owner-assistant errors; unrelated schema drift remains.
+  No application migration, commit or deployment. See PROGRESS.md for details.
+- Next: Authorized application migration and owner browser walkthrough at rollout;
+  resolve unrelated owner-assistant build/test and schema issues separately.
 
 ### TK2610-0029 — P2-04 AI assistant: owner summary, rebooking nudges, slow-day promos
 

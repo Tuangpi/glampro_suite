@@ -2,23 +2,118 @@
 
 ## Current State
 
-- Current task: **OA-02 IN PROGRESS**, dashboard briefing and evidence workspace.
-  Most recently completed: **OA-01**, shared owner-assistant
-  metric definitions and contracts. Approved OA-01–OA-07 plan recorded.
-- Next: OA-02 owner walkthrough/acceptance. Implementation and automated checks
-  complete; do not start OA-03 before closing the acceptance gate.
-- OA-01 verified locally: shared 170/170, API focused 31 passed / 1 opt-in live
-  acceptance skipped, dashboard 3/3, typechecks/lint/production builds pass.
-- Verified: all 43 migrations replay and commission acceptance/resolver 5/5 on
-  disposable PostgreSQL 55443; API 541 passed / 0 failed / 14 opt-in skips; web
-  633/633; shared 168/168. Root build, API/web typechecks, lint, formatting/diff pass.
+- Current task: **OA-02 IN PROGRESS**, dashboard briefing/evidence workspace,
+  pending owner walkthrough/acceptance before OA-03. No next task auto-started.
+- Most recently completed: **TK2610-0028**, optional multi-outlet implementation
+  and disposable acceptance verified October 24. Company roles apply at every
+  outlet; customers/credit/families and stock quantities remain shared tenant-wide.
+- Verified: 45 migrations replay from empty; 23/23 focused/live outlet checks;
+  163/163 final API regressions; web 653/653; shared 171/171. Web production build,
+  typecheck, Prisma validation and focused API/web/shared lint pass.
+- Full disposable API: 547 passed / 1 unrelated owner-assistant failure / 16 skips.
+  Six existing ai-assistant.service.ts type errors still block API/root build;
+  unrelated Service.interval and prepaid/treatment schema drift remains.
 - Application database/accounts unchanged; no deployment, commit or push.
-- Actual onboarding needs authorized migration plus configured SMTP and trusted
-  `SALON_PORTAL_ORIGIN`. Both logins now use web port 5173: `/login` for salons,
-  `/platform/login` for operators. No separate platform dev server. Email failure
-  is recoverable by resend after committed creation.
-- Multi-outlet remains deferred. TK2610-0026 remains BLOCKED/deferred. Existing
-  prepaid/treatment migration/schema drift remains unresolved; P2 is not complete.
+  Outlet rollout requires authorized application migrations and owner walkthrough.
+- TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
+- SaaS onboarding still requires authorized migrations, configured SMTP and
+  trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — TK2610-0028 implementation complete
+
+- Added validated x-outlet-id context after session/tenant validation. Foreign or
+  missing outlets return 404; malformed selection 422; suspended selection 403.
+  Existing company roles apply at all outlets; manager/super-admin management
+  requires writable tenant. No per-user branch ACLs or warehouse quantities.
+- Added outlet create/list/update and product/package availability assignment APIs,
+  tenant-bound Product outlet FK migration, shared request/response contracts,
+  browser management screen and tab-local active-outlet picker. Confirmed switching
+  clears unsaved carts and reloads all query/component state. Management/auth
+  requests omit selection for suspended-outlet recovery. Sign-out clears selection.
+- Prisma central policy scopes catalogue reads to global + selected availability;
+  sales and sale-linked ledgers/reports to selected branch. Creates snapshot the
+  validated selection. Customer identity, holdings, family and stock remain shared.
+  Tenant-wide reporting includes all branches and legacy null-attributed sales.
+  Reused idempotency keys from a different selected branch return explicit 409.
+- Shared guarded stock decrements, hold completion, void and refund restore verified
+  live, including concurrent last-unit sale and restoration after reassignment.
+  Report liability/customer/appointment metrics remain company-wide; report day
+  timezone remains salon/report timezone. Detailed scope: docs/multi-outlet.md.
+- All **45 migrations** replay successfully from empty disposable database
+  outlet_replay_final at 127.0.0.1:55448. No compatibility patch in that replay.
+  Broader API regression database outlet_test received disposable-only
+  `services.interval INTEGER NOT NULL DEFAULT 60` to accommodate unrelated working
+  schema drift, not an application migration or an outlet migration dependency.
+- Checks: focused/live **23/23**; final sale/catalogue/packages/reports/auth/tenant
+  API regressions **163/163**; web **653/653**; shared **171/171**; Prisma validation,
+  web production build/typecheck, web/shared lint and focused API lint pass.
+- Full API run: **547 passed / 1 failed / 16 opt-in skips**. Failure is the existing
+  owner-assistant rebooking test (new unstubbed consent lookup to 127.0.0.1:1).
+  API typecheck still has the same six errors only in ai-assistant.service.ts;
+  API/root production build remains blocked. Unrelated edits preserved.
+- Earlier first-pass test failures corrected: existing oversell precheck is HTTP
+  400; Z totals are nested; Zod partial/default status required explicit omission
+  handling; UI text selectors and navigation expectations updated. Fixed test module
+  fixtures to preserve canonical core flags; final broader run has no module failure.
+- Logs: /tmp/glampro-outlet-http.log, /tmp/glampro-outlet-final-regression.log,
+  /tmp/glampro-outlet-final-replay.log, /tmp/glampro-outlet-api-disposable-tests.log,
+  /tmp/glampro-outlet-web-tests.log, /tmp/glampro-outlet-shared-tests.log,
+  /tmp/glampro-outlet-final-typecheck.log. pg emits a pre-existing concurrent-query
+  deprecation warning on refund paths; tests pass without suppressing it.
+- Application DB unchanged. No commit, deployment or browser walkthrough claimed.
+  Next: OA-02 owner acceptance; outlet application rollout separately authorized.
+
+## October 24, 2026 — TK2610-0028 disposable migration acceptance
+
+- Replayed all 44 migrations successfully on a fresh local PostgreSQL instance
+  at port 55448, database `outlet_test`. Application database unchanged.
+- Added guarded opt-in `apps/api/prisma/outlet.acceptance.test.ts`. Raw SQL fixtures
+  roll back; Prisma scoping fixtures are cleaned up. It verifies null/outlet-specific
+  Customer/Package/Sale links, unchanged family IDs, tenant-local slug uniqueness,
+  cross-tenant/missing outlet rejection, restricted deletion/reassignment,
+  tenant-wide email uniqueness and runtime Prisma outlet tenant scoping.
+- Focused/live checks: 14/14 pass, no skips. Corrected the test expectation for
+  PostgreSQL's RESTRICT violation SQLSTATE to 23001 after the first run.
+  Focused ESLint passed. API typecheck reports the same six pre-existing errors
+  exclusively in ai-assistant.service.ts; new test has no reported type errors.
+- Schema diff after replay has no outlet changes. Remaining drift concerns
+  commission/prepaid/treatment constraints/index names and unrelated Service.interval.
+  Logs: `/tmp/glampro-outlet-replay.log`, `/tmp/glampro-outlet-acceptance.log`,
+  `/tmp/glampro-outlet-drift.log`, `/tmp/glampro-outlet-followup-typecheck.log`.
+- TK2610-0028 remains IN PROGRESS. Next: authenticated outlet context and service/API
+  coverage; branch permissions/stock/reporting remain unfinished. No app migration,
+  deployment, commit or unrelated owner-assistant edits.
+
+## October 24, 2026 — TK2610-0028 outlet foundation (IN PROGRESS)
+
+- Fixed optional outlet relations on Customer/Package, added tenant-bound composite
+  foreign keys for Customer/Package/Sale, tenant-local outlet slugs and lookup
+  indexes. Registered Outlet in the Prisma tenant-scoping registry. Existing
+  family grouping and tenant-wide customer email uniqueness remain unchanged.
+- Generated `20261024090000_outlet_foundation` from schema-to-schema diff, excluding
+  the pre-existing unrelated Service.interval change. No migration was applied to
+  the application database; disposable database replay/sample data remain pending.
+- Verified: Prisma validation/client generation; focused migration/registry tests
+  7/7; focused ESLint and diff whitespace check. Formatted the new test.
+- Workspace typecheck fails in pre-existing ai-assistant.service.ts changes;
+  web/shared typechecks report no errors. Full tests: API 226 pass, 16 fail,
+  302 cancelled, 14 skipped; database setup failures include missing Service.interval.
+  Web 645 pass/1 routing failure; shared 170/170. Logs:
+  `/tmp/glampro-outlet-typecheck.log`, `/tmp/glampro-outlet-tests.log`.
+- Unrelated owner-assistant edits preserved. Next: disposable migration/sample-data
+  verification, then authenticated outlet context/service coverage. Branch stock,
+  permissions and consolidated reporting remain unfinished. No commit/deploy.
+
+## October 23, 2026 — OA-02 acceptance follow-up
+
+- Re-ran focused briefing component, hook and dashboard tests: 16/16 pass across
+  three files. Log: `/tmp/oa02-walkthrough-focused.log`; exit status 0.
+- Local web port 5173 and API port 9000 did not respond. No authenticated
+  owner/manager walkthrough, live figure reconciliation or destination navigation
+  was performed. Automated fixture checks are not owner acceptance.
+- OA-02 remains IN PROGRESS pending the signed-in walkthrough and explicit
+  acceptance. OA-03 remains TODO and was not started. No application code,
+  accounts, database or deployment changed.
 
 ## October 23, 2026 — OA-02 briefing implemented; owner walkthrough pending
 

@@ -404,6 +404,7 @@ model Tenant {
   serviceResources     ServiceResource[]
   products            Product[]
   packages            Package[]
+  outlets             Outlet[]
   packageServices     PackageService[]
   valuePackages       ValuePackage[]
   valuePackageServices ValuePackageService[]
@@ -487,6 +488,36 @@ model TenantOperatingHours {
 
   @@index([tenantId])
   @@map("tenant_operating_hours")
+}
+
+/// A salon branch/location within a tenant (TK2610-0028).
+model Outlet {
+  id          String       @id @default(cuid())
+  tenantId    String
+  name        String
+  slug        String
+  status      TenantStatus @default(ACTIVE)
+  /// Physical address of the branch.
+  address     String?
+  /// Contact phone number.
+  phone       String?
+  /// Branch time zone; callers may copy the tenant setting on creation.
+  timeZone    String   @default("Asia/Singapore") @map("time_zone")
+  /// Branch locale; callers may copy the tenant setting on creation.
+  locale      String   @default("en-SG")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  customers   Customer[]
+  packages    Package[]
+  sales       Sale[]
+  products    Product[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+  @@map("outlets")
 }
 
 /// Both bounds are required when the day is open; a null pair means the day is
@@ -646,6 +677,7 @@ model Service {
   departmentId   String?
   name           String
   status         CatalogStatus @default(ACTIVE)
+  interval       Int           @default(60) // OA-03: rebooking interval in days, defaults to 60 days
   memberPrice    Decimal       @db.Decimal(12, 2)
   nonmemberPrice Decimal       @db.Decimal(12, 2)
   /// Loyalty points earned. Legacy `point` (integer).
@@ -729,6 +761,8 @@ model ServiceResource {
 model Product {
   id             String        @id @default(cuid())
   tenantId       String
+  /// Optional availability tag; quantity remains a single shared tenant stock pool.
+  outletId       String?
   departmentId   String?
   name           String
   status         CatalogStatus @default(ACTIVE)
@@ -748,6 +782,7 @@ model Product {
   updatedAt      DateTime      @updatedAt
 
   tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  outlet     Outlet?     @relation(fields: [tenantId, outletId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
 
   /// A barcode identifies one product within one salon. The same barcode may
@@ -755,6 +790,7 @@ model Product {
   /// NULLs as distinct in a unique index, so products without a barcode are
   /// unconstrained.
   @@unique([tenantId, barcode], map: "products_tenantId_barcode_key")
+  @@index([tenantId, outletId])
   @@index([tenantId])
   @@index([departmentId])
   @@map("products")
@@ -779,12 +815,18 @@ model Package {
   /// familyId links packages into a shared group across branches;
   /// packages with the same familyId are shared across all branches.
   familyId   String?
+  /// Null means tenant-wide availability; family grouping remains tenant-wide.
+  outletId   String?
   updatedAt      DateTime      @updatedAt
 
   tenant   Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Links package to an outlet (TK2610-0028).
+  /// When outletId is not set, package is available across all outlets within the tenant.
+  outlet   Outlet?    @relation(fields: [tenantId, outletId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   services PackageService[]
   customerHoldings CustomerPackageHolding[]
 
+  @@index([tenantId, outletId])
   @@index([tenantId])
   @@map("packages")
 }
@@ -1011,6 +1053,9 @@ model Customer {
   appointments Appointment[]
   sales            Sale[]
   packageHoldings     CustomerPackageHolding[]
+  /// Links customer to an outlet (TK2610-0028).
+  /// When outletId is not set, customer is available across all outlets.
+  outlet       Outlet?    @relation(fields: [tenantId, outletId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   valuePackageHoldings CustomerValuePackageHolding[]
   giftCardHoldings    CustomerGiftCardHolding[]
   customerPoints      CustomerPoint[]
@@ -1027,7 +1072,10 @@ model Customer {
   /// familyId links customers into a shared group across branches;
   /// holdings with the same familyId share credit and expiry.
   familyId   String?
+  /// Null means tenant-wide availability; family grouping remains tenant-wide.
+  outletId   String?
   @@unique([tenantId, email])
+  @@index([tenantId, outletId])
   @@index([tenantId])
   @@index([name])
   @@map("customers")
@@ -1456,6 +1504,9 @@ model CommissionRule {
 model Sale {
   id       String @id @default(cuid())
   tenantId String
+  /// Links sale to a specific outlet (TK2610-0028).
+  /// When not set, sale is available across all outlets within the tenant.
+  outletId   String?
   /// Optional: a walk-in sale has no customer row, and forcing one would mean
   /// inventing a "cash customer" per salon. Legacy made this column non-null.
   customerId String?
@@ -1522,6 +1573,9 @@ model Sale {
   updatedAt DateTime @updatedAt
 
   tenant     Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  /// Links sale to an outlet (TK2610-0028).
+  /// When outletId is not set, sale is available across all outlets within the tenant.
+  outlet     Outlet?   @relation(fields: [tenantId, outletId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   customer   Customer? @relation(fields: [customerId], references: [id], onDelete: Restrict)
   staff      User?    @relation("SaleStaff", fields: [staffId], references: [id], onDelete: Restrict)
   /// Receipt customer/cashier/performer links restrict deletion. Void actor remains
@@ -1554,6 +1608,7 @@ model Sale {
   /// Q16. The same nullability argument: the importer posts without a key, and any
   /// number of unkeyed sales may coexist.
   @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, outletId])
   @@index([tenantId, soldAt])
   @@index([tenantId, status])
   @@index([customerId, soldAt])

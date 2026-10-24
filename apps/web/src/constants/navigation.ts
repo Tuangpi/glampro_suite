@@ -51,6 +51,7 @@ export interface NavItem {
  * PROJECT.md#design-5.
  */
 export const navItems: NavItem[] = [
+  { label: "Outlets", path: "/outlets", icon: Grid, roles: ["SUPER_ADMIN", "MANAGER"] },
   { label: "Dashboard", path: "/", icon: Grid, module: "dashboard" },
   { label: "Sale", path: "/sale", icon: Cart, badge: "openCart", module: "sales" },
   { label: "Appointments", path: "/appointments", icon: Calendar, module: "appointments" },

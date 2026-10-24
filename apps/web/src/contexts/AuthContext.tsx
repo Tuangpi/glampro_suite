@@ -25,6 +25,7 @@ import type {
 import { get, post } from "@/lib/api";
 import { clearSession, getRefreshToken, setSession } from "@/lib/auth-storage";
 import { clearSaleDraft, saleDraftIdentity } from "@/lib/sale-draft-storage";
+import { selectOutlet } from "@/lib/outlet-storage";
 
 export type AuthStatus = "loading" | "authenticated" | "anonymous";
 
@@ -119,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const signOut = useCallback(async () => {
+    selectOutlet("");
     const refreshToken = getRefreshToken();
     const draftIdentity =
       profile?.tenant && profile.user

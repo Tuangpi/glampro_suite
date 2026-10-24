@@ -431,8 +431,8 @@ export default function Reports() {
           <section aria-label="Current customer balances" className="xl:col-span-2">
             <h3 className="text-lg font-bold">Current customer balances</h3>
             <p className="mt-1 text-sm text-ink-muted">
-              Current snapshot, independent of the selected sales range. These are not historical
-              closing balances for that period.
+              Company-wide current snapshot, shared across outlets and independent of the selected
+              sales range. These are not historical closing balances for that period.
             </p>
             <p className="mt-1 text-sm text-ink-muted">
               Snapshot as of {formatDateTime(data?.liability.asOf)} ({timeZone}).

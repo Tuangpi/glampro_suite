@@ -9,6 +9,7 @@ import { canWrite, resolveTenantStatus } from "../lib/tenant-status.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
 import { logger } from "../lib/logger.js";
 import type { AuthenticatedUser } from "../types/index.js";
+import { outletContext } from "./outlet.js";
 
 /** Realms whose subject is a `User` belonging to a tenant. */
 const TENANT_REALMS = new Set(["web", "pos", "mobile"]);
@@ -162,7 +163,7 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
 
     // Enter the tenant scope for everything downstream. `next()` runs inside
     // `runAsTenant` so the route handlers and their continuations inherit it.
-    runAsTenant(tenant.id, next, user.id);
+    runAsTenant(tenant.id, () => void outletContext(req, res, next), user.id);
   } catch (error) {
     logger.debug("Rejected request during authentication", { error });
     next(error);

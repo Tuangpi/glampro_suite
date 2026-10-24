@@ -22,6 +22,7 @@ import {
 } from "@/lib/auth-storage";
 import { normalisePaginated } from "@/lib/apiUtils";
 import { clearPosIdentity, getPosIdentity } from "@/lib/pos-identity";
+import { getOutletId, selectOutlet } from "@/lib/outlet-storage";
 
 /**
  * Per-request flags the interceptors below set on the axios config.
@@ -55,6 +56,11 @@ const api: AxiosInstance = axios.create({
 });
 
 api.interceptors.request.use((config) => {
+  const outletId = getOutletId();
+  // Auth bootstrap and outlet recovery must work even after an outlet is suspended.
+  if (outletId && !/^\/(auth|outlets)(\/|$)/.test(config.url ?? "")) {
+    config.headers["x-outlet-id"] = outletId;
+  }
   const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -140,6 +146,7 @@ api.interceptors.response.use(
     }
 
     if (status === 401) {
+      selectOutlet("");
       clearPosIdentity();
       const hadToken = Boolean(getAccessToken());
       clearSession();

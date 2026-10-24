@@ -3,7 +3,8 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "../../generated/prisma/client.js";
-import { requireScope } from "./tenant-context.js";
+import { outletPredicate } from "./outlet-policy.js";
+import { currentOutletId, requireScope } from "./tenant-context.js";
 
 const connectionString = `${process.env.DATABASE_URL}`;
 
@@ -26,6 +27,7 @@ const adapter = new PrismaPg({ connectionString });
  * are deliberately absent: they are not tenant-scoped.
  */
 export const TENANT_SCOPED_MODELS = [
+  "Outlet",
   "OwnerInvitation",
   "MessagingSettings",
   "ChannelConsent",
@@ -134,21 +136,44 @@ export function isTenantScoped(model: string): boolean {
  * `findFirst` through the client delegate, which cost the call its return type
  * and added no isolation the merge does not already give.
  */
-function scopeWhere<T>(args: T, tenantId: string): T {
+function scopeWhere<T>(args: T, tenantId: string, model: string, writing = false): T {
   const source = args as { where?: Record<string, unknown> };
-  return { ...source, where: { ...source.where, tenantId } } as T;
+  // Stock restoration and manager availability edits must reach the shared pool
+  // even if an item has since been made unavailable at the selling outlet.
+  const predicate =
+    writing && (model === "Product" || model === "Package") ? undefined : outletPredicate(model);
+  const where = { ...source.where, tenantId };
+  return { ...source, where: predicate ? { ...where, AND: [where, predicate] } : where } as T;
 }
 
 /** Merges the caller's `tenantId` into a single row's create `data`. */
-function scopeCreateData<T>(args: T, tenantId: string): T {
+function scopeCreateData<T>(args: T, tenantId: string, model: string): T {
   const source = args as { data: Record<string, unknown> };
-  return { ...source, data: { ...source.data, tenantId } } as T;
+  return {
+    ...source,
+    data: {
+      ...source.data,
+      tenantId,
+      ...(["Sale", "Customer", "Product", "Package"].includes(model)
+        ? { outletId: currentOutletId() ?? null }
+        : {}),
+    },
+  } as T;
 }
 
 /** Merges the caller's `tenantId` into every row of a `createMany` payload. */
-function scopeCreateManyData<T>(args: T, tenantId: string): T {
+function scopeCreateManyData<T>(args: T, tenantId: string, model: string): T {
   const source = args as { data: Record<string, unknown>[] };
-  return { ...source, data: source.data.map((row) => ({ ...row, tenantId })) } as T;
+  return {
+    ...source,
+    data: source.data.map((row) => ({
+      ...row,
+      tenantId,
+      ...(["Sale", "Customer", "Product", "Package"].includes(model)
+        ? { outletId: currentOutletId() ?? null }
+        : {}),
+    })),
+  } as T;
 }
 
 /**
@@ -171,56 +196,56 @@ const prisma = new PrismaClient({ adapter }).$extends({
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       findUniqueOrThrow({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       findFirst({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       findFirstOrThrow({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       findMany({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       count({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       aggregate({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       groupBy({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       create({ model, args, query }) {
@@ -229,42 +254,42 @@ const prisma = new PrismaClient({ adapter }).$extends({
         if (scope.kind === "platform") return query(args);
         // `tenantId` is written after the caller's own data, so a handler that
         // passes a foreign id cannot put the row in another tenant.
-        return query(scopeCreateData(args, scope.tenantId));
+        return query(scopeCreateData(args, scope.tenantId, model));
       },
 
       createMany({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeCreateManyData(args, scope.tenantId));
+        return query(scopeCreateManyData(args, scope.tenantId, model));
       },
 
       update({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model, true));
       },
 
       updateMany({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model, true));
       },
 
       delete({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
 
       deleteMany({ model, args, query }) {
         if (!isTenantScoped(model)) return query(args);
         const scope = requireScope(model);
         if (scope.kind === "platform") return query(args);
-        return query(scopeWhere(args, scope.tenantId));
+        return query(scopeWhere(args, scope.tenantId, model));
       },
     },
   },

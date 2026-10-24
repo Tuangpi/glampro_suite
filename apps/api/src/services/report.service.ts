@@ -31,6 +31,7 @@ import {
 
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
+import { currentOutletId } from "../lib/tenant-context.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
 import { ownerMetrics } from "./owner-metrics.service.js";
 
@@ -485,7 +486,7 @@ export async function zReport(query: ZReportQuery): Promise<ZReport> {
       select: { totalAmount: true },
     }),
     prisma.customerOutstanding.findMany({
-      where: { sale: { soldAt } },
+      where: { sale: { soldAt, ...(currentOutletId() ? { outletId: currentOutletId() } : {}) } },
       select: { unpaidAmount: true },
     }),
     prisma.saleRefund.findMany({

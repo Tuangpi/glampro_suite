@@ -13,6 +13,7 @@ import { appointmentsRouter } from "./routes/appointments.routes.js";
 import { publicBookingRouter } from "./routes/public-booking.routes.js";
 
 import { authRouter } from "./routes/auth.routes.js";
+import { outletsRouter } from "./routes/outlets.routes.js";
 import { platformAuthRouter } from "./routes/platform-auth.routes.js";
 import { companiesRouter, ownerInvitationRouter } from "./routes/companies.routes.js";
 import { customersRouter } from "./routes/customers.routes.js";
@@ -88,6 +89,7 @@ export function createApp(): Express {
 
   // Feature routes. Each phase mounts its router here.
   app.use(`${API_PREFIX}/auth`, authRouter);
+  app.use(`${API_PREFIX}/outlets`, outletsRouter);
   app.use(`${API_PREFIX}/platform/auth`, platformAuthRouter);
   app.use(`${API_PREFIX}/platform/companies`, companiesRouter);
   app.use(`${API_PREFIX}/owner-invitations`, ownerInvitationRouter);
