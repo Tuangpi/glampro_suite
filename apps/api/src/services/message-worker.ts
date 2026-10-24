@@ -178,7 +178,10 @@ export async function runMessageBatch(
             // Re-read guards after acquiring locks, not just when selecting candidates.
             await assertMessagingAccess(job.kind === "RECEIPT" ? "sales" : "appointments");
             const booking = job.appointmentId
-              ? await tx.appointment.findFirst({ where: { id: job.appointmentId } })
+              ? await tx.appointment.findFirst({
+                  where: { id: job.appointmentId },
+                  include: { outlet: { select: { timeZone: true, locale: true, name: true } } },
+                })
               : null;
             if (
               job.appointmentId &&
@@ -291,11 +294,12 @@ export async function runMessageBatch(
               link = `${origin}/api/public/messages/${token}`;
             }
             const when = booking
-              ? new Intl.DateTimeFormat(tenant.locale, {
-                  timeZone: tenant.timeZone,
+              ? new Intl.DateTimeFormat(booking.outlet?.locale ?? tenant.locale, {
+                  timeZone: booking.outlet?.timeZone ?? tenant.timeZone,
                   dateStyle: "medium",
                   timeStyle: "short",
-                }).format(booking.startsAt)
+                }).format(booking.startsAt) +
+                (booking.outlet ? ` (${booking.outlet.name}, ${booking.outlet.timeZone})` : "")
               : "";
             const title =
               kind === "RECEIPT"

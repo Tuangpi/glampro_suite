@@ -84,6 +84,17 @@ All 45 migrations replay and focused live acceptance passes on disposable
 PostgreSQL. Application rollout is not performed. Detailed policy and migration
 instructions: docs/multi-outlet.md. Unrelated owner-assistant errors remain.
 
+### Branch booking extension — HOURS-01, October 24, 2026
+
+HOURS-01 scope extension approved October 24, 2026: add full branch-aware booking
+and outlet hours with company-hours fallback. This supersedes only the earlier
+branch-calendar exclusion, not other accepted multi-outlet limitations. New branch
+appointments persist a fixed outlet; existing null/company-wide rows retain their
+behavior and are not backfilled. Public booking requires a branch where outlets
+exist. Staff/resources and company shift calendars remain shared. Financial
+formatting and stock policies are unchanged. See docs/outlet-booking-hours.md;
+implementation/verification status is in TASKS.md and PROGRESS.md.
+
 ### Platform authentication — SAAS-02, October 23, 2026
 
 The operator UI now lives in `apps/web/src/platform`, lazy-loaded outside salon

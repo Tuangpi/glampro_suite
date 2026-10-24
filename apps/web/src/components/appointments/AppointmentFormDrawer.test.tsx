@@ -46,6 +46,25 @@ vi.mock("@/hooks/useStaff", () => ({
 import AppointmentFormDrawer from "./AppointmentFormDrawer";
 import { subscribeToToasts, type ToastMessage } from "@/components/ui/toast-store";
 
+it("uses the saved branch timezone for edits instead of the active calendar zone", () => {
+  render(
+    <AppointmentFormDrawer
+      open
+      appointment={{
+        ...SERIES_OCCURRENCE,
+        outletId: "west",
+        outletName: "West",
+        outletTimeZone: "America/Los_Angeles",
+      }}
+      defaultStartsAt={SERIES_OCCURRENCE.startsAt}
+      bookingTimeZone="Asia/Singapore"
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText("Starts at")).toHaveValue("2030-03-06T10:00");
+  expect(screen.getByText(/Outlet: West/)).toHaveTextContent("America/Los_Angeles");
+});
+
 // The drawer's edit path also renders the secure-link buttons, which read the
 // signed-in salon. They are not what this file is about, and stubbing them keeps
 // the form under test rather than an auth provider.

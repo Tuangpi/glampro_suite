@@ -155,8 +155,8 @@ export type ModuleSummary = z.infer<typeof moduleSummarySchema>;
 /** One day's open window. A `null` day means the salon is closed that day. */
 export const dayHoursSchema = z
   .object({
-    open: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:mm, such as 09:00"),
-    close: z.string().regex(/^\d{2}:\d{2}$/, "Use HH:mm, such as 20:00"),
+    open: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm, such as 09:00"),
+    close: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/, "Use HH:mm, such as 20:00"),
   })
   .refine((data) => data.open < data.close, {
     message: "Closing time must be after opening time",

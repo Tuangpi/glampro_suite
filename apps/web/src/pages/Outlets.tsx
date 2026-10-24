@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { OutletSummary } from "@glampro_suite/shared";
 import { get, patch, post } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
+import OutletHoursEditor from "@/components/settings/OutletHoursEditor";
 
 export default function Outlets() {
   const { user, isReadOnly } = useAuth();
@@ -45,6 +46,12 @@ export default function Outlets() {
         {outlets.data?.map((outlet) => (
           <li key={outlet.id} className="rounded-md border border-line-soft p-3">
             <strong>{outlet.name}</strong> — {outlet.slug} — {outlet.status}
+            {canManage && (
+              <OutletHoursEditor
+                key={`${outlet.id}:${JSON.stringify(outlet.operatingHours)}:${outlet.timeZone}`}
+                outlet={outlet}
+              />
+            )}
             {canManage && (
               <button
                 className="ml-4 underline"

@@ -3,6 +3,18 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { toSalonDate } from "@/lib/salon-time";
+vi.mock("@/hooks/useBookingFormatting", async () => {
+  const { createSalonFormatters } = await import("@/lib/utils");
+  return {
+    useBookingFormatting: () => ({
+      ...createSalonFormatters({ timeZone: "Asia/Singapore", locale: "en-SG" }),
+      timeZone: "Asia/Singapore",
+      locale: "en-SG",
+      outletReady: true,
+      outletError: false,
+    }),
+  };
+});
 
 /** Read a UTC instant as salon-local wall clock (Asia/Singapore is the default salon TZ). */
 function salonOf(iso: string): Date {

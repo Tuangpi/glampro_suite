@@ -1,4 +1,11 @@
 import { z } from "zod";
+import { salonOperatingHoursSchema } from "./settings.js";
+
+/** A full-week override. Null on the outlet inherits company hours. */
+export const outletOperatingHoursSchema = salonOperatingHoursSchema
+  .omit({ tenantId: true })
+  .strict();
+export type OutletOperatingHours = z.infer<typeof outletOperatingHoursSchema>;
 
 const outletFields = {
   name: z.string().trim().min(1).max(120),
@@ -11,6 +18,7 @@ const outletFields = {
   status: z.enum(["ACTIVE", "SUSPENDED"]).default("ACTIVE"),
   address: z.string().trim().max(500).nullable().optional(),
   phone: z.string().trim().max(40).nullable().optional(),
+  operatingHours: outletOperatingHoursSchema.nullable().optional(),
   timeZone: z
     .string()
     .max(100)
@@ -53,6 +61,7 @@ export const outletSummarySchema = z.object({
   phone: z.string().nullable(),
   timeZone: z.string(),
   locale: z.string(),
+  operatingHours: outletOperatingHoursSchema.nullable().optional(),
 });
 export const outletAssignmentSchema = z.strictObject({
   kind: z.enum(["PRODUCT", "PACKAGE"]),

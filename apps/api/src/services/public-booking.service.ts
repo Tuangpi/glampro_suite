@@ -1,5 +1,5 @@
 import { prisma } from "../lib/prisma.js";
-import { runAsTenant } from "../lib/tenant-context.js";
+import { runAsTenant, runAtOutlet, currentOutletId } from "../lib/tenant-context.js";
 import { conflict, notFound } from "../lib/http-error.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
 import { salonDayBounds, wallClockAt } from "../lib/wall-clock.js";
@@ -15,6 +15,7 @@ import {
   lockBookingCalendar,
 } from "./appointment.service.js";
 import { type Tx } from "./messaging.service.js";
+import { bookingLocation, BOOKING_DAYS, fitsOperatingHours } from "./booking-hours.service.js";
 
 export type { PublicBookingInput } from "../schemas/public-booking.js";
 
@@ -54,7 +55,7 @@ async function currentNotice(db: Tx) {
 export async function getPublicBookingConfig(slug: string) {
   const tenant = await resolveTenant(slug, prisma);
   return runAsTenant(tenant.id, async () => {
-    const [services, hours, privacyNotice] = await Promise.all([
+    const [services, hours, privacyNotice, outlets] = await Promise.all([
       prisma.service.findMany({
         where: { status: "ACTIVE" },
         select: { id: true, name: true, durationMinutes: true, nonmemberPrice: true },
@@ -62,6 +63,11 @@ export async function getPublicBookingConfig(slug: string) {
       }),
       prisma.tenantOperatingHours.findUnique({ where: { tenantId: tenant.id } }),
       currentNotice(prisma),
+      prisma.outlet.findMany({
+        where: { status: "ACTIVE" },
+        select: { id: true, name: true, timeZone: true, locale: true },
+        orderBy: { name: "asc" },
+      }),
     ]);
     return {
       tenant: {
@@ -82,6 +88,7 @@ export async function getPublicBookingConfig(slug: string) {
       })),
       hours,
       privacyNotice,
+      outlets,
     };
   });
 }
@@ -100,14 +107,14 @@ function localDate(instant: Date, timeZone: string): string {
 
 export async function slotContext(
   db: Tx,
-  tenantId: string,
+  _tenantId: string,
   serviceId: string,
   staffLimit?: number,
 ) {
   const service = await db.service.findFirst({ where: { id: serviceId, status: "ACTIVE" } });
   if (!service) throw notFound("Service not found.", "SERVICE_NOT_FOUND");
   const [hours, candidates] = await Promise.all([
-    db.tenantOperatingHours.findUnique({ where: { tenantId } }),
+    bookingLocation(db, currentOutletId() ?? null),
     db.user.findMany({
       where: {
         disabled: false,
@@ -122,7 +129,14 @@ export async function slotContext(
   ]);
   return {
     service,
-    hours,
+    hours: Object.fromEntries(
+      BOOKING_DAYS.flatMap((day) => [
+        [`${day}Open`, hours.hours[day]?.open ?? null],
+        [`${day}Close`, hours.hours[day]?.close ?? null],
+      ]),
+    ),
+    operatingHours: hours.hours,
+    timeZone: hours.timeZone,
     candidates,
     duration: service.durationMinutes && service.durationMinutes > 0 ? service.durationMinutes : 60,
   };
@@ -134,6 +148,7 @@ export function withinHours(
   timeZone: string,
 ) {
   const end = new Date(start.getTime() + context.duration * 60_000);
+  if (!fitsOperatingHours(context.operatingHours, timeZone, start, end)) return false;
   if (
     start <= new Date() ||
     start.getUTCSeconds() !== 0 ||
@@ -172,26 +187,38 @@ async function availableStaff(
   return null;
 }
 
+async function publicLocation<T>(db: Tx, outletId: string | undefined, work: () => Promise<T>) {
+  if (outletId) {
+    await bookingLocation(db, outletId);
+    return runAtOutlet(outletId, work);
+  }
+  if (await db.outlet.count())
+    throw conflict("Select an active outlet before booking.", "BOOKING_OUTLET_REQUIRED");
+  return work();
+}
+
 export async function getPublicAvailability(slug: string, input: PublicAvailabilityQuery) {
   const query = publicAvailabilitySchema.parse(input);
   const tenant = await resolveTenant(slug, prisma);
-  return runAsTenant(tenant.id, async () => {
-    if (!(await currentNotice(prisma))) return { slots: [] as string[] };
-    const context = await slotContext(prisma, tenant.id, query.serviceId);
-    const bounds = salonDayBounds(query.date, tenant.timeZone);
-    const slots: string[] = [];
-    // Walk real instants: skipped/repeated DST hours retain their correct offsets.
-    for (let cursor = bounds.from.getTime(); cursor < bounds.to.getTime(); cursor += 60_000) {
-      const start = new Date(cursor);
-      if (
-        withinHours(context, start, tenant.timeZone) &&
-        (await availableStaff(prisma, context, start))
-      ) {
-        slots.push(start.toISOString());
+  return runAsTenant(tenant.id, () =>
+    publicLocation(prisma, query.outletId, async () => {
+      if (!(await currentNotice(prisma))) return { slots: [] as string[] };
+      const context = await slotContext(prisma, tenant.id, query.serviceId);
+      const bounds = salonDayBounds(query.date, context.timeZone);
+      const slots: string[] = [];
+      // Walk real instants: skipped/repeated DST hours retain their correct offsets.
+      for (let cursor = bounds.from.getTime(); cursor < bounds.to.getTime(); cursor += 60_000) {
+        const start = new Date(cursor);
+        if (
+          withinHours(context, start, context.timeZone) &&
+          (await availableStaff(prisma, context, start))
+        ) {
+          slots.push(start.toISOString());
+        }
       }
-    }
-    return { slots };
-  });
+      return { slots };
+    }),
+  );
 }
 
 export async function createPublicBooking(slug: string, rawInput: PublicBookingInput) {
@@ -201,81 +228,83 @@ export async function createPublicBooking(slug: string, rawInput: PublicBookingI
     prisma.$transaction(
       async (tx) => {
         await lockBookingCalendar(tx);
-        const currentTenant = await resolveTenant(slug, tx);
-        const notice = await currentNotice(tx);
-        if (!notice || notice.id !== input.noticeId) {
-          throw conflict(
-            "Review the current privacy notice before booking.",
-            "PRIVACY_NOTICE_REQUIRED",
-          );
-        }
-        const context = await slotContext(tx, tenant.id, input.serviceId);
-        const start = new Date(input.startsAt);
-        const staffId = withinHours(context, start, currentTenant.timeZone)
-          ? await availableStaff(tx, context, start)
-          : null;
-        if (!staffId) {
-          throw conflict(
-            "That time is no longer available. Choose another slot.",
-            "BOOKING_SLOT_UNAVAILABLE",
-          );
-        }
+        return publicLocation(tx, input.outletId, async () => {
+          const currentTenant = await resolveTenant(slug, tx);
+          const notice = await currentNotice(tx);
+          if (!notice || notice.id !== input.noticeId) {
+            throw conflict(
+              "Review the current privacy notice before booking.",
+              "PRIVACY_NOTICE_REQUIRED",
+            );
+          }
+          const context = await slotContext(tx, tenant.id, input.serviceId);
+          const start = new Date(input.startsAt);
+          const staffId = withinHours(context, start, context.timeZone)
+            ? await availableStaff(tx, context, start)
+            : null;
+          if (!staffId) {
+            throw conflict(
+              "That time is no longer available. Choose another slot.",
+              "BOOKING_SLOT_UNAVAILABLE",
+            );
+          }
 
-        // Unverified public contact details must not grant access to an existing record.
-        if (
-          input.customerEmail &&
-          (await tx.customer.findFirst({ where: { email: input.customerEmail } }))
-        ) {
-          throw conflict(
-            "Please contact the salon to book with this email address.",
-            "BOOKING_CONTACT_REQUIRED",
-          );
-        }
-        const customer = await tx.customer.create({
-          data: {
-            tenantId: "",
-            name: input.customerName,
-            phone: input.customerPhone,
-            email: input.customerEmail,
-            pdpaConsent: true,
-            consentRevision: 1,
-          },
-        });
-        await tx.customerConsentEvent.create({
-          data: {
-            tenantId: "",
+          // Unverified public contact details must not grant access to an existing record.
+          if (
+            input.customerEmail &&
+            (await tx.customer.findFirst({ where: { email: input.customerEmail } }))
+          ) {
+            throw conflict(
+              "Please contact the salon to book with this email address.",
+              "BOOKING_CONTACT_REQUIRED",
+            );
+          }
+          const customer = await tx.customer.create({
+            data: {
+              tenantId: "",
+              name: input.customerName,
+              phone: input.customerPhone,
+              email: input.customerEmail,
+              pdpaConsent: true,
+              consentRevision: 1,
+            },
+          });
+          await tx.customerConsentEvent.create({
+            data: {
+              tenantId: "",
+              customerId: customer.id,
+              revision: 1,
+              pdpaConsent: true,
+              marketingOptIn: false,
+              noticeId: notice.id,
+              recordedById: "public-booking:self-reported",
+            },
+          });
+          const created = await createAppointmentInTransaction(tx, {
             customerId: customer.id,
-            revision: 1,
-            pdpaConsent: true,
-            marketingOptIn: false,
-            noticeId: notice.id,
-            recordedById: "public-booking:self-reported",
-          },
+            serviceId: input.serviceId,
+            staffId,
+            startsAt: input.startsAt,
+          });
+          await tx.appointment.update({
+            where: { id: created.id },
+            data: {
+              source: "ONLINE",
+              depositAmount:
+                currentTenant.onlineDepositAmount > 0 ? currentTenant.onlineDepositAmount : null,
+              noShowFee: currentTenant.onlineNoShowFee > 0 ? currentTenant.onlineNoShowFee : null,
+            },
+          });
+          return {
+            appointmentId: created.id,
+            depositAmount: currentTenant.onlineDepositAmount,
+            noShowFee: currentTenant.onlineNoShowFee,
+            message:
+              currentTenant.onlineDepositAmount > 0
+                ? "Booking created. Contact the salon to arrange the deposit; no payment was collected online."
+                : "Booking created. No payment was collected online.",
+          };
         });
-        const created = await createAppointmentInTransaction(tx, {
-          customerId: customer.id,
-          serviceId: input.serviceId,
-          staffId,
-          startsAt: input.startsAt,
-        });
-        await tx.appointment.update({
-          where: { id: created.id },
-          data: {
-            source: "ONLINE",
-            depositAmount:
-              currentTenant.onlineDepositAmount > 0 ? currentTenant.onlineDepositAmount : null,
-            noShowFee: currentTenant.onlineNoShowFee > 0 ? currentTenant.onlineNoShowFee : null,
-          },
-        });
-        return {
-          appointmentId: created.id,
-          depositAmount: currentTenant.onlineDepositAmount,
-          noShowFee: currentTenant.onlineNoShowFee,
-          message:
-            currentTenant.onlineDepositAmount > 0
-              ? "Booking created. Contact the salon to arrange the deposit; no payment was collected online."
-              : "Booking created. No payment was collected online.",
-        };
       },
       { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 },
     ),

@@ -9,6 +9,7 @@ interface PublicService {
   price: number | null;
 }
 interface PublicConfig {
+  outlets?: { id: string; name: string; timeZone: string; locale: string }[];
   tenant: { name: string; slug: string; timeZone: string; locale: string };
   depositAmount: number;
   noShowFee: number;
@@ -25,6 +26,9 @@ export default function PublicBooking() {
 function Booking({ slug }: { slug: string | undefined }) {
   const [config, setConfig] = useState<PublicConfig | null>(null);
   const [serviceId, setServiceId] = useState("");
+  const [outletId, setOutletId] = useState("");
+  const branchParams = outletId ? { outletId } : {};
+  const location = config?.outlets?.find((outlet) => outlet.id === outletId) ?? config?.tenant;
   const [date, setDate] = useState("");
   const [selectedSlot, setSelectedSlot] = useState("");
   const [name, setName] = useState("");
@@ -41,7 +45,7 @@ function Booking({ slug }: { slug: string | undefined }) {
   }>({ key: "", slots: [], loading: false, error: "" });
   const [booked, setBooked] = useState(false);
   const submitting = useRef(false);
-  const slotKey = `${serviceId}:${date}`;
+  const slotKey = `${outletId}:${serviceId}:${date}`;
   const currentSlots = availability.key === slotKey ? availability.slots : [];
 
   useEffect(() => {
@@ -61,14 +65,16 @@ function Booking({ slug }: { slug: string | undefined }) {
   }, [slug]);
 
   useEffect(() => {
-    if (!slug || !serviceId || !date) return;
+    if (!slug || !serviceId || !date || (config?.outlets?.length && !outletId)) return;
     let active = true;
     api
-      .get(`/public/booking/${slug}/availability`, { params: { serviceId, date } })
+      .get(`/public/booking/${slug}/availability`, {
+        params: { serviceId, date, ...(outletId ? { outletId } : {}) },
+      })
       .then((r) => {
         if (active)
           setAvailability({
-            key: `${serviceId}:${date}`,
+            key: `${outletId}:${serviceId}:${date}`,
             slots: ((r.data?.data ?? r.data) as { slots?: string[] }).slots ?? [],
             loading: false,
             error: "",
@@ -77,7 +83,7 @@ function Booking({ slug }: { slug: string | undefined }) {
       .catch(() => {
         if (active)
           setAvailability({
-            key: `${serviceId}:${date}`,
+            key: `${outletId}:${serviceId}:${date}`,
             slots: [],
             loading: false,
             error: "Available times could not be loaded. Change the date to try again.",
@@ -86,7 +92,7 @@ function Booking({ slug }: { slug: string | undefined }) {
     return () => {
       active = false;
     };
-  }, [slug, serviceId, date]);
+  }, [slug, serviceId, date, outletId, config?.outlets?.length]);
 
   const book = async () => {
     if (
@@ -104,6 +110,7 @@ function Booking({ slug }: { slug: string | undefined }) {
     setMessage("");
     try {
       const res = await api.post(`/public/booking/${slug}`, {
+        ...branchParams,
         serviceId,
         startsAt: selectedSlot,
         customerName: name,
@@ -142,7 +149,7 @@ function Booking({ slug }: { slug: string | undefined }) {
     setDate(day);
     setSelectedSlot("");
     setAvailability({
-      key: `${service}:${day}`,
+      key: `${outletId}:${service}:${day}`,
       slots: [],
       loading: Boolean(service && day),
       error: "",
@@ -152,7 +159,30 @@ function Booking({ slug }: { slug: string | undefined }) {
   return (
     <div className="max-w-2xl mx-auto p-6 space-y-4">
       <h1 className="text-2xl font-bold">{config.tenant.name} — Book online</h1>
-      <p>All appointment times are shown in {config.tenant.timeZone}.</p>
+      <p>All appointment times are shown in {location?.timeZone}.</p>
+      {Boolean(config.outlets?.length) && (
+        <label className="block">
+          Outlet
+          <select
+            aria-label="Booking outlet"
+            value={outletId}
+            disabled={loading || booked}
+            onChange={(event) => {
+              setOutletId(event.target.value);
+              setSelectedSlot("");
+              setAvailability({ key: "", slots: [], loading: false, error: "" });
+            }}
+            className="border p-2 w-full"
+          >
+            <option value="">Select outlet</option>
+            {config.outlets?.map((outlet) => (
+              <option key={outlet.id} value={outlet.id}>
+                {outlet.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       {config.depositAmount > 0 && (
         <p>
           Deposit required: {money(config.depositAmount)}. Contact the salon to arrange payment.
@@ -206,7 +236,7 @@ function Booking({ slug }: { slug: string | undefined }) {
           {currentSlots.map((s) => (
             <option key={s} value={s}>
               {new Intl.DateTimeFormat(config.tenant.locale, {
-                timeZone: config.tenant.timeZone,
+                timeZone: location?.timeZone,
                 dateStyle: "medium",
                 timeStyle: "short",
               }).format(new Date(s))}

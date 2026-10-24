@@ -55,6 +55,79 @@ beforeEach(() => {
 });
 
 describe("public booking", () => {
+  it("submits the selected outlet with the booking", async () => {
+    const user = userEvent.setup();
+    mocks.get.mockImplementation(async (path: string) => ({
+      data: {
+        data: path.endsWith("availability")
+          ? { slots: [slot] }
+          : {
+              ...config,
+              outlets: [{ id: "east", name: "East", timeZone: "Asia/Singapore", locale: "en-SG" }],
+            },
+      },
+    }));
+    mount();
+    await screen.findByLabelText("Booking outlet");
+    await user.selectOptions(screen.getByLabelText("Booking outlet"), "east");
+    await user.selectOptions(screen.getByLabelText("Service"), "facial");
+    await user.type(screen.getByLabelText("Date"), "2099-06-15");
+    await waitFor(() =>
+      expect(screen.getByLabelText("Time slot").querySelectorAll("option")).toHaveLength(2),
+    );
+    await user.selectOptions(screen.getByLabelText("Time slot"), slot);
+    await user.type(screen.getByLabelText("Name"), "Visitor");
+    await user.type(screen.getByLabelText("Phone"), "+6591234567");
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Book" }));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith(
+        "/public/booking/salon",
+        expect.objectContaining({ outletId: "east", startsAt: slot }),
+      ),
+    );
+  });
+  it("requires an outlet, includes it in requests and clears stale slots when it changes", async () => {
+    const user = userEvent.setup();
+    mocks.get.mockImplementation(async (path: string) => ({
+      data: {
+        data: path.endsWith("availability")
+          ? { slots: [slot] }
+          : {
+              ...config,
+              outlets: [
+                { id: "east", name: "East", timeZone: "Asia/Singapore", locale: "en-SG" },
+                { id: "west", name: "West", timeZone: "America/Los_Angeles", locale: "en-US" },
+              ],
+            },
+      },
+    }));
+    mount();
+    await screen.findByLabelText("Booking outlet");
+    await user.selectOptions(screen.getByLabelText("Service"), "facial");
+    await user.type(screen.getByLabelText("Date"), "2099-06-15");
+    expect(mocks.get).not.toHaveBeenCalledWith(
+      "/public/booking/salon/availability",
+      expect.anything(),
+    );
+    await user.selectOptions(screen.getByLabelText("Booking outlet"), "east");
+    await waitFor(() =>
+      expect(mocks.get).toHaveBeenCalledWith("/public/booking/salon/availability", {
+        params: { serviceId: "facial", date: "2099-06-15", outletId: "east" },
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Time slot").querySelectorAll("option")).toHaveLength(2),
+    );
+    await user.selectOptions(screen.getByLabelText("Time slot"), slot);
+    mocks.get.mockImplementation(() => new Promise(() => {}));
+    await user.selectOptions(screen.getByLabelText("Booking outlet"), "west");
+    expect(screen.getByLabelText("Time slot")).toHaveValue("");
+    expect(
+      screen.getByText(/All appointment times are shown in America\/Los_Angeles/),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Book" })).toBeDisabled();
+  });
   it("shows actual consent wording, salon timezone and manual payment terms", async () => {
     mount();
     await screen.findByText(config.privacyNotice.dataConsentText);

@@ -10,7 +10,11 @@ process.env.JWT_SECRET ??= "public-booking-test-secret";
 process.env.NODE_ENV = "test";
 const { createApp } = await import("../app.js");
 const { prisma } = await import("../lib/prisma.js");
-const { runAsPlatform } = await import("../lib/tenant-context.js");
+const { runAsPlatform, runAsTenant, runAtOutlet } = await import("../lib/tenant-context.js");
+const { createAppointment, updateAppointment, listAppointments, cancelAppointmentSeries } =
+  await import("../services/appointment.service.js");
+const { updateOutlet } = await import("../services/outlet.service.js");
+const { Prisma } = await import("../../generated/prisma/client.js");
 const { publicAvailabilitySchema, publicBookingSchema } =
   await import("../schemas/public-booking.js");
 
@@ -174,6 +178,171 @@ describe(
         assert.equal(event.noticeId, noticeId);
         assert.equal(event.recordedById, "public-booking:self-reported");
       });
+    });
+    it("requires a tenant-owned active outlet and enforces overrides on listing and submission", async () => {
+      const closed = {
+        sunday: null,
+        monday: null,
+        tuesday: null,
+        wednesday: null,
+        thursday: null,
+        friday: null,
+        saturday: null,
+      };
+      const outlet = await runAsPlatform(() =>
+        prisma.outlet.create({
+          data: {
+            tenantId,
+            name: "East",
+            slug: "east",
+            operatingHours: { ...closed, monday: { open: "12:00", close: "18:00" } },
+          },
+        }),
+      );
+      assert.equal(
+        (await request(`/availability?serviceId=${serviceId}&date=${date}`)).status,
+        409,
+      );
+      assert.equal((await request("", body())).status, 409);
+      assert.equal((await request("", { ...body(), outletId: "foreign-outlet" })).status, 404);
+      const config = (await (await request()).json()).data;
+      assert.equal(config.outlets[0].id, outlet.id);
+      const path = `/availability?serviceId=${serviceId}&date=${date}&outletId=${outlet.id}`;
+      assert.equal((await (await request(path)).json()).data.slots.includes(startsAt), false);
+      assert.equal((await request("", { ...body(), outletId: outlet.id })).status, 409);
+      await runAsTenant(tenantId, () => updateOutlet(outlet.id, { operatingHours: null }));
+      assert.ok((await (await request(path)).json()).data.slots.includes(startsAt));
+      const response = await request("", { ...body(), outletId: outlet.id });
+      assert.equal(response.status, 201, await response.clone().text());
+      const id = (await response.json()).data.appointmentId;
+      assert.equal(
+        (await runAsPlatform(() => prisma.appointment.findUniqueOrThrow({ where: { id } })))
+          .outletId,
+        outlet.id,
+      );
+      await runAsTenant(tenantId, () => updateOutlet(outlet.id, { status: "SUSPENDED" }));
+      assert.equal((await request("", { ...body(), outletId: outlet.id })).status, 409);
+    });
+    it("retains branch identity for manual edits/series, shares conflicts and preserves legacy bookings", async () => {
+      const [east, west] = await runAsPlatform(async () =>
+        Promise.all(
+          ["east", "west"].map((name) =>
+            prisma.outlet.create({ data: { tenantId, name, slug: name } }),
+          ),
+        ),
+      );
+      const atOutlet = <T>(id: string, work: () => Promise<T>) =>
+        runAsTenant(tenantId, () => runAtOutlet(id, work));
+      const manual = { serviceId, staffId, startsAt };
+      const branch = await atOutlet(east.id, () =>
+        createAppointment({ ...manual, repeat: { intervalWeeks: 1, occurrences: 2 } }),
+      );
+      assert.equal(branch.appointment.outletId, east.id);
+      assert.equal(branch.series?.created, 2);
+      await assert.rejects(
+        atOutlet(west.id, () => createAppointment(manual)),
+        { code: "APPOINTMENT_CLASH" },
+      );
+      await assert.rejects(
+        atOutlet(west.id, () =>
+          updateAppointment(branch.appointment.id, { startsAt: `${date}T03:00:00Z` }),
+        ),
+        { code: "APPOINTMENT_NOT_FOUND" },
+      );
+      await assert.rejects(
+        atOutlet(west.id, () => cancelAppointmentSeries(branch.series!.id)),
+        { code: "APPOINTMENT_SERIES_NOT_FOUND" },
+      );
+      await assert.rejects(
+        runAsTenant(tenantId, () =>
+          updateAppointment(branch.appointment.id, { startsAt: `${date}T00:00:00Z` }),
+        ),
+        { code: "OUTLET_CLOSED" },
+      );
+      const moved = await runAsTenant(tenantId, () =>
+        updateAppointment(branch.appointment.id, { startsAt: `${date}T03:00:00Z` }),
+      );
+      assert.equal(moved.outletId, east.id);
+      await runAsTenant(tenantId, () =>
+        updateOutlet(east.id, {
+          operatingHours: {
+            sunday: null,
+            monday: null,
+            tuesday: null,
+            wednesday: null,
+            thursday: null,
+            friday: null,
+            saturday: null,
+          },
+        }),
+      );
+      await runAsTenant(tenantId, () =>
+        updateAppointment(branch.appointment.id, {
+          comment: "Hours changed; keep existing booking.",
+        }),
+      );
+      await assert.rejects(
+        atOutlet(east.id, () => createAppointment({ serviceId, startsAt: `${date}T06:00:00Z` })),
+        { code: "OUTLET_CLOSED" },
+      );
+      await runAsTenant(tenantId, () =>
+        updateAppointment(branch.appointment.id, { status: "CANCELLED" }),
+      );
+      await assert.rejects(
+        runAsTenant(tenantId, () =>
+          updateAppointment(branch.appointment.id, { status: "SCHEDULED" }),
+        ),
+        { code: "OUTLET_CLOSED" },
+      );
+      await runAsTenant(tenantId, () => updateOutlet(east.id, { operatingHours: null }));
+      // No outlet on old/company bookings: editing at a branch must not reattribute them.
+      const legacy = await runAsTenant(tenantId, () =>
+        createAppointment({ serviceId, startsAt: `${date}T00:00:00Z` }),
+      );
+      const edited = await atOutlet(west.id, () =>
+        updateAppointment(legacy.appointment.id, { startsAt: `${date}T00:30:00Z` }),
+      );
+      assert.equal(edited.outletId, null);
+      const visible = await atOutlet(west.id, () =>
+        listAppointments({ page: 1, pageSize: 100, search: "Facial" }),
+      );
+      assert.ok(visible.data.some((row) => row.id === legacy.appointment.id));
+      assert.equal(
+        visible.data.some((row) => row.id === branch.appointment.id),
+        false,
+      );
+    });
+    it("uses outlet timezone even when inherited company hours and closes an explicit empty week", async () => {
+      const outlet = await runAsPlatform(() =>
+        prisma.outlet.create({
+          data: { tenantId, name: "West", slug: "west", timeZone: "America/Los_Angeles" },
+        }),
+      );
+      const path = `/availability?serviceId=${serviceId}&date=${date}&outletId=${outlet.id}`;
+      const slots = (await (await request(path)).json()).data.slots;
+      assert.ok(slots.includes(`${date}T16:00:00.000Z`));
+      assert.equal(slots.includes(startsAt), false);
+      await runAsPlatform(() =>
+        prisma.outlet.update({
+          where: { id: outlet.id },
+          data: {
+            operatingHours: {
+              sunday: null,
+              monday: null,
+              tuesday: null,
+              wednesday: null,
+              thursday: null,
+              friday: null,
+              saturday: null,
+            },
+          },
+        }),
+      );
+      assert.deepEqual((await (await request(path)).json()).data.slots, []);
+      await runAsPlatform(() =>
+        prisma.outlet.update({ where: { id: outlet.id }, data: { operatingHours: Prisma.DbNull } }),
+      );
+      assert.ok((await (await request(path)).json()).data.slots.length > 0);
     });
     it("refuses stale concurrent submissions without orphan customers or consent", async () => {
       const responses = await Promise.all([request("", body()), request("", body())]);

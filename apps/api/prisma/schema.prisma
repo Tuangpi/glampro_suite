@@ -507,6 +507,8 @@ model Outlet {
   timeZone    String   @default("Asia/Singapore") @map("time_zone")
   /// Branch locale; callers may copy the tenant setting on creation.
   locale      String   @default("en-SG")
+  /// Null inherits company hours; an explicit full-week schedule can close every day.
+  operatingHours Json? @map("operating_hours")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -515,6 +517,7 @@ model Outlet {
   packages    Package[]
   sales       Sale[]
   products    Product[]
+  appointments Appointment[]
 
   @@unique([tenantId, id])
   @@unique([tenantId, slug])
@@ -1354,6 +1357,9 @@ model Appointment {
   customerConfirmedAt DateTime?
   id          String            @id @default(cuid())
   tenantId    String
+  /// Null preserves legacy/company-wide bookings. Never inferred again on edits.
+  outletId    String?
+  outlet      Outlet? @relation(fields: [tenantId, outletId], references: [tenantId, id], onDelete: Restrict, onUpdate: Restrict)
   customerId  String?
   /// The **primary** performer: the one on the first service line. The truth for
   /// a multi-service booking is `AppointmentLine.staffId`, one performer per
@@ -1401,6 +1407,7 @@ model Appointment {
   treatmentRecords   TreatmentRecord[]
 
   @@index([tenantId, startsAt])
+  @@index([tenantId, outletId, startsAt])
   @@index([staffId, startsAt])
   @@index([seriesId, seriesIndex])
   @@map("appointments")

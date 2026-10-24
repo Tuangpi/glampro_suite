@@ -174,6 +174,7 @@ it("walks real instants across DST and preserves the booking fallback duration",
   mock.timers.reset();
   mock.timers.enable({ apis: ["Date"], now: new Date("2026-10-31T16:00:00Z") });
   replace(prisma.tenant, "findUnique", async () => ({ timeZone: "America/New_York" }));
+  replace(prisma.tenant, "findUniqueOrThrow", async () => ({ timeZone: "America/New_York" }));
   replace(prisma.service, "findFirst", async () => ({ ...service, durationMinutes: null }));
   replace(prisma.tenantOperatingHours, "findUnique", async () => ({
     sundayOpen: "01:00",

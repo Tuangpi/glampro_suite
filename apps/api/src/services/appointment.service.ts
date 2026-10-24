@@ -66,6 +66,8 @@ import { salonTimeZone } from "../lib/salon-clock.js";
 import { addWeeksInZone } from "../lib/wall-clock.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertStaffAvailable } from "./staff-availability.service.js";
+import { currentOutletId } from "../lib/tenant-context.js";
+import { assertOutletBookingHours, bookingLocation } from "./booking-hours.service.js";
 import {
   lockBookingCalendar,
   queueAppointmentMessages,
@@ -82,6 +84,8 @@ export { lockBookingCalendar } from "./messaging.service.js";
  */
 const APPOINTMENT_SELECT = {
   id: true,
+  outletId: true,
+  outlet: { select: { name: true, timeZone: true } },
   customerId: true,
   staffId: true,
   serviceId: true,
@@ -120,7 +124,15 @@ const APPOINTMENT_SELECT = {
 } as const;
 
 function findRow(id: string) {
-  return prisma.appointment.findFirst({ where: { id }, select: APPOINTMENT_SELECT });
+  return prisma.appointment.findFirst({
+    where: {
+      id,
+      ...(currentOutletId()
+        ? { AND: [{ OR: [{ outletId: currentOutletId() }, { outletId: null }] }] }
+        : {}),
+    },
+    select: APPOINTMENT_SELECT,
+  });
 }
 
 type AppointmentRow = NonNullable<Awaited<ReturnType<typeof findRow>>>;
@@ -147,6 +159,9 @@ function toSummary(row: AppointmentRow): AppointmentSummary {
 
   return appointmentSummarySchema.parse({
     id: row.id,
+    outletId: row.outletId,
+    outletName: row.outlet?.name ?? null,
+    outletTimeZone: row.outlet?.timeZone ?? null,
     startsAt: row.startsAt.toISOString(),
     endsAt: row.endsAt.toISOString(),
     status: row.status,
@@ -668,6 +683,9 @@ export async function listAppointments(
   const { page, pageSize, skip, take } = parsePagination(query);
 
   const where = {
+    ...(currentOutletId()
+      ? { AND: [{ OR: [{ outletId: currentOutletId() }, { outletId: null }] }] }
+      : {}),
     ...(query.from || query.to
       ? {
           ...(query.overlap === "true"
@@ -724,6 +742,7 @@ export interface CreatedAppointment {
 
 /** Everything one occurrence needs, before it is multiplied into a series. */
 interface BookingPlan {
+  outletId: string | null;
   customerId: string | null;
   status: (typeof APPOINTMENT_STATUSES)[number];
   comment: string | null;
@@ -747,6 +766,7 @@ async function writeBooking(
     data: {
       tenantId: "",
       customerId: plan.customerId,
+      outletId: plan.outletId,
       staffId: primary.staffId,
       serviceId: primary.serviceId,
       startsAt: primary.startsAt,
@@ -800,7 +820,8 @@ function isSkippableOccurrence(error: unknown): error is HttpError {
     error.statusCode === 409 &&
     (error.code === "APPOINTMENT_CLASH" ||
       error.code === "STAFF_UNAVAILABLE" ||
-      error.code === "RESOURCE_UNAVAILABLE")
+      error.code === "RESOURCE_UNAVAILABLE" ||
+      error.code === "OUTLET_CLOSED")
   );
 }
 
@@ -863,6 +884,7 @@ export async function createAppointmentInTransaction(
   if (input.customerId) await assertCustomerExists(tx, input.customerId);
 
   const plan: BookingPlan = {
+    outletId: currentOutletId() ?? null,
     customerId: input.customerId ?? null,
     status,
     comment: input.comment ?? null,
@@ -872,9 +894,18 @@ export async function createAppointmentInTransaction(
   // A row created already cancelled holds no slot, so neither it nor its repeats
   // are availability- or clash-checked (ADR 0014 §3, as PATCH treats it).
   const holds = status !== "CANCELLED";
+  const reserveAtOutlet = async (plannedLines: PlannedLine[]) => {
+    await assertOutletBookingHours(
+      tx,
+      plan.outletId,
+      plannedLines[0]!.startsAt,
+      plannedLines[plannedLines.length - 1]!.endsAt,
+    );
+    return reserve(tx, plannedLines);
+  };
 
   if (!input.repeat) {
-    const booked = holds ? await reserve(tx, lines) : lines;
+    const booked = holds ? await reserveAtOutlet(lines) : lines;
     const id = await writeBooking(tx, { ...plan, lines: booked });
     return { id, series: null };
   }
@@ -882,10 +913,12 @@ export async function createAppointmentInTransaction(
   // The anchor is the booking the desk asked for, so a busy time — or a service
   // whose rooms are all taken — is refused as it always was rather than quietly
   // producing a series with nothing in it.
-  const anchorLines = holds ? await reserve(tx, lines) : lines;
+  const anchorLines = holds ? await reserveAtOutlet(lines) : lines;
 
   const { intervalWeeks, occurrences } = input.repeat;
-  const zone = await salonTimeZone(tx);
+  const zone = plan.outletId
+    ? (await bookingLocation(tx, plan.outletId)).timeZone
+    : await salonTimeZone(tx);
   const skipped: AppointmentSeriesReport["skipped"] = [];
   const planned: { index: number; lines: PlannedLine[] }[] = [{ index: 0, lines: anchorLines }];
 
@@ -903,7 +936,7 @@ export async function createAppointmentInTransaction(
     }
 
     try {
-      planned.push({ index, lines: await reserve(tx, occurrenceLines) });
+      planned.push({ index, lines: await reserveAtOutlet(occurrenceLines) });
     } catch (error) {
       // One busy fortnight is not a reason to throw away the other bookings. Any
       // other refusal — an ineligible performer, a dead service — is a real error
@@ -971,6 +1004,8 @@ async function updateAppointmentInTransaction(
   await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${id} AND "tenantId" = ${tenantId()} FOR UPDATE`;
   const existing = await tx.appointment.findFirst({ where: { id }, select: APPOINTMENT_SELECT });
   if (!existing) throw notFound("That appointment does not exist.", "APPOINTMENT_NOT_FOUND");
+  if (currentOutletId() && existing.outletId && currentOutletId() !== existing.outletId)
+    throw notFound("That appointment does not exist at this outlet.", "APPOINTMENT_NOT_FOUND");
 
   const customerId = input.customerId === undefined ? existing.customerId : input.customerId;
   if (customerId) await assertCustomerExists(tx, customerId);
@@ -1049,6 +1084,13 @@ async function updateAppointmentInTransaction(
   // The chain as it will be written. Re-picking a resource can move a line from
   // Room 1 to Room 2, which is exactly why the rewrite below uses this rather
   // than the freshly planned chain.
+  if (
+    mustCheck &&
+    (linesChanged ||
+      startsAt.getTime() !== existing.startsAt.getTime() ||
+      (existing.status === "CANCELLED" && input.status !== undefined))
+  )
+    await assertOutletBookingHours(tx, existing.outletId, startsAt, endsAt);
   const booked = mustCheck ? await reserve(tx, lines, id) : lines;
   // A room that changed hands is a line that changed, even when its service, its
   // performer and its window did not — so the rewrite has to happen then too.
@@ -1135,7 +1177,12 @@ async function cancelAppointmentSeriesInTransaction(
   seriesId: string,
 ): Promise<{ cancelled: number }> {
   const series = await tx.appointmentSeries.findFirst({
-    where: { id: seriesId },
+    where: {
+      id: seriesId,
+      ...(currentOutletId()
+        ? { appointments: { some: { OR: [{ outletId: currentOutletId() }, { outletId: null }] } } }
+        : {}),
+    },
     select: { id: true },
   });
   if (!series) {

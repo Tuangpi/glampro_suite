@@ -153,6 +153,7 @@ function toSalonInstant(value: string, timeZone: string): Date | null {
 }
 
 export interface AppointmentFormDrawerProps {
+  bookingTimeZone?: string;
   open: boolean;
   /** `null` creates; a booking edits. */
   appointment: AppointmentDetail | null;
@@ -162,6 +163,7 @@ export interface AppointmentFormDrawerProps {
 }
 
 export default function AppointmentFormDrawer({
+  bookingTimeZone,
   open,
   appointment,
   defaultStartsAt,
@@ -170,7 +172,16 @@ export default function AppointmentFormDrawer({
   // Seeded once at mount; the page keys this component on record + open state,
   // so a cancelled edit cannot leak into the next one without an effect that
   // would render the form twice on every open.
-  const { timeZone, formatDateTime } = useSalonFormatting();
+  const formatting = useSalonFormatting();
+  const timeZone = appointment
+    ? (appointment.outletTimeZone ?? formatting.timeZone)
+    : (bookingTimeZone ?? formatting.timeZone);
+  const formatDateTime = (value: string) =>
+    new Intl.DateTimeFormat(formatting.locale, {
+      timeZone,
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(new Date(value));
 
   // Seeded once at mount; the page keys this component on record + open state,
   // so a cancelled edit cannot leak into the next one without an effect that
@@ -456,6 +467,13 @@ export default function AppointmentFormDrawer({
         noValidate
         className="flex flex-col gap-4"
       >
+        <p>
+          Outlet:{" "}
+          {appointment
+            ? (appointment.outletName ?? "Company-wide (legacy)")
+            : "Current top-bar outlet, or company-wide if none selected"}
+          . Times use {timeZone}. Existing bookings keep their outlet when edited.
+        </p>
         {formError ? (
           <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
             {formError}

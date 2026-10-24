@@ -26,6 +26,7 @@ import type {
 import { notFound, badRequest } from "../lib/http-error.js";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
+import { lockBookingCalendar } from "./messaging.service.js";
 
 /**
  * The caller's tenant id, or an exception.
@@ -253,19 +254,21 @@ export async function updateSalonOperatingHours(
     data[`${day}Close`] = { set: value?.close ?? null };
   }
 
-  await prisma.tenantOperatingHours.upsert({
-    where: { tenantId },
-    update: data,
-    create: {
-      tenantId,
-      ...Object.fromEntries(
-        days.flatMap((day) => [
-          [`${day}Open`, input[day]?.open ?? null],
-          [`${day}Close`, input[day]?.close ?? null],
-        ]),
-      ),
-    },
+  await prisma.$transaction(async (tx) => {
+    await lockBookingCalendar(tx);
+    await tx.tenantOperatingHours.upsert({
+      where: { tenantId },
+      update: data,
+      create: {
+        tenantId,
+        ...Object.fromEntries(
+          days.flatMap((day) => [
+            [`${day}Open`, input[day]?.open ?? null],
+            [`${day}Close`, input[day]?.close ?? null],
+          ]),
+        ),
+      },
+    });
   });
-
   return getSalonOperatingHours();
 }

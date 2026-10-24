@@ -36,7 +36,7 @@ import {
   OPEN_APPOINTMENT_STATUSES,
 } from "@/constants/appointments";
 import { useAuth } from "@/contexts/AuthContext";
-import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
+import { useBookingFormatting } from "@/hooks/useBookingFormatting";
 import {
   CALENDAR_PAGE_SIZE,
   useAppointmentList,
@@ -138,7 +138,7 @@ function bookingStart(day: Date, timeZone: string): string {
 
 export default function Appointments() {
   const { isReadOnly } = useAuth();
-  const { formatDate, formatTime, timeZone } = useSalonFormatting();
+  const { formatDate, formatTime, timeZone, outletReady, outletError } = useBookingFormatting();
 
   const [day, setDay] = useState(() => new Date());
   const [status, setStatus] = useState("");
@@ -286,6 +286,7 @@ export default function Appointments() {
         ),
     },
     { key: "service", header: "Service", cell: (row) => row.serviceName ?? "—" },
+    { key: "outlet", header: "Outlet", cell: (row) => row.outletName ?? "Company-wide" },
     { key: "staff", header: "Performer", cell: (row) => row.staffName ?? "Unassigned" },
     {
       key: "status",
@@ -329,6 +330,15 @@ export default function Appointments() {
       ),
     },
   ];
+
+  if (!outletReady)
+    return (
+      <p role={outletError ? "alert" : "status"}>
+        {outletError
+          ? "Outlet preferences could not be loaded. Reload or select another outlet."
+          : "Loading outlet preferences…"}
+      </p>
+    );
 
   return (
     <div className="flex flex-col gap-6">
@@ -569,6 +579,7 @@ export default function Appointments() {
         open={drawerOpen}
         appointment={editing}
         defaultStartsAt={bookingStart(day, timeZone)}
+        bookingTimeZone={timeZone}
         onClose={() => setDrawerOpen(false)}
       />
     </div>

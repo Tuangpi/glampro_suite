@@ -2,11 +2,12 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **PRINT-01**, thermal receipt
-  layouts and local preview verification. Web 697/697; build/typecheck/lint pass.
-  Physical printer/driver validation remains separate. Recommended next local work:
-  assess per-outlet hours as an extension to accepted TK2610-0007; not started.
-  VERIFY-01 API/shared and MAINT-01 audit results below are historical, not rerun here.
+- Current task: **None**. Most recently completed: **HOURS-01**, approved branch-aware
+  bookings/hours with company-hours fallback and preserved legacy appointments.
+  Full API 581 passed / 0 failed / 18 skips; web 704/704; shared 181/181.
+  Build/typecheck/lint/format pass; all 48 migrations replayed on disposable PostgreSQL.
+  Next: authorized rollout/browser verification when ready; no further local task
+  selected. Physical receipt/driver validation remains separate.
 - **OA-07 remains BLOCKED** on operational inputs, not acceptance. Outcome/local
   verification and synthetic recovery complete. All acceptance is user-confirmed;
   do not request again. Target/provider evidence and specific retention/security
@@ -15,9 +16,8 @@
   **TK2610-0028** multi-outlet disposable acceptance verified October 24.
   Company roles apply at every
   outlet; customers/credit/families and stock quantities remain shared tenant-wide.
-- Latest checks: 47 migrations replay; full API 576 passed / 0 failed / 18 skips;
-  web 693/693, shared 179/179, fake-provider HTTP 1/1, workspace build/lint pass.
-  Synthetic backup/restore verified; this is not target-data recovery evidence.
+- Earlier VERIFY-01: fake-provider HTTP and synthetic backup/restore verified;
+  these are historical, not target-data recovery evidence or newly rerun here.
 - Earlier outlet/assistant failures are superseded by the full isolated API pass.
   Application prepaid/treatment schema drift remains a separate rollout concern.
 - Application database/accounts unchanged; no deployment, commit or push.
@@ -25,6 +25,33 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — HOURS-01 branch booking and hours complete locally
+
+- Inspected company-hours service, outlet contracts/routes/UI, public-booking
+  availability, appointment models/service and saved architecture decisions.
+- User approved full enforcement after the previous branch-calendar exclusion was
+  explained. Stored appointment outlet is fixed at creation (including series);
+  null/legacy rows remain company-wide. Staff/resource conflicts and shifts stay shared.
+- Added outlet full-week hours/reset UI/API, strict valid clock values, tenant-bound
+  nullable appointment FK/index, public outlet selection and effective local hours,
+  create/reschedule/reactivation checks, calendar/editor branch clock and message
+  branch identity/time. Receipts/reports keep company formatting. Existing hours edits
+  do not move bookings; comment/customer/status completion/cancellation stay possible.
+- Files: shared outlet/settings/appointment schemas; API schema/migration,
+  booking-hours/outlet/appointment/public-booking/settings/quiet-day/message-worker;
+  web outlet editor, public booking, calendar/form and booking-formatting hook;
+  regression tests; PROJECT.md and docs/outlet-booking-hours.md.
+- Verified 48 migrations replayed on fresh disposable PostgreSQL 18 port 55446;
+  full sequential API 581 passed / 0 failed / 18 opt-in skips; web 704/704 across
+  89 files; shared 181/181. Workspace build/typecheck/lint/format and diff checks pass.
+  Initial API run exposed a DST mock returning inconsistent tenant zones; fixture
+  corrected without weakening assertions, then full suite rerun successfully.
+- Disposable cluster stopped; application database/accounts/providers untouched.
+  No dependencies, deployment, commit or push. Logs: /tmp/glampro-hours01-api.log,
+  /tmp/hours01-{web,shared,build,types,lint-final,format-check}.log.
+- Next: authorized application migration and browser branch-booking walkthrough;
+  hardware receipts and OA-07 operational evidence remain separate. No next task started.
 
 ## October 24, 2026 — PRINT-01 thermal receipt layouts complete locally
 

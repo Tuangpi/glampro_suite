@@ -24,6 +24,34 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### HOURS-01 — Assess and extend outlet operating hours
+
+- Status: DONE — October 24, 2026, full enforcement implemented and verified locally.
+- Expected result: Extend accepted company-hours behavior without silently
+  introducing branch calendars excluded by TK2610-0028.
+- Initial assessment: Hours and booking were company-wide; accepted TK2610-0028
+  excluded branch calendars. User explicitly approved full enforcement after
+  this boundary was explained; no prior acceptance was reopened.
+- Completion check: Shared/API/UI validation, tenant/role safety,
+  inheritance/reset behavior and focused tests; full booking enforcement additionally
+  needs branch selection, availability, rescheduling/series and legacy-booking tests.
+- Dependencies: PRINT-01 complete; preserve TK2610-0007/TK2610-0028 acceptance.
+- Approved decision: Full branch-aware appointments/public booking, persisted outlet
+  attribution, company-hours fallback and unchanged legacy company-wide bookings.
+  Staff/resource conflicts remain company-wide; a person cannot work at two outlets
+  simultaneously. Outlet identity is fixed at creation; rescheduling retains it.
+- Result: Full-week outlet override/reset UI and validated API; nullable tenant-bound
+  appointment outlet; public branch selection; local-zone calendar/editor; effective
+  hours enforcement on create/reschedule/reactivation and recurring occurrences.
+  Legacy company-wide bookings remain unchanged. Booking messages show branch time;
+  receipts/reports retain company formatting. See docs/outlet-booking-hours.md.
+- Verified: All 48 migrations replayed on fresh disposable PostgreSQL port 55446;
+  full API 581 passed / 0 failed / 18 opt-in skips; web 704/704 (89 files), shared
+  181/181; workspace build/typecheck/lint/format and diff checks pass. Cluster stopped.
+- Limits: No application migration, deployment, provider calls, commit or push.
+  Physical receipt testing and OA-07 remain separate. New branch-booking browser
+  walkthrough remains a rollout check, not claimed by automated tests.
+
 ### PRINT-01 — Thermal receipt layout and local preview
 
 - Status: DONE — October 24, 2026, local layout and automated preview verification.

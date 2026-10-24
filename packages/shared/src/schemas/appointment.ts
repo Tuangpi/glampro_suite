@@ -116,6 +116,9 @@ export const MAX_APPOINTMENT_SERVICES = 10;
 /** A row in the day list. */
 export const appointmentSummarySchema = z.object({
   id: z.string(),
+  outletId: z.string().nullable().optional(),
+  outletName: z.string().nullable().optional(),
+  outletTimeZone: z.string().nullable().optional(),
   startsAt: z.string(),
   endsAt: z.string(),
   status: appointmentStatusSchema,

@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 export const publicAvailabilitySchema = z.object({
+  outletId: z.string().trim().min(1).max(64).optional(),
   serviceId: z.string().trim().min(1),
   date: z.iso.date(),
 });
 
 export const publicBookingSchema = z
   .object({
+    outletId: z.string().trim().min(1).max(64).optional(),
     serviceId: z.string().trim().min(1),
     startsAt: z.iso.datetime({ offset: true }),
     customerName: z.string().trim().min(1).max(200),

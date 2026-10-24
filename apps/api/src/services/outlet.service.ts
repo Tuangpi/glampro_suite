@@ -7,6 +7,8 @@ import {
 import { prisma } from "../lib/prisma.js";
 import { conflict, notFound } from "../lib/http-error.js";
 import { currentScope } from "../lib/tenant-context.js";
+import { Prisma } from "../../generated/prisma/client.js";
+import { lockBookingCalendar } from "./messaging.service.js";
 
 export async function listOutlets() {
   return (await prisma.outlet.findMany({ orderBy: [{ name: "asc" }, { id: "asc" }] })).map((row) =>
@@ -34,7 +36,13 @@ export async function createOutlet(input: CreateOutletInput) {
   });
   return writeOutlet(() =>
     prisma.outlet.create({
-      data: { tenantId: "", timeZone: tenant.timeZone, locale: tenant.locale, ...input },
+      data: {
+        tenantId: "",
+        timeZone: tenant.timeZone,
+        locale: tenant.locale,
+        ...input,
+        operatingHours: input.operatingHours === null ? Prisma.DbNull : input.operatingHours,
+      },
     }),
   );
 }
@@ -43,7 +51,18 @@ export async function updateOutlet(id: string, input: UpdateOutletInput) {
   if (!(await prisma.outlet.findFirst({ where: { id }, select: { id: true } }))) {
     throw notFound("That outlet does not exist.", "OUTLET_NOT_FOUND");
   }
-  return writeOutlet(() => prisma.outlet.update({ where: { id }, data: input }));
+  return writeOutlet(() =>
+    prisma.$transaction(async (tx) => {
+      await lockBookingCalendar(tx);
+      return tx.outlet.update({
+        where: { id },
+        data: {
+          ...input,
+          operatingHours: input.operatingHours === null ? Prisma.DbNull : input.operatingHours,
+        },
+      });
+    }),
+  );
 }
 
 /** Assignment changes availability, never product quantity, credit or family membership. */

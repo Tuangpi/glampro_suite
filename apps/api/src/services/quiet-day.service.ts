@@ -24,23 +24,24 @@ export async function quietDayOpportunities(raw: QuietDayQuery) {
     select: { timeZone: true },
   });
   if (!tenant) throw notFound("Salon not found.", "TENANT_NOT_FOUND");
+  const context = await slotContext(prisma, scope.tenantId, query.serviceId, STAFF_LIMIT + 1);
+  const timeZone = context.timeZone;
   const now = new Date();
   const today = new Intl.DateTimeFormat("en-CA", {
-    timeZone: tenant.timeZone,
+    timeZone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(now);
   const dateAfter = (days: number) =>
     new Date(Date.parse(today) + days * DAY).toISOString().slice(0, 10);
-  const context = await slotContext(prisma, scope.tenantId, query.serviceId, STAFF_LIMIT + 1);
   const opportunities = [];
   let checkedSlots = 0;
   let searchLimited = context.candidates.length > STAFF_LIMIT;
   const candidates = context.candidates.slice(0, STAFF_LIMIT);
   for (let day = 1; day <= query.days; day++) {
     const date = dateAfter(day);
-    const bounds = salonDayBounds(date, tenant.timeZone);
+    const bounds = salonDayBounds(date, timeZone);
     const bookingCount = await prisma.appointment.count({
       where: { startsAt: { gte: bounds.from, lt: bounds.to }, status: { not: "CANCELLED" } },
     });
@@ -53,7 +54,7 @@ export async function quietDayOpportunities(raw: QuietDayQuery) {
       cursor += 60000
     ) {
       const start = new Date(cursor);
-      if (!withinHours(context, start, tenant.timeZone)) continue;
+      if (!withinHours(context, start, timeZone)) continue;
       for (const staff of candidates) {
         if (checkedSlots >= CHECK_LIMIT) {
           searchLimited = true;
@@ -82,9 +83,9 @@ export async function quietDayOpportunities(raw: QuietDayQuery) {
   }
   return quietDayResponseSchema.parse({
     asOf: now.toISOString(),
-    timeZone: tenant.timeZone,
-    from: salonDayBounds(dateAfter(1), tenant.timeZone).from.toISOString(),
-    to: salonDayBounds(dateAfter(query.days), tenant.timeZone).to.toISOString(),
+    timeZone,
+    from: salonDayBounds(dateAfter(1), timeZone).from.toISOString(),
+    to: salonDayBounds(dateAfter(query.days), timeZone).to.toISOString(),
     serviceId: context.service.id,
     serviceName: context.service.name,
     durationMinutes: context.duration,
