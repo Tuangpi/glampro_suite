@@ -2,6 +2,11 @@
 
 ## Current State
 
+- **REPORTS-UX DONE — October 24, 2026:** four focused report tabs, four primary
+  metrics, salon-local presets, invalid-date guards and expandable valuation audit
+  details. Full web 750/750; lint/typecheck/build pass. Authenticated visual browser
+  review not performed. Current task: None; no next task auto-selected.
+
 - **PLATFORM-UX DONE — October 24, 2026:** responsive wider operator workspace,
   company directory, separate onboarding view and overview/subscription/modules/activity
   tabs. Suspension/cancellation now require explicit confirmation. Full web 737/737,
@@ -59,6 +64,26 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — REPORTS-UX reporting workspace complete
+
+- Reused existing accessible Tabs, Button, StatTile and Table components. Overview
+  shows net revenue, amount paid, completed sales and refunds; secondary figures
+  remain in a compact breakdown. Staff/payments, current balances/valuation and
+  independently dated daily close have separate views.
+- Added Today, Last 7 days, This month and Custom presets in the salon timezone;
+  default is month-to-date. Invalid ranges/daily dates disable queries and hide
+  stale figures. Daily close fetches only when selected. Customer balances still
+  come from the overview API; an invalid range must be corrected on Overview.
+- Kept active/expired/unvalued/unpaid disclosures and activation safeguards.
+  Policy/actor/reconciliation evidence is expandable; no financial calculations,
+  API contracts, database, permissions or dependencies changed.
+- Verification: full web 750/750 across 92 files; lint and production build with
+  TypeScript checks pass. Added coverage for timezone boundary presets, invalid
+  input, keyboard tabs, on-demand close, audit expansion and stale-error values.
+  Initial typecheck caught missing StatTile values and unsupported test options;
+  corrected both before the final successful runs. Browser visual review not run.
+- No migration, deployment, commit or push. Next: None for this approved cleanup.
 
 ## October 24, 2026 — MSG-01 local messaging and assistant verification complete
 

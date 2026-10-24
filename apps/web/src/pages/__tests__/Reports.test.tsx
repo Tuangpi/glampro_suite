@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PackageValuationReport, ReportOverview, ZReport } from "@glampro_suite/shared";
 import { createSalonFormatters, DEFAULT_SALON_FORMATTING } from "@/lib/utils";
@@ -148,6 +148,7 @@ function result(overrides: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks();
   useReportOverview.mockReturnValue(result());
   useZReport.mockReturnValue(result({ data: CLOSE }));
   usePackageValuationReport.mockReturnValue(
@@ -156,9 +157,82 @@ beforeEach(() => {
   getErrorMessage.mockReturnValue("Report service unavailable.");
 });
 
+afterEach(() => vi.useRealTimers());
+
 describe("Reports", () => {
+  it("uses salon-local presets even when the browser is on the previous day", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-24T18:00:00.000Z"));
+    render(<Reports />);
+    expect(screen.getByLabelText("From")).toHaveValue("2026-10-01");
+    expect(screen.getByLabelText("To")).toHaveValue("2026-10-25");
+    fireEvent.click(screen.getByRole("button", { name: "Today" }));
+    expect(screen.getByLabelText("From")).toHaveValue("2026-10-25");
+    expect(screen.getByRole("button", { name: "Today" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Last 7 days" }));
+    expect(screen.getByLabelText("From")).toHaveValue("2026-10-19");
+    expect(screen.getByLabelText("To")).toHaveValue("2026-10-25");
+    fireEvent.click(screen.getByRole("button", { name: "This month" }));
+    expect(screen.getByLabelText("From")).toHaveValue("2026-10-01");
+    fireEvent.click(screen.getByRole("button", { name: "Custom" }));
+    expect(screen.getByLabelText("From")).toHaveValue("2026-10-01");
+  });
+
+  it("disables incomplete and reversed ranges without showing stale totals", () => {
+    render(<Reports />);
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose valid From and To dates");
+    expect(useReportOverview.mock.calls.at(-1)?.[1]).toBe(false);
+    expect(screen.queryByText("S$105.00")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-10-01" } });
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-10-02" } });
+    expect(useReportOverview.mock.calls.at(-1)?.[1]).toBe(false);
+    expect(screen.getByRole("button", { name: "Custom" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-10-03" } });
+    expect(useReportOverview.mock.calls.at(-1)?.[1]).toBe(true);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("supports keyboard tabs and fetches the daily close only when selected", async () => {
+    const user = userEvent.setup();
+    render(<Reports />);
+    expect(useZReport.mock.calls.at(-1)?.[1]).toBe(false);
+    screen.getByRole("tab", { name: "Overview" }).focus();
+    await user.keyboard("{ArrowRight}");
+    expect(screen.getByRole("tab", { name: "Staff & payments" })).toHaveFocus();
+    expect(screen.getByRole("tabpanel")).toHaveAccessibleName("Staff & payments");
+    await user.keyboard("{End}");
+    expect(screen.getByRole("tab", { name: "Daily close" })).toHaveFocus();
+    expect(useZReport.mock.calls.at(-1)?.[1]).toBe(true);
+    fireEvent.change(screen.getByLabelText("Close date"), { target: { value: "" } });
+    expect(useZReport.mock.calls.at(-1)?.[1]).toBe(false);
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose a valid close date");
+    expect(screen.queryByText("S$90.00")).not.toBeInTheDocument();
+  });
+
+  it("keeps package warnings visible while audit details are collapsed", async () => {
+    const user = userEvent.setup();
+    render(<Reports />);
+    await user.click(screen.getByRole("tab", { name: "Customer balances" }));
+    const summary = screen.getByText("Valuation policy and audit details");
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText(/Unknown purchase value is not zero/)).toBeVisible();
+    expect(screen.getByText(/not allocated package cash/)).toBeVisible();
+    await user.click(summary);
+    expect(summary.closest("details")).toHaveAttribute("open");
+    expect(screen.getByText(/Immutable activation confirmation/)).toBeVisible();
+  });
+
+  it("does not show cached sales totals on a report error", () => {
+    useReportOverview.mockReturnValue(result({ isError: true, error: new Error("down") }));
+    render(<Reports />);
+    expect(screen.queryByText("S$105.00")).not.toBeInTheDocument();
+    expect(screen.getByText("The report could not be loaded")).toBeInTheDocument();
+  });
+
   it("keeps package purchase value separate, company-wide and explicitly incomplete", () => {
     render(<Reports />);
+    fireEvent.click(screen.getByRole("tab", { name: "Customer balances" }));
     const panel = within(screen.getByRole("region", { name: "Remaining package purchase value" }));
     expect(
       panel.getByText(/Independent of the selected sales range and outlet/),
@@ -186,6 +260,7 @@ describe("Reports", () => {
       result({ data: { ...VALUATION, activation: null }, refetch: vi.fn() }),
     );
     render(<Reports />);
+    fireEvent.click(screen.getByRole("tab", { name: "Customer balances" }));
     expect(screen.getByText(/Package valuation is not activated/)).toBeInTheDocument();
     expect(screen.queryByText("SGD 100.01")).not.toBeInTheDocument();
     expect(
@@ -201,9 +276,10 @@ describe("Reports", () => {
       result({ data: VALUATION, isError: true, error: new Error("reconciliation"), refetch }),
     );
     render(<Reports />);
+    fireEvent.click(screen.getByRole("tab", { name: "Customer balances" }));
     expect(screen.getByRole("alert")).toHaveTextContent("Package valuation is unavailable");
     expect(screen.queryByText("SGD 100.01")).not.toBeInTheDocument();
-    expect(screen.getByText("S$105.00")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Overview" })).toBeInTheDocument();
     await userEvent.setup().click(screen.getByRole("button", { name: "Refresh package value" }));
     expect(refetch).toHaveBeenCalledOnce();
   });
@@ -213,6 +289,7 @@ describe("Reports", () => {
       result({ data: undefined, isPending: true, isFetching: true, refetch: vi.fn() }),
     );
     render(<Reports />);
+    fireEvent.click(screen.getByRole("tab", { name: "Customer balances" }));
     expect(screen.getByText("Loading package valuation…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refresh package value" })).toBeDisabled();
     expect(screen.queryByText("SGD 0.00")).not.toBeInTheDocument();
@@ -234,46 +311,43 @@ describe("Reports", () => {
       }),
     );
     render(<Reports />);
+    fireEvent.click(screen.getByRole("tab", { name: "Customer balances" }));
     expect(screen.getAllByText("SGD 9,007,199,254,740,993.01")).toHaveLength(2);
     expect(screen.getByText("SGD 0.00")).toBeInTheDocument();
   });
 
-  it("renders totals, the daily close and every server-backed table", () => {
+  it("renders the focused overview and preserves every server-backed table across tabs", async () => {
+    const user = userEvent.setup();
     render(<Reports />);
-
     expect(screen.getByText("S$105.00")).toBeInTheDocument();
     expect(screen.getByText("S$95.00")).toBeInTheDocument();
-    expect(screen.getAllByText("S$5.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Signature cut")).toHaveLength(2);
     expect(screen.getByText("Hair oil")).toBeInTheDocument();
+    expect(screen.queryByText("Stella Stylist")).not.toBeInTheDocument();
+    for (const name of ["Sales by day", "Top-selling items", "Sales by service"]) {
+      expect(within(screen.getByRole("table", { name })).getAllByRole("row")).toHaveLength(3);
+    }
+    await user.click(screen.getByRole("tab", { name: "Staff & payments" }));
     expect(screen.getByText("Stella Stylist")).toBeInTheDocument();
     expect(screen.getByText("S$6.25")).toBeInTheDocument();
-    expect(screen.getByText("S$90.00")).toBeInTheDocument();
-    expect(screen.getByText("12 across 3 holdings")).toBeInTheDocument();
-
-    expect(
-      within(screen.getByRole("table", { name: "Sales by day" })).getAllByRole("row"),
-    ).toHaveLength(3);
-    expect(
-      within(screen.getByRole("table", { name: "Top-selling items" })).getAllByRole("row"),
-    ).toHaveLength(3);
-    expect(
-      within(screen.getByRole("table", { name: "Sales by service" })).getAllByRole("row"),
-    ).toHaveLength(3);
     expect(
       within(screen.getByRole("table", { name: "Tender totals" })).getAllByRole("row"),
     ).toHaveLength(4);
     expect(
       within(screen.getByRole("table", { name: "Staff performance" })).getAllByRole("row"),
     ).toHaveLength(2);
+    await user.click(screen.getByRole("tab", { name: "Daily close" }));
+    expect(screen.getByText("S$90.00")).toBeInTheDocument();
     expect(
       within(screen.getByRole("table", { name: "Daily tender totals" })).getAllByRole("row"),
     ).toHaveLength(3);
-    expect(screen.getAllByText("Credit redeemed").length).toBeGreaterThan(0);
+    await user.click(screen.getByRole("tab", { name: "Customer balances" }));
+    expect(screen.getByText("12 across 3 holdings")).toBeInTheDocument();
   });
 
   it("separates current liabilities, receivables and unvalued sessions", () => {
     render(<Reports />);
+    fireEvent.click(screen.getByRole("tab", { name: "Customer balances" }));
     const balances = screen.getByRole("region", { name: "Current customer balances" });
     expect(
       within(balances).getByText(/independent of the selected sales range/),
@@ -302,6 +376,7 @@ describe("Reports", () => {
     await user.type(screen.getByLabelText("From"), "2000-01-01");
     await user.clear(screen.getByLabelText("To"));
     await user.type(screen.getByLabelText("To"), "2000-01-02");
+    await user.click(screen.getByRole("tab", { name: "Customer balances" }));
     expect(
       screen.getByText(
         `Snapshot as of ${formatDateTime(OVERVIEW.liability.asOf)} (Asia/Singapore).`,
@@ -336,6 +411,7 @@ describe("Reports", () => {
   it("asks for the daily close by salon-local date", async () => {
     const user = userEvent.setup();
     render(<Reports />);
+    await user.click(screen.getByRole("tab", { name: "Daily close" }));
 
     const closeDate = screen.getByLabelText("Close date");
     await user.clear(closeDate);
@@ -346,7 +422,7 @@ describe("Reports", () => {
     expect(latest.timeZone).toBeTruthy();
   });
 
-  it("shows honest empty states when the range has no rows", () => {
+  it("shows honest empty states when the range has no rows", async () => {
     useReportOverview.mockReturnValue(
       result({
         data: {
@@ -379,9 +455,11 @@ describe("Reports", () => {
     render(<Reports />);
     expect(screen.getByText("No completed sales")).toBeInTheDocument();
     expect(screen.getByText("No items sold")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Staff & payments" }));
     expect(screen.getByText("No attributed sales")).toBeInTheDocument();
-    expect(screen.getByText("No services sold")).toBeInTheDocument();
+
     expect(screen.getByText("No payments")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Customer balances" }));
     expect(screen.getByText("Current customer balances")).toBeInTheDocument();
   });
 

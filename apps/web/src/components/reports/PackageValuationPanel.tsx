@@ -68,23 +68,30 @@ export default function PackageValuationPanel() {
             </p>
             {data.activation ? (
               <>
-                <p className="text-sm text-ink-muted">
-                  Policy {data.activation.policyVersion} · {data.activation.currency} · Valuation
-                  started {formatDateTime(data.activation.activatedAt)}. Only verified purchases
-                  recorded from activation are valued; no legacy backfill.
-                </p>
-                <p className="break-words text-sm text-ink-muted">
-                  Immutable activation confirmation by {data.activation.actorId}:{" "}
-                  {data.activation.reason}
-                </p>
+                <details className="rounded-md border border-line p-3 text-sm text-ink-muted">
+                  <summary className="cursor-pointer font-bold text-ink">
+                    Valuation policy and audit details
+                  </summary>
+                  <p className="mt-3">
+                    Policy {data.activation.policyVersion} · {data.activation.currency} · Valuation
+                    started {formatDateTime(data.activation.activatedAt)}. Only verified purchases
+                    recorded from activation are valued; no legacy backfill.
+                  </p>
+                  <p className="break-words text-sm text-ink-muted">
+                    Immutable activation confirmation by {data.activation.actorId}:{" "}
+                    {data.activation.reason}
+                  </p>
+                  <p className="mt-2">
+                    Reconciled {data.reconciliation.purchases} purchase snapshots and{" "}
+                    {data.reconciliation.movements} movements.
+                  </p>
+                </details>
                 <div className="grid gap-4 lg:grid-cols-2">
                   {bucket("Active unused packages", data.active)}
                   {bucket("Expired unused packages", data.expired)}
                 </div>
                 <p className="text-sm text-ink-muted">
-                  Reconciled {data.reconciliation.purchases} purchase snapshots and{" "}
-                  {data.reconciliation.movements} movements. Expired value is separate and does not
-                  imply recognised revenue.
+                  Expired value is separate and does not imply recognised revenue.
                 </p>
               </>
             ) : (

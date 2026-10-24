@@ -24,6 +24,20 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### REPORTS-UX — Simplify the reporting workspace
+
+- Status: **DONE**. Approved and implemented October 24, 2026.
+- Expected result: four focused tabs, four primary metrics, salon-local date presets,
+  validated custom ranges and expandable valuation audit details. Preserve financial
+  disclosures, activation safeguards, current snapshots and existing report contracts.
+- Completion check: report interaction/regression tests, full web tests,
+  typecheck/lint/build, formatting and diff review.
+- Dependencies: existing report and valuation implementation.
+- Evidence: full web 750/750 across 92 files; web lint, typecheck and production
+  build pass. Report tests cover all four tabs, keyboard navigation, salon-local
+  presets, invalid dates, stale-value suppression and expandable audit details.
+  Authenticated visual browser review not performed. No backend/database/dependency changes.
+
 ### PLATFORM-UX — Company management workspace
 
 - Status: **DONE**. Approved and implemented October 24, 2026.

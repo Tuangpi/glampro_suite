@@ -3,7 +3,12 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { PropsWithChildren } from "react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { queryKeys } from "@/constants/queryKeys";
-import { useActivatePackageValuation, usePackageValuationReport } from "./useReports";
+import {
+  useActivatePackageValuation,
+  usePackageValuationReport,
+  useReportOverview,
+  useZReport,
+} from "./useReports";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 vi.mock("@/lib/api", () => ({ get, post }));
@@ -36,6 +41,20 @@ const report = {
   unpaidPurchases: { sales: 0, holdings: 0, sourceSaleOutstanding: "0.00" },
   reconciliation: { status: "RECONCILED", purchases: 0, movements: 0 },
 };
+
+it("does not request overview or daily close while their inputs are disabled", async () => {
+  const { wrapper } = setup();
+  const { result } = renderHook(
+    () => ({
+      overview: useReportOverview({ from: "", to: "", timeZone: "Asia/Singapore" }, false),
+      close: useZReport({ date: "", timeZone: "Asia/Singapore" }, false),
+    }),
+    { wrapper },
+  );
+  expect(result.current.overview.fetchStatus).toBe("idle");
+  expect(result.current.close.fetchStatus).toBe("idle");
+  expect(get).not.toHaveBeenCalled();
+});
 
 it("fetches a validated current report without sales dates and uses report invalidation prefix", async () => {
   get.mockResolvedValue(report);

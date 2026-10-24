@@ -22,8 +22,9 @@ export interface ZReportParams {
   timeZone: string;
 }
 
-export function useReportOverview(range: ReportRange) {
+export function useReportOverview(range: ReportRange, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: [...queryKeys.reports.overview(), range],
     queryFn: () =>
       get<ReportOverview>("/reports/overview", {
@@ -35,8 +36,9 @@ export function useReportOverview(range: ReportRange) {
   });
 }
 
-export function useZReport(params: ZReportParams) {
+export function useZReport(params: ZReportParams, enabled = true) {
   return useQuery({
+    enabled,
     queryKey: [...queryKeys.reports.zReport(), params],
     queryFn: () => get<ZReport>("/reports/z-report", { ...params }),
     staleTime: 60_000,
