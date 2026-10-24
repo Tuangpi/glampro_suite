@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { rebookingNudgeSchema, type RebookingNudge } from "@glampro_suite/shared";
 import { useAuth } from "@/contexts/AuthContext";
 import { queryKeys } from "@/constants/queryKeys";
-import { get } from "@/lib/api";
+import { get, post } from "@/lib/api";
 import Button from "@/components/ui/Button";
+import AssistantDraftReview from "./AssistantDraftReview";
+import { draftKey } from "./assistant-draft-keys";
 
 export default function RebookingRecommendations() {
   const { user, tenant, entitlements } = useAuth();
@@ -46,8 +48,9 @@ function Workspace({ tenantId, userId }: { tenantId: string; userId: string }) {
         </Button>
       </div>
       <p className="mt-2 text-sm text-ink-muted">
-        Temporary editable drafts only. Nothing is saved, approved or sent. Refreshing discards
-        edits. Dates are salon-local. Tomorrow is a suggested date, not checked availability.
+        Editing alone does not save, approve or send. Save an SMS draft for separate versioned
+        review below. WhatsApp delivery is gated. Dates are salon-local. Tomorrow is a suggested
+        date, not checked availability.
       </p>
       {query.isFetching ? (
         <p role="status">Checking current consent, bookings and message jobs…</p>
@@ -67,12 +70,35 @@ function Workspace({ tenantId, userId }: { tenantId: string; userId: string }) {
           ))}
         </div>
       )}
+      <AssistantDraftReview tenantId={tenantId} userId={userId} />
     </section>
   );
 }
 
 function Draft({ nudge }: { nudge: RebookingNudge }) {
   const [message, setMessage] = useState(nudge.message);
+  const client = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  async function save() {
+    setBusy(true);
+    setNotice("");
+    try {
+      await post("/ai-assistant/drafts", {
+        customerId: nudge.customerId,
+        appointmentId: nudge.appointmentId,
+        channel: "SMS",
+        destination: nudge.destination,
+        message,
+      });
+      setNotice("Draft saved. Review the exact SMS body below; nothing has been queued.");
+      await client.invalidateQueries({ queryKey: draftKey });
+    } catch {
+      setNotice("Save failed. Refresh eligibility before retrying.");
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <article className="rounded-md border border-line p-4">
       <h3 className="font-bold">{nudge.customerName}</h3>
@@ -92,13 +118,21 @@ function Draft({ nudge }: { nudge: RebookingNudge }) {
         <textarea
           className="rounded-md border border-line p-2"
           value={message}
-          maxLength={2000}
+          maxLength={1000}
           onChange={(event) => setMessage(event.target.value)}
         />
       </label>
+      {nudge.channel === "SMS" ? (
+        <Button disabled={busy || !message.trim()} onClick={() => void save()}>
+          Save SMS draft
+        </Button>
+      ) : (
+        <p>WhatsApp approval and delivery are gated; this draft cannot be sent.</p>
+      )}
+      {notice && <p role="status">{notice}</p>}
       <p className="text-sm text-ink-muted">
         Eligibility is a point-in-time preview. Consent and contact limits must be rechecked before
-        any future approval or delivery.
+        approval and queueing, and again at dispatch.
       </p>
     </article>
   );

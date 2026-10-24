@@ -19,6 +19,7 @@ import {
   tenantId,
 } from "./messaging.service.js";
 import { randomBytes } from "node:crypto";
+import { assistantActor, assistantUnsubscribeIsCurrent } from "./assistant-drafts.service.js";
 import {
   rebookingChannel,
   rebookingInterval,
@@ -147,6 +148,31 @@ export async function runMessageBatch(
             )
               return suppress("CONSENT_REQUIRED");
             const channel = consent.channel as Channel;
+            const draft = job.assistantDraftId
+              ? await tx.assistantDraft.findFirst({ where: { id: job.assistantDraftId } })
+              : null;
+            if (job.assistantDraftId) {
+              if (
+                !draft ||
+                draft.status !== "QUEUED" ||
+                draft.channel !== "SMS" ||
+                channel !== "SMS" ||
+                draft.destination !== destination ||
+                draft.customerId !== customer.id ||
+                draft.appointmentId !== job.appointmentId ||
+                draft.reviewDueAt <= now
+              )
+                return suppress("ASSISTANT_DRAFT_CHANGED");
+              if (!(await assistantUnsubscribeIsCurrent(tx, draft)))
+                return suppress("ASSISTANT_UNSUBSCRIBE_CHANGED");
+              try {
+                await assistantActor(draft.approvedById!, draft.approvedTokenVersion!);
+                await assistantActor(draft.queuedById!, draft.queuedTokenVersion!);
+                for (const code of ["dashboard", "customers"]) await assertMessagingAccess(code);
+              } catch {
+                return suppress("ASSISTANT_AUTHORIZATION_CHANGED");
+              }
+            }
             if (!(channel === "SMS" ? settings.smsEnabled : settings.whatsappEnabled))
               return suppress("CHANNEL_DISABLED");
             // Re-read guards after acquiring locks, not just when selecting candidates.
@@ -179,10 +205,24 @@ export async function runMessageBatch(
               const latest = await tx.appointment.findFirst({
                 where: { customerId: customer.id, status: "COMPLETED", endsAt: { lte: now } },
                 orderBy: [{ startsAt: "desc" }, { id: "asc" }],
-                select: { id: true, service: { select: { interval: true } } },
+                select: { id: true, startsAt: true, service: { select: { interval: true } } },
               });
               if (!latest || latest.id !== job.appointmentId) return suppress("LATER_VISIT");
               const interval = rebookingInterval(latest.service?.interval, settings.rebookingDays);
+              if (draft) {
+                const date = (value: Date) =>
+                  new Intl.DateTimeFormat("en-CA", {
+                    timeZone: tenant.timeZone,
+                    year: "numeric",
+                    month: "2-digit",
+                    day: "2-digit",
+                  }).format(value);
+                if (
+                  (Date.parse(date(now)) - Date.parse(date(latest.startsAt))) / 86400000 <=
+                  interval
+                )
+                  return suppress("ASSISTANT_INTERVAL_CHANGED");
+              }
               const contacted = await tx.messageJob.findFirst({
                 where: {
                   id: { not: job.id },
@@ -226,6 +266,8 @@ export async function runMessageBatch(
             const kind = job.kind as MessageKind;
             assertSender(config, channel, kind);
             const origin = publicOrigin();
+            if (draft && (draft.origin !== origin || draft.sender !== config!.smsFrom))
+              return suppress("ASSISTANT_SENDER_CHANGED");
             let link = "";
             if ((booking && !promotional) || job.saleId) {
               if (job.saleId) {
@@ -274,7 +316,9 @@ export async function runMessageBatch(
               },
             });
             const unsubscribe = `${origin}/api/public/messages/${unsubscribeToken}`;
-            const text = `${tenant.name}: ${title}${when && !promotional ? ` — ${when}` : ""}. ${link} Unsubscribe: ${unsubscribe}`;
+            const text =
+              draft?.body ??
+              `${tenant.name}: ${title}${when && !promotional ? ` — ${when}` : ""}. ${link} Unsubscribe: ${unsubscribe}`;
             const callback = `${origin}/api/messaging/webhooks/${encodeURIComponent(tenantId())}/status/${job.id}`;
             await tx.messageJob.update({ where: { id: job.id }, data: { channel, destination } });
             submitted = true;

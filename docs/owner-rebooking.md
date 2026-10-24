@@ -1,5 +1,11 @@
 # Owner rebooking recommendations — OA-03
 
+OA-05 update (October 24): SMS drafts now support explicit saving, versioned review,
+approval and controlled queueing. The read-only/temporary descriptions below record
+the original OA-03 boundary. Current workflow/policy: `docs/owner-draft-delivery.md`.
+WhatsApp and promotion delivery remain gated; recommendation preview itself does
+not persist or send anything.
+
 Dashboard recommendations are deterministic, read-only previews for owners and
 managers with dashboard, customer and appointment access. There is no new main
 navigation entry, approval endpoint, saved draft or sender. Edits exist only in

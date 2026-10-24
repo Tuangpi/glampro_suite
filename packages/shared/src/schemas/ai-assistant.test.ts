@@ -1,11 +1,43 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  assistantDraftInputSchema,
+  assistantDraftEditSchema,
+  assistantDraftActionSchema,
   ownerSummarySchema,
   rebookingNudgeSchema,
   quietDayQuerySchema,
   quietDayResponseSchema,
 } from "./ai-assistant.js";
+
+it("assistant actions require exact bounded SMS recipient/content versions", () => {
+  const input = {
+    customerId: "customer",
+    appointmentId: "visit",
+    channel: "SMS",
+    destination: "+6591234567",
+    message: "Rebook?",
+  };
+  assert.equal(assistantDraftInputSchema.safeParse(input).success, true);
+  for (const change of [
+    { channel: "WHATSAPP" },
+    { channel: "EMAIL" },
+    { message: " " },
+    { message: "a".repeat(1001) },
+    { destination: "91234567" },
+    { approvedById: "spoof" },
+    { kind: "PROMOTION" },
+    { tenantId: "other" },
+  ])
+    assert.equal(assistantDraftInputSchema.safeParse({ ...input, ...change }).success, false);
+  assert.equal(assistantDraftEditSchema.safeParse(input).success, false);
+  assert.equal(assistantDraftEditSchema.safeParse({ ...input, expectedVersion: 1 }).success, true);
+  assert.equal(assistantDraftActionSchema.safeParse({ expectedVersion: 0 }).success, false);
+  assert.equal(
+    assistantDraftActionSchema.safeParse({ expectedVersion: 1, body: "changed" }).success,
+    false,
+  );
+});
 import { createServiceSchema, updateServiceSchema } from "./catalogue.js";
 
 const facts = {

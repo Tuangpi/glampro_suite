@@ -2,9 +2,9 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **OA-04**, future quiet-day
-  opportunities, local/disposable checks complete October 24. Recommended next:
-  **OA-05**, draft approvals and controlled delivery (TODO); not started.
+- Current task: **None**. Most recently completed: **OA-05**, draft approvals and
+  controlled delivery, local/disposable checks complete October 24. Recommended next:
+  **OA-06**, bounded conversational explanations (TODO); not started.
 - **OA-02** dashboard briefing/evidence workspace owner acceptance recorded.
   **TK2610-0028** multi-outlet disposable acceptance verified October 24.
   Company roles apply at every
@@ -20,6 +20,40 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — OA-05 draft approvals and controlled SMS delivery complete locally
+
+- Approved SMS-first; WhatsApp/promotions gated; manual retention review due after
+  30 days with no automatic deletion; 20 assistant queue entries/company/local day.
+- Added persisted versions, exact SMS body/sender/recipient preview, explicit approval
+  and idempotent queue actions, unique draft/job relationship, stale/concurrent edit
+  guards, append-only audit snapshots with paginated UI/API history and retention
+  review reason/reviewer/next date. Edits invalidate approval. Queued content cannot
+  be edited through these APIs. No new main navigation or external AI provider.
+- Worker uses saved body unchanged, shares existing cross-channel contact history,
+  rechecks actor/tenant/module/consent/destination/interval/booking/link/sender state,
+  preserves uncertain outcomes and definite-rejection backoff without blind resends.
+- Verified: full web **678/678** (85 files, two workers), shared **175/175**, focused
+  API **25/25**, live messaging regressions **25/25**, OA-05 disposable PostgreSQL/HTTP
+  acceptance **1/1**. Live acceptance covers edit races, duplicate queueing, exact
+  provider payload, opt-out/phone/role/tenant changes, quota, retry/uncertainty,
+  audit mutation refusal, retention review, pagination and HTTP auth/module refusal.
+  Workspace lint and production build (including API/web typechecks) pass.
+- All **47 migrations** replay from empty on a newly initialized disposable loopback
+  cluster, port 55443. New migration `20261024120000_assistant_draft_approvals` only
+  applied there. Application database/accounts untouched. No real provider calls,
+  full API suite, browser owner UAT, deployment, commit or push claimed.
+- Initial fixture type errors corrected; lint fast-refresh constant moved to its
+  own module. Expanded HTTP test corrected to use a valid action body so it reaches
+  tenant-state refusal, rather than failing schema validation. Checks rerun.
+- Docs: docs/owner-draft-delivery.md. Logs: /tmp/oa05-acceptance-verified.log,
+  /tmp/oa05-messaging-regression.log, /tmp/oa05-api-focused.log,
+  /tmp/oa05-web-full-final.log, /tmp/oa05-shared-tests.log,
+  /tmp/oa05-lint-final.log, /tmp/oa05-build-final.log.
+- OA-06 is next ready; not started. Retention disposal/export and real-provider
+  operational readiness remain OA-07/release gates, not silently approved here.
+- Disposable cluster stopped after checks; pg_ctl confirms no server running.
+  Final changed-file formatting and git whitespace checks pass.
 
 ## October 24, 2026 — OA-04 future quiet-day opportunities complete locally
 

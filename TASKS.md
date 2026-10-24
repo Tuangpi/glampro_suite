@@ -118,13 +118,30 @@ owner-facing experience; they do not authorize deployment or outbound messages.
 
 ### OA-05 — Draft approvals and controlled delivery
 
-- Status: TODO
+- Status: DONE — local implementation and disposable PostgreSQL/HTTP acceptance verified October 24, 2026.
 - Dependencies: OA-03, OA-04
 - Expected result: Versioned review/approval, explicit recipients/content/channel,
   execution-time rechecks, audit and existing queue integration. Promotion sending
   remains gated on supported offers/provider templates.
 - Completion check: Stale/concurrent edits, opt-outs, tenant/role changes, duplicate
   sends, retries and uncertain delivery; preview matches actual provider payload.
+- Approved policy October 24: SMS-first; WhatsApp/promotions gated. Manual retention
+  review due after 30 days, no automatic deletion. Maximum 20 assistant queue entries
+  per company per salon-local day; existing customer contact limits remain mandatory.
+- Delivered: persisted SMS-only draft versions; exact destination/sender/body preview;
+  separate approval and idempotent queue actions; stale-edit refusal and edit-invalidated
+  approvals; paginated saved drafts and append-only version audit; manual retention
+  review with reason/reviewer, next due date and unqueued approval invalidation.
+- Existing worker consumes immutable approved SMS body and rechecks current actor
+  role/membership/disabled/token version, modules, tenant, consent/destination,
+  unsubscribe link, service interval, bookings and shared contact history. Existing
+  uncertain/accepted retry refusal and bounded definite-429 backoff preserved.
+- Verified: full web 678/678, shared 175/175, focused API 25/25, messaging PostgreSQL
+  regressions 25/25, OA-05 disposable service/HTTP acceptance 1/1; 47 migrations
+  replay from empty. Workspace lint and production build (API/web typechecks) pass.
+- No application migration, real-provider calls, owner browser UAT, deployment,
+  commit or push. Full API suite not rerun. Migration and rollout/privacy/retention
+  caveats: docs/owner-draft-delivery.md. OA-06 next; not started.
 
 ### OA-06 — Bounded conversational explanations
 

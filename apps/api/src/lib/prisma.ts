@@ -33,6 +33,8 @@ export const TENANT_SCOPED_MODELS = [
   "ChannelConsent",
   "ChannelConsentEvent",
   "MessageJob",
+  "AssistantDraft",
+  "AssistantDraftEvent",
   "PublicLink",
   "TenantModule",
   "Subscription",

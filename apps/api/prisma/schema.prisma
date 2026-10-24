@@ -438,6 +438,8 @@ model Tenant {
   voucherRedemptions  VoucherRedemption[]
   saleRefunds         SaleRefund[]
   directStaffTips     DirectStaffTip[]
+  assistantDrafts     AssistantDraft[]
+  assistantDraftEvents AssistantDraftEvent[]
 
   @@index([status])
   @@map("tenants")
@@ -981,6 +983,8 @@ model MessageJob {
   kind String
   channel String?
   destination String?
+  assistantDraftId String? @unique
+  assistantDraft AssistantDraft? @relation(fields: [assistantDraftId], references: [id], onDelete: Restrict)
   status String @default("PENDING")
   dueAt DateTime
   attempts Int @default(0)
@@ -994,6 +998,50 @@ model MessageJob {
   @@index([status, dueAt])
   @@index([tenantId, createdAt])
   @@map("message_jobs")
+}
+
+model AssistantDraft {
+  id String @id @default(cuid())
+  tenantId String
+  customerId String
+  appointmentId String
+  channel String @default("SMS")
+  destination String
+  message String
+  body String
+  sender String
+  origin String
+  version Int @default(1)
+  status String @default("DRAFT")
+  approvedById String?
+  approvedTokenVersion Int?
+  queuedById String?
+  queuedTokenVersion Int?
+  reviewDueAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  events AssistantDraftEvent[]
+  job MessageJob?
+
+  @@index([tenantId, createdAt])
+  @@map("assistant_drafts")
+}
+
+model AssistantDraftEvent {
+  id String @id @default(cuid())
+  tenantId String
+  draftId String
+  actorId String
+  version Int
+  action String
+  snapshot Json
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  draft AssistantDraft @relation(fields: [draftId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, draftId, createdAt])
+  @@map("assistant_draft_events")
 }
 
 model PublicLink {

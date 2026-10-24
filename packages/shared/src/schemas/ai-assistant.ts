@@ -50,6 +50,47 @@ export const rebookingNudgeSchema = z.object({
 });
 export type RebookingNudge = z.infer<typeof rebookingNudgeSchema>;
 
+export const assistantDraftInputSchema = z
+  .object({
+    customerId: z.string().min(1).max(64),
+    appointmentId: z.string().min(1).max(64),
+    channel: z.literal("SMS"),
+    destination: z.string().regex(/^\+[1-9]\d{7,14}$/),
+    message: z.string().trim().min(1).max(1000),
+  })
+  .strict();
+export const assistantDraftEditSchema = assistantDraftInputSchema
+  .extend({
+    expectedVersion: z.number().int().positive(),
+  })
+  .strict();
+export const assistantDraftActionSchema = z
+  .object({
+    expectedVersion: z.number().int().positive(),
+  })
+  .strict();
+export const assistantDraftReviewSchema = assistantDraftActionSchema
+  .extend({ reason: z.string().trim().min(3).max(500) })
+  .strict();
+export const assistantDraftSchema = z.object({
+  id: z.string(),
+  customerId: z.string(),
+  appointmentId: z.string(),
+  channel: z.literal("SMS"),
+  destination: z.string(),
+  message: z.string(),
+  body: z.string(),
+  sender: z.string(),
+  version: z.number().int().positive(),
+  status: z.enum(["DRAFT", "APPROVED", "QUEUED"]),
+  reviewDueAt: z.iso.datetime(),
+  job: z
+    .object({ id: z.string(), status: z.string(), errorCode: z.string().nullable() })
+    .nullable(),
+});
+export type AssistantDraftInput = z.infer<typeof assistantDraftInputSchema>;
+export type AssistantDraft = z.infer<typeof assistantDraftSchema>;
+
 /** Deliberately no discount/content/recipient fields: this endpoint cannot publish offers. */
 export const quietDayQuerySchema = z
   .object({

@@ -351,6 +351,17 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ### Owner assistant expansion — approved October 23, 2026
 
+OA-05 implementation verified October 24: persisted SMS-only draft versions,
+exact sender/destination/body preview, explicit approval then idempotent queueing,
+append-only actor/version audit and execution-time authorization/eligibility checks.
+WhatsApp and promotions remain gated. Approved policy: 20 assistant queue entries
+per company per salon-local day; manual retention review due after 30 days with
+reason/reviewer and no automatic deletion. Edits/unqueued retention reviews invalidate
+approval. Existing automatic queue/contact limits and uncertain retry refusal remain.
+Migration `20261024120000_assistant_draft_approvals` tested only on disposable DB;
+no rollout or real-provider delivery. See docs/owner-draft-delivery.md for privacy,
+review workflow and outstanding operational retention/disposal/UAT gates.
+
 OA-04 implementation verified October 24: guarded dashboard previews check one
 service over tomorrow through seven salon-local days, using shared booking hours,
 staff/shift/conflict/resource validation. Fewer than three non-cancelled booking

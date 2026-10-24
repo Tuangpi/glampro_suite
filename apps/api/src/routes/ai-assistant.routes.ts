@@ -1,4 +1,4 @@
-/** Authenticated, tenant-scoped read-only assistant drafts. */
+/** Authenticated, tenant-scoped assistant previews and explicit draft actions. */
 import { Router } from "express";
 import { auth, requireRole } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
@@ -6,6 +6,19 @@ import { validate, validated } from "../middleware/validate.js";
 import { aiAssistantService } from "../services/ai-assistant.service.js";
 import { quietDayQuerySchema, type QuietDayQuery } from "@glampro_suite/shared";
 import { quietDayOpportunities } from "../services/quiet-day.service.js";
+import {
+  assistantDraftInputSchema,
+  assistantDraftEditSchema,
+  assistantDraftActionSchema,
+  assistantDraftReviewSchema,
+} from "@glampro_suite/shared";
+import {
+  listAssistantDrafts,
+  saveAssistantDraft,
+  actOnAssistantDraft,
+  assistantDraftHistory,
+  reviewAssistantDraft,
+} from "../services/assistant-drafts.service.js";
 import {
   assistantRangeSchema,
   rebookingQuerySchema,
@@ -17,6 +30,80 @@ import {
 
 const router = Router();
 router.use(auth, requireRole("SUPER_ADMIN", "MANAGER"), requireModule("dashboard"));
+router.use("/drafts", requireModule("customers"), requireModule("appointments"));
+router.post(
+  "/drafts/:id/retention-review",
+  validate(assistantDraftReviewSchema),
+  async (req, res, next) => {
+    try {
+      const input = assistantDraftReviewSchema.parse(req.body);
+      res.json({
+        data: await reviewAssistantDraft(
+          String(req.params.id),
+          input.expectedVersion,
+          input.reason,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+router.get("/drafts", async (req, res, next) => {
+  try {
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    res.json({ data: await listAssistantDrafts(cursor) });
+  } catch (error) {
+    next(error);
+  }
+});
+router.get("/drafts/:id/history", async (req, res, next) => {
+  try {
+    res.json({
+      data: await assistantDraftHistory(
+        String(req.params.id),
+        typeof req.query.cursor === "string" ? req.query.cursor : undefined,
+      ),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+router.post("/drafts", validate(assistantDraftInputSchema), async (req, res, next) => {
+  try {
+    res
+      .status(201)
+      .json({ data: await saveAssistantDraft(assistantDraftInputSchema.parse(req.body)) });
+  } catch (error) {
+    next(error);
+  }
+});
+router.patch("/drafts/:id", validate(assistantDraftEditSchema), async (req, res, next) => {
+  try {
+    const { expectedVersion, ...input } = assistantDraftEditSchema.parse(req.body);
+    res.json({ data: await saveAssistantDraft(input, String(req.params.id), expectedVersion) });
+  } catch (error) {
+    next(error);
+  }
+});
+for (const action of ["approve", "queue"] as const)
+  router.post(
+    `/drafts/:id/${action}`,
+    validate(assistantDraftActionSchema),
+    async (req, res, next) => {
+      try {
+        res.json({
+          data: await actOnAssistantDraft(
+            String(req.params.id),
+            assistantDraftActionSchema.parse(req.body).expectedVersion,
+            action,
+          ),
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 router.get(
   "/quiet-day-opportunities",
   requireModule("appointments"),

@@ -3,9 +3,15 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
 import RebookingRecommendations from "./RebookingRecommendations";
 
-const { useAuth, get } = vi.hoisted(() => ({ useAuth: vi.fn(), get: vi.fn() }));
+const { useAuth, get, post, patch } = vi.hoisted(() => ({
+  useAuth: vi.fn(),
+  get: vi.fn(),
+  post: vi.fn(),
+  patch: vi.fn(),
+}));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth }));
-vi.mock("@/lib/api", () => ({ get }));
+vi.mock("@/lib/api", () => ({ get, post, patch }));
+vi.mock("./AssistantDraftReview", () => ({ default: () => null, draftKey: ["saved-drafts"] }));
 const profile = (role = "MANAGER", codes = ["dashboard", "customers", "appointments"]) => ({
   user: { id: "owner", globalRole: role },
   tenant: { id: "salon" },
@@ -42,7 +48,7 @@ beforeEach(() => {
 });
 
 it.each(["SUPER_ADMIN", "MANAGER"])(
-  "provides temporary editable drafts without approval or sending for %s",
+  "provides editable SMS drafts without implicit approval or sending for %s",
   async (role) => {
     useAuth.mockReturnValue(profile(role));
     mount();
@@ -50,10 +56,34 @@ it.each(["SUPER_ADMIN", "MANAGER"])(
     fireEvent.change(draft, { target: { value: "My edited draft" } });
     expect(draft).toHaveValue("My edited draft");
     expect(screen.getByText(/45-day interval \(service\)/)).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /send|approve|save/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save SMS draft" })).toBeInTheDocument();
+    expect(post).not.toHaveBeenCalled();
     expect(get).toHaveBeenCalledWith("/ai-assistant/rebooking-nudges");
   },
 );
+it("saves explicit edited SMS content without approval or queueing", async () => {
+  post.mockResolvedValue({ id: "saved" });
+  mount();
+  fireEvent.change(await screen.findByRole("textbox"), {
+    target: { value: "My approved-for-review text" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save SMS draft" }));
+  await screen.findByText(/Draft saved/);
+  expect(post).toHaveBeenCalledExactlyOnceWith("/ai-assistant/drafts", {
+    customerId: "customer",
+    appointmentId: "visit",
+    channel: "SMS",
+    destination: "+6591234567",
+    message: "My approved-for-review text",
+  });
+});
+it("gates WhatsApp instead of substituting an SMS channel", async () => {
+  get.mockResolvedValue([{ ...nudge, channel: "WHATSAPP" }]);
+  mount();
+  await screen.findByText(/WhatsApp approval and delivery are gated/);
+  expect(screen.queryByRole("button", { name: "Save SMS draft" })).not.toBeInTheDocument();
+  expect(post).not.toHaveBeenCalled();
+});
 it.each(["STAFF", "CASHIER"])("does not request recommendations for %s", (role) => {
   useAuth.mockReturnValue(profile(role));
   mount();
