@@ -3,15 +3,19 @@ import {
   dashboardQuerySchema,
   reportRangeQuerySchema,
   zReportQuerySchema,
+  activatePackageValuationSchema,
+  type ActivatePackageValuationInput,
   type DashboardQuery,
   type ReportRangeQuery,
   type ZReportQuery,
 } from "@glampro_suite/shared";
 
-import { auth } from "../middleware/auth.js";
+import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
 import { dashboardSummary, reportOverview, zReport } from "../services/report.service.js";
+import { packageValuationReport } from "../services/package-valuation-report.service.js";
+import { activatePackageValuation } from "../services/package-valuation.service.js";
 
 /**
  * Reports — handoff screen 05's tiles (`/api/reports`).
@@ -23,6 +27,35 @@ import { dashboardSummary, reportOverview, zReport } from "../services/report.se
  * fresh `db:reset` (`docs/mvp.md` → M3).
  */
 export const reportsRouter = Router();
+
+reportsRouter.post(
+  "/package-valuation/activation",
+  auth,
+  requireModule("reports"),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  requireWritableTenant(),
+  validate(activatePackageValuationSchema),
+  async (req, res, next) => {
+    try {
+      res.status(200).json({
+        data: await activatePackageValuation(
+          validated<ActivatePackageValuationInput>(req, "body"),
+          req.user!.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+reportsRouter.get("/package-valuation", auth, requireModule("reports"), async (_req, res, next) => {
+  try {
+    res.status(200).json({ data: await packageValuationReport() });
+  } catch (error) {
+    next(error);
+  }
+});
 
 reportsRouter.get(
   "/dashboard",

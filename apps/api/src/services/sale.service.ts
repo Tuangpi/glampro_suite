@@ -68,6 +68,12 @@ import { lockPrepaid, prepaidSaleContext } from "../lib/prepaid-lock.js";
 import { resolveLowStockThreshold } from "./catalogue.service.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { holdingPackageRules } from "../lib/package-rules.js";
+import {
+  recordPackagePurchase,
+  recordPackageRedemption,
+  restorePackageRedemption,
+  voidPackagePurchase,
+} from "./package-valuation-ledger.js";
 
 /**
  * Which module each kind belongs to. A kind is searchable when its module is
@@ -1566,7 +1572,7 @@ async function redeemPackage(
 
   // `amount` stays null: a session is not money. What the package paid is on the
   // tender row, and this row is the ledger entry that says how many sessions went.
-  await tx.customerRedemption.create({
+  const redemption = await tx.customerRedemption.create({
     data: {
       tenantId,
       customerId,
@@ -1578,6 +1584,7 @@ async function redeemPackage(
       holdingId: holding.id,
     },
   });
+  await recordPackageRedemption(tx, holding.id, redemption.id, sessions);
 }
 
 /** One credit tender: draws money off a value-package holding. */
@@ -1945,7 +1952,7 @@ async function grantHoldings(
         // Sessions granted scale with the quantity sold, and the remaining balance
         // starts equal to it — the whole grant is unspent at the moment of sale.
         const sessions = Number(line.item.grant) * quantity;
-        await tx.customerPackageHolding.create({
+        const holding = await tx.customerPackageHolding.create({
           data: {
             tenantId,
             customerId,
@@ -1957,6 +1964,7 @@ async function grantHoldings(
             expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },
         });
+        await recordPackagePurchase(tx, holding.id);
         break;
       }
 
@@ -2719,6 +2727,7 @@ async function reverseForVoid(
             "The redeemed package no longer exists. Nothing was reversed.",
             "REVERSAL_HOLDING_MISSING",
           );
+        await restorePackageRedemption(tx, redemption.holdingId, redemption.id);
       } else if (redemption.itemType === "VALUE_PACKAGE" && redemption.amount !== null) {
         const restored = await tx.customerValuePackageHolding.updateMany({
           where: { id: redemption.holdingId },
@@ -2742,6 +2751,11 @@ async function reverseForVoid(
 
   const lineIds = sale.lines.map((line) => line.id);
   if (lineIds.length > 0) {
+    const packages = await tx.customerPackageHolding.findMany({
+      where: { saleLineId: { in: lineIds } },
+      select: { id: true },
+    });
+    for (const holding of packages) await voidPackagePurchase(tx, holding.id, sale.id);
     await tx.customerPackageHolding.deleteMany({ where: { saleLineId: { in: lineIds } } });
     await tx.customerValuePackageHolding.deleteMany({ where: { saleLineId: { in: lineIds } } });
     await tx.customerGiftCardHolding.deleteMany({ where: { saleLineId: { in: lineIds } } });

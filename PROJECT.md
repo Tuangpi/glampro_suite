@@ -14,6 +14,35 @@ Positioning from the review: simple flat SGD pricing, local shared/transferable
 prepaid packages, WhatsApp-first engagement, owner assistance and grant readiness.
 These are product direction, not verified pricing, provider or grant commitments.
 
+## Session-package valuation — VALUE-01, approved October 24, 2026
+
+The user approved all seven points of policy version 1 in
+`docs/package-valuation-policy-draft.md`. Implement remaining package purchase
+value, not statutory accounting liability: actual discounted contracted net purchase
+consideration, separate stored-tax/gross components, equal per-session/whole-set
+exact-cent allocation, exact reversals and preserved ownership through transfers.
+Unpaid purchases retain full value with receivables separate; expiry moves value
+to an expired-unused bucket without automatic revenue recognition. Incomplete
+legacy evidence stays explicitly unvalued. Company-wide current reporting and
+reconciliation begin at activation; no retrospective closings or mixed-basis grand
+total. Existing GST and refund rules remain unchanged. Approval authorizes local
+implementation, not application database migration or deployment. Implementation
+and verification remain outstanding; see `docs/package-valuation-implementation.md`.
+The storage foundation now includes explicit currency/policy/actor activation evidence
+and immutable purchase snapshots. Migration `20261024210000_package_purchase_valuation`
+is verified on disposable PostgreSQL only; it inserts no activation or legacy values.
+No sale/report integration or salon activation is claimed by this schema checkpoint.
+
+Subsequent VALUE-01 checkpoints implement the transactional purchase/redemption/
+restoration/transfer/expiry ledger and reconciled company-wide report API/UI.
+Activation is now exposed through the reports entitlement to enabled owners/managers
+in writable salons, retaining owner 2FA, shared POS lock, server-time boundary and
+atomic audit checks. The one-time control explicitly confirms policy 1 and SGD,
+requires a reason and performs no legacy backfill. Existing activation evidence is
+immutable. Local disposable acceptance is expanded, but the task remains IN PROGRESS:
+remaining lifecycle cases and large-tenant locked-report performance are unverified.
+No application migration, live salon activation or deployment is authorized or claimed.
+
 ## Session-package transfer — SESS-01, approved October 24, 2026
 
 The user approved whole remaining session-holding transfers as the next independent

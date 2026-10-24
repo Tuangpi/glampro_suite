@@ -24,6 +24,90 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### VALUE-01 — Monetary session-package liability reporting
+
+- Status: IN PROGRESS — October 24, 2026, policy version 1 approved; implementation
+  includes exact-cent storage, transactional ledger and current report API/UI.
+  Public activation controls and expanded lifecycle acceptance are implemented/tested;
+  remaining lifecycle matrix and large-tenant performance verification are outstanding.
+- Dependencies: SESS-01 complete; explicit valuation-policy approval received.
+- Latest checkpoint: owner/manager reports activation API/UI requires explicit SGD /
+  policy 1 / no-backfill confirmation and reason, with immutable evidence and server
+  permission/subscription checks. Disposable HTTP + extended ledger acceptance 2/2;
+  web 733/733, shared 187/187; API regression 591 pass / 0 fail / 22 opt-in skips,
+  with new opt-ins run separately. Workspace typecheck/lint/build passed. No live
+  activation or application migration. Remaining: whole-set/voucher/collection/
+  transfer-back/post-expiry restoration and broader race acceptance, manual browser
+  walkthrough and large-tenant report performance. Still IN PROGRESS.
+- Expected result: Preserve approved purchase-time valuation inputs and report
+  reconciled remaining monetary package value without inventing accounting rules.
+- Completion check: Approved allocation, discount/GST/rounding, unpaid purchase,
+  redemption/reversal, expiry, transfer and legacy-data rules are recorded; isolated
+  database tests reconcile opening value, movements and remaining value; report UI
+  distinguishes operational session counts from monetary valuation and unknowns.
+- Assessment: Existing report counts unexpired sessions, excludes session packages
+  from monetary totals and explicitly disclaims complete accounting valuation.
+  Purchase line references and redemption-rule snapshots exist. No calculation or
+  schema change made at the approval-recording checkpoint.
+- Policy blocker removed: User approved all seven draft points on October 24, 2026.
+  Version 1 is recorded in docs/package-valuation-policy-draft.md.
+- Next: Implement and verify the approved policy using the plan in
+  docs/package-valuation-implementation.md. Do not start #6 automatically.
+- Partial implementation: apps/api/src/lib/package-valuation.ts provides strict
+  decimal-to-bigint purchase calculation, compact stable ordinal ranges, independent
+  net/tax allocation, lowest-ordinal draws and exact restoration with corruption
+  checks. Nine new tests include 1,275 conservation scenarios and large grants.
+  Focused allocation/expiry 14/14; isolated API 590 pass, 19 opt-in skips, no failures;
+  API build/typecheck/lint pass. No new schema or production path integration yet.
+- Currency evidence gap: Sale has no stored currency; web formatting uses SGD but
+  subscription currency is separate. Establish an explicit purchase-currency source
+  before snapshot integration; never infer legacy currency from those display defaults.
+- Storage foundation: PackageValuationActivation records explicit currency/policy/
+  actor/boundary; PackagePurchaseSnapshot preserves immutable original ids, exact
+  cents and expiry without source-row cascades. No default currency, automatic
+  activation or legacy backfill. Both models tenant-scoped; database-level checks,
+  unique source keys and append-only protections verified. Activation workflow and
+  source validation/writes in sale transactions remain unfinished.
+- Latest verification: all 50 migrations replayed on disposable PostgreSQL; focused
+  19/19, full isolated API 596 pass / 0 fail / 19 opt-in skips; validate/generate,
+  API build/typecheck/lint/format/diff pass. Schema-drift check reports unrelated
+  older-table differences, none in the two new models. No application migration.
+- Internal activation service now complete/tested: strict policy 1/SGD/confirmation/
+  reason contract, authenticated enabled manager/verified owner, current writable
+  tenant/subscription checks, shared POS lock order, database-clock boundary, atomic
+  audit, identical retries and conflicting-confirmation refusal. No automatic legacy
+  valuation. Public routes/UI intentionally deferred until sale ledger wiring works.
+- Latest activation checkpoint: shared 185/185; focused 20/20; full isolated API
+  597 passed / 0 failed / 19 opt-in skips; all 50 migrations replayed disposable-only;
+  API/shared build/lint, API typecheck and format/diff checks passed. Next: atomic
+  sale/movement integration, then expose safe activation controls. Not DONE.
+- Transactional ledger now wired into purchase grant, redemption, exact void restore,
+  session transfer and purchase void. Added mutable ordinal projection and immutable
+  signed bucket movements in migration 20261024220000_package_valuation_movements.
+  Idempotent expiry helper exists but report/job integration remains unfinished.
+- Latest ledger verification: all 51 migrations fresh disposable replay; full API
+  597 passed / 0 failed / 20 opt-in skips, including new opt-in POS/rollback test.
+  API validate/generate/build/typecheck/lint and format/diff passed. No public
+  activation/report API/UI yet. Next: coherent report/expiry integration and expanded
+  lifecycle acceptance. VALUE-01 remains IN PROGRESS; no application migration.
+- Draft requested by user: docs/package-valuation-policy-draft.md records
+  equal-session allocation, net/original-tax/gross components, contracted-price basis,
+  exact-cent reversals, expired bucket and explicit unknowns. Initially blocked on
+  review; the subsequent explicit approval supersedes that gate, not rollout gates.
+- Current report API implemented: GET /api/reports/package-valuation, reports entitlement,
+  company-wide current DB-clock snapshot, report-triggered expiry and fail-closed
+  per-owner/bucket amount/quantity/ordinal reconciliation with holdings. Shared contract
+  separates active/expired/unvalued and source-sale unpaid disclosures. No mixed total.
+- Report checkpoint: isolated API 598 pass / 0 fail / 20 opt-in skips; shared 187/187;
+  API build/typecheck/lint and shared build/lint passed. UI/public activation and wider
+  lifecycle acceptance remain unfinished. VALUE-01 stays IN PROGRESS.
+- Report UI checkpoint: independent company-wide panel shows active/expired purchase
+  components, unvalued counts, unpaid source-sale disclosures and activation/snapshot
+  boundary. Validated hook, refresh and honest loading/inactive/error states; no
+  public activation controls. Existing prepaid/gift/receivable totals unchanged.
+  Web 724/724, focused 15/15, typecheck/lint/build/format/diff passed. No DB access.
+  Next: expanded lifecycle acceptance, then safe public activation. Still IN PROGRESS.
+
 ### SESS-01 — Whole remaining session-package transfer
 
 - Status: DONE — October 24, 2026, implementation and isolated local verification.

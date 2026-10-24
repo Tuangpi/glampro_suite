@@ -11,6 +11,7 @@ import { resolveTenantStatus } from "../lib/tenant-status.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { lockPrepaid } from "../lib/prepaid-lock.js";
+import { transferPackageValuation } from "./package-valuation-ledger.js";
 
 async function assertCustomer(customerId: string) {
   if (!(await prisma.customer.findFirst({ where: { id: customerId }, select: { id: true } })))
@@ -144,19 +145,19 @@ export async function transferSessionPackage(
         updatedAt: new Date(Math.max(Date.now(), holding.updatedAt.getTime() + 1)),
       },
     });
-    return serializeEvent(
-      await tx.sessionPackageTransferEvent.create({
-        data: {
-          tenantId: scope.tenantId,
-          holdingId,
-          fromCustomerId: customerId,
-          toCustomerId: input.targetCustomerId,
-          actorId,
-          quantity: holding.quantityRemaining,
-          expiresAt: holding.expiresAt,
-          reason: input.reason,
-        },
-      }),
-    );
+    const event = await tx.sessionPackageTransferEvent.create({
+      data: {
+        tenantId: scope.tenantId,
+        holdingId,
+        fromCustomerId: customerId,
+        toCustomerId: input.targetCustomerId,
+        actorId,
+        quantity: holding.quantityRemaining,
+        expiresAt: holding.expiresAt,
+        reason: input.reason,
+      },
+    });
+    await transferPackageValuation(tx, holdingId, event.id, input.targetCustomerId);
+    return serializeEvent(event);
   });
 }

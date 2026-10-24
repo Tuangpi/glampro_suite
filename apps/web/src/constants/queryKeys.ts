@@ -164,6 +164,7 @@ export const queryKeys = {
     all: () => ["reports"] as const,
     overview: () => ["reports", "overview"] as const,
     zReport: () => ["reports", "z-report"] as const,
+    packageValuation: () => ["reports", "package-valuation"] as const,
   },
 
   settings: {

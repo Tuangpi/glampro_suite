@@ -2,19 +2,25 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ReportOverview, ZReport } from "@glampro_suite/shared";
+import type { PackageValuationReport, ReportOverview, ZReport } from "@glampro_suite/shared";
 import { createSalonFormatters, DEFAULT_SALON_FORMATTING } from "@/lib/utils";
 
 const { formatDateTime } = createSalonFormatters(DEFAULT_SALON_FORMATTING);
 
-const { useReportOverview, useZReport, getErrorMessage } = vi.hoisted(() => ({
-  useReportOverview: vi.fn(),
-  useZReport: vi.fn(),
-  getErrorMessage: vi.fn(() => "Report service unavailable."),
-}));
+const { useReportOverview, useZReport, usePackageValuationReport, getErrorMessage } = vi.hoisted(
+  () => ({
+    useReportOverview: vi.fn(),
+    useZReport: vi.fn(),
+    usePackageValuationReport: vi.fn(),
+    getErrorMessage: vi.fn(() => "Report service unavailable."),
+  }),
+);
 
-vi.mock("@/hooks/useReports", () => ({ useReportOverview, useZReport }));
+vi.mock("@/hooks/useReports", () => ({ useReportOverview, useZReport, usePackageValuationReport }));
 vi.mock("@/lib/api", () => ({ getErrorMessage }));
+vi.mock("@/components/reports/PackageValuationActivation", () => ({
+  default: () => <p>Activation controls</p>,
+}));
 
 const { default: Reports } = await import("@/pages/Reports");
 
@@ -104,6 +110,33 @@ const CLOSE: ZReport = {
   asOf: "2026-10-02T23:59:59.999Z",
 };
 
+const VALUATION: PackageValuationReport = {
+  scope: "COMPANY",
+  asOf: "2026-10-24T05:00:00.000Z",
+  activation: {
+    id: "activation",
+    policyVersion: 1,
+    currency: "SGD",
+    activatedAt: "2026-10-23T00:00:00.000Z",
+    actorId: "manager",
+    reason: "Confirmed",
+  },
+  active: {
+    holdings: 2,
+    sessionsRemaining: 5,
+    net: "100.01",
+    originalTax: "9.00",
+    gross: "109.01",
+  },
+  expired: { holdings: 1, sessionsRemaining: 2, net: "20.00", originalTax: "1.80", gross: "21.80" },
+  unvalued: {
+    active: { holdings: 3, sessionsRemaining: 7 },
+    expired: { holdings: 1, sessionsRemaining: 4 },
+  },
+  unpaidPurchases: { sales: 1, holdings: 2, sourceSaleOutstanding: "150.00" },
+  reconciliation: { status: "RECONCILED", purchases: 3, movements: 8 },
+};
+
 function result(overrides: Record<string, unknown> = {}) {
   return {
     data: OVERVIEW,
@@ -117,10 +150,94 @@ function result(overrides: Record<string, unknown> = {}) {
 beforeEach(() => {
   useReportOverview.mockReturnValue(result());
   useZReport.mockReturnValue(result({ data: CLOSE }));
+  usePackageValuationReport.mockReturnValue(
+    result({ data: VALUATION, isFetching: false, refetch: vi.fn() }),
+  );
   getErrorMessage.mockReturnValue("Report service unavailable.");
 });
 
 describe("Reports", () => {
+  it("keeps package purchase value separate, company-wide and explicitly incomplete", () => {
+    render(<Reports />);
+    const panel = within(screen.getByRole("region", { name: "Remaining package purchase value" }));
+    expect(
+      panel.getByText(/Independent of the selected sales range and outlet/),
+    ).toBeInTheDocument();
+    expect(panel.getByText(/Other report panels have their own snapshot times/)).toHaveTextContent(
+      formatDateTime(VALUATION.asOf),
+    );
+    expect(
+      within(panel.getByRole("region", { name: "Active unused packages" })).getByText("SGD 100.01"),
+    ).toBeInTheDocument();
+    expect(
+      within(panel.getByRole("region", { name: "Expired unused packages" })).getByText("SGD 20.00"),
+    ).toBeInTheDocument();
+    expect(panel.getByText(/Unknown purchase value is not zero/)).toBeInTheDocument();
+    expect(panel.getByText("7 across 3 holdings")).toBeInTheDocument();
+    expect(panel.getByText("4 across 1 holdings")).toBeInTheDocument();
+    expect(panel.getByText("SGD 150.00")).toBeInTheDocument();
+    expect(panel.getByText(/not allocated package cash/)).toBeInTheDocument();
+    expect(panel.getByText(/does not imply recognised revenue/)).toBeInTheDocument();
+    expect(screen.getByText(/Total monetary liability:/)).toHaveTextContent("S$55.00");
+  });
+
+  it("does not imply valuation is active or present zeros before activation", () => {
+    usePackageValuationReport.mockReturnValue(
+      result({ data: { ...VALUATION, activation: null }, refetch: vi.fn() }),
+    );
+    render(<Reports />);
+    expect(screen.getByText(/Package valuation is not activated/)).toBeInTheDocument();
+    expect(screen.queryByText("SGD 100.01")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Unpaid package purchase disclosure" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("7 across 3 holdings")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /activate/i })).not.toBeInTheDocument();
+  });
+
+  it("hides cached values after valuation failure without hiding other reports", async () => {
+    const refetch = vi.fn();
+    usePackageValuationReport.mockReturnValue(
+      result({ data: VALUATION, isError: true, error: new Error("reconciliation"), refetch }),
+    );
+    render(<Reports />);
+    expect(screen.getByRole("alert")).toHaveTextContent("Package valuation is unavailable");
+    expect(screen.queryByText("SGD 100.01")).not.toBeInTheDocument();
+    expect(screen.getByText("S$105.00")).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("button", { name: "Refresh package value" }));
+    expect(refetch).toHaveBeenCalledOnce();
+  });
+
+  it("shows loading rather than zero and disables refresh while fetching", () => {
+    usePackageValuationReport.mockReturnValue(
+      result({ data: undefined, isPending: true, isFetching: true, refetch: vi.fn() }),
+    );
+    render(<Reports />);
+    expect(screen.getByText("Loading package valuation…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh package value" })).toBeDisabled();
+    expect(screen.queryByText("SGD 0.00")).not.toBeInTheDocument();
+  });
+
+  it("displays a known zero and preserves cents on large aggregate values", () => {
+    usePackageValuationReport.mockReturnValue(
+      result({
+        data: {
+          ...VALUATION,
+          active: {
+            ...VALUATION.active,
+            net: "9007199254740993.01",
+            originalTax: "0.00",
+            gross: "9007199254740993.01",
+          },
+        },
+        refetch: vi.fn(),
+      }),
+    );
+    render(<Reports />);
+    expect(screen.getAllByText("SGD 9,007,199,254,740,993.01")).toHaveLength(2);
+    expect(screen.getByText("SGD 0.00")).toBeInTheDocument();
+  });
+
   it("renders totals, the daily close and every server-backed table", () => {
     render(<Reports />);
 

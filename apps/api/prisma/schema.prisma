@@ -320,6 +320,10 @@ model PlatformSession {
 /// the legacy database keeps its owner's legacy `users.id` verbatim, so every
 /// `company_id` is already a valid `tenantId` — see ADR 0002.
 model Tenant {
+  packageValuationActivation PackageValuationActivation?
+  packagePurchaseSnapshots PackagePurchaseSnapshot[]
+  packageValuationStates PackageValuationState[]
+  packageValuationMovements PackageValuationMovement[]
   sessionPackageTransferEvents SessionPackageTransferEvent[]
   commissionRules CommissionRule[]
   prepaidTransferEvents PrepaidTransferEvent[]
@@ -1941,6 +1945,97 @@ model PrepaidBalanceEvent {
   @@index([tenantId, customerId, createdAt, id])
   @@index([tenantId, holdingId, createdAt, id])
   @@map("prepaid_balance_events")
+}
+
+/// Explicit valuation start and purchase-currency evidence, never subscription currency.
+/// No default/backfill: an authorized activation must supply all evidence.
+model PackageValuationActivation {
+  id String @id @default(cuid())
+  tenantId String @unique
+  policyVersion Int
+  currency String
+  activatedAt DateTime @default(now())
+  actorId String
+  reason String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchases PackagePurchaseSnapshot[]
+
+  @@unique([tenantId, id])
+  @@map("package_valuation_activations")
+}
+
+/// Immutable purchase evidence survives ordinary holding/customer/sale deletion.
+/// Source ids are evidence, not cascading foreign keys. Write services must validate
+/// the source rows in the same tenant transaction before creating a snapshot.
+model PackagePurchaseSnapshot {
+  id String @id @default(cuid())
+  tenantId String
+  activationId String
+  policyVersion Int
+  currency String
+  holdingId String
+  saleId String
+  saleLineId String
+  originalCustomerId String
+  grantedSessions Int
+  netCents BigInt
+  taxCents BigInt
+  grossCents BigInt
+  originalExpiresAt DateTime?
+  purchasedAt DateTime
+  recordedAt DateTime @default(now())
+  actorId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  activation PackageValuationActivation @relation(fields: [tenantId, activationId], references: [tenantId, id], onDelete: Cascade)
+  state PackageValuationState?
+  movements PackageValuationMovement[]
+
+  @@unique([tenantId, id])
+  @@unique([tenantId, holdingId])
+  @@unique([tenantId, saleLineId])
+  @@index([tenantId, purchasedAt, id])
+  @@map("package_purchase_snapshots")
+}
+
+/// Mutable projection only; immutable purchase/movement evidence is authoritative.
+model PackageValuationState {
+  id String @id @default(cuid())
+  tenantId String
+  purchaseId String
+  customerId String
+  availableOrdinals Json
+  expired Boolean @default(false)
+  voided Boolean @default(false)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchase PackagePurchaseSnapshot @relation(fields: [tenantId, purchaseId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, purchaseId])
+  @@map("package_valuation_states")
+}
+
+/// Signed bucket movements. Transfers and expiry have paired equal/opposite rows.
+model PackageValuationMovement {
+  id String @id @default(cuid())
+  tenantId String
+  purchaseId String
+  customerId String
+  sourceKey String
+  kind String
+  bucket String
+  quantity Int
+  netCents BigInt
+  taxCents BigInt
+  grossCents BigInt
+  ordinals Json
+  actorId String?
+  effectiveAt DateTime
+  recordedAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  purchase PackagePurchaseSnapshot @relation(fields: [tenantId, purchaseId], references: [tenantId, id], onDelete: Cascade)
+
+  @@unique([tenantId, purchaseId, sourceKey])
+  @@index([tenantId, effectiveAt, id])
+  @@map("package_valuation_movements")
 }
 
 /// Append-only ownership snapshots; only tenant removal cascades evidence.

@@ -448,6 +448,7 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
     assert.equal((await request("/api/reports/dashboard")).status, 401);
     assert.equal((await request("/api/reports/overview")).status, 401);
     assert.equal((await request("/api/reports/z-report")).status, 401);
+    assert.equal((await request("/api/reports/package-valuation")).status, 401);
   });
 
   it("keeps the dashboard core while the overview needs the reports add-on", async () => {
@@ -461,6 +462,7 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
     assert.equal(dashboard.status, 200);
     assert.equal(overview.status, 403);
     assert.equal(close.status, 403);
+    assert.equal((await request("/api/reports/package-valuation", token)).status, 403);
     assert.equal(((await overview.json()) as ErrorEnvelope).code, "MODULE_NOT_ENTITLED");
   });
 
@@ -541,6 +543,19 @@ describe("reports endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not
       asOf: body.liability.asOf,
     });
     assert.ok(Number.isFinite(Date.parse(body.liability.asOf)));
+  });
+
+  it("reports legacy sessions as explicitly unvalued without activation or backfill", async () => {
+    const { packageValuationReportSchema } = await import("@glampro_suite/shared");
+    const response = await request("/api/reports/package-valuation", token);
+    assert.equal(response.status, 200);
+    const report = packageValuationReportSchema.parse(await dataOf(response));
+    assert.equal(report.scope, "COMPANY");
+    assert.equal(report.activation, null);
+    assert.equal(report.active.net, "0.00");
+    assert.equal(report.expired.net, "0.00");
+    assert.ok(report.unvalued.active.sessionsRemaining > 0);
+    assert.equal(report.reconciliation.purchases, 0);
   });
 
   it("returns current balances even for a historical range with no sales", async () => {

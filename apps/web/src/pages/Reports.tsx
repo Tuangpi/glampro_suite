@@ -27,6 +27,7 @@ import { getErrorMessage } from "@/lib/api";
 import { formatDateInputValue } from "@/lib/utils";
 import { instantFromSalonDate } from "@/lib/salon-time";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
+import PackageValuationPanel from "@/components/reports/PackageValuationPanel";
 
 function initialDates(): { from: string; to: string } {
   const today = new Date();
@@ -246,6 +247,8 @@ export default function Reports() {
           reconciliation. No recovery has been recorded.
         </p>
       ) : null}
+
+      <PackageValuationPanel />
 
       <Card
         title="Daily close"
@@ -476,7 +479,7 @@ export default function Reports() {
               </Card>
               <Card
                 title="Remaining package sessions"
-                description="Unexpired session entitlements, counted but not valued in money."
+                description="Unexpired operational entitlements. Purchase valuation is reported separately above."
                 className="lg:col-span-2"
               >
                 <dl>

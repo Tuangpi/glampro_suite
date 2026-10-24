@@ -2,14 +2,24 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **SESS-01**, whole remaining
+- Current task: **VALUE-01 IN PROGRESS**. User approved all seven valuation-policy
+  points on October 24, 2026; policy version 1 and implementation plan recorded.
+  Exact-cent core and immutable activation/purchase storage implemented and tested.
+  Internal activation service and strict SGD confirmation contract now tested.
+  Transactional purchase/redemption/void/transfer ledger and expiry helper now wired.
+  Company-wide current report API now processes expiry and reconciles evidence.
+  Report UI now displays separate active/expired/unvalued and unpaid disclosures.
+  Public activation API/UI and expanded lifecycle acceptance now implemented/tested.
+  Broader lifecycle matrix and large-tenant reporting performance remain unverified.
+  Migrations disposable-only.
+  Most recently completed: **SESS-01**, whole remaining
   session-package transfer, same-company owner/manager controls and reversal safety.
   New isolated HTTP acceptance 1/1; existing package-set/treatment-session acceptance
   2/2; full API 581 pass / 0 fail / 19 opt-in skips; web 716/716, shared 183/183;
   workspace build/typecheck/lint/format pass. All 49 migrations replayed on two
   disposable databases; temporary PostgreSQL stopped. No application migration.
-  Next: #5 monetary valuation only after approved policy; otherwise select remaining
-  #6 messaging/assistant local scope. Neither started. Physical printing and rollout
+  Next: remaining lifecycle matrix and large-tenant reporting performance checks
+  under the approved policy; #6 is not selected. Physical printing and rollout
   authorization remain separate; existing HOURS-02 working changes preserved.
 - **OA-07 remains BLOCKED** on operational inputs, not acceptance. Outcome/local
   verification and synthetic recovery complete. All acceptance is user-confirmed;
@@ -23,11 +33,233 @@
   these are historical, not target-data recovery evidence or newly rerun here.
 - Earlier outlet/assistant failures are superseded by the full isolated API pass.
   Application prepaid/treatment schema drift remains a separate rollout concern.
-- Application database/accounts unchanged; no deployment, commit or push.
+- No application migration, deployment, commit or push. Earlier VALUE-01 test run
+  may have changed local test-namespaced fixtures; see the exact-cent checkpoint.
   Outlet owner acceptance is user-confirmed; rollout still requires authorized migrations.
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — VALUE-01 lifecycle acceptance and activation controls (partial)
+
+- Expanded disposable ledger acceptance: held carts excluded until completion;
+  repeat completion creates one snapshot; discounted multi-unit purchase stores
+  six sessions / SGD 180.00 net / 16.20 original tax / 196.20 gross. Part-payment
+  is disclosed separately. Catalogue/session-count/GST-setting edits do not reprice
+  snapshots; concurrent redemptions and a report serialize, and reverse-order voids
+  restore exact original amounts. Existing transfer/expiry/corruption checks retained.
+- Added POST /api/reports/package-valuation/activation using reports entitlement,
+  enabled owner/manager role and writable-tenant middleware plus existing locked
+  service checks. HTTP acceptance covers unauthenticated/unentitled/staff/unverified
+  owner/suspended/disabled refusals, spoofed fields and bad confirmation, concurrent
+  identical retries, conflicting reason, single tenant-filtered audit and isolation.
+- Reports offers one-time SGD/policy-1 confirmation with required reason, explicit
+  no-backfill/immutable/server-time disclosure, role/read-only gating and pending
+  lockout. No automatic mutation retry; success/error invalidates current evidence.
+  Activated reports display immutable actor/reason. Refresh failures still hide values.
+- Verified: disposable acceptance 2/2; full API 591 pass / 0 fail / 22 opt-in skips
+  (acceptance opt-ins tested separately); full web 733/733, shared 187/187; focused
+  web 24/24 rerun after evidence display. Workspace typecheck/lint/build passed.
+  Initial failures corrected: fixture DB role and snapshot field name; HTTP expects
+  existing auth's 401 for owner without 2FA; audit counts require explicit tenantId.
+  No production assertions or safeguards weakened.
+- Evidence: /tmp/value01-{lifecycle,acceptance,api-all,web-all,web-focused,shared,
+  typecheck,lint,build}.log. Reused previously migrated disposable PostgreSQL 18 at
+  port 55462; no new migration replay claimed. No application DB access, application
+  salon activation, migration, deployment, commit or push. Prior working changes kept.
+- VALUE-01 remains IN PROGRESS. Remaining acceptance includes whole service sets,
+  voucher-attributed discount integration, later receivable collection, transfer-back,
+  post-expiry restoration and broader conflicting-action races. Large-tenant locked
+  report performance and manual browser walkthrough remain unverified.
+
+## October 24, 2026 — VALUE-01 report UI (partial)
+
+- Added independent PackageValuationPanel on Reports, validated current-report hook
+  and reports-prefixed query key. Existing sale invalidation also refreshes valuation.
+- Company-wide/outlet-independent scope, separate snapshot timestamp, policy/currency/
+  activation boundary, active and expired net/original-tax/gross, unvalued counts and
+  unpaid whole-source-sale disclosures. No mixed-basis grand total or activation UI.
+- Loading/inactive/error states never substitute zero. Failed refresh hides cached
+  valuation while other report panels remain usable. Explicit refresh is available.
+  Bigint whole-unit formatting preserves exact cents even above Number's safe range.
+- Full web regression: 724/724 across 91 files. Focused report/hook 15/15; web
+  typecheck/lint/production build and format/diff checks passed. Tests cover scope,
+  separate values, incomplete legacy evidence, inactive/loading/error/refresh,
+  large exact values, response validation and report-prefix invalidation.
+- No browser/manual visual walkthrough performed. No database access or migration
+  needed this increment. Earlier API 598/shared 187 results were not rerun here.
+- Remaining: wider lifecycle/discount/tax/multi-unit acceptance, public activation
+  controls and large-tenant performance verification. VALUE-01 stays IN PROGRESS.
+
+## October 24, 2026 — VALUE-01 current report API (partial)
+
+- Added authenticated reports-entitled GET /api/reports/package-valuation and shared
+  contract. Current company-wide snapshot drops only outlet scope, samples database
+  time after the prepaid lock and processes due expiry in the same transaction.
+- Reconciles immutable movement amounts, quantities and signed ordinal boundaries
+  per purchase/customer/bucket against projection and operational holdings. Fails
+  closed with VALUATION_RECONCILIATION_FAILED; failed reports roll expiry back.
+- Reports active/expired net, original tax and gross separately; unknown legacy
+  active/expired counts remain unvalued. Known zero counts as valued. Discloses
+  whole source-sale receivables once, without inventing mixed-sale cash allocation.
+  Existing sales, GST, receivables and prepaid/gift totals are unchanged.
+- Verified full isolated API: 598 passed / 0 failed / 20 opt-in skips; shared 187/187.
+  API build/typecheck/lint and shared build/lint passed. Focused HTTP/lifecycle tests
+  cover auth/entitlement, no activation/backfill, transferred owner, outlet-independent
+  totals, exact ordinal corruption, repeat/concurrent reports and report expiry.
+- Additional acceptance verifies expiry rollback on failed reconciliation and voiding
+  an expired unused purchase. Corrected a test fixture that expired during grant
+  instead of during report; final full regression rerun passed. Disposable cluster
+  stopped after testing; log: /tmp/glampro-value01-ledger-evctm2fu/report-full-api-final.log.
+- Remaining: report UI, public activation controls, wider discount/tax/multi-unit and
+  concurrent lifecycle acceptance. Current implementation reads full tenant evidence
+  under the prepaid lock; bounded large-tenant performance remains unverified.
+- VALUE-01 remains IN PROGRESS. Disposable port 55462 only; no application migration,
+  deployment, commit or push. Earlier local test-fixture disclosure remains above.
+
+## October 24, 2026 — VALUE-01 transactional ledger (partial)
+
+- Added migration 20261024220000_package_valuation_movements: tenant-bound mutable
+  ordinal/ownership projection plus append-only signed bucket evidence with unique
+  source keys, reconciled bigint net/tax/gross, stable ranges and system expiry actor.
+- New package-valuation-ledger.ts writes immutable purchase snapshots and grants from
+  completed sale holdings; redemptions, exact void restorations, paired transfers and
+  purchase voids commit with existing POS transactions under prepaid lock order.
+  Snapshot-less legacy holdings stay unvalued. Redemption restoration uses current
+  valuation owner after transfer. Purchase void evidence survives holding deletion.
+- Idempotent expiry helper moves remaining ordinals between active/expired buckets
+  effective at original expiry, without staff attribution. It is NOT yet connected
+  to a report transaction/job. No public activation controls or report changes yet.
+- New isolated POS test covers unpaid contracted value, no legacy backfill, purchase
+  retry, exact-cent redemption/restoration, transfer conservation/current-owner
+  restoration, forbidden purchase void after transfer, allowed source deletion,
+  immutable movement edits, repeated expiry and forced movement failure rolling back
+  sale, snapshot and receipt counter. Expanded lifecycle/tax/discount races remain.
+- All 51 migrations replayed on fresh disposable PostgreSQL 18 port 55462. Initial
+  focused 20/20; final full API 597 passed / 0 failed / 20 opt-in skips (activation
+  acceptance requires its separate port 55461; previously verified, not rerun here).
+  Prisma validate/generate, API build/typecheck/lint, formatting/diff passed.
+  Temporary cluster stopped. Logs: /tmp/glampro-value01-ledger-evctm2fu/
+  {migrations-verified,api-tests-verified,stop}.log.
+- Intermediate regression failures: fixture incorrectly declared packages core,
+  polluting reused disposable DB; first correction patch landed in wrong fixture
+  field. Corrected actual lines, checked typecheck, recreated disposable database
+  and replayed migrations before final clean pass. No assertions weakened.
+- Still IN PROGRESS. No application DB migration/access, deployment, commit or push.
+
+## October 24, 2026 — VALUE-01 internal activation service (partial)
+
+- Added shared strict activation contract and internal package-valuation.service.ts.
+  Explicit policy 1 / SGD / confirmation / bounded reason only; rejects submitted
+  actor, tenant, id and effective time. SGD is explicitly confirmed for future
+  purchases, not inferred from billing currency or used to backfill older holdings.
+  Arbitrary currency selection is excluded while POS display remains SGD-only.
+- Activation service requires authenticated scope actor, rechecks enabled owner/
+  manager (owner 2FA), tenant and subscription write status under shared prepaid →
+  tenant → actor locks. Database UTC clock sampled after lock acquisition establishes
+  activation boundary. Activation and audit commit together. Same actor/input retries
+  return original evidence; conflicting confirmations reject without replacing it.
+- Deliberately NOT exposed through routes/UI until atomic sale/ledger integration
+  works. Exposing it now would let users activate a reporting boundary while sale
+  grants are not recorded. No application salon activated and no legacy backfill.
+- New isolated service test verifies permissions, scope spoofing, suspension/expired
+  subscription, USD billing versus confirmed SGD purchase currency, retry/race,
+  verified owner, shared POS lock, no backfill and rollback on forced audit failure.
+  Shared tests 185/185; focused database/storage/allocation/tenancy 20/20; full isolated
+  API 597 pass / 0 fail / 19 unrelated opt-in skips. All 50 migrations replayed on
+  disposable PostgreSQL 18 at port 55461; stopped normally. API/shared build and lint,
+  API typecheck, formatting and diff checks pass. No web files changed/tested here.
+  Evidence: /tmp/glampro-value01-activation-1eykj5go/{migrations,focused,api-tests,stop}.log.
+- Still IN PROGRESS: next implement movement evidence, purchase/redemption/void/
+  transfer writes and expiry reconciliation; expose activation only once safe.
+  No application migration, database access, deployment, commit or push this checkpoint.
+
+## October 24, 2026 — VALUE-01 immutable purchase-storage foundation (partial)
+
+- Added PackageValuationActivation and PackagePurchaseSnapshot with tenant scoping
+  and migration 20261024210000_package_purchase_valuation. Activation explicitly
+  records currency, policy version, actor, reason and boundary; no default currency,
+  activation inserts or legacy backfill. New purchases will reference that evidence,
+  not subscription billing currency. No salon has been activated by this work.
+- Snapshots preserve original source ids without holding/customer/sale cascades,
+  bigint net/tax/gross cents, quantity, original expiry and purchase/recording times.
+  Database checks enforce reconciled nonnegative amounts, positive quantity,
+  source uniqueness and matching tenant activation/currency/policy/recording boundary.
+  Append-only triggers forbid updates/deletes except tenant-removal cascades.
+- Added opt-in storage tests (PACKAGE_VALUATION_STORAGE_TEST=1) for cross-tenant
+  references and reads, unscoped refusal, exact amounts, known zero, retry uniqueness,
+  raw-SQL immutability, rollback and tenant cascade retention behavior. Test source
+  ids intentionally need not have live source rows; future write service must validate
+  tenant source provenance in the transaction before writing snapshots.
+- Fresh PostgreSQL 18 replayed all 50 migrations at disposable port 55460. Focused
+  storage/allocation/tenant registration 19/19; full isolated API 596 passed, zero
+  failures, 19 unrelated opt-in skips. Prisma validate/generate, API typecheck/lint,
+  build (including shared build), formatting and diff checks passed. Cluster stopped.
+  Evidence: /tmp/glampro-value01-storage-oyx853tt/{migrations,focused,api-tests,stop}.log.
+- Prisma schema-drift comparison exits 2 for older assistant/commission/prepaid/
+  treatment tables' FK/index differences. Neither new valuation table appears in the
+  diff. Unrelated pre-existing drift was not changed; schema-drift check is not a pass.
+- Still IN PROGRESS: no activation API/workflow, sale grant/redemption/void wiring,
+  movement ledger, expiry job or report changes yet. No application DB connected in
+  this checkpoint, no application migration, deployment, commit or push.
+
+## October 24, 2026 — VALUE-01 exact-cent allocation core (partial)
+
+- Added apps/api/src/lib/package-valuation.ts and its test file. Strict exact decimal
+  conversion to bigint, consideration after voucher only, independent net/tax
+  allocation, compact one-based ordinal ranges, lowest-available draws and exact
+  restoration. Rejects invalid/overlapping evidence instead of silently repairing it.
+  No one-row-per-session expansion; input evidence is not mutated.
+- Nine new tests cover approved examples, known-zero versus missing evidence,
+  invalid amounts/ranges, tax rounding, out-of-order restoration, large grants and
+  1,275 grant/draw/restoration conservation scenarios. Focused expiry/allocation
+  14/14. API typecheck, lint and build (including shared build) passed.
+- Full isolated API: 590 passed, 0 failed, 19 opt-in skips. All 49 existing migrations
+  replayed on fresh PostgreSQL 18 at port 55459; no new migration. Disposable cluster
+  stopped normally. Evidence: /tmp/glampro-value01-npdm241p/{migrations,api-tests,stop}.log.
+- Initial full API invocation unintentionally used configured local database through
+  dotenv; failed on existing missing services.interval. Test fixture setup/cleanup
+  may have changed test-namespaced rows there; no migration ran against it. This was
+  not an isolated run and is not claimed safe application-data verification. Later
+  rerun explicitly used disposable DATABASE_URL. First disposable migration attempt
+  refused a matching shadow URL; corrected to a separate disposable shadow database.
+- Currency integration still unresolved: Sale has no currency field; web formatting
+  hardcodes SGD and subscription currency is billing evidence only. Do not infer
+  historical currency. Next: establish explicit purchase-currency source and add
+  tenant-scoped immutable purchase/movement models and transactional integration.
+- VALUE-01 remains IN PROGRESS. No report change, new schema, deployment, commit
+  or push. These helpers are not yet wired into sales; monetary reporting is not ready.
+
+## October 24, 2026 — VALUE-01 policy approved; implementation planned
+
+- User explicitly approved the draft's seven points. Recorded policy version 1 in
+  docs/package-valuation-policy-draft.md, retaining its path for existing references.
+- Removed the policy blocker and started implementation planning. Inspected report
+  API/contracts/UI, purchase grants, redemption and void paths. Purchase void deletes
+  holdings, so valuation evidence must survive ordinary holding deletion. Redemption
+  currently records counts, not exact-cent ordinal allocations.
+- Plan: docs/package-valuation-implementation.md. Original-currency evidence must
+  be verified before valuing existing holdings; subscription currency is not evidence
+  of sale currency. No invented backfill or inferred cash allocation is authorized.
+- This checkpoint changes documentation only. No functional tests rerun; no schema,
+  migration, application behaviour, application database, deployment, commit or push.
+  VALUE-01 is not DONE. Continue the same task before selecting another deliverable.
+
+## October 24, 2026 — VALUE-01 initial assessment (superseded policy blocker)
+
+- Selected #5 after SESS-01. Inspected saved decisions, package purchase snapshots
+  and report API/UI. No approved monetary allocation policy found. Existing report
+  explicitly labels unexpired session counts as operational, not full accounting
+  valuation, and excludes session packages from monetary totals. Preserved this.
+- Recorded VALUE-01 BLOCKED pending allocation, discounts/GST/rounding, unpaid
+  purchases, redemption/void, expiry, transfer, legacy-data and reporting-period
+  rules. No application code/schema changes or new functional test run claimed.
+- Next: user supplies approved policy or explicitly defers #5 to select #6.
+- User requested a concrete draft before implementation. Created
+  docs/package-valuation-policy-draft.md with proposed rules and worked examples.
+  No accounting-policy approval inferred. VALUE-01 remains BLOCKED on review;
+  application behaviour unchanged. Draft includes unpaid purchases, stored-tax
+  allocation, exact-cent restoration, expiry and incomplete legacy evidence.
 
 ## October 24, 2026 — SESS-01 complete: whole session-package transfer
 
