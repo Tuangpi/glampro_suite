@@ -14,6 +14,20 @@ Positioning from the review: simple flat SGD pricing, local shared/transferable
 prepaid packages, WhatsApp-first engagement, owner assistance and grant readiness.
 These are product direction, not verified pricing, provider or grant commitments.
 
+## Session-package transfer — SESS-01, approved October 24, 2026
+
+The user approved whole remaining session-holding transfers as the next independent
+local deliverable. This extends the earlier prepaid-only transfer scope; historical
+session-transfer exclusions below describe that earlier scope. Partial transfers
+and cross-company transfers remain excluded. Owners/managers transfer between active
+same-company customers with a reason and confirmation, preserving expiry, purchase
+provenance and redemption rules. Original purchase voids are blocked after transfer;
+existing package/refund exclusions remain. Redemption voids restore the same holding
+under its current owner. Historical sales/treatments keep their original customer.
+See `docs/session-package-transfers.md`. No monetary liability policy is introduced.
+The additive migration is verified only on disposable databases until authorized
+application rollout is explicitly recorded.
+
 ## Advanced commissions — COMM-01, accepted October 23, 2026
 
 Extend the completed basic commission policy, without tiers, shared attribution,

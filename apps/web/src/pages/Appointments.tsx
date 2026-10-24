@@ -86,18 +86,19 @@ function viewSubtitle(
   ) => string,
 ): string {
   if (view === "month") {
-    return formatDate(day, { month: "long", year: "numeric" });
+    return formatDate(dayKey(day), { month: "long", year: "numeric" });
   }
 
   if (view === "week") {
     const first = startOfWeek(day);
     const last = addDays(first, 6);
-    const from = formatDate(first, { day: "numeric", month: "short" });
-    const to = formatDate(last, { day: "numeric", month: "short", year: "numeric" });
+    const from = formatDate(dayKey(first), { day: "numeric", month: "short" });
+    const to = formatDate(dayKey(last), { day: "numeric", month: "short", year: "numeric" });
     return `${from} – ${to}`;
   }
 
-  return formatDate(day, {
+  // These are already wall-clock calendar fields, not instants to shift again.
+  return formatDate(dayKey(day), {
     weekday: "long",
     day: "numeric",
     month: "long",

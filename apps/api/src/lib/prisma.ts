@@ -81,6 +81,7 @@ export const TENANT_SCOPED_MODELS = [
   // Customer holdings and their ledgers. Every one carries `tenantId` in its own
   // right: a redemption is read per customer, not only through its sale.
   "CustomerPackageHolding",
+  "SessionPackageTransferEvent",
   "CustomerValuePackageHolding",
   "PrepaidTransferEvent",
   "PrepaidFamily",

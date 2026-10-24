@@ -2592,7 +2592,7 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
     const [packages, credits, cards] = await Promise.all([
       tx.customerPackageHolding.findMany({
         where: { saleLineId: { in: lineIds } },
-        select: { quantity: true, quantityRemaining: true },
+        select: { id: true, quantity: true, quantityRemaining: true },
       }),
       tx.customerValuePackageHolding.findMany({
         where: { saleLineId: { in: lineIds } },
@@ -2603,6 +2603,16 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
         select: { value: true, valueRemaining: true },
       }),
     ]);
+
+    const sessionTransferred = await tx.sessionPackageTransferEvent.findFirst({
+      where: { holdingId: { in: packages.map((holding) => holding.id) } },
+      select: { id: true },
+    });
+    if (sessionTransferred)
+      throw conflict(
+        "Sessions this sale granted have been transferred. Their ownership history must be preserved; the purchase cannot be voided.",
+        "HOLDING_ALREADY_TRANSFERRED",
+      );
 
     const transferred = await tx.prepaidTransferEvent.findFirst({
       where: { holdingId: { in: credits.map((holding) => holding.id) } },

@@ -320,6 +320,7 @@ model PlatformSession {
 /// the legacy database keeps its owner's legacy `users.id` verbatim, so every
 /// `company_id` is already a valid `tenantId` — see ADR 0002.
 model Tenant {
+  sessionPackageTransferEvents SessionPackageTransferEvent[]
   commissionRules CommissionRule[]
   prepaidTransferEvents PrepaidTransferEvent[]
   prepaidFamilies PrepaidFamily[]
@@ -1943,6 +1944,26 @@ model PrepaidBalanceEvent {
 }
 
 /// Append-only ownership snapshots; only tenant removal cascades evidence.
+model SessionPackageTransferEvent {
+  id String @id @default(cuid())
+  tenantId String
+  holdingId String
+  fromCustomerId String
+  toCustomerId String
+  actorId String
+  quantity Int
+  expiresAt DateTime?
+  reason String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, holdingId])
+  @@index([tenantId, fromCustomerId, createdAt, id], map: "session_transfer_from_history_idx")
+  @@index([tenantId, toCustomerId, createdAt, id], map: "session_transfer_to_history_idx")
+  @@map("session_package_transfer_events")
+}
+
+/// Append-only prepaid ownership snapshots; only tenant removal cascades evidence.
 model PrepaidTransferEvent {
   id String @id @default(cuid())
   tenantId String

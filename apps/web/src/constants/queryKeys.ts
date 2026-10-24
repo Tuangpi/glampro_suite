@@ -82,6 +82,9 @@ export const queryKeys = {
      */
     holdings: (id: string) => ["customers", "detail", id, "holdings"] as const,
     ownedPrepaid: (id: string) => ["customers", "detail", id, "owned-prepaid"] as const,
+    ownedSessionPackages: (id: string) => ["customers", "detail", id, "session-packages"] as const,
+    sessionPackageTransfers: (id: string) =>
+      ["customers", "detail", id, "session-package-transfers"] as const,
     prepaidTransfers: (id: string) => ["customers", "detail", id, "prepaid-transfers"] as const,
   },
 

@@ -14,6 +14,7 @@ export * from "./schemas/company-administration.js";
 export * from "./schemas/common.js";
 export * from "./schemas/customer.js";
 export * from "./schemas/prepaid.js";
+export * from "./schemas/session-transfer.js";
 export * from "./schemas/catalogue.js";
 export * from "./schemas/sales.js";
 export * from "./schemas/staff.js";

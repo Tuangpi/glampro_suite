@@ -5,6 +5,7 @@ import type { CustomerPhoto, CustomerPurchase, CustomerVisit } from "@glampro_su
 import CustomerAvatar from "@/components/customers/CustomerAvatar";
 import CustomerArchivePanel from "@/components/customers/CustomerArchivePanel";
 import CustomerPrepaidPanel from "@/components/customers/CustomerPrepaidPanel";
+import CustomerSessionPackagesPanel from "@/components/customers/CustomerSessionPackagesPanel";
 import CustomerFormDrawer from "@/components/customers/CustomerFormDrawer";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -121,6 +122,7 @@ function Profile({ id }: { id: string }) {
         )}
       </section>
       <CustomerPrepaidPanel customerId={id} />
+      <CustomerSessionPackagesPanel customerId={id} />
       <History id={id} kind="visits" />
       <History id={id} kind="purchases" />
       <Treatments id={id} />

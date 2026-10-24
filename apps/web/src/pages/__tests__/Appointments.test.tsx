@@ -1,14 +1,15 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { toSalonDate } from "@/lib/salon-time";
+import { instantFromSalonDate, toSalonDate } from "@/lib/salon-time";
+const bookingZone = vi.hoisted(() => ({ value: "Asia/Singapore" }));
 vi.mock("@/hooks/useBookingFormatting", async () => {
   const { createSalonFormatters } = await import("@/lib/utils");
   return {
     useBookingFormatting: () => ({
-      ...createSalonFormatters({ timeZone: "Asia/Singapore", locale: "en-SG" }),
-      timeZone: "Asia/Singapore",
+      ...createSalonFormatters({ timeZone: bookingZone.value, locale: "en-SG" }),
+      timeZone: bookingZone.value,
       locale: "en-SG",
       outletReady: true,
       outletError: false,
@@ -61,9 +62,9 @@ vi.mock("@/components/appointments/AppointmentFormDrawer", () => ({
 
 const { default: Appointments } = await import("@/pages/Appointments");
 
-/** A local-time instant on the anchor day — the day grid draws the day on screen and no other. */
+/** A salon-time instant on the anchor day, independent of the test host's timezone. */
 function dayAt(offsetDays: number, hour: number): { startsAt: string; endsAt: string } {
-  const anchor = new Date();
+  const anchor = salonOf(new Date().toISOString());
   anchor.setDate(anchor.getDate() + offsetDays);
   const start = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate(), hour, 0, 0, 0);
   const end = new Date(
@@ -75,7 +76,10 @@ function dayAt(offsetDays: number, hour: number): { startsAt: string; endsAt: st
     0,
     0,
   );
-  return { startsAt: start.toISOString(), endsAt: end.toISOString() };
+  return {
+    startsAt: instantFromSalonDate(start, "Asia/Singapore").toISOString(),
+    endsAt: instantFromSalonDate(end, "Asia/Singapore").toISOString(),
+  };
 }
 
 /** One page, as the list hook returns it. */
@@ -134,6 +138,7 @@ const ROW = {
 };
 
 beforeEach(() => {
+  vi.clearAllMocks();
   readOnly.value = false;
   mutateAsync.mockReset().mockResolvedValue({});
   get.mockReset().mockResolvedValue(ROW);
@@ -152,6 +157,40 @@ beforeEach(() => {
 });
 
 describe("Appointments", () => {
+  afterEach(() => {
+    bookingZone.value = "Asia/Singapore";
+    vi.useRealTimers();
+  });
+
+  it("labels the same Auckland calendar day that the list requests", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-24T06:00:00.000Z"));
+    bookingZone.value = "Pacific/Auckland";
+    render(<Appointments />);
+
+    const filters = useAppointmentList.mock.calls.at(-1)?.[0];
+    expect(filters.from).toBe("2026-10-23T11:00:00.000Z");
+    expect(filters.to).toBe("2026-10-24T10:59:59.999Z");
+    expect(screen.getByText("Saturday, 24 October 2026")).toBeInTheDocument();
+  });
+
+  it("keeps Auckland week and month labels on the requested calendar dates", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-31T06:00:00.000Z"));
+    bookingZone.value = "Pacific/Auckland";
+    render(<Appointments />);
+
+    expect(screen.getByText("Saturday, 31 October 2026")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+    expect(screen.getByText("26 Oct – 1 Nov 2026")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    expect(screen.getByText("October 2026")).toBeInTheDocument();
+    expect(enabledWindows()[0]).toEqual({
+      from: "2026-09-30T11:00:00.000Z",
+      to: "2026-10-31T10:59:59.999Z",
+    });
+  });
+
   it("queries the browser day and renders the real booking", () => {
     render(<Appointments />);
 
@@ -274,7 +313,7 @@ describe("Appointments", () => {
     render(<Appointments />);
 
     await user.click(screen.getByRole("button", { name: "Week" }));
-    const weekBefore = new Date(enabledWindows()[0]!.from);
+    const weekBefore = salonOf(enabledWindows()[0]!.from);
     await user.click(screen.getByRole("button", { name: "Next week" }));
     const weekAfter = salonOf(enabledWindows()[0]!.from);
     // Seven days, not one — and still a Monday.

@@ -2,12 +2,15 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **HOURS-01**, approved branch-aware
-  bookings/hours with company-hours fallback and preserved legacy appointments.
-  Full API 581 passed / 0 failed / 18 skips; web 704/704; shared 181/181.
-  Build/typecheck/lint/format pass; all 48 migrations replayed on disposable PostgreSQL.
-  Next: authorized rollout/browser verification when ready; no further local task
-  selected. Physical receipt/driver validation remains separate.
+- Current task: **None**. Most recently completed: **SESS-01**, whole remaining
+  session-package transfer, same-company owner/manager controls and reversal safety.
+  New isolated HTTP acceptance 1/1; existing package-set/treatment-session acceptance
+  2/2; full API 581 pass / 0 fail / 19 opt-in skips; web 716/716, shared 183/183;
+  workspace build/typecheck/lint/format pass. All 49 migrations replayed on two
+  disposable databases; temporary PostgreSQL stopped. No application migration.
+  Next: #5 monetary valuation only after approved policy; otherwise select remaining
+  #6 messaging/assistant local scope. Neither started. Physical printing and rollout
+  authorization remain separate; existing HOURS-02 working changes preserved.
 - **OA-07 remains BLOCKED** on operational inputs, not acceptance. Outcome/local
   verification and synthetic recovery complete. All acceptance is user-confirmed;
   do not request again. Target/provider evidence and specific retention/security
@@ -25,6 +28,84 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — SESS-01 complete: whole session-package transfer
+
+- Added tenant-scoped append-only session transfer events and migration
+  `20261024200000_session_package_transfer`; strict shared contracts, paginated
+  holding/history routes, owner/manager transfer and customer-profile controls.
+  Same-company active customers only; whole remaining holding, unchanged expiry,
+  purchase line, quantity and rule snapshots. No partial transfers or monetary policy.
+- Transfer shares POS advisory/holding lock order. Rechecks enabled actor/current
+  role/owner verification, effective subscription/write state, archived customers,
+  current ownership/version, positive valid balance and expiry inside transaction.
+  Ownership/evidence commit atomically. Purchase void refused after any transfer,
+  including return to buyer. Existing package purchase/redemption refund exclusions
+  retained. Redemption void restores same holding under current owner once only.
+- Kept original-customer treatment evidence linkable after ownership transfer,
+  without exposing the old customer's visit to the recipient. Clinical/sale customer
+  identities remain unchanged. Service-set purchase rules survive catalogue edits.
+- Fresh replay of all 49 migrations on disposable PostgreSQL port 55448 database
+  session_transfer_test, plus second fresh database package_expiry_test on 55440.
+  New HTTP/database acceptance 1/1, no skips; existing package-set/treatment-session
+  acceptance separately enabled 2/2, no skips. Covers permissions, cross-tenant
+  refusal, stale/duplicate/racing writes, expiry/archive, reports, exact-source
+  reversals, purchase-void race, service sets, treatment links, immutable evidence
+  and forced audit-write failure rollback. Temporary cluster stopped normally.
+- Final sequential API: 581 passed / 0 failed / 19 opt-in skips (three separately
+  enabled above; remaining 16 are not newly verified). Web 716/716 in 90 files;
+  focused transfer/profile 17/17, shared 183/183. Workspace build/typecheck/lint,
+  formatting and diff checks pass. Existing pg concurrent-query deprecation remains.
+- Initial new-test failures: cashier fixture lacked web-login email, history URL
+  typo and report comparison included independent snapshot timestamp. Corrected
+  fixtures/asserted balances separately; clean fresh replay final acceptance passes.
+  No production/app data, providers, deployment, commit or push. UI verification is
+  automated components, not interactive browser UAT. Existing outlet-hours edits
+  preserved. Docs: docs/session-package-transfers.md; logs /tmp/glampro-sess01-*.
+- Next: #5 requires approved allocation/discount/refund/expiry/transfer valuation
+  policy; do not invent it. Alternatively select remaining #6 local messaging scope.
+
+## October 24, 2026 — HOURS-02 complete: browser checks and heading correction
+
+- Captured list requests/responses: October 24 Auckland window was correct, but
+  heading showed October 25 because the already-local Date was formatted as an
+  instant again. Earlier walkthrough then booked the following day. Fixed
+  Appointments.tsx subtitles with date-only keys for day/week/month; no API/query
+  or persisted booking behavior changed. Added two page regressions and corrected
+  existing fixture/comparison host-timezone assumptions found by cross-zone tests.
+- Ten browser assertions passed: top-bar switching/confirmation/persistence,
+  correct heading, next-day series visibility, saved branch clock, closed-day
+  reschedule refusal, valid reschedule/reload, branch filtering and consolidated
+  branch editing. CDP stall was the unanswered confirmation dialog, not an app hang.
+- Verified full web 706/706 across 89 files (two workers), page 11/11 under both
+  Los Angeles and Auckland; web build/typecheck/lint and formatting pass. Initial
+  default-worker full run had one unrelated lazy-route timeout; bounded-worker
+  rerun passed unchanged. Prior public/API walkthrough evidence remains recorded.
+- Evidence: /tmp/hours02-{investigate.log,finish-results.json,finish.log,
+  web-tests-final.log,los-angeles.log,auckland.log,build.log,types.log,lint.log}.
+  Application database/providers untouched; no dependencies, deployment, commit
+  or push. No next development task selected; rollout authorization still required.
+
+## October 24, 2026 — HOURS-02 disposable browser walkthrough partial (superseded)
+
+- User selected disposable-only browser verification. Application database,
+  accounts and real providers untouched. All 48 migrations replayed on fresh
+  PostgreSQL 18 port 55447; local API/web and headless Chrome used synthetic data.
+- Browser override/reset persistence, public branch selection/Auckland slots,
+  successful booking and closed-day message passed. Branch editor timezone,
+  closed-day refusal and three-occurrence creation passed. Public/live API runner
+  completed 16 assertions including staff conflicts, hours enforcement, series
+  identity, legacy edits/filtering and non-scheduling edits after hours changes.
+- Still IN PROGRESS: top-bar switch and UI rescheduling need completion. Initial
+  CDP navigation/switch stalled; fresh tab rendered. Branch list remained empty
+  after current-local-day series creation/reload. Capture list ranges and responses
+  before diagnosing; no source defect established or application fix attempted.
+- Harness corrections: CORS for isolated origin, seed join fields, asynchronous
+  slot waits, unique public emails and refreshed disposable access token. These
+  are setup corrections, not product regressions. Logs/screenshots: /tmp/hours02-*.
+- Temporary API/web/Chrome and stalled CDP runner stopped; disposable PostgreSQL
+  stopped successfully. No application migration, deployment, dependencies, commit
+  or push. Next: resume HOURS-02 investigation, not rollout or hardware acceptance.
 
 ## October 24, 2026 — HOURS-01 branch booking and hours complete locally
 

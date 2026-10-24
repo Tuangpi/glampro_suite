@@ -24,6 +24,73 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### SESS-01 — Whole remaining session-package transfer
+
+- Status: DONE — October 24, 2026, implementation and isolated local verification.
+- Dependencies: VERIFY-01, PRINT-01, HOURS-01 and HOURS-02 complete.
+- Expected result: Owner/manager transfers a whole remaining session holding between
+  active same-company customers, with preserved expiry, rules and purchase provenance,
+  immutable history, explicit confirmation and concurrency protection. No partial or
+  cross-company transfers; no monetary liability valuation.
+- Reversal policy: Original purchase void is blocked after any transfer, even if
+  transferred back. Existing package purchase/redemption refund exclusions remain.
+  Redemption void restores the same holding under its current owner, without renewing
+  expiry. Historical sales/treatments remain with their original customer.
+- Completion check: Shared/API/UI regressions and isolated PostgreSQL acceptance for
+  permissions, tenant isolation, stale/concurrent requests, transfer/spend/reversal
+  session conservation, preserved snapshots and immutable/atomic evidence.
+- Safety: Disposable database only; no application migration, real provider calls,
+  deployment, commit or push. Preserve existing outlet-hours working changes.
+- Result: Whole-holding API and customer-profile controls, immutable transfer events,
+  version/role/customer/expiry checks, shared POS lock order and purchase-void guard.
+  Original-customer treatment evidence remains linkable after ownership changes.
+- Verified: New HTTP/database acceptance 1/1; existing package-set and treatment-session
+  acceptance 2/2 separately enabled without skips. Full API 581 passed / 0 failed /
+  19 opt-in skips; web 716/716 (90 files), shared 183/183; workspace build/typecheck/
+  lint/format and diff checks pass. All 49 migrations replayed on two fresh disposable
+  databases; temporary PostgreSQL stopped. See docs/session-package-transfers.md.
+- Limits: Component UI tests, not a new interactive browser walkthrough. Additive
+  migration not applied to application data; authorized rollout remains separate.
+  Partial transfers, package refunds and monetary valuation were not added.
+
+### HOURS-02 — Disposable browser booking walkthrough
+
+- Status: DONE — October 24, 2026, disposable browser walkthrough and heading fix verified.
+- Dependencies: HOURS-01
+- Expected result: Exercise outlet hours and branch booking through a real browser
+  backed by a fresh local API/database, without touching application data/providers.
+- Completion check: Verify override/reset, branch timezone and public selection,
+  closed/out-of-hours rejection, rescheduling/series, legacy edits and shared staff
+  conflicts; record actual coverage and limitations, then stop temporary services.
+- Safety: No application migration, deployment, outbound providers or hardware checks.
+- Result so far: 16 public-browser/live-API assertions passed on fresh PostgreSQL 18
+  port 55447 after all 48 migrations replayed. Browser override/reset persisted;
+  public branch selection, Auckland opening/booking and closed-day display passed.
+  Branch editor timezone, closed-day refusal and three-occurrence creation passed.
+  Live API checks cover shared staff clashes, closed/overrun refusal, reschedule
+  refusal, non-scheduling edits, series outlet identity and legacy preservation/filtering.
+- Follow-up result: 10 additional browser assertions pass, including normal top-bar
+  switching with confirmation, next-day series visibility, closed-day rejection and
+  valid rescheduling persisted after reload, branch filtering and consolidated edits.
+  Captured requests establish the list correctly queried October 24 in Auckland;
+  its heading incorrectly showed October 25 after double timezone conversion.
+  Fixed list/day/week/month headings to format calendar date keys, not wall-clock
+  Dates as instants. No booking data/query change. CDP stall was an unanswered
+  confirmation dialog, now handled. Earlier fixtures booked the following day.
+- Checks: Full web 706/706 across 89 files with two workers; focused page 11/11
+  under Los Angeles and Auckland host zones; web build/typecheck/lint and format
+  pass. Initial default-worker suite hit an unrelated lazy-route timeout; rerun
+  passed without weakening it. Cross-zone checks also exposed two pre-existing
+  fixture/comparison timezone assumptions, corrected to use salon instants/fields.
+- Evidence: /tmp/hours02-{public-results.json,public.log,editor.log,browser.log},
+  screenshots /tmp/hours02-{override,branch-editor,public-closed}.png.
+  Harness setup required CORS configuration, seed join-field corrections, longer
+  slot waits, unique public emails and token refresh; these are not application fixes.
+- Final evidence: /tmp/hours02-{investigate.log,finish-results.json,finish.log,
+  web-tests-final.log,los-angeles.log,auckland.log,build.log,types.log,lint.log}.
+  Temporary API/web/Chrome and disposable database stopped after verification.
+  Application rollout, physical receipts and OA-07 operational gates remain separate.
+
 ### HOURS-01 — Assess and extend outlet operating hours
 
 - Status: DONE — October 24, 2026, full enforcement implemented and verified locally.

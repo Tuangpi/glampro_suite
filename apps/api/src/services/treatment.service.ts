@@ -153,8 +153,23 @@ export async function listTreatmentRedemptions(query: TreatmentRedemptionQuery) 
   const customer = await prisma.customer.findFirst({ where: { id: query.customerId } });
   if (!customer) throw notFound("That customer does not exist.", "CUSTOMER_NOT_FOUND");
   const paging = parsePagination(query);
+  // Ownership can move after a visit. Its original customer's POS evidence must
+  // remain linkable without making the recipient's visits visible to that customer.
+  const historicalRedemptions = await prisma.customerRedemption.findMany({
+    where: { customerId: query.customerId, itemType: "PACKAGE", revertedAt: null },
+    select: { holdingId: true },
+  });
   const holdings = await prisma.customerPackageHolding.findMany({
-    where: { customerId: query.customerId },
+    where: {
+      OR: [
+        { customerId: query.customerId },
+        {
+          id: {
+            in: historicalRedemptions.flatMap((row) => (row.holdingId ? [row.holdingId] : [])),
+          },
+        },
+      ],
+    },
     include: {
       package: {
         include: { services: { include: { service: { select: { id: true, name: true } } } } },
@@ -277,7 +292,7 @@ async function resolvePackageLink(
     throw notFound("That POS package redemption does not exist.", "REDEMPTION_NOT_FOUND");
   // Same holding lock as POS: a concurrent reversal cannot race eligibility checks.
   await tx.customerPackageHolding.updateMany({
-    where: { id: redemption.holdingId, customerId },
+    where: { id: redemption.holdingId },
     data: { quantityRemaining: { increment: 0 } },
   });
   const current = await tx.customerRedemption.findFirst({
@@ -287,7 +302,9 @@ async function resolvePackageLink(
   if (!current || current.revertedAt || current.sale.status !== "COMPLETED")
     throw conflict("That POS redemption has been reversed.", "REDEMPTION_REVERSED");
   const holding = await tx.customerPackageHolding.findFirst({
-    where: { id: redemption.holdingId, customerId, packageId: redemption.itemId },
+    // The redemption above proves the visit's customer; holding ownership may
+    // legitimately have changed since that visit. Tenant scoping still applies.
+    where: { id: redemption.holdingId, packageId: redemption.itemId },
     include: { package: { select: { services: { select: { serviceId: true } } } } },
   });
   if (!holding) throw notFound("That package holding does not exist.", "HOLDING_NOT_FOUND");
