@@ -1,10 +1,10 @@
 /**
- * The salon's parked carts — the till's right column, under the cart.
+ * The salon's parked carts, opened from the till toolbar.
  *
  * A hold belongs to the **salon**, not to the till that parked it (ADR 0015), so this is
  * a shared workbench rather than one cashier's scratch pad: a colleague has to be able to
  * pick up the cart somebody else left, and this card is the only place a hold can be
- * opened or abandoned. That is why it sits beside the cart instead of behind a menu.
+ * opened or abandoned. Its toolbar action remains visible beside the staff controls.
  *
  * A row carries enough to recognise a cart — who it is for, who parked it, when, how many
  * lines and what it came to — and **no lines**. The lines arrive when the cart is opened

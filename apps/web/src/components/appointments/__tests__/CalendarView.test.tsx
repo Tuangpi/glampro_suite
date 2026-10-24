@@ -48,6 +48,16 @@ const COLUMNS: CalendarColumn[] = [
 const DAY = new Date(2026, 9, 9, 12, 0, 0, 0);
 
 describe("CalendarView", () => {
+  it("keeps staff tracks inside a width-constrained scroll panel", () => {
+    const { container } = render(
+      <CalendarView day={DAY} appointments={[booking()]} columns={COLUMNS} onEdit={vi.fn()} />,
+    );
+
+    const panel = container.firstElementChild;
+    expect(panel).toHaveClass("min-w-0", "max-w-full", "overflow-auto");
+    expect(panel?.firstElementChild).toHaveStyle({ minWidth: "348px" });
+  });
+
   it("renders a track per column with its own header", () => {
     const { container } = render(
       <CalendarView day={DAY} appointments={[booking()]} columns={COLUMNS} onEdit={vi.fn()} />,

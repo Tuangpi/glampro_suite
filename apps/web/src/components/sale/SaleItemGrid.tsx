@@ -111,7 +111,7 @@ export default function SaleItemGrid({
               className="flex min-h-control w-full flex-col gap-1.5 rounded-card border border-line bg-surface p-4 text-left transition-colors hover:border-purple focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple"
             >
               <span className="flex items-start justify-between gap-2">
-                <span className="min-w-0 truncate font-bold text-ink">{item.name}</span>
+                <span className="min-w-0 break-words font-bold text-ink">{item.name}</span>
                 <Plus aria-hidden className="shrink-0 text-base text-purple" />
               </span>
 
@@ -119,7 +119,7 @@ export default function SaleItemGrid({
                 <span className="font-heavy text-ink">{formatPrice(price)}</span>
                 {/* Shown beside, not instead: a walk-in's cashier must see the
                     price they are actually charging. */}
-                {item.memberPrice !== null && item.memberPrice !== item.price ? (
+                {!isMember && item.memberPrice !== null && item.memberPrice !== item.price ? (
                   <span className="text-xs text-ink-muted">
                     member {formatPrice(item.memberPrice)}
                   </span>

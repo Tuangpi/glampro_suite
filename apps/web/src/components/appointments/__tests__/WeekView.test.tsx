@@ -49,6 +49,22 @@ function booking(overrides: Partial<AppointmentSummary> = {}): AppointmentSummar
 const WEEK = at(9, 12);
 
 describe("WeekView", () => {
+  it("contains a wide staff grid inside a width-constrained scroll panel", () => {
+    const columns = Array.from({ length: 5 }, (_, index) => ({
+      id: `staff-${index + 1}`,
+      name: `Staff ${index + 1}`,
+    }));
+    const { container } = render(
+      <WeekView day={WEEK} appointments={[booking()]} columns={columns} onEdit={vi.fn()} />,
+    );
+
+    // jsdom checks the containment contract, not browser layout dimensions.
+    const panel = container.firstElementChild;
+    expect(panel).toHaveClass("min-w-0", "max-w-full", "overflow-auto");
+    expect(panel?.firstElementChild).toHaveStyle({ minWidth: "4968px" });
+    expect(container.querySelectorAll("[data-day]")).toHaveLength(35);
+  });
+
   it("draws seven Monday-first columns, and only the anchor's own week", () => {
     const { container } = render(
       <WeekView day={WEEK} appointments={[booking()]} onEdit={vi.fn()} />,

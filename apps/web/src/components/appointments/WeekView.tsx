@@ -115,7 +115,7 @@ export default function WeekView({
   }
 
   return (
-    <div className="rounded-card overflow-auto border border-line bg-surface">
+    <div className="min-w-0 max-w-full rounded-card overflow-auto border border-line bg-surface">
       <div style={{ minWidth: 68 + tracks.length * 140 }}>
         {/* Day heads — a second grid with the same template, so a head always sits exactly
           above its own column. `CALENDAR_WEEKDAY_LABELS` is Monday-first, the same first

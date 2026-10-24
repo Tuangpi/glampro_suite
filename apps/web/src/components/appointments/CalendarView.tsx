@@ -155,7 +155,7 @@ export default function CalendarView({
   }
 
   return (
-    <div className="rounded-card overflow-auto border border-line bg-surface">
+    <div className="min-w-0 max-w-full rounded-card overflow-auto border border-line bg-surface">
       <div style={{ minWidth: 68 + columns.length * 140 }}>
         {/* Staff header — a second grid with the same template, so a column head
           always sits exactly above its own track. */}

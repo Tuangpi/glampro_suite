@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { SaleDetail } from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
+import Drawer from "@/components/ui/Drawer";
 import SaleListPagination from "@/components/sale/SaleListPagination";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useOpenSaleReceipt, useSaleHistory } from "@/hooks/useSale";
@@ -26,6 +26,7 @@ export default function SaleHistoryPanel({
     if (disabled) return;
     try {
       const sale = await receipt.mutateAsync(id);
+      setOpen(false);
       onOpen(sale);
     } catch {
       // The mutation error is displayed beside the list; the active cart is untouched.
@@ -33,20 +34,22 @@ export default function SaleHistoryPanel({
   }
 
   return (
-    <Card
-      title="Sale history"
-      description="Open a stored receipt without changing your current cart."
-    >
+    <>
       <Button
         variant="secondary"
         disabled={disabled || receipt.isPending}
         onClick={() => setOpen(!open)}
         aria-expanded={open}
       >
-        {open ? "Hide sale history" : "Browse sale history"}
+        Browse sale history
       </Button>
-      {open ? (
-        <div className="mt-3 flex flex-col gap-3">
+      <Drawer
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Sale history"
+        description="Open a stored receipt without changing your current cart."
+      >
+        <section aria-label="Sale history results" className="flex flex-col gap-3">
           <label className="text-sm">
             Sale status
             <select
@@ -113,8 +116,8 @@ export default function SaleHistoryPanel({
             disabled={history.isFetching || history.isError || receipt.isPending}
             onPageChange={setPage}
           />
-        </div>
-      ) : null}
-    </Card>
+        </section>
+      </Drawer>
+    </>
   );
 }

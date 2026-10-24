@@ -227,6 +227,46 @@ beforeEach(() => {
   del.mockReset().mockResolvedValue({ id: "sale-9" });
 });
 
+describe("sale workspace", () => {
+  it("keeps secondary panels closed and customer selection beside the cart", () => {
+    renderSale();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Staff PIN")).not.toBeInTheDocument();
+    expect(screen.queryByText("Nothing is parked")).not.toBeInTheDocument();
+    const cartWorkspace = document.getElementById("sale-cart")!;
+    expect(
+      within(cartWorkspace).getByRole("searchbox", { name: "Attach a customer by name or phone" }),
+    ).toBeInTheDocument();
+    expect(within(cartWorkspace).getByRole("heading", { name: "Cart" })).toBeInTheDocument();
+    expect(screen.getByText("Scan barcode").closest("details")).not.toHaveAttribute("open");
+  });
+
+  it("opens held carts on demand and returns focus to its toolbar action", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    const trigger = screen.getByRole("button", { name: /^Held carts/ });
+    await user.click(trigger);
+    expect(screen.getByRole("dialog", { name: "Held carts" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("offers a cart shortcut after adding an item and focuses the cart", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    expect(screen.queryByRole("button", { name: "View cart" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    const cartWorkspace = document.getElementById("sale-cart")!;
+    const scroll = vi.fn();
+    cartWorkspace.scrollIntoView = scroll;
+    await user.click(screen.getByRole("button", { name: "View cart" }));
+    expect(scroll).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+    expect(cartWorkspace).toHaveFocus();
+    expect(screen.queryByLabelText("Discount percent for Root colour")).not.toBeInTheDocument();
+  });
+});
+
 describe("barcode scanning", () => {
   function barcodeResult(quantity = 2) {
     return { searchableKinds: ["PRODUCT"], items: [{ ...PRODUCT, barcode: "001ABC", quantity }] };
@@ -238,6 +278,7 @@ describe("barcode scanning", () => {
       path === "/sales/items" ? barcodeResult() : { items: [] },
     );
     renderSale();
+    await user.click(screen.getByText("Scan barcode"));
     const input = screen.getByRole("textbox", { name: "Scan a barcode or type the code" });
     await user.type(input, "001abc{Enter}");
     await waitFor(() => expect(cartPanel()).toHaveTextContent("Shampoo"));
@@ -262,6 +303,7 @@ describe("barcode scanning", () => {
       path === "/sales/items" ? barcodeResult(0) : { items: [] },
     );
     renderSale();
+    await user.click(screen.getByText("Scan barcode"));
     const input = screen.getByRole("textbox", { name: "Scan a barcode or type the code" });
     await user.type(input, "001ABC{Enter}");
     await waitFor(() => expect(input).toHaveValue(""));
@@ -284,6 +326,7 @@ describe("barcode scanning", () => {
           : Promise.resolve({ items: [] }),
       );
       const view = renderSale();
+      await user.click(screen.getByText("Scan barcode"));
       await user.click(
         screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }),
       );
@@ -777,9 +820,17 @@ function withHeldCart(rows: SaleSummary[] = [HELD_ROW]) {
   });
 }
 
+async function openHeldCarts(user: ReturnType<typeof userEvent.setup>) {
+  if (!screen.queryByRole("dialog", { name: "Held carts" })) {
+    await user.click(screen.getByRole("button", { name: /^Held carts/ }));
+  }
+}
+
 /** The held-carts card, found by its heading so the cart's own region is excluded. */
 function heldPanel(): HTMLElement {
-  return screen.getByRole("heading", { name: "Held carts" }).closest("section") as HTMLElement;
+  return screen
+    .getByRole("heading", { name: "Held carts", level: 3 })
+    .closest("section") as HTMLElement;
 }
 
 describe("holding a cart", () => {
@@ -816,12 +867,20 @@ describe("holding a cart", () => {
     const user = userEvent.setup();
     renderSale();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await openHeldCarts(user);
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
     await user.click(screen.getByRole("button", { name: "Keep current cart" }));
     expect(get).not.toHaveBeenCalledWith("/sales/sale-9/resume");
+    await openHeldCarts(user);
     await user.click(screen.getByRole("button", { name: "Pick up" }));
     await user.click(screen.getByRole("button", { name: "Replace and pick up" }));
+    await openHeldCarts(user);
     await waitFor(() => expect(screen.getByRole("button", { name: "Pick up" })).toBeEnabled());
+    await user.click(
+      within(screen.getByRole("dialog", { name: "Held carts" })).getByRole("button", {
+        name: "Close",
+      }),
+    );
     expect(within(cartPanel()).getByText("Root colour")).toBeInTheDocument();
     expect(screen.queryByText(/Ringing up the/)).not.toBeInTheDocument();
   });
@@ -839,7 +898,9 @@ describe("holding a cart", () => {
     );
     const user = userEvent.setup();
     const view = renderSale();
+    await openHeldCarts(user);
     await user.click((await screen.findAllByRole("button", { name: "Pick up" }))[0]!);
+    await openHeldCarts(user);
     for (const button of screen.getAllByRole("button", { name: "Pick up" }))
       expect(button).toBeDisabled();
     expect(screen.getByRole("button", { name: "Browse sale history" })).toBeDisabled();
@@ -868,6 +929,7 @@ describe("holding a cart", () => {
     const user = userEvent.setup();
     renderSale();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await openHeldCarts(user);
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
     expect(get).not.toHaveBeenCalledWith("/sales/sale-9/resume");
     await user.click(screen.getByRole("button", { name: "Replace and pick up" }));
@@ -887,6 +949,7 @@ describe("holding a cart", () => {
     }));
     const user = userEvent.setup();
     renderSale();
+    await openHeldCarts(user);
     await screen.findByText("Newer hold");
     await user.click(within(heldPanel()).getByRole("button", { name: "Next" }));
     await screen.findByText("Older hold");
@@ -918,7 +981,9 @@ describe("holding a cart", () => {
 
   it("shows what the salon has parked, and who parked it", async () => {
     withHeldCart();
+    const user = userEvent.setup();
     renderSale();
+    await openHeldCarts(user);
 
     expect(await screen.findByText("Held by Ava Owner")).toBeInTheDocument();
     expect(screen.getByText("1 cart waiting.")).toBeInTheDocument();
@@ -932,6 +997,7 @@ describe("holding a cart", () => {
     const user = userEvent.setup();
     renderSale();
 
+    await openHeldCarts(user);
     await user.click(
       await screen.findByRole("button", { name: "Discard the cart held by Ava Owner" }),
     );
@@ -1006,6 +1072,7 @@ describe("picking a parked cart up", () => {
     withHeldCart();
     const user = userEvent.setup();
     const first = renderSale();
+    await openHeldCarts(user);
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
     await screen.findByText(/Ringing up the/);
     first.unmount();
@@ -1027,6 +1094,7 @@ describe("picking a parked cart up", () => {
     const user = userEvent.setup();
     renderSale();
 
+    await openHeldCarts(user);
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
 
     // Pickup uses current catalogue prices; completion checks them again.
@@ -1057,6 +1125,7 @@ describe("picking a parked cart up", () => {
     const user = userEvent.setup();
     renderSale();
 
+    await openHeldCarts(user);
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
     await screen.findByText(/Ringing up the/);
 
@@ -1100,14 +1169,13 @@ describe("historical sale browsing", () => {
     historyData();
     const user = userEvent.setup();
     renderSale();
-    await screen.findByRole("button", { name: "Pick up" });
     expect(get).not.toHaveBeenCalledWith(
       "/sales",
       expect.objectContaining({ status: "COMPLETED" }),
     );
     await user.click(screen.getByRole("button", { name: "Browse sale history" }));
     await screen.findByText(/Historical customer/);
-    const panel = screen.getByRole("heading", { name: "Sale history" }).closest("section")!;
+    const panel = screen.getByRole("region", { name: "Sale history results" });
     await user.click(within(panel).getByRole("button", { name: "Next" }));
     await screen.findByText(/Older sale/);
     expect(within(panel).getByRole("button", { name: "Next" })).toBeDisabled();
@@ -1119,6 +1187,7 @@ describe("historical sale browsing", () => {
     historyData();
     const user = userEvent.setup();
     renderSale();
+    await openHeldCarts(user);
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
     await screen.findByText(/Ringing up the/);
     await user.click(screen.getByRole("button", { name: "Browse sale history" }));
@@ -1196,6 +1265,7 @@ describe("discounting a line", () => {
 
     // The rate is committed on blur, the same way the quantity is, so typing "1" of "10"
     // never briefly sets one percent.
+    await user.click(screen.getByRole("button", { name: "Add discount" }));
     const discount = screen.getByLabelText("Discount percent for Root colour");
     await user.type(discount, "25");
     await user.tab();
@@ -1230,6 +1300,7 @@ describe("discounting a line", () => {
 
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
 
+    await user.click(screen.getByRole("button", { name: "Add discount" }));
     const discount = screen.getByLabelText("Discount percent for Root colour");
     await user.type(discount, "10");
     await user.tab();

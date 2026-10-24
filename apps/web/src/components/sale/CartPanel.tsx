@@ -77,6 +77,7 @@ export default function CartPanel({
 
   return (
     <Card
+      className="max-h-[65vh] [&>div]:min-h-0 [&>div]:overflow-y-auto [&>footer]:shrink-0 lg:max-h-[calc(100dvh-22rem)]"
       title="Cart"
       description={
         lines.length === 0

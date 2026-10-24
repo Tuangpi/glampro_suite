@@ -70,6 +70,7 @@ export default function CartLine({
   // The same treatment for the discount: typing "1" of "10" must not briefly set a
   // rate of one percent.
   const [discountDraft, setDiscountDraft] = useState<string | null>(null);
+  const [discountOpen, setDiscountOpen] = useState(false);
 
   function commit(raw: string) {
     setDraft(null);
@@ -109,7 +110,7 @@ export default function CartLine({
         <p className="shrink-0 text-sm font-heavy text-ink">{formatPrice(totalCents / 100)}</p>
       </div>
 
-      <div className="flex items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1.5">
         <IconButton
           label={`One fewer ${line.name}`}
           icon={<Minus />}
@@ -147,32 +148,38 @@ export default function CartLine({
         />
         <span className="flex-1" />
 
-        {/* The discount control, always visible rather than behind an overflow menu: a
-            rate the cashier has to hunt for is a rate that gets forgotten mid-sale, and
-            the box shows the rate the line already carries so a discounted line says so.
-            A raw input for the quantity's reason — a visible label per line would double
-            the row's height. */}
-        <label className="flex items-center gap-1 text-xs text-ink-muted">
-          <span aria-hidden>%</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            placeholder="off"
-            aria-label={`Discount percent for ${line.name}`}
-            value={discountDraft ?? line.discountPercent ?? ""}
-            onChange={(event) => setDiscountDraft(event.target.value)}
-            onBlur={(event) => commitDiscount(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                commitDiscount((event.target as HTMLInputElement).value);
-              }
-            }}
-            disabled={disabled}
-            className={cn(CONTROL_CLASS, "h-control-sm w-16 text-center")}
-          />
-        </label>
+        <button
+          type="button"
+          disabled={disabled}
+          aria-expanded={discountOpen || discounted}
+          onClick={() => setDiscountOpen(!discountOpen)}
+          className="min-h-control px-2 text-xs font-bold text-purple disabled:opacity-60"
+        >
+          {discounted ? "Edit discount" : "Add discount"}
+        </button>
+        {discountOpen || discounted ? (
+          <label className="flex items-center gap-1 text-xs text-ink-muted">
+            <span aria-hidden>%</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              placeholder="off"
+              aria-label={`Discount percent for ${line.name}`}
+              value={discountDraft ?? line.discountPercent ?? ""}
+              onChange={(event) => setDiscountDraft(event.target.value)}
+              onBlur={(event) => commitDiscount(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitDiscount((event.target as HTMLInputElement).value);
+                }
+              }}
+              disabled={disabled}
+              className={cn(CONTROL_CLASS, "h-control-sm w-16 text-center")}
+            />
+          </label>
+        ) : null}
 
         <IconButton
           label={`Remove ${line.name} from the cart`}

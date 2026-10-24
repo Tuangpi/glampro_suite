@@ -116,7 +116,7 @@ export default function AppShell() {
         </button>
       </aside>
 
-      <div className="flex min-h-screen flex-1 flex-col pl-rail print:pl-0">
+      <div className="flex min-h-screen min-w-0 flex-1 flex-col pl-rail print:pl-0">
         <header className="sticky top-0 z-30 flex h-topbar items-center gap-5 border-b border-line bg-surface px-7 print:hidden">
           <div className="min-w-0">
             <h1 className="truncate text-lg leading-tight">{current?.label ?? "Glampro"}</h1>

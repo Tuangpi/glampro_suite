@@ -57,6 +57,7 @@ import SaleHistoryPanel from "@/components/sale/SaleHistoryPanel";
 import VoidSaleDialog from "@/components/sale/VoidSaleDialog";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import Drawer from "@/components/ui/Drawer";
 import Modal from "@/components/ui/Modal";
 import Tabs from "@/components/ui/Tabs";
 import { showToast } from "@/components/ui/toast-store";
@@ -126,6 +127,8 @@ export default function Sale() {
   const [receipt, setReceipt] = useState<SaleDetail | null>(null);
   const [historicalReceipt, setHistoricalReceipt] = useState(false);
   const [heldPage, setHeldPage] = useState(1);
+  const [heldOpen, setHeldOpen] = useState(false);
+  const cartSection = useRef<HTMLDivElement>(null);
   /** The parked cart this till is ringing up, or `null` for an ordinary sale. */
   const [heldSaleId, updateHeldSaleId] = useState<string | null>(
     () => readSaleDraft(draftIdentity).heldSaleId ?? null,
@@ -563,7 +566,7 @@ export default function Sale() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex min-w-0 flex-col gap-4 pb-24 lg:pb-0">
       <header>
         <h2 className="text-xl">Sale</h2>
         <p className="mt-1 text-sm text-ink-muted">
@@ -575,7 +578,29 @@ export default function Sale() {
         </p>
       </header>
 
-      {!receipt && <PosStaffSwitch disabled={isReadOnly} />}
+      {!receipt && (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <PosStaffSwitch disabled={cartLocked || checkoutOpen} />
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" aria-haspopup="dialog" onClick={() => setHeldOpen(true)}>
+              Held carts
+              {heldCarts.isError
+                ? " · unavailable"
+                : heldCarts.data?.items.length
+                  ? ` · ${heldCarts.data.items.length}${heldCarts.data.hasMore ? "+" : ""} on page ${heldPage}`
+                  : ""}
+            </Button>
+            <SaleHistoryPanel
+              disabled={holdSale.isPending || busyHoldId !== null}
+              onOpen={(sale) => {
+                if (holdAction.current || holdSale.isPending) return;
+                setHistoricalReceipt(true);
+                setReceipt(sale);
+              }}
+            />
+          </div>
+        </div>
+      )}
       {/* After a sale the till is gone until "New sale" — see the module comment. */}
       {receipt ? (
         <>
@@ -639,25 +664,8 @@ export default function Sale() {
           ) : null}
         </>
       ) : (
-        <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="flex flex-col gap-4">
-            <SaleHistoryPanel
-              disabled={holdSale.isPending || busyHoldId !== null}
-              onOpen={(sale) => {
-                if (holdAction.current || holdSale.isPending) return;
-                setHistoricalReceipt(true);
-                setReceipt(sale);
-              }}
-            />
-            <Card
-              title="Customer"
-              description="A walk-in sale needs nobody. A package, a card or prepaid credit does."
-            >
-              <div className="px-2 py-1">
-                <CustomerPicker customer={customer} onSelect={setCustomer} disabled={cartLocked} />
-              </div>
-            </Card>
-
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0">
             <section
               aria-label="Items to sell"
               className="flex flex-col gap-4 rounded-card border border-line bg-surface p-4"
@@ -670,37 +678,42 @@ export default function Sale() {
                 answer differently: this one demands an exact code, that one
                 matches loosely.
               */}
-              <form
-                className="flex items-end gap-2"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void submitBarcode();
-                }}
-              >
-                <label className="flex-1">
-                  <span className="mb-1.5 block text-sm font-medium text-ink">Barcode</span>
-                  <input
-                    type="text"
-                    value={barcodeInput}
-                    onChange={(event) => setBarcodeInput(event.target.value)}
-                    placeholder="Scan a barcode or type the code"
-                    aria-label="Scan a barcode or type the code"
-                    autoComplete="off"
-                    maxLength={64}
-                    disabled={cartLocked}
-                    className="h-control w-full rounded-md border border-line bg-surface px-3 font-mono text-sm text-ink transition-colors placeholder:font-sans placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-purple disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-ink-disabled"
-                  />
-                </label>
-                <Button
-                  type="submit"
-                  variant="secondary"
-                  disabled={cartLocked || barcodeBusy || barcodeInput.trim() === ""}
+              <details className="rounded-md border border-line-soft px-3 py-2">
+                <summary className="min-h-control cursor-pointer content-center text-sm font-bold text-ink-body">
+                  Scan barcode
+                </summary>
+                <form
+                  className="flex items-end gap-2"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void submitBarcode();
+                  }}
                 >
-                  Add
-                </Button>
-              </form>
+                  <label className="flex-1">
+                    <span className="mb-1.5 block text-sm font-medium text-ink">Barcode</span>
+                    <input
+                      type="text"
+                      value={barcodeInput}
+                      onChange={(event) => setBarcodeInput(event.target.value)}
+                      placeholder="Scan a barcode or type the code"
+                      aria-label="Scan a barcode or type the code"
+                      autoComplete="off"
+                      maxLength={64}
+                      disabled={cartLocked}
+                      className="h-control w-full rounded-md border border-line bg-surface px-3 font-mono text-sm text-ink transition-colors placeholder:font-sans placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-purple disabled:cursor-not-allowed disabled:bg-surface-2 disabled:text-ink-disabled"
+                    />
+                  </label>
+                  <Button
+                    type="submit"
+                    variant="secondary"
+                    disabled={cartLocked || barcodeBusy || barcodeInput.trim() === ""}
+                  >
+                    Add
+                  </Button>
+                </form>
+              </details>
 
-              <div className="relative">
+              <div className="relative order-first">
                 <Search
                   aria-hidden
                   className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-muted"
@@ -739,7 +752,23 @@ export default function Sale() {
             </section>
           </div>
 
-          <div className="flex flex-col gap-4">
+          <div
+            ref={cartSection}
+            id="sale-cart"
+            tabIndex={-1}
+            className="flex min-w-0 scroll-mt-24 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-purple lg:sticky lg:top-24"
+          >
+            <Card title="Customer">
+              <CustomerPicker customer={customer} onSelect={setCustomer} disabled={cartLocked} />
+              {isMember ? (
+                <p className="mt-2 text-xs font-bold text-purple">Member pricing applied</p>
+              ) : null}
+              {needsCustomer && !customer ? (
+                <p role="status" className="mt-2 text-sm text-warning">
+                  Select a customer to issue this package, credit or gift card.
+                </p>
+              ) : null}
+            </Card>
             {heldSaleId ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-purple/40 bg-surface-2 px-4 py-2.5">
                 <p className="text-xs text-ink-body">
@@ -779,24 +808,53 @@ export default function Sale() {
               holdPending={holdSale.isPending}
             />
 
-            <HeldCartsPanel
-              holds={heldCarts.data?.items ?? []}
-              isPending={heldCarts.isPending}
-              isError={heldCarts.isError}
-              activeId={heldSaleId}
-              busyId={busyHoldId}
-              disabled={cartLocked || checkoutOpen}
-              onPickUp={(id) => void pickUpHold(id)}
-              onDiscard={(id) => void discardHeldCart(id)}
-              onRetry={() => void heldCarts.refetch()}
-              page={heldPage}
-              hasMore={heldCarts.data?.hasMore ?? false}
-              isFetching={heldCarts.isFetching}
-              onPageChange={setHeldPage}
-            />
+            <Drawer
+              open={heldOpen}
+              onClose={() => setHeldOpen(false)}
+              title="Held carts"
+              widthClassName="max-w-lg"
+            >
+              <HeldCartsPanel
+                holds={heldCarts.data?.items ?? []}
+                isPending={heldCarts.isPending}
+                isError={heldCarts.isError}
+                activeId={heldSaleId}
+                busyId={busyHoldId}
+                disabled={cartLocked || checkoutOpen}
+                onPickUp={(id) => {
+                  setHeldOpen(false);
+                  void pickUpHold(id);
+                }}
+                onDiscard={(id) => void discardHeldCart(id)}
+                onRetry={() => void heldCarts.refetch()}
+                page={heldPage}
+                hasMore={heldCarts.data?.hasMore ?? false}
+                isFetching={heldCarts.isFetching}
+                onPageChange={setHeldPage}
+              />
+            </Drawer>
           </div>
         </div>
       )}
+
+      {!receipt && cart.lines.length > 0 ? (
+        <div className="fixed inset-x-0 bottom-0 z-30 ml-rail flex items-center justify-between gap-3 border-t border-line bg-surface p-3 shadow-menu lg:hidden">
+          <div>
+            <p className="text-xs text-ink-muted">
+              {cart.lines.reduce((sum, line) => sum + line.quantity, 0)} items in cart
+            </p>
+            <p className="font-heavy text-ink">{formatPrice(totalCents / 100)}</p>
+          </div>
+          <Button
+            onClick={() => {
+              cartSection.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              cartSection.current?.focus({ preventScroll: true });
+            }}
+          >
+            View cart
+          </Button>
+        </div>
+      ) : null}
 
       {replacementHoldId ? (
         <Modal
