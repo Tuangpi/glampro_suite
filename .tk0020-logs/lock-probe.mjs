@@ -20,11 +20,9 @@ await a.query("BEGIN");
 await a.query("select id from tenants where id = $1 for no key update", [tid]);
 
 let bDone = false;
-const pB = b
-  .query("select id from tenants where id = $1 for no key update", [tid])
-  .then(() => {
-    bDone = true;
-  });
+const pB = b.query("select id from tenants where id = $1 for no key update", [tid]).then(() => {
+  bDone = true;
+});
 
 await new Promise((r) => setTimeout(r, 700));
 console.log("B blocked while A holds lock:", bDone === false);

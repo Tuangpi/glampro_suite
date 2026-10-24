@@ -90,15 +90,13 @@ companiesRouter.post(
   validate(recordSubscriptionSchema),
   async (req, res, next) => {
     try {
-      res
-        .status(201)
-        .json({
-          data: await recordCompanySubscription(
-            validated<{ id: string }>(req, "params").id,
-            validated<RecordSubscriptionInput>(req, "body"),
-            res.locals.platformAdmin.id,
-          ),
-        });
+      res.status(201).json({
+        data: await recordCompanySubscription(
+          validated<{ id: string }>(req, "params").id,
+          validated<RecordSubscriptionInput>(req, "body"),
+          res.locals.platformAdmin.id,
+        ),
+      });
     } catch (error) {
       next(error);
     }

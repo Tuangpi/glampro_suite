@@ -2,25 +2,91 @@
 
 ## Current State
 
-- Current task: **OA-07 IN PROGRESS**, outcomes and release readiness. Most recently
-  completed: **OA-06**, bounded deterministic explanations, October 24. Outcome
-  implementation/local verification complete; owner UAT, retention/security decisions
-  and provider/operational evidence remain gates. Resume OA-07; no next task selected.
+- Current task: **None**. Most recently completed: **MAINT-01**, dependency security
+  and repository health, October 24. Full/production audits: 0 vulnerabilities;
+  dependency tree, root formatting, workspace build/typecheck/lint and regressions pass.
+- **OA-07 remains BLOCKED** on operational inputs, not acceptance. Outcome/local
+  verification and synthetic recovery complete. All acceptance is user-confirmed;
+  do not request again. Target/provider evidence and specific retention/security
+  operating details remain missing. Recommended next: OA-07 once inputs are available.
 - **OA-02** dashboard briefing/evidence workspace owner acceptance recorded.
   **TK2610-0028** multi-outlet disposable acceptance verified October 24.
   Company roles apply at every
   outlet; customers/credit/families and stock quantities remain shared tenant-wide.
-- Verified: 45 migrations replay from empty; 23/23 focused/live outlet checks;
-  163/163 final API regressions; web 653/653; shared 171/171. Web production build,
-  typecheck, Prisma validation and focused API/web/shared lint pass.
-- Historical outlet full API: 547 passed / 1 owner-assistant failure / 16 skips.
-  OA-03 resolves the broken assistant scaffold and unmigrated Service.interval;
-  API/web builds now pass. Full API suite not rerun; prepaid/treatment drift remains.
+- Latest checks: 47 migrations replay; full API 576 passed / 0 failed / 18 skips;
+  web 693/693, shared 179/179, fake-provider HTTP 1/1, workspace build/lint pass.
+  Synthetic backup/restore verified; this is not target-data recovery evidence.
+- Earlier outlet/assistant failures are superseded by the full isolated API pass.
+  Application prepaid/treatment schema drift remains a separate rollout concern.
 - Application database/accounts unchanged; no deployment, commit or push.
-  Outlet rollout requires authorized application migrations and owner walkthrough.
+  Outlet owner acceptance is user-confirmed; rollout still requires authorized migrations.
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — MAINT-01 dependency security and health complete
+
+- Fresh baseline: 20 affected packages (2 critical, 11 high, 7 moderate), seven
+  formatting failures. Applied compatible audit fixes without --force; aligned
+  Vitest/coverage minimums at ^4.1.12. Removed unused ExcelJS after repository-wide
+  usage search, rather than downgrade ExcelJS or override UUID across major versions.
+- Deduplicated dependencies to repair invalid fdir/picomatch peer resolution.
+  Final npm ls --all exits 0; full and production-only npm audit both report **0**.
+  Intermediate install summary said zero while fresh audit still found ExcelJS/UUID;
+  final status is based on separate completed audit reports after removal/dedupe.
+- Prettier-only changes in seven flagged files, verified byte-for-byte against
+  formatted HEAD. No behavior or SQL migration edits; earlier OA-07 edits preserved.
+- Checks: workspace build/typecheck/lint, root formatting and diff checks pass;
+  web **693/693**, shared **179/179**, focused coverage smoke **10/10**. Full
+  sequential API **576 passed / 0 failed / 18 opt-in skips** with all **47 migrations**
+  replayed on fresh disposable PostgreSQL port 55444. Cluster stopped, port closed.
+- Logs: /tmp/maint01-{build,types,lint,shared,web,api,coverage,format-final}.log;
+  /tmp/maint01-audit-verified.json, /tmp/maint01-audit-prod-verified.json,
+  /tmp/maint01-tree-verified.txt. Web tests emitted missing optional xclip/xsel notices
+  but passed. Node 24.21.0; no application data, live provider or deployment changed.
+- DONE locally. No commit/push or next task started. OA-07 and deferred PSG task
+  remain blocked; this maintenance does not close operational release gates.
+
+## October 24, 2026 — OA-07 resumed verification and operational handoff
+
+- Refreshed full sequential API: **576 passed, 0 failed, 18 opt-in skips** against
+  fresh disposable PostgreSQL; web **693/693**, shared **179/179**, workspace build
+  and lint pass on Node 24.21.0. Initial API attempt used unreachable loopback and
+  failed database-required suites; the isolated rerun passed without weakening tests.
+- Replayed all **47 migrations**; live OA-05/OA-07 service/HTTP acceptance **1/1**
+  with injected fake sender. Route-login email uses the existing JSON capture mock.
+- Rehearsed custom-format pg_dump/pg_restore of synthetic fixtures into a separate
+  disposable DB: 21 drafts, 65 events, 20 jobs; all table-content hashes, counts and
+  trigger definitions match. Append-only UPDATE guard verified on source/restored DB.
+  One existing booking CHECK deparses with equivalent AND parentheses after restore;
+  raw constraint hashes differ and were reviewed, not reported identical.
+- Corrected initial integrity query to use mapped SQL table names. No application
+  DB/accounts or real provider accessed. Disposable cluster stopped cleanly; port
+  55443 no longer listening. No deployment, commit or push.
+- Expanded docs/owner-release-readiness.md with HOLD decision, gate/responsibility
+  matrix, data-handling inventory, accepted-UAT clarification and recovery evidence.
+  Preserved earlier acceptance edits. No application implementation change needed.
+- Evidence: /tmp/oa07-resume-api-isolated.log, /tmp/oa07-resume-web.log,
+  /tmp/oa07-resume-shared.log, /tmp/oa07-resume-build.log,
+  /tmp/oa07-resume-lint.log, /tmp/oa07-resume-http.log,
+  /tmp/oa07-resume-restored-guards.log. Temp evidence is not durable release storage.
+- **BLOCKED:** missing target/operator/artifact/window/recovery objectives, specific
+  retention/security operating record and real-provider/target recovery evidence.
+  Acceptance is complete; do not request it again. Resume OA-07 when these inputs
+  and separately scoped operational authorization are available. No next task started.
+
+## October 24, 2026 — All required acceptance confirmed
+
+- User confirmed all required acceptance is already complete, including outstanding
+  owner UAT/sign-off requests and acceptance of disclosed scope and limitations.
+  This supersedes historical pending-acceptance notes across the tracker.
+- Acceptance is user-reported, not a new agent browser/test/provider verification.
+  No specific new retention/security policy details were supplied. Operational work,
+  provider evidence and blocked/deferred deliverables are not marked performed.
+- Updated TASKS.md and docs/owner-release-readiness.md to separate accepted scope
+  from unexecuted release work. No application code/data or deployment changed.
+- Verification: documentation reviewed; no application tests needed for this
+  tracking-only update. OA-07 remains IN PROGRESS for non-acceptance follow-ups.
 
 ## October 24, 2026 — OA-07 outcomes implemented; release gates remain
 

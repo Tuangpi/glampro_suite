@@ -1,8 +1,92 @@
 # Owner assistant outcomes and release readiness — OA-07
 
 Prepared October 24, 2026. **Local implementation is not release approval.**
-Owner UAT, provider and operational gates below remain open. No application database
-access, migrations, provider activation, outbound messages or deployment is authorized.
+All required acceptance, including owner UAT/sign-off and the disclosed scope and
+limitations, was confirmed by the user October 24, 2026. Historical unchecked UAT
+items below describe acceptance scope, not outstanding acceptance requests. This is
+user-reported acceptance, not new agent verification or operational execution evidence.
+Provider/operational checks and recording specific retention/security decisions remain
+separate follow-ups. No application database access, migrations, provider activation,
+outbound messages or deployment is authorized by this acceptance confirmation.
+
+## Release decision and responsibility record
+
+**Current decision: HOLD target activation.** Owner acceptance is complete. This
+hold concerns unrecorded operational/policy evidence, not another acceptance request.
+
+| Gate                                        | State          | Evidence or required record                                                                            |
+| ------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------------------ |
+| Outcome implementation and owner acceptance | Complete       | Local implementation; user confirmed all required acceptance October 24, 2026                          |
+| Local regression/build checks               | Recorded below | Synthetic data only; opt-in suites and failures must be disclosed                                      |
+| Local fixture backup/restore                | Rehearsed      | PostgreSQL 18 custom-format dump restored to a separate disposable database; details below             |
+| Target rollout                              | Not executed   | Target, operator, revision/artifacts, maintenance window and migration inventory                       |
+| Target recovery                             | Not verified   | Protected backup, isolated target-data restore, recovery objectives and writer/provider reconciliation |
+| Real SMS provider/cost controls             | Not verified   | Scoped non-customer test, verified sender/callback/opt-out evidence and budget/alert owner             |
+| Retention/security operating record         | Incomplete     | Named responsible owner, storage durations, access/export/hold/disposal process and backup/log policy  |
+
+The salon data owner is responsible for retention/access decisions; the release
+operator for migrations and recovery; the messaging operator for provider/cost
+checks; and the go/no-go owner for activation. These are responsibilities, not
+assigned people: no names, target or recovery objectives have been supplied.
+Record those details in the private operational handoff, not credentials or personal
+data in this repository. Existing acceptance does not supply missing policy values.
+
+Until the operating record is completed, preserve the existing 30-day manual review,
+append-only evidence and restricted deletion. Do not invent a retention duration,
+enable automatic disposal, or activate production outreach. No new export/disposal
+API or distributed quota is claimed. Keep provider activation separate from code rollout.
+
+### Data-handling inventory for the operating record
+
+| Record                        | Existing purpose and boundary                                                                                                     | Unresolved operating detail                                                         |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Draft and version snapshots   | Exact approved SMS evidence; customer/appointment references, destination, sender/body, actor/version; salon owner/manager access | Named reviewer, retained lifetime and authorized support access                     |
+| Message jobs                  | Queue/provider state, dispatch eligibility and shared contact limits; no automatic resend of uncertain/accepted jobs              | Retained lifetime, provider reconciliation and incident owner                       |
+| Consent and unsubscribe links | Current dispatch consent and opt-out; capability-bearing URL must remain private                                                  | Access/export/hold/disposal process and linked-record retention                     |
+| Outcome response              | On-demand aggregate observations; no new stored outcome record, amounts or clinical notes; sales entitlement required             | Query-load monitoring and production response/log review                            |
+| Application logs and backups  | Operational diagnosis and recovery; use sanitized identifiers, never copy draft bodies or capability links                        | Actual storage/access controls, redaction verification, retention and restore owner |
+
+For an access/export or disposal request, route it to the named salon data owner
+and authorized operator. Verify tenant and requester authority, preserve any
+applicable hold, and use only a separately approved process. Do not disable audit
+triggers, reset job state, delete linked records ad hoc or claim a self-service
+export/disposal feature. The release remains held until the missing operating
+details and any necessary implementation are recorded and verified.
+
+### Local recovery rehearsal — October 24, 2026
+
+Refreshed local release checks: full sequential API **576 passed, 0 failed, 18
+opt-in skips**; web **693/693**; shared **179/179**; workspace production build and
+lint passed on Node 24.21.0. The first API run against unreachable loopback failed
+database-required suites; the complete rerun used a fresh disposable migrated DB
+and passed. Logs: `/tmp/oa07-resume-api-isolated.log`,
+`/tmp/oa07-resume-web.log`, `/tmp/oa07-resume-shared.log`,
+`/tmp/oa07-resume-build.log` and `/tmp/oa07-resume-lint.log`.
+
+All 47 migrations were replayed on a fresh loopback-only PostgreSQL 18 cluster,
+port 55443. The existing OA-05 service/HTTP acceptance passed with an injected fake
+sender, including OA-07 observations. The resulting synthetic fixture database was
+dumped with `pg_dump -Fc` and restored with `pg_restore --exit-on-error` into a
+separate database in that disposable cluster.
+
+The source contained 21 drafts, 65 draft events, 20 jobs, 47 migration records,
+10 non-internal triggers and 785 public-schema constraints. All table-content
+hashes, these counts and trigger definitions matched after restore. The draft-event
+append-only UPDATE guard refused changes in both databases. One existing
+`appointment_series_rule_check` deparsed with different associative AND parentheses
+after restore; its raw definition difference was reviewed and both constraints
+remained validated. Constraint-definition hashes therefore were not identical.
+
+This is a synthetic local restore, not a protected production backup, target-data
+recovery rehearsal, measured recovery objective or real-provider reconciliation.
+The first integrity query used Prisma model names instead of mapped SQL table names;
+it was corrected and rerun. No application database or real provider was accessed.
+The disposable cluster was stopped cleanly and port 55443 was no longer listening.
+Sanitized local evidence: `/tmp/oa07-resume-http.log`,
+`/tmp/oa07-resume-restore.log`, `/tmp/oa07-resume-baseline.txt`,
+`/tmp/oa07-resume-restored.txt`, `/tmp/oa07-resume-data-diff.log` and
+`/tmp/oa07-resume-restored-guards.log`. Temporary files are not durable release evidence;
+retain approved sanitized results in the private release handoff before activation.
 
 ## Observations, not attributed conversions
 
@@ -82,7 +166,7 @@ export/disposal endpoint exists. Audit rows are database-enforced append-only an
 tenant deletion is restricted. Do not disable triggers or reuse clinical disposal
 tools for messaging evidence.
 
-**Release blockers requiring named data-owner/security approval:**
+**Operational policy records still needed (acceptance already confirmed):**
 
 - [ ] Record purpose, minimum retained fields, permitted readers/support access,
       retention duration and review responsibility for drafts, audit snapshots,
@@ -96,7 +180,11 @@ tools for messaging evidence.
 - [ ] Approve expected volume, provider cost controls and scaling plan for per-process
       Q&A limits and uncapped draft storage; monitor outcome-query load.
 
-## Realistic owner UAT — not performed by automated tests
+## Realistic owner UAT — acceptance confirmed by user
+
+Acceptance of this scope is user-confirmed October 24, 2026. Individual scenario
+results, tester and environment were not supplied, so the scenario boxes below
+are not represented as new agent-observed tests or separate pending acceptance.
 
 Use an explicitly authorized test salon and fake provider first. Record tester,
 revision/environment, date, expected/actual result and sanitized evidence for each:
@@ -115,9 +203,10 @@ revision/environment, date, expected/actual result and sanitized evidence for ea
       understands these are observations, not caused conversions or revenue.
 - [ ] Check role/module/disabled-account changes and foreign-company draft denial;
       inspect paginated version history and due retention review behavior.
-- [ ] Obtain explicit owner acceptance and separately record any unresolved defects.
+- [x] Owner acceptance confirmed October 24, 2026; no new defect list supplied.
 
-OA-02 acceptance applies to its briefing only; it is not OA-07 approval.
+The later all-required-acceptance confirmation includes OA-07 and supersedes the
+earlier briefing-only acceptance limitation.
 
 ## Authorized rollout and recovery checklist — STOP until approved
 
@@ -175,7 +264,9 @@ this in an isolated environment with fake integrations, not production providers
 Store sanitized test results and remaining gaps in
 `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/TASKS.md` and
 `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/PROGRESS.md`.
-Keep secrets, customer data and operational credentials private. OA-07 stays
-IN PROGRESS until realistic owner UAT, retention/security decisions and separate
-provider/operational readiness evidence meet the task's completion check. Checklist
-preparation, mock callbacks or passing tests alone do not authorize release.
+Keep secrets, customer data and operational credentials private. Required acceptance
+is user-confirmed; do not request it again. OA-07 is BLOCKED on recording
+specific retention/security decisions and separate provider/operational readiness
+evidence required by its completion check. Acceptance does not claim that these
+operations were performed. Checklist preparation, mock callbacks or passing tests
+alone do not authorize release.

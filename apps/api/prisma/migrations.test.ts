@@ -3,11 +3,17 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 const renameMigration = readFileSync(
-  new URL("./migrations/20261021082620_treatment_records_and_consent/migration.sql", import.meta.url),
+  new URL(
+    "./migrations/20261021082620_treatment_records_and_consent/migration.sql",
+    import.meta.url,
+  ),
   "utf8",
 );
 const createMigration = readFileSync(
-  new URL("./migrations/20261021120000_treatment_records_and_consent/migration.sql", import.meta.url),
+  new URL(
+    "./migrations/20261021120000_treatment_records_and_consent/migration.sql",
+    import.meta.url,
+  ),
   "utf8",
 );
 

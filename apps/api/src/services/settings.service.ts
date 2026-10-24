@@ -188,29 +188,38 @@ export async function getSalonOperatingHours(): Promise<SalonOperatingHours> {
   return salonOperatingHoursSchema.parse({
     tenantId,
     ...allClosed,
-    ...(hours ? {
-      sunday: hours.sundayOpen && hours.sundayClose
-        ? { open: hours.sundayOpen, close: hours.sundayClose }
-        : null,
-      monday: hours.mondayOpen && hours.mondayClose
-        ? { open: hours.mondayOpen, close: hours.mondayClose }
-        : null,
-      tuesday: hours.tuesdayOpen && hours.tuesdayClose
-        ? { open: hours.tuesdayOpen, close: hours.tuesdayClose }
-        : null,
-      wednesday: hours.wednesdayOpen && hours.wednesdayClose
-        ? { open: hours.wednesdayOpen, close: hours.wednesdayClose }
-        : null,
-      thursday: hours.thursdayOpen && hours.thursdayClose
-        ? { open: hours.thursdayOpen, close: hours.thursdayClose }
-        : null,
-      friday: hours.fridayOpen && hours.fridayClose
-        ? { open: hours.fridayOpen, close: hours.fridayClose }
-        : null,
-      saturday: hours.saturdayOpen && hours.saturdayClose
-        ? { open: hours.saturdayOpen, close: hours.saturdayClose }
-        : null,
-    } : {}),
+    ...(hours
+      ? {
+          sunday:
+            hours.sundayOpen && hours.sundayClose
+              ? { open: hours.sundayOpen, close: hours.sundayClose }
+              : null,
+          monday:
+            hours.mondayOpen && hours.mondayClose
+              ? { open: hours.mondayOpen, close: hours.mondayClose }
+              : null,
+          tuesday:
+            hours.tuesdayOpen && hours.tuesdayClose
+              ? { open: hours.tuesdayOpen, close: hours.tuesdayClose }
+              : null,
+          wednesday:
+            hours.wednesdayOpen && hours.wednesdayClose
+              ? { open: hours.wednesdayOpen, close: hours.wednesdayClose }
+              : null,
+          thursday:
+            hours.thursdayOpen && hours.thursdayClose
+              ? { open: hours.thursdayOpen, close: hours.thursdayClose }
+              : null,
+          friday:
+            hours.fridayOpen && hours.fridayClose
+              ? { open: hours.fridayOpen, close: hours.fridayClose }
+              : null,
+          saturday:
+            hours.saturdayOpen && hours.saturdayClose
+              ? { open: hours.saturdayOpen, close: hours.saturdayClose }
+              : null,
+        }
+      : {}),
   });
 }
 

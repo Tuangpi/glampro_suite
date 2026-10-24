@@ -66,7 +66,12 @@ import { salonTimeZone } from "../lib/salon-clock.js";
 import { addWeeksInZone } from "../lib/wall-clock.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertStaffAvailable } from "./staff-availability.service.js";
-import { lockBookingCalendar, queueAppointmentMessages, tenantId, type Tx } from "./messaging.service.js";
+import {
+  lockBookingCalendar,
+  queueAppointmentMessages,
+  tenantId,
+  type Tx,
+} from "./messaging.service.js";
 export { lockBookingCalendar } from "./messaging.service.js";
 
 /**

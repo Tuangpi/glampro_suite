@@ -13,6 +13,40 @@ promoted to Done. Mark Done only when the full expected result and completion
 check are met. Preserve explicit readiness sign-off gates. Historical evidence is
 not a new test run. Assess code first; follow dependencies rather than date order.
 
+### Acceptance confirmation — October 24, 2026
+
+The user confirmed that all required acceptance is already complete. This supersedes
+outstanding acceptance/sign-off requests throughout this tracker, including owner UAT
+and acceptance of the disclosed scope and limitations. Acceptance is user-reported;
+it is not a new agent verification run or evidence that operational work was executed.
+Unperformed migrations, provider checks, recovery rehearsals and blocked/deferred
+deliverables remain separate follow-ups; this confirmation does not authorize execution.
+
+## Maintenance — approved October 24, 2026
+
+### MAINT-01 — Dependency security and repository health
+
+- Status: DONE — October 24, 2026, compatible fixes and full local verification.
+- Expected result: Apply compatible dependency-security fixes, resolve current
+  formatting failures and disclose any findings requiring incompatible changes.
+- Completion check: Fresh full/production npm audits, reviewed lockfile changes,
+  workspace formatting/lint/typecheck/build and API/web/shared regression tests.
+  Use disposable PostgreSQL only; preserve existing acceptance/rollout boundaries.
+- Baseline October 24, 2026: npm audit reports 20 affected packages (2 critical,
+  11 high, 7 moderate); root formatting flags 7 files. No forced major downgrade,
+  production operation or external submission is authorized by this maintenance task.
+- Result: compatible npm audit fixes; Vitest/coverage minimums aligned at ^4.1.12;
+  removed unused ExcelJS (repository search found no imports/usages), eliminating
+  its vulnerable UUID path without a forced downgrade/override. npm dedupe repaired
+  an invalid fdir/picomatch peer resolution; final npm ls --all exits 0.
+- Evidence: full and production-only npm audits report 0 vulnerabilities; workspace
+  build/typecheck/lint and root formatting pass. Web 693/693, shared 179/179,
+  coverage smoke 10/10; full sequential API 576 passed / 0 failed / 18 opt-in skips
+  after all 47 migrations replayed on fresh disposable PostgreSQL port 55444.
+  Cluster stopped cleanly. Seven formatting edits verified against formatted HEAD;
+  no behavioral source changes or SQL migration edits. No application data/provider
+  activation, deployment, commit or push. OA-07 operational blockers unchanged.
+
 ## Owner assistant — approved October 23, 2026
 
 Preserve TK2610-0029's backend-correctness history. These follow-ups implement the
@@ -170,8 +204,10 @@ owner-facing experience; they do not authorize deployment or outbound messages.
 
 ### OA-07 — Outcomes and release readiness
 
-- Status: IN PROGRESS — local outcome implementation verified October 24, 2026;
-  owner UAT, retention/security decisions and provider/operational evidence pending.
+- Status: BLOCKED — local outcome implementation and refreshed verification complete October 24, 2026;
+  all required acceptance confirmed by the user October 24, 2026;
+  target/operator and retention/security operating details plus real-provider/target
+  recovery evidence are missing. These are not outstanding acceptance requests.
 - Dependencies: OA-05, OA-06
 - Expected result: Delivery/booking/sale outcomes without causal overclaims, usage
   controls, audit/retention policy and authorized rollout/rollback checklist.
@@ -187,11 +223,26 @@ owner-facing experience; they do not authorize deployment or outbound messages.
   disposable PostgreSQL/service/HTTP acceptance 1/1 covers booking/receipt outcomes,
   foreign-tenant refusal, no-store, existing approval/quota/uncertain/retry controls.
   Production build/API/web typechecks and workspace lint passed; final checks below
-  recorded in PROGRESS.md. No full API suite or browser UAT run.
+  recorded in PROGRESS.md. At that initial check no full API suite or agent browser
+  UAT ran; full API rerun is recorded below and owner acceptance is user-confirmed.
 - Release handoff: docs/owner-release-readiness.md records usage/storage/scaling
   limits, audit/capability privacy, unresolved controlled disposal/export policy,
   realistic owner UAT and authorized backup/restore/migration/provider/rollback gates.
   No application DB access, real-provider calls, deployment, commit or push.
+
+- October 24 resumed verification: full sequential API 576 passed / 0 failed /
+  18 opt-in skips on a fresh disposable PostgreSQL database; web 693/693, shared
+  179/179, workspace build and lint pass. OA-05/OA-07 live acceptance 1/1 with fake
+  sender; all 47 migrations replayed. Initial API attempt against unreachable loopback
+  failed because database-backed suites require PostgreSQL; isolated rerun passed.
+- Synthetic custom-format backup restored separately: all table-content hashes,
+  counts and trigger definitions match; append-only UPDATE guard verified on both.
+  One existing booking constraint deparsed with equivalent AND parentheses; raw
+  constraint hashes differ, reviewed and disclosed. Disposable cluster stopped.
+- Release decision HOLD: record named owners, target/artifact/window/recovery
+  objectives, retention/access/export/hold/disposal/log/backup specifics and separately
+  authorized target/provider evidence. No production operation is implied by local
+  recovery evidence. Details: docs/owner-release-readiness.md. No next task started.
 
 ## Multi-company SaaS — approved October 23, 2026
 
