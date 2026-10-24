@@ -351,6 +351,17 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ### Owner assistant expansion — approved October 23, 2026
 
+OA-07 local outcome implementation verified October 24: saved drafts expose a
+read-only delivery/same-customer booking/receipt observation with explicit half-open
+UTC queue-time window capped at 30 elapsed days. No causal attribution, conversion
+rate, revenue or uplift claim; overlapping drafts must not be summed. Current
+records can change and activity may precede dispatch. Sales counts require sales
+entitlement; unqueued drafts have no fabricated zeroes. Existing active-tenant,
+owner/manager and module gates apply; draft routes are no-store. No migration,
+new tracking storage, provider call or rollout. OA-07 remains IN PROGRESS pending
+owner UAT, retention/disposal/security decisions and separate provider/operational
+readiness evidence. Checklist and limitations: docs/owner-release-readiness.md.
+
 OA-06 implementation verified October 24: bounded read-only dashboard Q&A, nine
 fixed English templates, shared aggregate facts and explicit salon-local windows
 (at most 31 custom calendar days), exact evidence/as-of and policy-only rebooking/

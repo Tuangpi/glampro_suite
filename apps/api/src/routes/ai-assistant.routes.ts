@@ -12,6 +12,7 @@ import {
 } from "@glampro_suite/shared";
 import { assistantExplanation } from "../services/assistant-explanation.service.js";
 import { assistantExplanationLimiter } from "../middleware/rateLimit.js";
+import { assistantDraftOutcome } from "../services/assistant-outcomes.service.js";
 import {
   assistantDraftInputSchema,
   assistantDraftEditSchema,
@@ -52,6 +53,17 @@ router.post(
   },
 );
 router.use("/drafts", requireModule("customers"), requireModule("appointments"));
+router.use("/drafts", (_req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+});
+router.get("/drafts/:id/outcome", async (req, res, next) => {
+  try {
+    res.json({ data: await assistantDraftOutcome(String(req.params.id)) });
+  } catch (error) {
+    next(error);
+  }
+});
 router.post(
   "/drafts/:id/retention-review",
   validate(assistantDraftReviewSchema),

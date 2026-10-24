@@ -15,6 +15,7 @@ import {
 import { runMessageBatch } from "./message-worker.js";
 import { retryMessage } from "./messaging.service.js";
 import type { ProviderInput } from "../lib/messaging-provider.js";
+import { assistantDraftOutcome } from "./assistant-outcomes.service.js";
 
 test(
   "OA-05 disposable approval, version, quota and dispatch acceptance",
@@ -134,6 +135,42 @@ test(
           where: { assistantDraftId: draft.id },
         });
         assert.equal(accepted.status, "ACCEPTED");
+        const observation = await assistantDraftOutcome(draft.id);
+        assert.equal(observation.delivery, "not_confirmed");
+        assert.equal(observation.bookingsCreated, 0);
+        await prisma.appointment.create({
+          data: {
+            tenantId,
+            customerId: first.customerId,
+            startsAt: new Date(Date.now() + 86400000),
+            endsAt: new Date(Date.now() + 86400000 + 3600000),
+          },
+        });
+        // Isolated same-customer activity is observed, not attributed to delivery.
+        assert.equal((await assistantDraftOutcome(draft.id)).bookingsCreated, 1);
+        assert.equal((await assistantDraftOutcome(draft.id)).completedSales, null);
+        await runAsPlatform(() =>
+          prisma.module.upsert({
+            where: { code: "sales" },
+            update: { isCore: true },
+            create: { code: "sales", name: "Sales", category: "Core", isCore: true },
+          }),
+        );
+        await prisma.sale.create({
+          data: {
+            tenantId,
+            customerId: first.customerId,
+            status: "COMPLETED",
+            soldAt: new Date(),
+            totalQuantity: 1,
+            totalAmount: 10,
+            paidAmount: 10,
+          },
+        });
+        assert.equal((await assistantDraftOutcome(draft.id)).completedSales, 1);
+        await assert.rejects(
+          runAsTenant("oa05-other", () => assistantDraftOutcome(draft.id), actorId),
+        );
         await assert.rejects(retryMessage(accepted.id));
         await assert.rejects(saveAssistantDraft(first));
         const history = await assistantDraftHistory(draft.id);
@@ -262,6 +299,11 @@ test(
       try {
         assert.equal((await fetch(base)).status, 401);
         assert.equal((await fetch(base, { headers })).status, 200);
+        const listed = await scoped(() => listAssistantDrafts());
+        const outcomeResponse = await fetch(`${base}/${listed.drafts[0]!.id}/outcome`, { headers });
+        assert.equal(outcomeResponse.status, 200);
+        assert.equal(outcomeResponse.headers.get("cache-control"), "no-store");
+        assert.equal((await fetch(`${base}/missing/outcome`, { headers })).status, 404);
         assert.equal(
           (
             await fetch(base, {

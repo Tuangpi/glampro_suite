@@ -2,9 +2,10 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **OA-06**, bounded deterministic
-  explanations, local/disposable checks complete October 24. Recommended next:
-  **OA-07**, outcomes and release readiness (TODO); not started.
+- Current task: **OA-07 IN PROGRESS**, outcomes and release readiness. Most recently
+  completed: **OA-06**, bounded deterministic explanations, October 24. Outcome
+  implementation/local verification complete; owner UAT, retention/security decisions
+  and provider/operational evidence remain gates. Resume OA-07; no next task selected.
 - **OA-02** dashboard briefing/evidence workspace owner acceptance recorded.
   **TK2610-0028** multi-outlet disposable acceptance verified October 24.
   Company roles apply at every
@@ -20,6 +21,36 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — OA-07 outcomes implemented; release gates remain
+
+- Added shared validated outcome contract, read-only tenant-scoped draft outcome API
+  and on-demand dashboard observations. Explicit queue-time half-open UTC window,
+  capped at 30 elapsed days; current same-customer booking/receipt counts, not causal
+  conversions, incremental revenue or uplift. Overlapping drafts cannot be summed.
+- Provider acceptance/uncertainty never confirms delivery; unqueued drafts have null
+  observations. Sales entitlement controls receipt reads. Reuses existing current
+  owner/manager/active-tenant/module gates; explicit tenant predicates and no-store
+  draft routes. Outcome cache keys include tenant/user; failed refresh hides facts.
+- Added docs/owner-release-readiness.md: usage/cost/storage/distributed-rate limits,
+  failure recovery, audit/capability privacy, retention/export/disposal decisions,
+  realistic owner UAT and separately authorized rollout/recovery/provider evidence.
+  No deletion policy or operational/legal compliance is invented. OA-07 stays open.
+- Verified: full web **693/693** (86 files, two workers), shared **179/179**, focused
+  API outcomes/explanations **13/13**, extended OA-05 live service/HTTP **1/1** with
+  fake sender. Includes real same-customer booking/receipt observations, foreign
+  tenant refusal, no-store and existing approval/quota/uncertain/retry regressions.
+  Workspace build passed; final API/web typechecks, workspace lint, scoped formatting
+  and diff checks pass. Full API suite not run. Disposable PostgreSQL stopped cleanly.
+- Replayed all **47 existing migrations** on fresh disposable loopback 55443/oa05_acceptance;
+  no new migration. Initial PostgreSQL startup failed on default socket permissions;
+  used private temp socket directory, then clean fixture replay and acceptance pass.
+  No application database, real provider, browser UAT, deployment, commit or push.
+- Evidence: /tmp/oa07-http-final.log, /tmp/oa07-migrations-final.log,
+  /tmp/oa07-api-final.log, /tmp/oa07-web-final.log, /tmp/oa07-shared.log,
+  /tmp/oa07-build.log, /tmp/oa07-lint.log. Remaining: owner UAT/sign-off, named
+  retention/security decisions, actual provider/cost and operational restore/recovery
+  readiness evidence. No later task started.
 
 ## October 24, 2026 — OA-06 bounded explanations complete locally
 

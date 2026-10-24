@@ -101,3 +101,93 @@ it("supports paginated review and unavailable states", async () => {
   expect(get).toHaveBeenLastCalledWith("/ai-assistant/drafts", { cursor: "next" });
   expect(screen.queryByText(draft.body)).not.toBeInTheDocument();
 });
+
+const outcome = {
+  asOf: "2026-10-24T12:00:00.000Z",
+  from: "2026-10-01T00:00:00.000Z",
+  to: "2026-10-24T12:00:00.000Z",
+  windowDays: 30,
+  jobStatus: "ACCEPTED",
+  delivery: "not_confirmed",
+  bookingsCreated: 2,
+  completedSales: 1,
+  salesVisible: true,
+  limitations: [
+    "Same-customer observations, not attributed conversions. Do not sum across drafts.",
+  ],
+};
+it("loads observed activity only on request with window and attribution limits", async () => {
+  get.mockImplementation(async (path: string) =>
+    path.endsWith("/outcome") ? outcome : { drafts: [draft], nextCursor: null },
+  );
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Toggle observed outcomes" }));
+  await screen.findByText("Delivery not confirmed.");
+  expect(screen.getByText(/Bookings created/)).toHaveTextContent("2");
+  expect(screen.getByText(/Completed receipts/)).toHaveTextContent("1");
+  expect(screen.getByText(/UTC observation window/)).toHaveTextContent(outcome.from);
+  expect(screen.getByText(/not attributed conversions/)).toBeInTheDocument();
+  expect(post).not.toHaveBeenCalled();
+});
+it("hides prior observations after a failed refresh and offers read-only recovery", async () => {
+  get
+    .mockResolvedValueOnce({ drafts: [draft], nextCursor: null })
+    .mockResolvedValueOnce(outcome)
+    .mockRejectedValueOnce(new Error("source failed"));
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Toggle observed outcomes" }));
+  await screen.findByText(/Bookings created/);
+  fireEvent.click(screen.getByRole("button", { name: "Reload observed outcomes" }));
+  await screen.findByText(/Observed outcomes unavailable/);
+  expect(screen.queryByText(/Bookings created/)).not.toBeInTheDocument();
+  expect(post).not.toHaveBeenCalled();
+});
+it("distinguishes unqueued drafts from zero observations", async () => {
+  get.mockImplementation(async (path: string) =>
+    path.endsWith("/outcome")
+      ? {
+          ...outcome,
+          from: null,
+          to: null,
+          jobStatus: null,
+          delivery: "not_queued",
+          bookingsCreated: null,
+          completedSales: null,
+        }
+      : { drafts: [draft], nextCursor: null },
+  );
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Toggle observed outcomes" }));
+  await screen.findByText("Not queued; no observation window.");
+  expect(screen.queryByText(/Bookings created/)).not.toBeInTheDocument();
+});
+
+it("shows provider-reported delivery without claiming reading and hides unentitled sales", async () => {
+  get.mockImplementation(async (path: string) =>
+    path.endsWith("/outcome")
+      ? {
+          ...outcome,
+          jobStatus: "DELIVERED",
+          delivery: "provider_reported_delivered",
+          salesVisible: false,
+          completedSales: null,
+        }
+      : { drafts: [draft], nextCursor: null },
+  );
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Toggle observed outcomes" }));
+  await screen.findByText("Provider-reported delivery, not proof of reading or action.");
+  expect(screen.getByText(/Completed receipts/)).toHaveTextContent("Sales module required");
+});
+
+it("rejects malformed observations rather than presenting unchecked figures", async () => {
+  get.mockImplementation(async (path: string) =>
+    path.endsWith("/outcome")
+      ? { ...outcome, bookingsCreated: -1 }
+      : { drafts: [draft], nextCursor: null },
+  );
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "Toggle observed outcomes" }));
+  await screen.findByText(/Observed outcomes unavailable/);
+  expect(screen.queryByText(/Bookings created/)).not.toBeInTheDocument();
+});

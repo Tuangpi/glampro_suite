@@ -170,12 +170,28 @@ owner-facing experience; they do not authorize deployment or outbound messages.
 
 ### OA-07 — Outcomes and release readiness
 
-- Status: TODO
+- Status: IN PROGRESS — local outcome implementation verified October 24, 2026;
+  owner UAT, retention/security decisions and provider/operational evidence pending.
 - Dependencies: OA-05, OA-06
 - Expected result: Delivery/booking/sale outcomes without causal overclaims, usage
   controls, audit/retention policy and authorized rollout/rollback checklist.
 - Completion check: Outcome attribution limits, failure recovery, retention/security
   review, realistic owner UAT and separate provider/operational readiness evidence.
+- Delivered: read-only saved-draft observations with explicit half-open UTC queue
+  window (maximum 30 elapsed days), provider-reported delivery versus acceptance,
+  same-customer non-cancelled bookings created and completed receipts by soldAt.
+  Company-wide, current-record observations, not attributed conversions/revenue;
+  overlapping drafts must not be summed. Unqueued counts are null, sales entitlement
+  enforced, source failures hide previous results; draft routes use no-store.
+- Verified: full web 693/693, shared 179/179, focused API 13/13; extended OA-05
+  disposable PostgreSQL/service/HTTP acceptance 1/1 covers booking/receipt outcomes,
+  foreign-tenant refusal, no-store, existing approval/quota/uncertain/retry controls.
+  Production build/API/web typechecks and workspace lint passed; final checks below
+  recorded in PROGRESS.md. No full API suite or browser UAT run.
+- Release handoff: docs/owner-release-readiness.md records usage/storage/scaling
+  limits, audit/capability privacy, unresolved controlled disposal/export policy,
+  realistic owner UAT and authorized backup/restore/migration/provider/rollback gates.
+  No application DB access, real-provider calls, deployment, commit or push.
 
 ## Multi-company SaaS — approved October 23, 2026
 

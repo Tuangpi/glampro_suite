@@ -43,7 +43,7 @@ export async function assistantUnsubscribeIsCurrent(tx: Tx, draft: AssistantDraf
     }))
   );
 }
-async function access() {
+export async function assistantDraftAccess() {
   const scope = currentScope();
   if (scope?.kind !== "tenant" || !scope.actorId) throw forbidden();
   const actor = await assistantActor(scope.actorId);
@@ -88,7 +88,7 @@ async function event(tx: Tx, draft: AssistantDraft, actorId: string, action: str
   });
 }
 export async function listAssistantDrafts(cursor?: string) {
-  await access();
+  await assistantDraftAccess();
   const rows = await prisma.assistantDraft.findMany({
     where: cursor ? { id: { lt: cursor } } : {},
     orderBy: { id: "desc" },
@@ -98,7 +98,7 @@ export async function listAssistantDrafts(cursor?: string) {
   return { drafts: rows.slice(0, 20), nextCursor: rows.length > 20 ? rows[19]!.id : null };
 }
 export async function assistantDraftHistory(id: string, cursor?: string) {
-  await access();
+  await assistantDraftAccess();
   if (!(await prisma.assistantDraft.findFirst({ where: { id } }))) throw notFound();
   const rows = await prisma.assistantDraftEvent.findMany({
     where: { draftId: id, ...(cursor ? { id: { lt: cursor } } : {}) },
@@ -112,7 +112,7 @@ export async function saveAssistantDraft(
   id?: string,
   expectedVersion?: number,
 ) {
-  const { actor, tenant } = await access();
+  const { actor, tenant } = await assistantDraftAccess();
   const origin = publicOrigin();
   const config = senderConfig(tenantId());
   assertSender(config, "SMS", "REBOOKING");
@@ -163,7 +163,7 @@ export async function saveAssistantDraft(
   });
 }
 export async function reviewAssistantDraft(id: string, expectedVersion: number, reason: string) {
-  const { actor } = await access();
+  const { actor } = await assistantDraftAccess();
   return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM assistant_drafts WHERE id = ${id} AND "tenantId" = ${tenantId()} FOR UPDATE`;
     const draft = await tx.assistantDraft.findFirst({ where: { id } });
@@ -204,7 +204,7 @@ export async function actOnAssistantDraft(
   expectedVersion: number,
   action: "approve" | "queue",
 ) {
-  const { actor, tenant } = await access();
+  const { actor, tenant } = await assistantDraftAccess();
   return prisma.$transaction(async (tx) => {
     // Tenant lock serializes daily quota checks; customer lock shares automatic dispatch exclusion.
     await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId()} FOR NO KEY UPDATE`;

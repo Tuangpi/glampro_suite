@@ -1,6 +1,10 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { assistantDraftSchema, type AssistantDraft } from "@glampro_suite/shared";
+import {
+  assistantDraftSchema,
+  assistantOutcomeSchema,
+  type AssistantDraft,
+} from "@glampro_suite/shared";
 import { get, post, patch } from "@/lib/api";
 import Button from "@/components/ui/Button";
 
@@ -50,6 +54,8 @@ export default function AssistantDraftReview({
             <Review
               key={`${draft.id}:${draft.version}:${draft.status}:${query.dataUpdatedAt}`}
               draft={draft}
+              tenantId={tenantId}
+              userId={userId}
             />
           ))}
           {cursor && <Button onClick={() => setCursor(undefined)}>First page</Button>}
@@ -62,13 +68,22 @@ export default function AssistantDraftReview({
   );
 }
 
-function Review({ draft }: { draft: AssistantDraft }) {
+function Review({
+  draft,
+  tenantId,
+  userId,
+}: {
+  draft: AssistantDraft;
+  tenantId: string;
+  userId: string;
+}) {
   const client = useQueryClient();
   const [message, setMessage] = useState(draft.message);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [reason, setReason] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [outcomeOpen, setOutcomeOpen] = useState(false);
   async function reviewRetention() {
     setBusy(true);
     setError("");
@@ -156,6 +171,10 @@ function Review({ draft }: { draft: AssistantDraft }) {
           proof of delivery. Uncertain messages must not be blindly resent.
         </p>
       )}
+      <Button variant="secondary" onClick={() => setOutcomeOpen((value) => !value)}>
+        Toggle observed outcomes
+      </Button>
+      {outcomeOpen && <Outcome id={draft.id} tenantId={tenantId} userId={userId} />}
       <label className="flex flex-col">
         Reason for continued retention (manual review)
         <input
@@ -178,6 +197,59 @@ function Review({ draft }: { draft: AssistantDraft }) {
       {historyOpen && <History id={draft.id} />}
       {error && <p role="alert">{error}</p>}
     </article>
+  );
+}
+
+function Outcome({ id, tenantId, userId }: { id: string; tenantId: string; userId: string }) {
+  const query = useQuery({
+    queryKey: [...draftKey, tenantId, userId, "outcome", id],
+    retry: false,
+    staleTime: 0,
+    queryFn: async () =>
+      assistantOutcomeSchema.parse(await get<unknown>(`/ai-assistant/drafts/${id}/outcome`)),
+  });
+  return (
+    <section aria-label="Observed outcomes">
+      <Button onClick={() => void query.refetch()} disabled={query.isFetching}>
+        Reload observed outcomes
+      </Button>
+      {query.isFetching ? (
+        <p role="status">Loading observed outcomes…</p>
+      ) : query.isError ? (
+        <p role="status">
+          Observed outcomes unavailable. Reload to retry; no results are confirmed.
+        </p>
+      ) : query.data ? (
+        <>
+          <p>
+            {query.data.delivery === "provider_reported_delivered"
+              ? "Provider-reported delivery, not proof of reading or action."
+              : query.data.delivery === "not_queued"
+                ? "Not queued; no observation window."
+                : "Delivery not confirmed."}
+          </p>
+          <p>As of: {query.data.asOf}</p>
+          {query.data.from && (
+            <>
+              <p>
+                UTC observation window: [{query.data.from}, {query.data.to}) · at most 30 elapsed
+                days.
+              </p>
+              <p>Bookings created (not currently cancelled): {query.data.bookingsCreated}</p>
+              <p>
+                Completed receipts:{" "}
+                {query.data.salesVisible ? query.data.completedSales : "Sales module required"}
+              </p>
+            </>
+          )}
+          <ul>
+            {query.data.limitations.map((text) => (
+              <li key={text}>{text}</li>
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </section>
   );
 }
 
