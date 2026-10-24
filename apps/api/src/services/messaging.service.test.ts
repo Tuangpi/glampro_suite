@@ -535,6 +535,30 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
     });
     assert.equal((await fetch(`${base}${new URL(url).pathname}`)).status, 200);
   });
+  it("queues the explicit service interval and inherits company days when cleared", async () => {
+    await inA(async () => {
+      try {
+        for (const interval of [45, null]) {
+          await prisma.service.update({ where: { id: serviceId }, data: { interval } });
+          const booking = await book({
+            ...bookingInput(),
+            startsAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+            status: "COMPLETED",
+          });
+          const row = await prisma.appointment.findFirstOrThrow({ where: { id: booking.id } });
+          const job = await prisma.messageJob.findFirstOrThrow({
+            where: { appointmentId: row.id, kind: "REBOOKING" },
+          });
+          assert.equal(
+            job.dueAt.getTime() - row.finishedAt!.getTime(),
+            (interval ?? (await getMessagingSettings()).rebookingDays) * 86400000,
+          );
+        }
+      } finally {
+        await prisma.service.update({ where: { id: serviceId }, data: { interval: null } });
+      }
+    });
+  });
   it("dispatches eligible rebooking once when outside quiet hours", async () => {
     const localHour = Number(
       new Intl.DateTimeFormat("en-GB", {
@@ -551,11 +575,32 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
         quietEnd: (localHour + 3) % 24,
       });
     });
-    const booking = await inA(() => book({ ...bookingInput(), status: "COMPLETED" }));
+    // A completed visit must actually be in the past; future completed fixtures
+    // must not bypass the latest-completed-visit guard.
+    const booking = await inA(() =>
+      book({
+        ...bookingInput(),
+        startsAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+        status: "COMPLETED",
+      }),
+    );
     await inA(() =>
       prisma.messageJob.updateMany({
         where: { appointmentId: booking.id },
         data: { dueAt: new Date(Date.now() - 1000) },
+      }),
+    );
+    await inA(async () =>
+      prisma.messageJob.create({
+        data: {
+          tenantId: ids[0]!,
+          customerId,
+          appointmentId: booking.id,
+          revision: (await prisma.appointment.findFirstOrThrow({ where: { id: booking.id } }))
+            .messageRevision,
+          kind: "REBOOKING",
+          dueAt: new Date(Date.now() - 1000),
+        },
       }),
     );
     let count = 0;

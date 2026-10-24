@@ -144,6 +144,10 @@ test(
           "cancelled",
           "no-email",
           "foreign",
+          "queued",
+          "destination-changed",
+          "withdrawn",
+          "contacted",
         ]) {
           const tenantId = kind === "foreign" ? ids[1]! : ids[0]!;
           const customer = await prisma.customer.create({
@@ -151,11 +155,40 @@ test(
               tenantId,
               name: kind,
               email: kind === "no-email" ? null : `${kind}@assistant.test`,
+              phone: "+6591234567",
               pdpaConsent: kind !== "marketing-only",
               marketingOptIn: kind !== "pdpa-only",
               archivedAt: kind === "archived" ? now : null,
             },
           });
+          await prisma.messagingSettings.upsert({
+            where: { tenantId },
+            create: { tenantId, smsEnabled: true, rebookingDays: 60 },
+            update: {},
+          });
+          // Missing email is allowed for phone-channel outreach, but no channel
+          // consent must never fall back to global consent or another channel.
+          if (kind !== "no-email")
+            await prisma.channelConsent.create({
+              data: {
+                tenantId,
+                customerId: customer.id,
+                channel: "SMS",
+                destination: kind === "destination-changed" ? "+6599999999" : "+6591234567",
+                preferred: true,
+                marketing: kind !== "withdrawn",
+              },
+            });
+          if (kind === "queued" || kind === "contacted")
+            await prisma.messageJob.create({
+              data: {
+                tenantId,
+                customerId: customer.id,
+                kind: "REBOOKING",
+                status: kind === "queued" ? "PENDING" : "ACCEPTED",
+                dueAt: now,
+              },
+            });
           await appointment(
             tenantId,
             customer.id,

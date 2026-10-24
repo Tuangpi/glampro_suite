@@ -41,6 +41,7 @@ interface FormState {
   nonmemberPrice: string;
   points: string;
   durationMinutes: string;
+  interval: string;
   departmentId: string;
   status: string;
   description: string;
@@ -52,6 +53,7 @@ const EMPTY_FORM: FormState = {
   nonmemberPrice: "",
   points: "",
   durationMinutes: "",
+  interval: "",
   departmentId: "",
   status: "ACTIVE",
   description: "",
@@ -68,6 +70,7 @@ function toForm(service: ServiceDetail): FormState {
     // A service with no duration has none to show, so the box is left empty rather
     // than reading "0 minutes", which would be a claim about the booking length.
     durationMinutes: service.durationMinutes === null ? "" : String(service.durationMinutes),
+    interval: service.interval == null ? "" : String(service.interval),
     departmentId: service.departmentId ?? "",
     status: service.status,
     description: service.description ?? "",
@@ -145,10 +148,14 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
     const nonmemberPrice = Number(form.nonmemberPrice);
     const points = toCount(form.points);
     const durationMinutes = toCount(form.durationMinutes);
+    const interval = toCount(form.interval);
 
     // Caught here so the user is not made to wait for a round trip, with the
     // contract's own wording where it has one.
     const localErrors: Record<string, string> = {};
+    if (interval !== undefined && (!Number.isInteger(interval) || interval < 1 || interval > 365)) {
+      localErrors["interval"] = "Enter a whole number from 1 to 365, or leave blank to inherit";
+    }
     if (trimmedName === "") localErrors["name"] = "Name is required";
 
     const memberError = moneyError(form.memberPrice, "Enter the member price");
@@ -185,6 +192,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
             // `null` clears it: an emptied duration box means "no duration yet",
             // not "leave the old one alone".
             durationMinutes: toNullableCount(form.durationMinutes),
+            interval: interval ?? null,
             description: clearable(form.description),
             departmentId: clearable(form.departmentId),
             status: (form.status || undefined) as CatalogStatusValue | undefined,
@@ -198,6 +206,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
           nonmemberPrice,
           ...(points !== undefined ? { points } : {}),
           ...(durationMinutes !== undefined ? { durationMinutes } : {}),
+          ...(interval !== undefined ? { interval } : {}),
           description: optional(form.description),
           departmentId: optional(form.departmentId),
           status: (form.status || undefined) as CatalogStatusValue | undefined,
@@ -327,6 +336,17 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
           />
         </div>
 
+        <Input
+          label="Rebooking interval (days)"
+          type="number"
+          min="1"
+          max="365"
+          step="1"
+          value={form.interval}
+          onChange={(event) => set("interval")(event.target.value)}
+          error={fieldError("interval")}
+          hint="Blank inherits the company rebooking days in Messaging settings (28 if unset)."
+        />
         <Input
           label="Description"
           value={form.description}

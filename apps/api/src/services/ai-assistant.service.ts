@@ -3,6 +3,13 @@ import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { badRequest, notFound } from "../lib/http-error.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
+import type { RebookingNudge } from "@glampro_suite/shared";
+import { getMessagingSettings } from "./messaging.service.js";
+import {
+  rebookingChannel,
+  rebookingInterval,
+  REBOOKING_CONTACT_STATUSES,
+} from "./rebooking-policy.js";
 import { ownerMetrics } from "./owner-metrics.service.js";
 export type { OwnerSummary } from "@glampro_suite/shared";
 import {
@@ -23,24 +30,6 @@ function localDate(instant: Date, timeZone: string): string {
     month: "2-digit",
     day: "2-digit",
   }).format(instant);
-}
-
-// Service interval map: service name patterns -> recommended rebooking interval in days
-// Extend this map as new services are added; falls back to query daysThreshold / 60 default.
-const SERVICE_INTERVALS: Record<string, number> = {
-  facial: 30,
-  haircut: 45,
-  color: 60,
-  massage: 30,
-  "": 60, // default fallback
-};
-
-function getServiceInterval(serviceName: string): number {
-  const lower = serviceName.toLowerCase();
-  for (const [pattern, interval] of Object.entries(SERVICE_INTERVALS)) {
-    if (lower.includes(pattern)) return interval;
-  }
-  return SERVICE_INTERVALS[""];
 }
 
 async function salon() {
@@ -71,146 +60,98 @@ function range(query: AssistantRange, timeZone: string, fallback: { from: Date; 
 }
 
 const ownerSummary = ownerMetrics;
-export interface RebookingNudge {
-  customerId: string;
-  customerName: string;
-  email: string;
-  lastServiceDate: string;
-  serviceName: string;
-  suggestedRebookDate: string;
-  daysSinceLastService: number;
-  message: string;
-  draftId: string; // OA-03: editable draft identifier
-  serviceInterval: number; // OA-03: service-specific rebooking interval in days
-}
+export type { RebookingNudge } from "@glampro_suite/shared";
 
 async function rebookingNudges(input: RebookingQuery) {
   const query = rebookingQuerySchema.parse(input);
   const { timeZone } = await salon();
   const now = new Date();
   const window = range(query, timeZone, { from: new Date(0), to: new Date(now.getTime() + 1) });
-
-  // OA-03: fetch tenant channel consents for eligibility checking
-  const tenant = await salon();
-  const channelConsents = await prisma.channelConsent.findMany({
-    where: { tenantId: tenant.id },
-    select: { customerId: true, channel: true, marketing: true, service: true, preferred: true },
-  });
-  const channelConsentMap = new Map<string, { marketing: boolean; service: boolean }>();
-  for (const cc of channelConsents) {
-    const existing = channelConsentMap.get(cc.customerId);
-    if (!existing) {
-      channelConsentMap.set(cc.customerId, { marketing: cc.marketing, service: cc.service });
-    } else {
-      // Prefer explicit consents; keep true if either has it
-      existing.marketing = existing.marketing || cc.marketing;
-      existing.service = existing.service || cc.service;
-    }
-  }
-
-  // OA-03: fetch customers eligible for rebooking nudges
+  const settings = await getMessagingSettings();
   const customers = await prisma.customer.findMany({
     where: {
       archivedAt: null,
-      // OA-03: check both global opt-in and channel-specific consents
-      OR: [
-        {
-          marketingOptIn: true,
-          pdpaConsent: true,
-        },
-        {
-          // channel-specific fallback: customer must have at least one consent event
-          consentEvents: {
-            some: {
-              OR: [
-                { pdpaConsent: true },
-                { marketingOptIn: true },
-              ],
-            },
-          },
-        },
-      ],
-      email: { not: null },
+      marketingOptIn: true,
+      pdpaConsent: true,
       appointments: { none: { status: { in: ["SCHEDULED", "IN_PROGRESS"] }, endsAt: { gt: now } } },
     },
     select: {
       id: true,
       name: true,
       email: true,
+      phone: true,
+      archivedAt: true,
+      pdpaConsent: true,
+      marketingOptIn: true,
       appointments: {
         where: { status: "COMPLETED", endsAt: { lte: now } },
         orderBy: [{ startsAt: "desc" }, { id: "asc" }],
         take: 1,
-        select: { startsAt: true, service: { select: { name: true } } },
+        select: { id: true, startsAt: true, service: { select: { name: true, interval: true } } },
       },
     },
   });
-
+  const choices = await prisma.channelConsent.findMany({
+    where: { customerId: { in: customers.map((customer) => customer.id) }, preferred: true },
+  });
   const today = Date.parse(localDate(now, timeZone));
   const nudges: RebookingNudge[] = [];
-  const seenCustomers = new Set<string>(); // OA-03: deduplicate within this run
-
+  const seen = new Set<string>();
   for (const customer of customers) {
-    // OA-03: deduplicate if already seen in this run
-    if (seenCustomers.has(customer.id)) continue;
-    seenCustomers.add(customer.id);
-
+    if (seen.has(customer.id)) continue;
+    seen.add(customer.id);
+    const channel = rebookingChannel(
+      customer,
+      choices.filter((choice) => choice.customerId === customer.id),
+      settings,
+    );
     const last = customer.appointments[0];
-    if (!last) continue;
-
+    if (!channel || !last || last.startsAt < window.gte || last.startsAt >= window.lt) continue;
     const lastServiceDate = localDate(last.startsAt, timeZone);
-    const serviceName = last.service?.name ?? "service";
-
-    // OA-03: use service-specific interval, fallback to query daysThreshold, then 60
-    const serviceInterval = getServiceInterval(serviceName);
-    const daysThreshold = serviceInterval ?? (query.daysThreshold ?? 60);
-
+    const serviceInterval = rebookingInterval(
+      last.service?.interval,
+      query.daysThreshold ?? settings.rebookingDays,
+    );
     const days = Math.floor((today - Date.parse(lastServiceDate)) / DAY);
-    if (days <= daysThreshold) continue;
-
-    // OA-03: contact limit - max 5 nudges per customer per interval period
-    const customerNudgeCount = await prisma.nudgeCount.count({
+    if (days <= serviceInterval) continue;
+    // Any active/uncertain queue entry owns outreach, even if scheduled in future.
+    // One accepted contact per interval across channels; definite failures do not count.
+    const existing = await prisma.messageJob.findFirst({
       where: {
         customerId: customer.id,
-        createdAt: { gte: new Date(now.getTime() - daysThreshold * DAY) },
+        kind: "REBOOKING",
+        status: { in: REBOOKING_CONTACT_STATUSES },
+        OR: [
+          { status: { in: ["PENDING", "RETRY", "SENDING", "UNCERTAIN"] } },
+          { appointmentId: last.id },
+          { updatedAt: { gte: new Date(now.getTime() - serviceInterval * DAY) } },
+        ],
       },
+      select: { id: true },
     });
-    if (customerNudgeCount >= 5) continue;
-
-    // OA-03: deduplication - skip if customer already has a recent rebooking suggestion
-    const recentRebook = await prisma.appointment.count({
-      where: {
-        customerId: customer.id,
-        status: "COMPLETED",
-        startsAt: { gte: new Date(now.getTime() - daysThreshold * DAY) },
-        service: { name: { contains: "rebook" } },
-      },
-    });
-    if (recentRebook > 0) continue;
-
-    // OA-03: channel consent eligibility check
-    const cc = channelConsentMap.get(customer.id);
-    const hasMarketingConsent = cc?.marketing ?? customer.marketingOptIn;
-    const hasPdpaConsent = cc?.service ?? customer.pdpaConsent;
-    if (!hasMarketingConsent || !hasPdpaConsent) continue;
-
-    // OA-03: editable draft ID
-    const draftId = `rebook-${customer.id}-${Date.now()}`;
-
+    if (existing) continue;
+    const serviceName = last.service?.name ?? "service";
     nudges.push({
       customerId: customer.id,
       customerName: customer.name,
-      email: customer.email,
+      email: customer.email ?? "",
+      appointmentId: last.id,
       lastServiceDate,
       serviceName,
-      suggestedRebookDate: new Date(today + 30 * DAY).toISOString().slice(0, 10),
+      suggestedRebookDate: new Date(today + DAY).toISOString().slice(0, 10),
       daysSinceLastService: days,
-      message: `It's been ${days} days since your ${serviceName}. Would you like to rebook?`,
-      draftId,
       serviceInterval,
+      intervalSource:
+        last.service?.interval != null
+          ? "service"
+          : query.daysThreshold != null
+            ? "query"
+            : "company",
+      ...channel,
+      message: `It's been ${days} days since your ${serviceName}. Would you like to rebook?`,
+      draftId: `rebook-${customer.id}-${last.id}-${channel.channel}`,
     });
   }
-
   nudges.sort(
     (a, b) =>
       b.daysSinceLastService - a.daysSinceLastService || a.customerId.localeCompare(b.customerId),
@@ -247,7 +188,8 @@ async function slowDayPromos(input: PromoQuery): Promise<SlowDayPromo[]> {
     1,
     Math.round(
       (Date.parse(localDate(new Date(window.lt.getTime() - 1), timeZone)) -
-        Date.parse(localDate(window.gte, timeZone))) / DAY,
+        Date.parse(localDate(window.gte, timeZone))) /
+        DAY,
     ) + 1,
   );
   if (count / days >= 3) return [];

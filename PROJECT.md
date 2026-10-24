@@ -351,6 +351,17 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ### Owner assistant expansion — approved October 23, 2026
 
+OA-03 implementation verified October 24: explicit nullable service rebooking days
+inherit existing company Messaging days (28 if unset). Owner/manager dashboard
+recommendations use current global and exact preferred-channel marketing permission,
+latest completed visit, upcoming-booking exclusion and existing message-job contact
+history. Temporary browser draft edits are not persisted or sent. Existing automatic
+queue shares interval resolution; dispatch rechecks eligibility and contact limits.
+Migration `20261024100000_service_rebooking_interval` verified only on disposable
+PostgreSQL. API/web builds now pass, resolving the prior broken assistant scaffold;
+full API suite not rerun. Application rollout and owner browser walkthrough pending.
+Detailed policy and limitations: docs/owner-rebooking.md.
+
 Follow-ups OA-01–OA-07 extend, rather than erase, TK2610-0029's correctness work.
 Deliver a dashboard briefing/evidence workspace, service-aware rebooking, future
 quiet-day opportunities, controlled approvals/delivery, bounded business questions

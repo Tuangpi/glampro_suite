@@ -31,3 +31,21 @@ export const ownerSummarySchema = z
   });
 
 export type OwnerSummary = z.infer<typeof ownerSummarySchema>;
+
+export const rebookingNudgeSchema = z.object({
+  customerId: z.string().min(1),
+  customerName: z.string(),
+  email: z.string(), // Legacy field; eligibility is channel/destination based, not email based.
+  appointmentId: z.string().min(1),
+  lastServiceDate: z.iso.date(),
+  serviceName: z.string(),
+  suggestedRebookDate: z.iso.date(),
+  daysSinceLastService: z.number().int().nonnegative(),
+  serviceInterval: z.number().int().min(1).max(3650),
+  intervalSource: z.enum(["service", "company", "query"]),
+  channel: z.enum(["SMS", "WHATSAPP"]),
+  destination: z.string().regex(/^\+[1-9]\d{7,14}$/),
+  message: z.string().min(1).max(2000),
+  draftId: z.string().min(1),
+});
+export type RebookingNudge = z.infer<typeof rebookingNudgeSchema>;

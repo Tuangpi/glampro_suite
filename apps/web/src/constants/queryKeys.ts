@@ -22,6 +22,8 @@ export const queryKeys = {
     summary: () => ["dashboard", "summary"] as const,
   },
   ownerAssistant: {
+    rebooking: (tenantId: string, userId: string) =>
+      ["owner-assistant", "rebooking", tenantId, userId] as const,
     summary: (tenantId: string, userId: string) =>
       ["owner-assistant", "summary", tenantId, userId] as const,
   },

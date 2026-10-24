@@ -37,7 +37,7 @@ owner-facing experience; they do not authorize deployment or outbound messages.
 
 ### OA-02 — Dashboard briefing and evidence workspace
 
-- Status: IN PROGRESS
+- Status: DONE — owner walkthrough completed and explicitly accepted October 24, 2026.
 - Dependencies: OA-01
 - Expected result: Owner/manager briefing with evidence links and no new main nav item.
 - Completion check: Role/module-aware UI; loading, empty, partial failure, retry and
@@ -49,20 +49,44 @@ owner-facing experience; they do not authorize deployment or outbound messages.
   independently available if the briefing fails. No new navigation, message draft,
   approval/send action or inferred trend/capacity. Full web 646/646, focused 16/16,
   web typecheck, workspace lint, production web build and diff/format review pass.
-- Remaining: owner walkthrough/acceptance. Keep IN PROGRESS until verified; no agent
-  browser walkthrough or live HTTP/database test performed.
+- Owner acceptance: user confirmed the walkthrough was completed and explicitly
+  accepted OA-02 on October 24, 2026. No agent browser walkthrough or live
+  HTTP/database test performed; earlier automated evidence remains as recorded.
 - Acceptance follow-up October 23: focused briefing/hook/dashboard tests rerun,
   16/16 pass. Local web/API did not respond on ports 5173/9000; live figures and
   destination navigation remain unverified. No acceptance recorded; OA-03 not started.
+- Acceptance follow-up October 24: focused briefing/hook/dashboard runner reports
+  16/16 passing across three files; terminal completion status was not reliably
+  captured. Local web/API again returned HTTP 000 on ports 5173/9000. Owner
+  walkthrough and explicit acceptance were outstanding at that check; subsequently
+  completed and confirmed by the user. OA-03 was not started.
 
 ### OA-03 — Service-aware rebooking recommendations
 
-- Status: TODO
+- Status: DONE — local implementation and disposable acceptance verified October 24, 2026.
 - Dependencies: OA-01, OA-02
 - Expected result: Company/service intervals, channel consent eligibility, editable
   drafts, contact limits and deduplication against existing rebooking automation.
 - Completion check: Interval fallback, consent/destination changes, upcoming bookings,
   existing jobs and duplicate contact tests; no implicit sending.
+- Delivered: nullable explicit service interval in catalogue (1–365 days), inheriting
+  existing company Messaging rebooking days (28 if unset); no service-name inference.
+  Dashboard owner/manager recommendations validate shared contracts, expose interval/
+  visit/channel/destination evidence and support temporary editable browser drafts.
+  No persistence, approval or sending actions; those remain OA-05 scope.
+- Current global and preferred-channel marketing choices, exact normalized phone,
+  enabled channel, unarchived customer and no upcoming booking are required. Existing
+  active/uncertain/same-visit/recent accepted contact jobs suppress recommendations.
+  Automatic scheduling shares interval resolution; dispatch rechecks eligibility,
+  latest visit and cross-channel contact history under the customer lock.
+- Verification: focused API 17/17; shared 173/173; full web 661/661 (two workers);
+  disposable HTTP acceptance 1/1 and messaging 25/25 with injected fake provider.
+  All 46 migrations replay from empty; API/web production builds, workspace lint,
+  Prisma validation pass. Initial default-worker web run had one operator-login
+  timeout; isolated 4/4 and full two-worker rerun passed without weakening assertions.
+- Rollout limitation: migration `20261024100000_service_rebooking_interval` applied
+  only to a new disposable loopback database. Application migration, owner browser
+  walkthrough and real-provider delivery not performed. See docs/owner-rebooking.md.
 
 ### OA-04 — Future quiet-day opportunities
 

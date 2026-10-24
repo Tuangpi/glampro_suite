@@ -84,6 +84,7 @@ const SERVICE_SELECT = {
   departmentId: true,
   department: { select: { id: true, name: true } },
   durationMinutes: true,
+  interval: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -177,6 +178,7 @@ function toService(row: ServiceRow): ServiceSummary {
     departmentId: row.departmentId,
     departmentName: row.department?.name ?? null,
     durationMinutes: row.durationMinutes,
+    interval: row.interval,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   });

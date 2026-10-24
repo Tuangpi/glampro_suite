@@ -149,6 +149,7 @@ export const serviceSummarySchema = z.object({
   departmentId: z.string().nullable(),
   departmentName: z.string().nullable(),
   durationMinutes: z.number().int().nullable(),
+  interval: z.number().int().min(1).max(365).nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -175,6 +176,7 @@ export const createServiceSchema = z.object({
   description: z.string().trim().max(2000).optional(),
   departmentId: z.string().min(1).max(64).optional(),
   durationMinutes: durationMinutesSchema.optional(),
+  interval: z.number().int().min(1).max(365).nullable().optional(),
   status: catalogStatusSchema.optional(),
 });
 
@@ -188,6 +190,7 @@ export const updateServiceSchema = z.object({
   description: z.string().trim().max(2000).nullable().optional(),
   departmentId: z.string().min(1).max(64).nullable().optional(),
   durationMinutes: durationMinutesSchema.nullable().optional(),
+  interval: z.number().int().min(1).max(365).nullable().optional(),
   status: catalogStatusSchema.optional(),
 });
 

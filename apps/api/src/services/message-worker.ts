@@ -19,6 +19,11 @@ import {
   tenantId,
 } from "./messaging.service.js";
 import { randomBytes } from "node:crypto";
+import {
+  rebookingChannel,
+  rebookingInterval,
+  REBOOKING_CONTACT_STATUSES,
+} from "./rebooking-policy.js";
 
 /** Minute stepping uses real instants, including DST gaps/repeated local hours. */
 export function outsideQuietHours(
@@ -118,7 +123,7 @@ export async function runMessageBatch(
               ? await tx.customer.findFirst({ where: { id: job.customerId } })
               : null;
             const destination = normalizePhone(customer?.phone ?? null);
-            if (!customer || !customer.pdpaConsent || !destination)
+            if (!customer || customer.archivedAt || !customer.pdpaConsent || !destination)
               return suppress("CUSTOMER_INELIGIBLE");
             const consent = await tx.channelConsent.findFirst({
               where: {
@@ -127,6 +132,14 @@ export async function runMessageBatch(
               },
             });
             const promotional = job.kind === "REBOOKING";
+            if (promotional) {
+              const choices = await tx.channelConsent.findMany({
+                where: { customerId: customer.id, preferred: true },
+              });
+              const eligible = rebookingChannel(customer, choices, settings);
+              if (!eligible || (job.channel && eligible.channel !== job.channel))
+                return suppress("CONSENT_REQUIRED");
+            }
             if (
               !consent ||
               consent.destination !== destination ||
@@ -156,12 +169,39 @@ export async function runMessageBatch(
               (await tx.appointment.findFirst({
                 where: {
                   customerId: customer.id,
-                  startsAt: { gt: now },
+                  endsAt: { gt: now },
                   status: { in: ["SCHEDULED", "IN_PROGRESS"] },
                 },
               }))
             )
               return suppress("ALREADY_REBOOKED");
+            if (promotional) {
+              const latest = await tx.appointment.findFirst({
+                where: { customerId: customer.id, status: "COMPLETED", endsAt: { lte: now } },
+                orderBy: [{ startsAt: "desc" }, { id: "asc" }],
+                select: { id: true, service: { select: { interval: true } } },
+              });
+              if (!latest || latest.id !== job.appointmentId) return suppress("LATER_VISIT");
+              const interval = rebookingInterval(latest.service?.interval, settings.rebookingDays);
+              const contacted = await tx.messageJob.findFirst({
+                where: {
+                  id: { not: job.id },
+                  customerId: customer.id,
+                  kind: "REBOOKING",
+                  status: {
+                    in: REBOOKING_CONTACT_STATUSES.filter(
+                      (status) => !["PENDING", "RETRY", "SENDING"].includes(status),
+                    ),
+                  },
+                  OR: [
+                    { appointmentId: job.appointmentId },
+                    { updatedAt: { gte: new Date(now.getTime() - interval * 86400000) } },
+                  ],
+                },
+                select: { id: true },
+              });
+              if (contacted) return suppress("CONTACT_LIMIT");
+            }
             if (scheduled) {
               const next = outsideQuietHours(
                 now,

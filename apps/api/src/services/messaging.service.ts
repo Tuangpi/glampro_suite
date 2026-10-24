@@ -17,6 +17,7 @@ import { resolveTenantStatus } from "../lib/tenant-status.js";
 import { moduleEntitlements } from "../lib/entitlements.js";
 import { getSale } from "./sale.service.js";
 import { getSalonProfile } from "./settings.service.js";
+import { rebookingInterval } from "./rebooking-policy.js";
 
 export type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 export function tenantId() {
@@ -194,12 +195,19 @@ export async function queueAppointmentMessages(tx: Tx, id: string) {
     if (dueAt > now) await tx.messageJob.create({ data: { ...base, kind: "REMINDER", dueAt } });
   }
   if (appointment.status === "COMPLETED" && appointment.finishedAt) {
+    const service = appointment.serviceId
+      ? await tx.service.findFirst({
+          where: { id: appointment.serviceId },
+          select: { interval: true },
+        })
+      : null;
     await tx.messageJob.create({
       data: {
         ...base,
         kind: "REBOOKING",
         dueAt: new Date(
-          appointment.finishedAt.getTime() + (settings?.rebookingDays ?? 28) * 86400000,
+          appointment.finishedAt.getTime() +
+            rebookingInterval(service?.interval, settings?.rebookingDays) * 86400000,
         ),
       },
     });
@@ -210,34 +218,37 @@ export const hashToken = (token: string) => createHash("sha256").update(token).d
 export async function issueLink(kind: "BOOKING" | "RECEIPT", targetId: string) {
   await assertMessagingAccess(kind === "BOOKING" ? "appointments" : "sales");
   const origin = publicOrigin();
-  return prisma.$transaction(async (tx) => {
-    let revision = 0;
-    let expiresAt = new Date(Date.now() + 30 * 86400000);
-    if (kind === "BOOKING") {
-      await lockBookingCalendar(tx);
-      await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${targetId} AND "tenantId" = ${tenantId()} FOR UPDATE`;
-      const booking = await tx.appointment.findFirst({ where: { id: targetId } });
-      if (!booking || booking.status !== "SCHEDULED" || booking.startsAt <= new Date())
-        throw conflict("Only future scheduled bookings can have action links.");
-      revision = booking.messageRevision;
-      expiresAt = booking.startsAt;
-    } else {
-      const sale = await tx.sale.findFirst({ where: { id: targetId } });
-      if (!sale || sale.status === "HELD") throw conflict("Complete the sale first.");
-    }
-    const token = randomBytes(32).toString("base64url");
-    await tx.publicLink.create({
-      data: {
-        tenantId: tenantId(),
-        kind,
-        targetId,
-        revision,
-        tokenHash: hashToken(token),
-        expiresAt,
-      },
-    });
-    return { url: `${origin}/api/public/messages/${token}`, expiresAt };
-  }, { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 });
+  return prisma.$transaction(
+    async (tx) => {
+      let revision = 0;
+      let expiresAt = new Date(Date.now() + 30 * 86400000);
+      if (kind === "BOOKING") {
+        await lockBookingCalendar(tx);
+        await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${targetId} AND "tenantId" = ${tenantId()} FOR UPDATE`;
+        const booking = await tx.appointment.findFirst({ where: { id: targetId } });
+        if (!booking || booking.status !== "SCHEDULED" || booking.startsAt <= new Date())
+          throw conflict("Only future scheduled bookings can have action links.");
+        revision = booking.messageRevision;
+        expiresAt = booking.startsAt;
+      } else {
+        const sale = await tx.sale.findFirst({ where: { id: targetId } });
+        if (!sale || sale.status === "HELD") throw conflict("Complete the sale first.");
+      }
+      const token = randomBytes(32).toString("base64url");
+      await tx.publicLink.create({
+        data: {
+          tenantId: tenantId(),
+          kind,
+          targetId,
+          revision,
+          tokenHash: hashToken(token),
+          expiresAt,
+        },
+      });
+      return { url: `${origin}/api/public/messages/${token}`, expiresAt };
+    },
+    { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 },
+  );
 }
 export async function revokeLinks(kind: string, targetId: string) {
   await prisma.publicLink.updateMany({
@@ -267,35 +278,38 @@ export async function publicBookingAction(
 ) {
   if (link.kind !== "BOOKING") throw notFound();
   const settings = await getMessagingSettings();
-  await prisma.$transaction(async (tx) => {
-    await lockBookingCalendar(tx);
-    await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${link.targetId} AND "tenantId" = ${tenantId()} FOR UPDATE`;
-    const currentLink = await tx.publicLink.findFirst({
-      where: { id: link.id, revokedAt: null, expiresAt: { gt: new Date() } },
-    });
-    const booking = await tx.appointment.findFirst({ where: { id: link.targetId } });
-    if (
-      !currentLink ||
-      !booking ||
-      booking.messageRevision !== link.revision ||
-      booking.status !== "SCHEDULED" ||
-      booking.startsAt <= new Date()
-    )
-      throw conflict("This booking link is no longer current.");
-    if (
-      action === "cancel" &&
-      booking.startsAt.getTime() - Date.now() <= settings.cancellationHours * 3600000
-    )
-      throw conflict("Contact the salon to cancel this appointment.");
-    await tx.appointment.update({
-      where: { id: booking.id },
-      data:
-        action === "confirm"
-          ? { customerConfirmedAt: booking.customerConfirmedAt ?? new Date() }
-          : { status: "CANCELLED", customerConfirmedAt: null, messageRevision: { increment: 1 } },
-    });
-    if (action === "cancel") await queueAppointmentMessages(tx, booking.id);
-  }, { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 });
+  await prisma.$transaction(
+    async (tx) => {
+      await lockBookingCalendar(tx);
+      await tx.$queryRaw`SELECT id FROM appointments WHERE id = ${link.targetId} AND "tenantId" = ${tenantId()} FOR UPDATE`;
+      const currentLink = await tx.publicLink.findFirst({
+        where: { id: link.id, revokedAt: null, expiresAt: { gt: new Date() } },
+      });
+      const booking = await tx.appointment.findFirst({ where: { id: link.targetId } });
+      if (
+        !currentLink ||
+        !booking ||
+        booking.messageRevision !== link.revision ||
+        booking.status !== "SCHEDULED" ||
+        booking.startsAt <= new Date()
+      )
+        throw conflict("This booking link is no longer current.");
+      if (
+        action === "cancel" &&
+        booking.startsAt.getTime() - Date.now() <= settings.cancellationHours * 3600000
+      )
+        throw conflict("Contact the salon to cancel this appointment.");
+      await tx.appointment.update({
+        where: { id: booking.id },
+        data:
+          action === "confirm"
+            ? { customerConfirmedAt: booking.customerConfirmedAt ?? new Date() }
+            : { status: "CANCELLED", customerConfirmedAt: null, messageRevision: { increment: 1 } },
+      });
+      if (action === "cancel") await queueAppointmentMessages(tx, booking.id);
+    },
+    { isolationLevel: "ReadCommitted", maxWait: 10_000, timeout: 30_000 },
+  );
 }
 export async function queueReceipt(saleId: string, channel: Channel) {
   const sale = await getSale(saleId);

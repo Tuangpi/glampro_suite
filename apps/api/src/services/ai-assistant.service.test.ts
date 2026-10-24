@@ -184,14 +184,27 @@ describe("owner summary", () => {
 });
 
 describe("rebooking drafts", () => {
-  it("uses latest completed visit, both consents, no upcoming booking and mandatory approval", async () => {
+  function fixtures(interval: number | null = null) {
+    replace(prisma.messagingSettings, "findFirst", async () => ({
+      smsEnabled: true,
+      rebookingDays: 60,
+    }));
+    replace(prisma.channelConsent, "findMany", async () => [
+      {
+        customerId: "overdue",
+        channel: "SMS",
+        destination: "+6591234567",
+        marketing: true,
+        preferred: true,
+      },
+    ]);
+    replace(prisma.messageJob, "findFirst", async () => null);
     replace(prisma.customer, "findMany", async (args: unknown) => {
       const query = args as { where: unknown; select: { appointments: unknown } };
       assert.deepEqual(query.where, {
         archivedAt: null,
         marketingOptIn: true,
         pdpaConsent: true,
-        email: { not: null },
         appointments: {
           none: { status: { in: ["SCHEDULED", "IN_PROGRESS"] }, endsAt: { gt: now } },
         },
@@ -200,31 +213,84 @@ describe("rebooking drafts", () => {
         where: { status: "COMPLETED", endsAt: { lte: now } },
         orderBy: [{ startsAt: "desc" }, { id: "asc" }],
         take: 1,
-        select: { startsAt: true, service: { select: { name: true } } },
+        select: { id: true, startsAt: true, service: { select: { name: true, interval: true } } },
       });
-      const customer = (id: string, startsAt: string, email = "person@example.test") => ({
-        id,
-        name: id,
-        email,
-        appointments: [{ startsAt: new Date(startsAt), service: { name: "Facial" } }],
-      });
-      return [
-        customer("overdue", "2026-07-01T17:00:00Z"),
-        customer("recent", "2026-10-22T17:00:00Z"),
-        customer("blank", "2026-07-01T17:00:00Z", " "),
-      ];
+      const customer = {
+        id: "overdue",
+        name: "Person",
+        email: null,
+        phone: "+6591234567",
+        archivedAt: null,
+        pdpaConsent: true,
+        marketingOptIn: true,
+        appointments: [
+          {
+            id: "visit",
+            startsAt: new Date("2026-07-01T17:00:00Z"),
+            service: { name: "Facial", interval },
+          },
+        ],
+      };
+      return [customer, customer];
     });
+  }
+  it("uses current choices, latest completed visit, no upcoming booking and stable deduplicated drafts", async () => {
+    fixtures();
     const result = await scoped(() => assistant.rebookingNudges({}));
     assert.equal(result.requiresApproval, true);
     assert.equal(result.nudges.length, 1);
-    assert.equal(result.nudges[0]?.customerId, "overdue");
     assert.equal(result.nudges[0]?.lastServiceDate, "2026-07-02");
-    assert.equal(result.nudges[0]?.suggestedRebookDate, "2026-11-23");
+    assert.equal(result.nudges[0]?.suggestedRebookDate, "2026-10-25");
     assert.equal(result.nudges[0]?.daysSinceLastService, 114);
-    assert.deepEqual(await scoped(() => assistant.rebookingNudges({ from: "2026-08-01" })), {
-      nudges: [],
-      requiresApproval: true,
+    assert.equal(result.nudges[0]?.serviceInterval, 60);
+    assert.equal(result.nudges[0]?.intervalSource, "company");
+    assert.deepEqual(await scoped(() => assistant.rebookingNudges({})), result);
+    assert.deepEqual(
+      (await scoped(() => assistant.rebookingNudges({ from: "2026-08-01" }))).nudges,
+      [],
+    );
+  });
+  it("uses explicit service intervals before query/company fallback", async () => {
+    fixtures(120);
+    assert.deepEqual(
+      (await scoped(() => assistant.rebookingNudges({ daysThreshold: 1 }))).nudges,
+      [],
+    );
+  });
+  it("keeps a legacy query threshold only when the service inherits", async () => {
+    fixtures();
+    const result = await scoped(() => assistant.rebookingNudges({ daysThreshold: 100 }));
+    assert.equal(result.nudges[0]?.serviceInterval, 100);
+    assert.equal(result.nudges[0]?.intervalSource, "query");
+  });
+  it("suppresses suggestions owned by existing automatic/uncertain/recent contact jobs", async () => {
+    fixtures();
+    replace(prisma.messageJob, "findFirst", async (args: unknown) => {
+      const { where } = args as {
+        where: { kind: string; customerId: string; status: { in: string[] }; OR: unknown[] };
+      };
+      assert.equal(where.kind, "REBOOKING");
+      assert.equal(where.customerId, "overdue");
+      assert.ok(where.status.in.includes("UNCERTAIN"));
+      assert.ok(where.status.in.includes("PENDING"));
+      assert.ok(!where.status.in.includes("FAILED"));
+      assert.equal(where.OR.length, 3);
+      return { id: "automatic" };
     });
+    assert.deepEqual((await scoped(() => assistant.rebookingNudges({}))).nudges, []);
+  });
+  it("refuses changed destination or withdrawn preferred-channel permission", async () => {
+    fixtures();
+    replace(prisma.channelConsent, "findMany", async () => [
+      {
+        customerId: "overdue",
+        channel: "SMS",
+        destination: "+6599999999",
+        marketing: true,
+        preferred: true,
+      },
+    ]);
+    assert.deepEqual((await scoped(() => assistant.rebookingNudges({}))).nudges, []);
   });
 });
 

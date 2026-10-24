@@ -677,7 +677,8 @@ model Service {
   departmentId   String?
   name           String
   status         CatalogStatus @default(ACTIVE)
-  interval       Int           @default(60) // OA-03: rebooking interval in days, defaults to 60 days
+  /// Null inherits MessagingSettings.rebookingDays (28 when not configured).
+  interval       Int?
   memberPrice    Decimal       @db.Decimal(12, 2)
   nonmemberPrice Decimal       @db.Decimal(12, 2)
   /// Loyalty points earned. Legacy `point` (integer).

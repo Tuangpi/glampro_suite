@@ -1,6 +1,7 @@
 import { AlertTriangle, Banknote, Calendar, Package, Users } from "@/components/icons";
 import StatTile from "@/components/ui/StatTile";
 import OwnerBriefing from "@/components/dashboard/OwnerBriefing";
+import RebookingRecommendations from "@/components/dashboard/RebookingRecommendations";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
@@ -82,6 +83,7 @@ export default function Dashboard() {
         </p>
       ) : null}
       <OwnerBriefing />
+      <RebookingRecommendations />
     </div>
   );
 }

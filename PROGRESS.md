@@ -2,22 +2,80 @@
 
 ## Current State
 
-- Current task: **OA-02 IN PROGRESS**, dashboard briefing/evidence workspace,
-  pending owner walkthrough/acceptance before OA-03. No next task auto-started.
-- Most recently completed: **TK2610-0028**, optional multi-outlet implementation
-  and disposable acceptance verified October 24. Company roles apply at every
+- Current task: **None**. Most recently completed: **OA-03**, service-aware rebooking
+  recommendations, local/disposable checks complete October 24. Recommended next:
+  **OA-04**, future quiet-day opportunities (TODO); not started.
+- **OA-02** dashboard briefing/evidence workspace owner acceptance recorded.
+  **TK2610-0028** multi-outlet disposable acceptance verified October 24.
+  Company roles apply at every
   outlet; customers/credit/families and stock quantities remain shared tenant-wide.
 - Verified: 45 migrations replay from empty; 23/23 focused/live outlet checks;
   163/163 final API regressions; web 653/653; shared 171/171. Web production build,
   typecheck, Prisma validation and focused API/web/shared lint pass.
-- Full disposable API: 547 passed / 1 unrelated owner-assistant failure / 16 skips.
-  Six existing ai-assistant.service.ts type errors still block API/root build;
-  unrelated Service.interval and prepaid/treatment schema drift remains.
+- Historical outlet full API: 547 passed / 1 owner-assistant failure / 16 skips.
+  OA-03 resolves the broken assistant scaffold and unmigrated Service.interval;
+  API/web builds now pass. Full API suite not rerun; prepaid/treatment drift remains.
 - Application database/accounts unchanged; no deployment, commit or push.
   Outlet rollout requires authorized application migrations and owner walkthrough.
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — OA-03 service-aware rebooking complete locally
+
+- Replaced name heuristics, nonexistent counter access and unsafe merged/historical
+  consent fallback. Nullable catalogue interval inherits existing Messaging company
+  days; explicit range 1–365. Legacy query threshold remains a fallback override.
+- Dashboard owner/manager workspace shows deterministic visit/interval/channel
+  evidence, temporary editable drafts, unavailable/retry/empty states and role/module
+  guards. No saved draft, approval, send, new main navigation or external AI.
+- Current global choices, preferred enabled channel, exact destination and active
+  customer required. Upcoming bookings and existing active/uncertain/same-visit/
+  recent provider-accepted jobs suppress suggestions. Automatic queue shares interval
+  resolution; locked dispatch rechecks current eligibility/latest visit/contact limit.
+  Duplicate jobs verified to produce one accepted fake-provider submission.
+- New migration replays with all **46 migrations** on disposable PostgreSQL at
+  127.0.0.1:55440/package_expiry_test. Application DB unchanged. Real providers never
+  called; messaging tests inject a fake sender. Docs: docs/owner-rebooking.md.
+- Checks: focused API **17/17**, shared **173/173**, full web **661/661** with two
+  workers, HTTP acceptance **1/1**, messaging **25/25**; API/web production builds,
+  workspace lint and Prisma validation pass. Initial full web default-worker run:
+  660 pass/1 operator-login timeout; isolated 4/4 and full rerun pass. Initial live
+  suites interfered through global worker access when run together; sequential reruns
+  pass. Corrected future-completed visit fixture and new test typing before final checks.
+- Logs: /tmp/oa03-api-unit-final.log, /tmp/oa03-shared-final.log,
+  /tmp/oa03-web-final.log, /tmp/oa03-http-final.log,
+  /tmp/oa03-messaging-verified.log, /tmp/oa03-api-build-final.log,
+  /tmp/oa03-web-build-final.log, /tmp/oa03-lint-final.log.
+- No application rollout, owner browser walkthrough, real-provider delivery, commit
+  or push. OA-04 is next ready; no next task started.
+
+## October 24, 2026 — OA-02 owner acceptance recorded
+
+- User confirmed the dashboard briefing/evidence walkthrough was completed and
+  explicitly accepted OA-02. Marked OA-02 DONE; OA-03 remains TODO and is ready.
+- Acceptance is user-reported, not an agent browser or live HTTP/database check.
+  No new tests run for this tracking-only update; prior focused runner reported
+  16/16 passing with terminal completion uncertainty disclosed below.
+- Only task/progress records changed. No application code, accounts, database,
+  deployment, commit or push changed. No next task started.
+
+## October 24, 2026 — OA-02 owner acceptance follow-up
+
+- Reviewed briefing component/hook and focused coverage. Vitest reports 16/16
+  passing across briefing, hook and dashboard tests. Terminal completion status
+  was not reliably captured; log: `/tmp/oa02-acceptance-20261024.log`.
+- Local web port 5173 and API port 9000 returned HTTP 000 (connection failed).
+  No authenticated browser walkthrough, live figure reconciliation or destination
+  navigation was performed. Automated fixture checks are not owner acceptance.
+- OA-02 remains IN PROGRESS pending owner walkthrough and explicit acceptance.
+  OA-03 remains TODO and was not started. No application code, accounts,
+  application database, deployment, commit or push changed.
+- Acceptance handoff: owner/manager opens Dashboard → Owner briefing → View
+  briefing evidence; checks the salon timezone/window and paid/refund/net/average
+  definitions against source screens using the same period. Source links do not
+  apply that period automatically. Confirm entitled links, refresh/retry and clear
+  empty/stale/error states before explicitly accepting or reporting findings.
 
 ## October 24, 2026 — TK2610-0028 implementation complete
 
