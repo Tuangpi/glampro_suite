@@ -65,10 +65,12 @@ const sale: SaleDetail = {
   ],
 };
 
-function draw(overrides: Partial<SaleDetail> = {}) {
+function draw(overrides: Partial<SaleDetail> = {}, historical = false) {
   return render(
     <ReceiptView
       sale={{ ...sale, ...overrides }}
+      historical={historical}
+      returnLabel={historical ? "Back to cart" : "New sale"}
       customerEmail={null}
       canVoid={false}
       canRefund={false}
@@ -80,12 +82,51 @@ function draw(overrides: Partial<SaleDetail> = {}) {
 }
 
 describe("receipt paper layouts", () => {
+  it("shows stored receipt context without announcing a new sale", () => {
+    const { container } = draw({}, true);
+    expect(screen.getByRole("heading", { name: "Receipt #1042" })).toBeInTheDocument();
+    expect(screen.getByText("Paid")).toBeInTheDocument();
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.queryByText(/Sale rung up as/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back to cart" })).toBeInTheDocument();
+    expect(screen.getByText("Printer settings").closest("details")).not.toHaveAttribute("open");
+    expect(container.querySelector(".receipt-print-root")?.querySelector("button")).toBeNull();
+  });
+
+  it("distinguishes outstanding payment from a completed transaction", () => {
+    draw({ paidAmount: "30.00", outstandingAmount: "50.00", paymentStatus: "UNPAID" }, true);
+    expect(screen.getByText("Completed")).toBeInTheDocument();
+    expect(screen.getByText("Outstanding balance")).toBeInTheDocument();
+    expect(screen.queryByText("Paid")).not.toBeInTheDocument();
+    expect(screen.getByText("Outstanding")).toBeInTheDocument();
+  });
+
+  it("does not show a new-sale success banner for a refund", () => {
+    draw({ refundedAt: sale.soldAt, refundAmount: "80.00" });
+    expect(screen.getByText("Refunded")).toBeInTheDocument();
+    expect(screen.queryByText(/Sale rung up as/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Paid")).not.toBeInTheDocument();
+  });
+
+  it("opens sharing on demand and returns focus to its action", async () => {
+    const user = userEvent.setup();
+    draw({}, true);
+    const share = screen.getByRole("button", { name: "Share receipt" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(share);
+    expect(screen.getByRole("dialog", { name: "Share receipt" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(share).toHaveFocus();
+  });
+
   it("defaults to standard and previews both thermal widths without changing receipt amounts", async () => {
     const user = userEvent.setup();
     const { container } = draw();
     const root = container.querySelector(".receipt-print-root")!;
     expect(root).toHaveAttribute("data-receipt-paper", "standard");
     const originalText = root.textContent;
+    await user.click(screen.getByText("Printer settings"));
     for (const width of ["80", "58", "standard"]) {
       await user.selectOptions(screen.getByRole("combobox", { name: "Receipt paper" }), width);
       expect(root).toHaveAttribute("data-receipt-paper", width);
@@ -103,6 +144,7 @@ describe("receipt paper layouts", () => {
     const print = vi.spyOn(window, "print").mockImplementation(() => {});
     const user = userEvent.setup();
     const { container } = draw();
+    await user.click(screen.getByText("Printer settings"));
     await user.selectOptions(screen.getByLabelText("Receipt paper"), "58");
     await user.click(screen.getByRole("button", { name: "Print" }));
     expect(print).toHaveBeenCalledTimes(1);
@@ -125,6 +167,7 @@ describe("receipt paper layouts", () => {
       refundRestocked: false,
       refundPayouts: [{ method: "CASH", amount: "80.00" }],
     });
+    await user.click(screen.getByText("Printer settings"));
     await user.selectOptions(screen.getByLabelText("Receipt paper"), "58");
     const printed = within(container.querySelector(".receipt-print-root") as HTMLElement);
     expect(printed.getByText("Returned")).toBeInTheDocument();

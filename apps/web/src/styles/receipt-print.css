@@ -11,6 +11,7 @@
 .receipt-print-root:not([data-receipt-paper="standard"]) {
   box-sizing: border-box;
   width: var(--receipt-width);
+  grid-template-columns: minmax(0, 1fr);
   max-width: 100%;
   gap: 3mm;
   padding: 2mm;
@@ -30,6 +31,12 @@
 
 .receipt-print-root:not([data-receipt-paper="standard"]) > section {
   overflow: visible;
+  border: 0;
+  border-radius: 0;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) > header {
+  padding: 2mm 0;
   border: 0;
   border-radius: 0;
 }
@@ -107,9 +114,11 @@
 
   .receipt-print-root > section {
     overflow: visible;
+    margin-top: 4mm;
   }
 
   .receipt-print-root .receipt-item-name,
+  .receipt-print-root h2,
   .receipt-print-root h3 {
     overflow: visible;
     white-space: normal;

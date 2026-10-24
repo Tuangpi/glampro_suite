@@ -24,12 +24,13 @@ import SecureLinkActions from "@/components/ui/SecureLinkActions";
 
 import type { SaleDetail } from "@glampro_suite/shared";
 
-import { Banknote, CheckCircle, Mail, Printer } from "@/components/icons";
+import { CheckCircle, Mail, Printer } from "@/components/icons";
 import EmailReceiptDialog from "@/components/sale/EmailReceiptDialog";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Select from "@/components/ui/Select";
+import Modal from "@/components/ui/Modal";
 import { PAYMENT_METHOD_BADGE, PAYMENT_METHOD_LABELS } from "@/constants/sale";
 import { priceToCents } from "@/lib/money";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
@@ -39,6 +40,8 @@ export interface ReceiptViewProps {
   /** Returns to the till; historical browsing preserves the existing cart. */
   onNewSale: () => void;
   returnLabel?: string;
+  /** Historical receipts must not announce a newly completed transaction. */
+  historical?: boolean;
   /**
    * The customer's saved address, prefilled in the email dialog (TK2610-0010). `null`
    * for a walk-in or a customer who never gave one — the cashier can still type one.
@@ -65,6 +68,7 @@ export default function ReceiptView({
   sale,
   onNewSale,
   returnLabel = "New sale",
+  historical = false,
   customerEmail,
   canVoid,
   onVoid,
@@ -73,6 +77,7 @@ export default function ReceiptView({
 }: ReceiptViewProps) {
   const { formatDateTime, formatPrice } = useSalonFormatting();
   const [emailOpen, setEmailOpen] = useState(false);
+  const [sharingOpen, setSharingOpen] = useState(false);
   const [paper, setPaper] = useState("standard");
   const changeCents = priceToCents(sale.paidAmount) - priceToCents(sale.totalAmount);
   // A refunded sale still stands on the books, so neither action is offered again: the
@@ -86,88 +91,59 @@ export default function ReceiptView({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-end gap-3 print:hidden">
-        <Select
-          label="Receipt paper"
-          value={paper}
-          onChange={(event) => setPaper(event.target.value)}
-          options={[
-            { value: "standard", label: "Standard page" },
-            { value: "80", label: "80 mm thermal" },
-            { value: "58", label: "58 mm thermal" },
-          ]}
-        />
-        <p className="max-w-lg text-sm text-ink-muted">
-          Thermal selection previews the receipt width. In the print dialog, match the printer paper
-          width, use 100% scale and disable headers and footers. Printer margins may need
-          adjustment.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <Button variant="secondary" onClick={onNewSale}>
+          {returnLabel}
+        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" className="print:hidden" onClick={() => window.print()}>
+            <Printer aria-hidden />
+            Print
+          </Button>
+          <Button variant="secondary" onClick={() => setEmailOpen(true)}>
+            <Mail aria-hidden />
+            Email receipt
+          </Button>
+          <Button variant="secondary" onClick={() => setSharingOpen(true)}>
+            Share receipt
+          </Button>
+        </div>
       </div>
-      <div className="receipt-print-root flex flex-col gap-6" data-receipt-paper={paper}>
-        <Card
-          title={
-            <span className="inline-flex flex-wrap items-center gap-2">
-              {`Receipt ${sale.receiptNumber === null ? "(number pending)" : `#${sale.receiptNumber}`}`}
-              {/* On the title as well as in the banner, because a printed sheet is read
-                from the top — a copy that does not say VOID reads as a live receipt. */}
-              {sale.status === "VOID" ? <Badge variant="danger">Void</Badge> : null}
-            </span>
-          }
-          description={`${formatDateTime(sale.soldAt)} · ${sale.customerName ?? "Walk-in"} · rung up by ${sale.staffName ?? "the till"}`}
-          actions={
-            <div className="receipt-actions flex flex-wrap items-center gap-2 print:hidden">
-              {/* The browser's own print dialog — no PDF library needed, because the
-                receipt is already rendered here with the server's numbers. It covers
-                both a physical printer and "Save as PDF"; `print:hidden` strips the
-                app chrome so only the receipt reaches the paper. */}
-              <Button
-                variant="secondary"
-                size="sm"
-                className="print:hidden"
-                onClick={() => window.print()}
-              >
-                <Printer aria-hidden />
-                Print
-              </Button>
-              {/* The same receipt, sent rather than printed (TK2610-0010). The dialog
-                prefills the customer's address and the API builds the body from the
-                sale row, so the copy cannot drift from the sheet. */}
-              <Button
-                variant="secondary"
-                size="sm"
-                className="print:hidden"
-                onClick={() => setEmailOpen(true)}
-              >
-                <Mail aria-hidden />
-                Email receipt
-              </Button>
-              {refundable ? (
-                <Button variant="danger" size="sm" className="print:hidden" onClick={onRefund}>
-                  Refund sale
-                </Button>
-              ) : null}
-              {voidable ? (
-                <Button variant="danger" size="sm" className="print:hidden" onClick={onVoid}>
-                  Void sale
-                </Button>
+      <div
+        className="receipt-print-root grid min-w-0 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_360px]"
+        data-receipt-paper={paper}
+      >
+        <header className="col-span-full flex flex-col gap-2 rounded-card border border-line bg-surface p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-xl">{`Receipt ${sale.receiptNumber === null ? "(number pending)" : `#${sale.receiptNumber}`}`}</h2>
+            <div className="flex flex-wrap gap-2">
+              {sale.status === "VOID" ? (
+                <Badge variant="danger">Void</Badge>
+              ) : refunded ? (
+                <Badge variant="warning">Refunded</Badge>
+              ) : (
+                <Badge variant="neutral">Completed</Badge>
+              )}
+              {sale.status !== "VOID" && !refunded ? (
+                <Badge variant={priceToCents(sale.outstandingAmount) > 0 ? "warning" : "success"}>
+                  {priceToCents(sale.outstandingAmount) > 0 ? "Outstanding balance" : "Paid"}
+                </Badge>
               ) : null}
             </div>
-          }
-          footer={
-            <div className="flex items-center justify-between gap-4">
-              <div className="print:hidden">
-                <SecureLinkActions key={sale.id} resource="sales" id={sale.id} receipt />
-              </div>
-              <Button variant="secondary" className="print:hidden" onClick={onNewSale}>
-                {returnLabel}
-              </Button>
-              <div className="text-right">
-                <p className="text-xs text-ink-muted">Total</p>
-                <p className="text-lg font-heavy text-ink">{formatPrice(sale.totalAmount)}</p>
-              </div>
+          </div>
+          <p className="text-sm text-ink-muted">{formatDateTime(sale.soldAt)}</p>
+          <dl className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
+            <div>
+              <dt className="text-ink-muted">Customer</dt>
+              <dd className="font-bold text-ink">{sale.customerName ?? "Walk-in"}</dd>
             </div>
-          }
-        >
+            <div>
+              <dt className="text-ink-muted">Operator</dt>
+              <dd className="font-bold text-ink">{sale.staffName ?? "the till"}</dd>
+            </div>
+          </dl>
+        </header>
+        <Card title="Items sold" className="min-w-0">
           {sale.gstRegistrationNumber ? (
             <p className="px-1 pt-2 text-sm text-ink-muted">
               GST registration no.: {sale.gstRegistrationNumber}
@@ -180,7 +156,9 @@ export default function ReceiptView({
                 className="flex items-start justify-between gap-4 border-b border-line-soft px-1 py-3 last:border-b-0"
               >
                 <div className="min-w-0">
-                  <p className="receipt-item-name truncate font-bold text-ink">{line.itemName}</p>
+                  <p className="receipt-item-name break-words font-bold text-ink">
+                    {line.itemName}
+                  </p>
                   <p className="text-xs text-ink-muted">
                     {line.quantity} × {formatPrice(line.unitPrice)}
                     {line.staffName ? ` · ${line.staffName}` : ""}
@@ -213,8 +191,12 @@ export default function ReceiptView({
           </ul>
         </Card>
 
-        <Card title="Payment">
-          <dl className="grid gap-3 px-1 pt-2 sm:grid-cols-2">
+        <Card title="Payment summary" className="min-w-0">
+          <dl className="grid gap-3 px-1 pt-2">
+            <div className="flex items-baseline justify-between gap-3 border-b border-line-soft pb-3">
+              <dt className="font-bold text-ink">Total</dt>
+              <dd className="text-xl font-heavy text-ink">{formatPrice(sale.totalAmount)}</dd>
+            </div>
             <div className="flex items-baseline justify-between gap-3">
               <dt className="text-sm text-ink-muted">Items</dt>
               <dd className="font-bold text-ink">{sale.totalQuantity}</dd>
@@ -252,7 +234,7 @@ export default function ReceiptView({
               </div>
             ) : null}
             <div className="flex items-baseline justify-between gap-3">
-              <dt className="text-sm text-ink-muted">Paid</dt>
+              <dt className="text-sm text-ink-muted">Tendered</dt>
               <dd className="font-bold text-ink">{formatPrice(sale.paidAmount)}</dd>
             </div>
             {sale.status !== "VOID" ? (
@@ -302,7 +284,7 @@ export default function ReceiptView({
           // receipt has to say the money went back, and to whom the record attributes it.
           <div
             role="status"
-            className="flex flex-col gap-1 rounded-card border border-warning/40 bg-warning-soft px-4.5 py-3.5 text-sm text-ink-body"
+            className="col-span-full flex flex-col gap-1 rounded-card border border-warning/40 bg-warning-soft px-4.5 py-3.5 text-sm text-ink-body"
           >
             <p className="font-bold text-ink">
               {formatPrice(sale.refundAmount ?? "0.00")} refunded on{" "}
@@ -329,7 +311,7 @@ export default function ReceiptView({
           // live receipt, which is the one mistake the void exists to prevent.
           <div
             role="status"
-            className="flex flex-col gap-1 rounded-card border border-danger/40 bg-danger/10 px-4.5 py-3.5 text-sm text-danger"
+            className="col-span-full flex flex-col gap-1 rounded-card border border-danger/40 bg-danger/10 px-4.5 py-3.5 text-sm text-danger"
           >
             <p className="font-bold">
               Voided{sale.voidedAt === null ? "" : ` on ${formatDateTime(sale.voidedAt)}`}
@@ -341,19 +323,68 @@ export default function ReceiptView({
               towards any total.
             </p>
           </div>
-        ) : (
+        ) : !historical && !refunded ? (
           <p
             role="status"
-            className="flex items-center gap-2 rounded-card border border-line bg-success-soft px-4.5 py-3.5 text-sm text-success-text print:hidden"
+            className="col-span-full flex items-center gap-2 rounded-card border border-line bg-success-soft px-4.5 py-3.5 text-sm text-success-text print:hidden"
           >
             <CheckCircle aria-hidden className="shrink-0" />
             {sale.receiptNumber === null
               ? "The sale is rung up. It will get a receipt number shortly."
               : `Sale rung up as receipt #${sale.receiptNumber}.`}
-            <Banknote aria-hidden className="ml-auto shrink-0 text-ink-muted" />
           </p>
-        )}
+        ) : null}
       </div>
+      <details className="rounded-card border border-line bg-surface p-4 print:hidden">
+        <summary className="min-h-control cursor-pointer content-center font-bold text-ink">
+          Printer settings
+        </summary>
+        <div className="mt-3 flex flex-wrap items-end gap-4">
+          <Select
+            label="Receipt paper"
+            value={paper}
+            onChange={(event) => setPaper(event.target.value)}
+            options={[
+              { value: "standard", label: "Standard page" },
+              { value: "80", label: "80 mm thermal" },
+              { value: "58", label: "58 mm thermal" },
+            ]}
+          />
+          <p className="max-w-lg text-sm text-ink-muted">
+            Thermal selection previews the receipt width. In the print dialog, match the printer
+            paper width, use 100% scale and disable headers and footers. Printer margins may need
+            adjustment.
+          </p>
+        </div>
+      </details>
+      {refundable || voidable ? (
+        <section
+          aria-label="Sale management"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-line bg-surface p-4 print:hidden"
+        >
+          <div>
+            <h3 className="font-bold text-ink">Sale management</h3>
+            <p className="text-sm text-ink-muted">
+              Refunds and voids require confirmation. A void does not return money.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {refundable ? (
+              <Button variant="danger" onClick={onRefund}>
+                Refund sale
+              </Button>
+            ) : null}
+            {voidable ? (
+              <Button variant="danger" onClick={onVoid}>
+                Void sale
+              </Button>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+      <Modal open={sharingOpen} onClose={() => setSharingOpen(false)} title="Share receipt">
+        <SecureLinkActions key={sale.id} resource="sales" id={sale.id} receipt />
+      </Modal>
       {emailOpen ? (
         <EmailReceiptDialog
           saleId={sale.id}

@@ -49,10 +49,29 @@ beforeEach(() => {
 });
 
 describe("direct staff tip recording", () => {
+  it("keeps a record summary visible while tip details start collapsed", async () => {
+    get.mockResolvedValue({ items: [tip] });
+    mount();
+    expect(
+      await screen.findByText("1 tip record · Separate from sale payments"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("View or record direct tips").closest("details")).not.toHaveAttribute(
+      "open",
+    );
+  });
+
+  it("shows loading failures without requiring the details to be opened", async () => {
+    get.mockRejectedValue(new Error("offline"));
+    mount();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not load tips");
+    expect(screen.getByRole("button", { name: "Retry tip records" })).toBeVisible();
+  });
+
   it("records only direct payment evidence and reuses the key after an uncertain failure", async () => {
     post.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ items: [tip] });
     const user = userEvent.setup();
     mount();
+    await user.click(screen.getByText("View or record direct tips"));
     await user.selectOptions(screen.getByLabelText("Tip recipient"), "staff-1");
     await user.type(screen.getByLabelText("Direct tip amount"), "2.50");
     await user.click(screen.getByRole("button", { name: "Record direct-to-staff tip" }));
@@ -80,6 +99,7 @@ describe("direct staff tip recording", () => {
     });
     const user = userEvent.setup();
     mount({ canReturn: true, sale: { ...sale, status: "VOID" } });
+    await user.click(screen.getByText("View or record direct tips"));
     await user.type(await screen.findByLabelText("Tip return reason"), "Returned directly");
     await user.click(screen.getByRole("button", { name: /Record full tip return/ }));
     await waitFor(() =>
@@ -97,6 +117,7 @@ describe("direct staff tip recording", () => {
     state.readOnly = true;
     get.mockResolvedValue({ items: [tip] });
     mount({ canReturn: true });
+    await userEvent.setup().click(screen.getByText("View or record direct tips"));
     expect(await screen.findByText(/recorded by Cashier/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Direct tip amount")).not.toBeInTheDocument();
     expect(
@@ -107,6 +128,7 @@ describe("direct staff tip recording", () => {
   it("rejects fractional cents before posting", async () => {
     const user = userEvent.setup();
     mount();
+    await user.click(screen.getByText("View or record direct tips"));
     await user.selectOptions(screen.getByLabelText("Tip recipient"), "staff-1");
     await user.type(screen.getByLabelText("Direct tip amount"), "0.001");
     await user.click(screen.getByRole("button", { name: "Record direct-to-staff tip" }));

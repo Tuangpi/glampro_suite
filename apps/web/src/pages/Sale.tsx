@@ -567,16 +567,14 @@ export default function Sale() {
 
   return (
     <div className="flex min-w-0 flex-col gap-4 pb-24 lg:pb-0">
-      <header>
-        <h2 className="text-xl">Sale</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          {receipt
-            ? historicalReceipt
-              ? "Stored sale receipt. Your current cart is unchanged."
-              : "Sale complete. Review your receipt below."
-            : "Add services and products to the cart, then take payment."}
-        </p>
-      </header>
+      {!receipt ? (
+        <header>
+          <h2 className="text-xl">Sale</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            Add services and products to the cart, then take payment.
+          </p>
+        </header>
+      ) : null}
 
       {!receipt && (
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -606,6 +604,7 @@ export default function Sale() {
         <>
           <ReceiptView
             sale={receipt}
+            historical={historicalReceipt}
             onNewSale={
               historicalReceipt
                 ? () => {
