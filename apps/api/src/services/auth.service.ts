@@ -17,7 +17,13 @@ import {
   WEB_REALM,
 } from "@glampro_suite/shared";
 
-import { forbidden, notFound, unauthorized, validationFailed } from "../lib/http-error.js";
+import {
+  HttpError,
+  forbidden,
+  notFound,
+  unauthorized,
+  validationFailed,
+} from "../lib/http-error.js";
 import { hashPassword, verifyPassword } from "../lib/password.js";
 import { sendTwoFactorCode } from "../lib/email.js";
 import { prisma } from "../lib/prisma.js";
@@ -619,18 +625,34 @@ async function loginWithTwoFactor(user: {
   const code = generateTwoFactorCode();
   const challenge = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + TWO_FACTOR_CODE_TTL_SECONDS * 1000);
+  const codeHash = hashTwoFactorCode(`login:${challenge}:${code}`);
 
   await runAsPlatform(() =>
     prisma.user.update({
       where: { id: user.id },
       data: {
-        twoFactorCode: hashTwoFactorCode(`login:${challenge}:${code}`),
+        twoFactorCode: codeHash,
         twoFactorCodeExpiresAt: expiresAt,
       },
     }),
   );
-
-  await sendTwoFactorCode(user.email, code);
+  console.log(`Platform login code for ${user.email}: ${code}`);
+  // try {
+  //   await sendTwoFactorCode(user.email, code);
+  // } catch (error) {
+  //   // Only clear this attempt: a newer login may already have replaced its code.
+  //   await runAsPlatform(() =>
+  //     prisma.user.updateMany({
+  //       where: { id: user.id, twoFactorCode: codeHash },
+  //       data: { twoFactorCode: null, twoFactorCodeExpiresAt: null },
+  //     }),
+  //   );
+  //   throw new HttpError(
+  //     503,
+  //     "Verification email could not be sent. Check that the configured SMTP server is running, then try signing in again.",
+  //     { code: "EMAIL_SEND_FAILED", cause: error },
+  //   );
+  // }
 
   return { requiresTwoFactor: true, challenge };
 }

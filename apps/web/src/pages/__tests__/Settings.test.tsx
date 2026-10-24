@@ -1,5 +1,5 @@
 import { MemoryRouter } from "react-router";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -67,6 +67,7 @@ vi.mock("@/lib/api", () => ({
 const { default: Settings } = await import("@/pages/Settings");
 
 beforeEach(() => {
+  vi.clearAllMocks();
   auth.role = "SUPER_ADMIN";
   auth.readOnly = false;
   mutateAsync.mockReset().mockResolvedValue({});
@@ -159,22 +160,120 @@ beforeEach(() => {
   useUpdateSalonOperatingHours.mockReturnValue({ mutateAsync, isPending: false });
 });
 
-function renderSettings() {
-  return render(
-    <MemoryRouter>
+function renderSettings(category = "salon") {
+  const result = render(
+    <MemoryRouter initialEntries={["/settings"]}>
       <Settings />
     </MemoryRouter>,
   );
+  if (category !== "salon") {
+    fireEvent.change(screen.getByLabelText("Settings category"), { target: { value: category } });
+  }
+  return result;
 }
 
 describe("Settings", () => {
-  it("uses salon-facing guidance without architecture or release-planning copy", () => {
+  it("switches categories using the desktop menu and marks the current category", async () => {
+    renderSettings();
+    const nav = screen.getByRole("navigation", { name: "Settings categories" });
+    await userEvent.click(within(nav).getByRole("button", { name: "Team & commissions" }));
+    expect(within(nav).getByRole("button", { name: "Team & commissions" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByText("Stella Stylist")).toBeVisible();
+    expect(screen.getByRole("region", { name: "Company commission defaults" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Manage staff" })).toHaveAttribute("href", "/staff");
+  });
+
+  it("starts with only salon details and loads other categories on demand", async () => {
+    renderSettings();
+    expect(screen.getByRole("region", { name: "Salon details" })).toBeVisible();
+    expect(screen.queryByText("Business hours")).not.toBeInTheDocument();
+    expect(useModules).not.toHaveBeenCalled();
+    expect(useStaffList).not.toHaveBeenCalled();
+
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "booking");
+    const booking = screen.getByRole("region", { name: "Booking & hours" });
+    expect(within(booking).getByText("Business hours")).toBeVisible();
+    expect(within(booking).getByText("Rooms and equipment")).toBeVisible();
+    expect(screen.queryByRole("region", { name: "Salon details" })).not.toBeInTheDocument();
+  });
+
+  it("preserves unsaved salon and booking drafts when switching categories", async () => {
+    const user = userEvent.setup();
+    renderSettings();
+    await user.clear(screen.getByLabelText("Salon name"));
+    await user.type(screen.getByLabelText("Salon name"), "Unsaved salon");
+    await user.selectOptions(screen.getByLabelText("Settings category"), "booking");
+    await user.click(screen.getByLabelText("Enable online booking"));
+    await user.clear(screen.getByLabelText("Deposit amount (SGD)"));
+    await user.type(screen.getByLabelText("Deposit amount (SGD)"), "25.50");
+    await user.selectOptions(screen.getByLabelText("Settings category"), "salon");
+    expect(screen.getByLabelText("Salon name")).toHaveValue("Unsaved salon");
+    await user.selectOptions(screen.getByLabelText("Settings category"), "booking");
+    expect(screen.getByLabelText("Deposit amount (SGD)")).toHaveValue(25.5);
+    await user.click(screen.getByRole("button", { name: "Save booking settings" }));
+    expect(mutateAsync).toHaveBeenCalledWith({
+      name: "Ava Salon",
+      lowStockThreshold: 5,
+      onlineBookingEnabled: true,
+      onlineDepositAmount: 2550,
+      onlineNoShowFee: 0,
+    });
+  });
+
+  it("shows saved booking fees in dollars and keeps them when online booking is disabled", async () => {
+    const profile = useSalonProfile();
+    useSalonProfile.mockReturnValue({
+      ...profile,
+      data: {
+        ...profile.data,
+        onlineBookingEnabled: true,
+        onlineDepositAmount: 1234,
+        onlineNoShowFee: 505,
+      },
+    });
+    const user = userEvent.setup();
+    renderSettings("booking");
+    expect(screen.getByLabelText("Deposit amount (SGD)")).toHaveValue(12.34);
+    expect(screen.getByLabelText("No-show fee (SGD)")).toHaveValue(5.05);
+    await user.click(screen.getByLabelText("Enable online booking"));
+    expect(screen.queryByLabelText("Deposit amount (SGD)")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save booking settings" }));
+    expect(mutateAsync).toHaveBeenCalledWith({
+      name: "Ava Salon",
+      lowStockThreshold: 5,
+      onlineBookingEnabled: false,
+      onlineDepositAmount: 1234,
+      onlineNoShowFee: 505,
+    });
+  });
+
+  it("keeps booking settings read-only for a suspended salon", async () => {
+    auth.readOnly = true;
+    renderSettings("booking");
+    expect(screen.getByLabelText("Enable online booking")).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save booking settings" })).not.toBeInTheDocument();
+  });
+
+  it("keeps personal security separate from salon privacy notices", async () => {
+    renderSettings();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "privacy");
+    expect(screen.getByText("Account security")).toBeVisible();
+    expect(screen.getByText("Privacy notice settings")).toBeVisible();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "messages");
+    expect(screen.getByText("WhatsApp and SMS settings")).toBeVisible();
+  });
+
+  it("uses salon-facing guidance without architecture or release-planning copy", async () => {
     renderSettings();
 
     expect(screen.getByText("Salon identifier")).toBeInTheDocument();
     expect(
       screen.getByText("Products with stock at or below this quantity are marked as low stock."),
     ).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "features");
     expect(
       screen.getByText(
         "View the features available to your salon. Contact support to change your subscription.",
@@ -185,11 +284,13 @@ describe("Settings", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders the profile, purchased modules and the real team summary", () => {
+  it("renders the profile, purchased modules and the real team summary in their categories", async () => {
     renderSettings();
     expect(screen.getByDisplayValue("Ava Salon")).toBeInTheDocument();
     expect(screen.getByText("ava-salon")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "features");
     expect(screen.getByText("Reports")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "team");
     expect(screen.getByText("Stella Stylist")).toBeInTheDocument();
     expect(screen.getByText("Senior stylist")).toBeInTheDocument();
   });
@@ -209,9 +310,6 @@ describe("Settings", () => {
       locale: "en-SG",
       gstEnabled: false,
       gstRegistrationNumber: null,
-      onlineBookingEnabled: false,
-      onlineDepositAmount: 0,
-      onlineNoShowFee: 0,
     });
   });
 
@@ -231,9 +329,6 @@ describe("Settings", () => {
       locale: "en-GB",
       gstEnabled: false,
       gstRegistrationNumber: null,
-      onlineBookingEnabled: false,
-      onlineDepositAmount: 0,
-      onlineNoShowFee: 0,
     });
   });
 
@@ -253,9 +348,6 @@ describe("Settings", () => {
       locale: "en-SG",
       gstEnabled: true,
       gstRegistrationNumber: "M90312345X",
-      onlineBookingEnabled: false,
-      onlineDepositAmount: 0,
-      onlineNoShowFee: 0,
     });
   });
 
@@ -280,7 +372,7 @@ describe("Settings", () => {
     renderSettings();
 
     expect(screen.getByLabelText("Charge GST (9% inclusive)")).toBeDisabled();
-    expect(screen.getByLabelText("GST registration number")).toBeDisabled();
+    expect(screen.queryByLabelText("GST registration number")).not.toBeInTheDocument();
   });
 
   it("displays server validation errors without losing the draft preferences", async () => {
@@ -318,7 +410,7 @@ describe("Settings", () => {
       isPending: false,
       isError: false,
     });
-    renderSettings();
+    renderSettings("booking");
     expect(screen.getByText("Business hours")).toBeInTheDocument();
     expect(screen.getByText("Used to generate available appointment slots.")).toBeInTheDocument();
     for (const day of [
@@ -352,7 +444,7 @@ describe("Settings", () => {
       isPending: false,
       isError: false,
     });
-    renderSettings();
+    renderSettings("booking");
     // Tuesday is open: click the checkbox to close it.
     await user.click(screen.getByLabelText("Tuesday"));
     // Monday opens at 09:00 and closes at 20:00.
@@ -383,7 +475,7 @@ describe("Settings", () => {
       isPending: false,
       isError: false,
     });
-    renderSettings();
+    renderSettings("booking");
     // Open the Monday checkbox (closed -> open with defaults).
     await user.click(screen.getByLabelText("Monday"));
     // The Opens and Closes inputs for the panels: Monday is the first.
@@ -415,7 +507,7 @@ describe("Settings", () => {
       isPending: false,
       isError: false,
     });
-    renderSettings();
+    renderSettings("booking");
     expect(screen.queryByRole("button", { name: "Save hours" })).not.toBeInTheDocument();
   });
 

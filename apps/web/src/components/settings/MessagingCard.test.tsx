@@ -26,6 +26,15 @@ beforeEach(() => {
   mocks.put.mockResolvedValue({});
 });
 describe("messaging settings", () => {
+  it("loads delivery history only when requested", async () => {
+    mount();
+    await screen.findByLabelText("Enable SMS");
+    expect(mocks.get).not.toHaveBeenCalledWith(expect.stringContaining("history"));
+    await userEvent.click(screen.getByText("View delivery history"));
+    await screen.findByText("Message delivery history");
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledWith("/messaging/history?page=1"));
+  });
+
   it("starts disabled and saves timing/channel settings without credentials", async () => {
     mount();
     const user = userEvent.setup();
@@ -41,6 +50,7 @@ describe("messaging settings", () => {
         expect.objectContaining({ smsEnabled: true, whatsappEnabled: false }),
       ),
     );
+    expect(await screen.findByRole("status")).toHaveTextContent("Messaging settings saved.");
   });
   it("shows configuration errors rather than claiming a successful activation", async () => {
     mocks.put.mockRejectedValue(new Error("missing sender"));

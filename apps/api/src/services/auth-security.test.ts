@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import nodemailer from "nodemailer";
 
@@ -6,10 +8,11 @@ import nodemailer from "nodemailer";
 process.env.NODE_ENV = "test";
 process.env.DATABASE_URL = "postgresql://unused:unused@127.0.0.1:1/unused";
 process.env.JWT_SECRET = "isolated-auth-security-unit-tests";
-delete process.env.SMTP_HOST;
+process.env.SMTP_HOST = "";
 const { prisma } = await import("../lib/prisma.js");
 const { hashPassword } = await import("../lib/password.js");
 const { hashRefreshToken } = await import("../lib/tokens.js");
+const { HttpError } = await import("../lib/http-error.js");
 const {
   login,
   refresh,
@@ -39,6 +42,7 @@ let consumed = false;
 let sessionsIssued = 0;
 let credentialWrites = 0;
 let mailFails = false;
+let beforeMailFailure: (() => Promise<void>) | undefined;
 const restore: Array<() => void> = [];
 // Prisma delegates are proxies without ordinary method descriptors.
 function replace(target: object, key: string, implementation: unknown) {
@@ -60,9 +64,13 @@ beforeEach(() => {
   sessionsIssued = 0;
   credentialWrites = 0;
   mailFails = false;
+  beforeMailFailure = undefined;
   mock.method(nodemailer, "createTransport", () => ({
     sendMail: async (input: { text: string }) => {
-      if (mailFails) throw new Error("Mail delivery failed");
+      if (mailFails) {
+        await beforeMailFailure?.();
+        throw new Error("connect ECONNREFUSED 127.0.0.1:1025");
+      }
       mailText = input.text;
       return { messageId: "unit-test" };
     },
@@ -73,12 +81,19 @@ beforeEach(() => {
     Object.assign(user, data);
     return { ...user };
   });
-  replace(prisma.user, "updateMany", async ({ data }: { data: object }) => {
-    if (consumed) return { count: 0 };
-    consumed = true;
-    Object.assign(user, data);
-    return { count: 1 };
-  });
+  replace(
+    prisma.user,
+    "updateMany",
+    async ({ where, data }: { where: { id?: string; twoFactorCode?: string }; data: object }) => {
+      if (where.twoFactorCode !== undefined && where.twoFactorCode !== user.twoFactorCode) {
+        return { count: 0 };
+      }
+      if (consumed) return { count: 0 };
+      consumed = true;
+      Object.assign(user, data);
+      return { count: 1 };
+    },
+  );
   replace(prisma.tenant, "findUnique", async () => ({ status: "ACTIVE", subscriptions: [] }));
   replace(prisma.refreshToken, "create", async () => {
     sessionsIssued++;
@@ -102,13 +117,85 @@ async function challengeLogin() {
 }
 
 describe("email-code authentication security", () => {
-  it("issues no session when verification email fails", async () => {
+  it("returns a service-unavailable error and clears the code when verification email fails", async () => {
     mailFails = true;
     await assert.rejects(
       login({ email: user.email, password, realm: "web" }, {}),
-      /Mail delivery failed/,
+      (error: unknown) => {
+        assert.ok(error instanceof HttpError);
+        assert.equal(error.statusCode, 503);
+        assert.equal(error.code, "EMAIL_SEND_FAILED");
+        assert.match(error.message, /SMTP server is running/);
+        assert.ok(error.cause instanceof Error);
+        assert.match(error.cause.message, /ECONNREFUSED/);
+        return true;
+      },
     );
+    assert.equal(user.twoFactorCode, null);
+    assert.equal(user.twoFactorCodeExpiresAt, null);
     assert.equal(sessionsIssued, 0);
+  });
+
+  it("preserves a newer login code when an older email attempt fails", async () => {
+    let newer: Awaited<ReturnType<typeof challengeLogin>> | undefined;
+    mailFails = true;
+    beforeMailFailure = async () => {
+      mailFails = false;
+      newer = await challengeLogin();
+    };
+    await assert.rejects(
+      login({ email: user.email, password, realm: "web" }, {}),
+      (error: unknown) => error instanceof HttpError && error.code === "EMAIL_SEND_FAILED",
+    );
+    assert.ok(newer);
+    assert.equal(user.twoFactorCode, hashRefreshToken(`login:${newer.challenge}:${newer.code}`));
+    assert.equal(sessionsIssued, 0);
+    const result = await verifyTwoFactorForLogin(newer, {});
+    assert.ok(result.accessToken);
+    assert.equal(sessionsIssued, 1);
+  });
+
+  it("allows login to be retried after email delivery is restored", async () => {
+    mailFails = true;
+    await assert.rejects(login({ email: user.email, password, realm: "web" }, {}));
+    // The next attempt is a fresh persistence operation, not a consumed verification.
+    consumed = false;
+    mailFails = false;
+    const input = await challengeLogin();
+    const result = await verifyTwoFactorForLogin(input, {});
+    assert.ok(result.accessToken);
+    assert.equal(sessionsIssued, 1);
+  });
+
+  it("returns a safe 503 response from POST /api/auth/login when email delivery fails", async () => {
+    const { createApp } = await import("../app.js");
+    mailFails = true;
+    const server = createApp().listen(0, "127.0.0.1");
+    try {
+      await once(server, "listening");
+      const response = await fetch(
+        `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/auth/login`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user.email, password, realm: "web" }),
+        },
+      );
+      assert.equal(response.status, 503);
+      const body = await response.json();
+      assert.equal(body.code, "EMAIL_SEND_FAILED");
+      assert.match(body.message, /SMTP server is running/);
+      assert.equal(body.data, undefined);
+      assert.equal(body.stack, undefined);
+      assert.doesNotMatch(JSON.stringify(body), /ECONNREFUSED|127\.0\.0\.1/);
+      assert.equal(user.twoFactorCode, null);
+      assert.equal(user.twoFactorCodeExpiresAt, null);
+      assert.equal(sessionsIssued, 0);
+    } finally {
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
   });
 
   it("requires owner verification before issuing tokens and enrolls on success", async () => {

@@ -1,11 +1,7 @@
 /**
- * Settings — handoff screen 11.
- *
- * **MVP slice M4** (`docs/mvp.md`): the salon profile (read/edit), a read-only
- * modules panel, and a staff/roles summary. Hours editing, tax and receipt
- * configuration, notifications and integrations are full-phase work and are
- * not stubbed — each needs columns the schema does not have, and a form that
- * saved nowhere would be worse than no form.
+ * Settings — focused categories for salon configuration and account security.
+ * Categories mount on first visit and remain mounted while hidden, preserving
+ * unsaved drafts without loading every settings query on arrival.
  *
  * Two boundaries this screen keeps rather than re-invents:
  *
@@ -56,49 +52,170 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
 import TwoFactorCard from "@/components/TwoFactorCard";
 
+const SETTINGS_SECTIONS = [
+  { id: "salon", label: "Salon details", description: "Business details, tax and preferences." },
+  {
+    id: "booking",
+    label: "Booking & hours",
+    description: "Online booking, opening hours and resources.",
+  },
+  {
+    id: "team",
+    label: "Team & commissions",
+    description: "Your team and company commission defaults.",
+  },
+  {
+    id: "messages",
+    label: "Customer messages",
+    description: "WhatsApp, SMS and appointment reminders.",
+  },
+  {
+    id: "privacy",
+    label: "Privacy & security",
+    description: "Salon privacy notices and your account security.",
+  },
+  {
+    id: "features",
+    label: "Features",
+    description: "Features included in your salon's subscription.",
+  },
+] as const;
+
+type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
+
 export default function Settings() {
   const { isReadOnly, user } = useAuth();
-  const modules = useModules();
-  // One request, and the server's `total` is the count the summary shows — the
-  // team screen's own numbers come from the same rows (ADR 0010).
-  const team = useStaffList({ page: 1, pageSize: 50, status: "active" });
+  const [activeSection, setActiveSection] = useState<SettingsSection>("salon");
+  const [visited, setVisited] = useState<SettingsSection[]>(["salon"]);
 
   const canEdit =
     !isReadOnly && (user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER");
+
+  function selectSection(section: SettingsSection) {
+    setActiveSection(section);
+    setVisited((current) => (current.includes(section) ? current : [...current, section]));
+  }
 
   return (
     <div className="flex flex-col gap-6">
       <header>
         <h2 className="text-xl">Settings</h2>
         <p className="mt-1 text-sm text-ink-muted">
-          Manage your salon profile, available features and team.
+          Manage your salon and preferences. Choose a category to get started.
         </p>
       </header>
 
-      <ProfileCard canEdit={canEdit} />
-      {(user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER") && (
-        <CommissionRules canEdit={canEdit} />
-      )}
-      <TwoFactorCard />
-      <ModulesCard modules={modules.data} isPending={modules.isPending} isError={modules.isError} />
-      <OperatingHoursCard canEdit={canEdit} />
-      {/* Rooms and equipment sit beside the hours: both describe the salon's
-          physical capacity rather than a feature it has bought. */}
-      <ResourcesCard canEdit={canEdit} />
-      <PrivacyNoticeCard canEdit={canEdit} />
-      <MessagingCard canEdit={canEdit} />
+      <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="lg:sticky lg:top-6">
+          <label className="flex flex-col gap-2 text-sm font-medium lg:hidden">
+            Settings category
+            <select
+              className="h-control rounded-md border border-line bg-surface px-3 text-ink"
+              value={activeSection}
+              onChange={(event) => selectSection(event.target.value as SettingsSection)}
+            >
+              {SETTINGS_SECTIONS.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <nav aria-label="Settings categories" className="hidden flex-col gap-1 lg:flex">
+            {SETTINGS_SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                aria-current={activeSection === section.id ? "page" : undefined}
+                aria-controls={`settings-${section.id}`}
+                onClick={() => selectSection(section.id)}
+                className={`rounded-lg px-4 py-3 text-left text-sm font-medium transition focus-visible:outline-2 focus-visible:outline-purple ${
+                  activeSection === section.id
+                    ? "bg-purple/10 text-purple"
+                    : "text-ink-muted hover:bg-surface-muted hover:text-ink"
+                }`}
+              >
+                {section.label}
+              </button>
+            ))}
+          </nav>
+          <p className="mt-4 text-xs text-ink-muted">
+            Drafts stay here when you switch categories. Save each form before leaving Settings.
+          </p>
+        </aside>
+        <div className="min-w-0">
+          {SETTINGS_SECTIONS.map((section) => (
+            <section
+              key={section.id}
+              id={`settings-${section.id}`}
+              aria-labelledby={`settings-heading-${section.id}`}
+              hidden={activeSection !== section.id}
+            >
+              {visited.includes(section.id) && (
+                <div className="flex flex-col gap-5">
+                  <header>
+                    <h3
+                      id={`settings-heading-${section.id}`}
+                      className="text-lg font-bold text-ink"
+                    >
+                      {section.label}
+                    </h3>
+                    <p className="mt-1 text-sm text-ink-muted">{section.description}</p>
+                  </header>
+                  {section.id === "salon" && <ProfileCard canEdit={canEdit} />}
+                  {section.id === "booking" && (
+                    <>
+                      <ProfileCard canEdit={canEdit} booking />
+                      <OperatingHoursCard canEdit={canEdit} />
+                      <ResourcesCard canEdit={canEdit} />
+                    </>
+                  )}
+                  {section.id === "team" && <TeamSettings canEdit={canEdit} />}
+                  {section.id === "messages" && <MessagingCard canEdit={canEdit} />}
+                  {section.id === "privacy" && (
+                    <>
+                      <TwoFactorCard />
+                      <PrivacyNoticeCard canEdit={canEdit} />
+                    </>
+                  )}
+                  {section.id === "features" && <FeatureSettings />}
+                </div>
+              )}
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeatureSettings() {
+  const modules = useModules();
+  return (
+    <ModulesCard modules={modules.data} isPending={modules.isPending} isError={modules.isError} />
+  );
+}
+
+function TeamSettings({ canEdit }: { canEdit: boolean }) {
+  const { user } = useAuth();
+  const team = useStaffList({ page: 1, pageSize: 50, status: "active" });
+  return (
+    <>
       <TeamCard
         rows={team.data?.data ?? []}
         total={team.data?.total ?? 0}
         isPending={team.isPending}
         isError={team.isError}
       />
-    </div>
+      {(user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER") && (
+        <CommissionRules canEdit={canEdit} />
+      )}
+    </>
   );
 }
 
 /** Salon profile and salon-wide localisation preferences. */
-function ProfileCard({ canEdit }: { canEdit: boolean }) {
+function ProfileCard({ canEdit, booking = false }: { canEdit: boolean; booking?: boolean }) {
   const { formatDate } = useSalonFormatting();
   const { tenant } = useAuth();
   const profile = useSalonProfile(tenant?.id);
@@ -130,9 +247,9 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
   const gstRegistrationNumber = draftGstNumber ?? data?.gstRegistrationNumber ?? "";
   const onlineEnabled = draftOnlineEnabled ?? data?.onlineBookingEnabled ?? false;
   const onlineDeposit =
-    draftOnlineDeposit ?? (data === undefined ? "" : String(data.onlineDepositAmount));
+    draftOnlineDeposit ?? (data === undefined ? "" : (data.onlineDepositAmount / 100).toFixed(2));
   const onlineNoShow =
-    draftOnlineNoShow ?? (data === undefined ? "" : String(data.onlineNoShowFee));
+    draftOnlineNoShow ?? (data === undefined ? "" : (data.onlineNoShowFee / 100).toFixed(2));
 
   const fieldError = (field: string): string | undefined =>
     fieldErrors[field] ?? fieldErrors[`body.${field}`];
@@ -143,21 +260,30 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
     setFormError(null);
 
     try {
-      await update.mutateAsync({
-        name: name.trim(),
-        lowStockThreshold: Number(threshold),
-        timeZone: timeZone.trim(),
-        locale: locale.trim(),
-        // Always sent: the toggle is a checkbox, so "untouched" and "off"
-        // are the same unchecked state and omitting it would never uncheck.
-        gstEnabled,
-        gstRegistrationNumber:
-          gstRegistrationNumber.trim().length > 0 ? gstRegistrationNumber.trim() : null,
-        onlineBookingEnabled: onlineEnabled,
-        onlineDepositAmount: Number(onlineDeposit || 0),
-        onlineNoShowFee: Number(onlineNoShow || 0),
-      });
-      showToast("success", "Salon profile saved.");
+      await update.mutateAsync(
+        booking
+          ? {
+              // The existing API requires these two fields on every profile write.
+              // Use saved values, never the other category's unsaved draft.
+              name: data!.name,
+              lowStockThreshold: data!.lowStockThreshold,
+              onlineBookingEnabled: onlineEnabled,
+              onlineDepositAmount: Math.round(Number(onlineDeposit || 0) * 100),
+              onlineNoShowFee: Math.round(Number(onlineNoShow || 0) * 100),
+            }
+          : {
+              name: name.trim(),
+              lowStockThreshold: Number(threshold),
+              timeZone: timeZone.trim(),
+              locale: locale.trim(),
+              // Always sent: the toggle is a checkbox, so "untouched" and "off"
+              // are the same unchecked state and omitting it would never uncheck.
+              gstEnabled,
+              gstRegistrationNumber:
+                gstRegistrationNumber.trim().length > 0 ? gstRegistrationNumber.trim() : null,
+            },
+      );
+      showToast("success", booking ? "Booking settings saved." : "Salon profile saved.");
     } catch (error) {
       const details = getValidationDetails(error);
       if (Object.keys(details).length > 0) {
@@ -170,8 +296,12 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
 
   return (
     <Card
-      title="Salon profile"
-      description="Manage your salon name, low-stock threshold and saved timezone and formatting preferences."
+      title={booking ? "Online booking" : "Salon profile"}
+      description={
+        booking
+          ? "Choose whether customers can book online and set your booking fees."
+          : "Your business name, regional preferences and tax settings."
+      }
     >
       {profile.isPending ? (
         <div className="flex flex-col gap-3">
@@ -192,118 +322,146 @@ function ProfileCard({ canEdit }: { canEdit: boolean }) {
             </p>
           ) : null}
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="Salon name"
-              required
-              value={name}
-              onChange={(event) => setDraftName(event.target.value)}
-              error={fieldError("name")}
-              disabled={!canEdit || update.isPending}
-              maxLength={200}
-            />
-            <Input
-              label="Low-stock threshold"
-              type="number"
-              min={0}
-              max={10000}
-              value={threshold}
-              onChange={(event) => setDraftThreshold(event.target.value)}
-              error={fieldError("lowStockThreshold")}
-              disabled={!canEdit || update.isPending}
-              hint="Products with stock at or below this quantity are marked as low stock."
-            />
-            <Input
-              label="Salon timezone"
-              required
-              value={timeZone}
-              onChange={(event) => setDraftTimeZone(event.target.value)}
-              error={fieldError("timeZone")}
-              disabled={!canEdit || update.isPending}
-              maxLength={100}
-              hint="Use a timezone identifier, such as Asia/Singapore. Saved for the whole salon."
-            />
-            <Input
-              label="Formatting locale"
-              required
-              value={locale}
-              onChange={(event) => setDraftLocale(event.target.value)}
-              error={fieldError("locale")}
-              disabled={!canEdit || update.isPending}
-              maxLength={100}
-              hint="Use a locale identifier, such as en-SG. This preference does not translate the app."
-            />
-          </div>
+          {!booking && (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Input
+                  label="Salon name"
+                  required
+                  value={name}
+                  onChange={(event) => setDraftName(event.target.value)}
+                  error={fieldError("name")}
+                  disabled={!canEdit || update.isPending}
+                  maxLength={200}
+                />
+                <Input
+                  label="Low-stock threshold"
+                  type="number"
+                  min={0}
+                  max={10000}
+                  value={threshold}
+                  onChange={(event) => setDraftThreshold(event.target.value)}
+                  error={fieldError("lowStockThreshold")}
+                  disabled={!canEdit || update.isPending}
+                  hint="Products with stock at or below this quantity are marked as low stock."
+                />
+                <Input
+                  label="Salon timezone"
+                  required
+                  value={timeZone}
+                  onChange={(event) => setDraftTimeZone(event.target.value)}
+                  error={fieldError("timeZone")}
+                  disabled={!canEdit || update.isPending}
+                  maxLength={100}
+                  hint="Use a timezone identifier, such as Asia/Singapore. Saved for the whole salon."
+                />
+                <Input
+                  label="Formatting locale"
+                  required
+                  value={locale}
+                  onChange={(event) => setDraftLocale(event.target.value)}
+                  error={fieldError("locale")}
+                  disabled={!canEdit || update.isPending}
+                  maxLength={100}
+                  hint="Use a locale identifier, such as en-SG. This preference does not translate the app."
+                />
+              </div>
 
-          <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
-            <Checkbox
-              label="Charge GST (9% inclusive)"
-              checked={gstEnabled}
-              disabled={!canEdit || update.isPending}
-              onChange={(event) => setDraftGstEnabled(event.target.checked)}
-            />
-            <Input
-              label="GST registration number"
-              required={gstEnabled}
-              value={gstRegistrationNumber}
-              onChange={(event) => setDraftGstNumber(event.target.value)}
-              error={fieldError("gstRegistrationNumber")}
-              disabled={!canEdit || update.isPending}
-              maxLength={50}
-              hint="Printed on receipts and tax reports. Required while GST is enabled."
-            />
-            <p className="text-xs text-ink-muted">
-              Catalogue prices include 9% GST when enabled; the till shows the GST component on
-              receipts and reports without changing what the customer pays.
-            </p>
-          </div>
+              <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
+                <Checkbox
+                  label="Charge GST (9% inclusive)"
+                  checked={gstEnabled}
+                  disabled={!canEdit || update.isPending}
+                  onChange={(event) => setDraftGstEnabled(event.target.checked)}
+                />
+                {gstEnabled && (
+                  <Input
+                    label="GST registration number"
+                    required={gstEnabled}
+                    value={gstRegistrationNumber}
+                    onChange={(event) => setDraftGstNumber(event.target.value)}
+                    error={fieldError("gstRegistrationNumber")}
+                    disabled={!canEdit || update.isPending}
+                    maxLength={50}
+                    hint="Printed on receipts and tax reports. Required while GST is enabled."
+                  />
+                )}
+                <p className="text-xs text-ink-muted">
+                  Catalogue prices include 9% GST when enabled; the till shows the GST component on
+                  receipts and reports without changing what the customer pays.
+                </p>
+              </div>
+            </>
+          )}
 
-          <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
-            <Checkbox
-              label="Enable online booking"
-              checked={onlineEnabled}
-              disabled={!canEdit || update.isPending}
-              onChange={(event) => setDraftOnlineEnabled(event.target.checked)}
-            />
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Input
-                label="Deposit amount (cents)"
-                type="number"
-                min={0}
-                value={onlineDeposit}
-                onChange={(event) => setDraftOnlineDeposit(event.target.value)}
+          {booking && (
+            <div className="flex flex-col gap-3">
+              <Checkbox
+                label="Enable online booking"
+                checked={onlineEnabled}
                 disabled={!canEdit || update.isPending}
+                onChange={(event) => setDraftOnlineEnabled(event.target.checked)}
               />
-              <Input
-                label="No-show fee (cents)"
-                type="number"
-                min={0}
-                value={onlineNoShow}
-                onChange={(event) => setDraftOnlineNoShow(event.target.value)}
-                disabled={!canEdit || update.isPending}
-              />
+              {onlineEnabled && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input
+                    label="Deposit amount (SGD)"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={onlineDeposit}
+                    onChange={(event) => setDraftOnlineDeposit(event.target.value)}
+                    error={fieldError("onlineDepositAmount")}
+                    disabled={!canEdit || update.isPending}
+                  />
+                  <Input
+                    label="No-show fee (SGD)"
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={onlineNoShow}
+                    onChange={(event) => setDraftOnlineNoShow(event.target.value)}
+                    error={fieldError("onlineNoShowFee")}
+                    disabled={!canEdit || update.isPending}
+                  />
+                </div>
+              )}
+              <p className="text-xs text-ink-muted">
+                Amounts are in Singapore dollars. Set a fee to 0 for no charge.
+              </p>
             </div>
-          </div>
+          )}
 
-          <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-            <Fact label="Salon identifier" value={data.slug} />
-            <Fact label="Status" value={data.status} />
-            <Fact label="Owner" value={data.owner?.name ?? "—"} />
-            <Fact label="Created" value={formatDate(data.createdAt)} />
-          </dl>
-          <p className="text-xs text-ink-muted">
-            Your salon identifier and account status are read-only. Contact support if they need to
-            change.
-          </p>
+          {!booking && (
+            <details className="rounded-lg border border-line p-3">
+              <summary className="cursor-pointer text-sm font-medium text-ink">
+                Account details
+              </summary>
+              <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+                <Fact label="Salon identifier" value={data.slug} />
+                <Fact label="Status" value={data.status} />
+                <Fact label="Owner" value={data.owner?.name ?? "—"} />
+                <Fact label="Created" value={formatDate(data.createdAt)} />
+              </dl>
+              <p className="text-xs text-ink-muted">
+                Your salon identifier and account status are read-only. Contact support if they need
+                to change.
+              </p>
+            </details>
+          )}
 
           {canEdit ? (
             <div className="flex justify-end">
               <Button type="submit" loading={update.isPending}>
-                Save profile
+                {booking ? "Save booking settings" : "Save profile"}
               </Button>
             </div>
           ) : (
-            <p className="text-xs text-ink-muted">{isReadOnlyReason()}</p>
+            <p className="text-xs text-ink-muted">
+              {booking
+                ? "Only a manager or the owner can change booking settings."
+                : isReadOnlyReason()}
+            </p>
           )}
         </form>
       )}
