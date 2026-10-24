@@ -4,6 +4,8 @@ import { auth, requireRole } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
 import { aiAssistantService } from "../services/ai-assistant.service.js";
+import { quietDayQuerySchema, type QuietDayQuery } from "@glampro_suite/shared";
+import { quietDayOpportunities } from "../services/quiet-day.service.js";
 import {
   assistantRangeSchema,
   rebookingQuerySchema,
@@ -15,6 +17,19 @@ import {
 
 const router = Router();
 router.use(auth, requireRole("SUPER_ADMIN", "MANAGER"), requireModule("dashboard"));
+router.get(
+  "/quiet-day-opportunities",
+  requireModule("appointments"),
+  requireModule("catalogue"),
+  validate(quietDayQuerySchema, "query"),
+  async (req, res, next) => {
+    try {
+      res.json({ data: await quietDayOpportunities(validated<QuietDayQuery>(req, "query")) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.get("/owner-summary", validate(assistantRangeSchema, "query"), async (req, res, next) => {
   try {
     res.json({

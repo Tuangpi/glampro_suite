@@ -49,3 +49,41 @@ export const rebookingNudgeSchema = z.object({
   draftId: z.string().min(1),
 });
 export type RebookingNudge = z.infer<typeof rebookingNudgeSchema>;
+
+/** Deliberately no discount/content/recipient fields: this endpoint cannot publish offers. */
+export const quietDayQuerySchema = z
+  .object({
+    serviceId: z.string().trim().min(1).max(64),
+    days: z.coerce.number().int().min(1).max(7).default(7),
+  })
+  .strict();
+export type QuietDayQuery = z.infer<typeof quietDayQuerySchema>;
+
+export const quietDayResponseSchema = z.object({
+  asOf: z.iso.datetime({ offset: true }),
+  timeZone: z.string().min(1),
+  from: z.iso.datetime({ offset: true }),
+  to: z.iso.datetime({ offset: true }),
+  serviceId: z.string().min(1),
+  serviceName: z.string(),
+  durationMinutes: z.number().int().positive(),
+  lowBookingThreshold: z.literal(3),
+  checkedSlots: z.number().int().min(0).max(120),
+  searchLimited: z.boolean(),
+  discountPercentage: z.literal(0),
+  requiresApproval: z.literal(true),
+  limitations: z.array(z.string()),
+  opportunities: z
+    .array(
+      z.object({
+        date: z.iso.date(),
+        bookingCount: z.number().int().min(0).max(2),
+        startsAt: z.iso.datetime({ offset: true }),
+        endsAt: z.iso.datetime({ offset: true }),
+        staffId: z.string().min(1),
+        action: z.literal("Review this opening before offering a regular-price appointment."),
+      }),
+    )
+    .max(7),
+});
+export type QuietDayResponse = z.infer<typeof quietDayResponseSchema>;

@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ownerSummarySchema, rebookingNudgeSchema } from "./ai-assistant.js";
+import {
+  ownerSummarySchema,
+  rebookingNudgeSchema,
+  quietDayQuerySchema,
+  quietDayResponseSchema,
+} from "./ai-assistant.js";
 import { createServiceSchema, updateServiceSchema } from "./catalogue.js";
 
 const facts = {
@@ -19,6 +24,21 @@ const facts = {
   to: "2026-10-24T16:00:00.000Z",
   asOf: "2026-10-23T17:00:00.000Z",
 };
+
+it("bounds quiet-day requests and rejects discount, tenant or arbitrary-range inputs", () => {
+  assert.deepEqual(quietDayQuerySchema.parse({ serviceId: "s" }), { serviceId: "s", days: 7 });
+  for (const change of [
+    { days: 0 },
+    { days: 8 },
+    { days: 1.5 },
+    { serviceId: "" },
+    { discountPercentage: 15 },
+    { tenantId: "foreign" },
+    { from: "2026-10-01" },
+  ])
+    assert.equal(quietDayQuerySchema.safeParse({ serviceId: "s", ...change }).success, false);
+  assert.equal(quietDayResponseSchema.safeParse({ discountPercentage: 15 }).success, false);
+});
 
 describe("owner summary contract", () => {
   it("preserves legacy values and explicit reporting evidence", () => {

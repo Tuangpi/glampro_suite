@@ -222,7 +222,7 @@ test(
             nonmemberPrice: 5,
           },
         });
-        return { users, old };
+        return { users, old, services };
       });
       const token = (index: number) => {
         const user = fixture.users[index]!;
@@ -237,7 +237,8 @@ test(
       };
       const get = (path: string, bearer?: string) =>
         fetch(`${base}${path}`, { headers: bearer ? { Authorization: `Bearer ${bearer}` } : {} });
-      for (const path of ["/owner-summary", "/rebooking-nudges", "/slow-day-promos"]) {
+      const quietPath = `/quiet-day-opportunities?serviceId=${fixture.services[0]!.id}&days=1`;
+      for (const path of ["/owner-summary", "/rebooking-nudges", "/slow-day-promos", quietPath]) {
         assert.equal((await get(path)).status, 401);
         assert.equal((await get(path, token(1))).status, 403);
         assert.equal((await get(path, token(2))).status, 200);
@@ -251,6 +252,9 @@ test(
         "/rebooking-nudges?daysThreshold=-1",
         "/slow-day-promos?discountPercentage=101",
         "/owner-summary?tenantId=foreign",
+        "/quiet-day-opportunities",
+        `${quietPath}&discountPercentage=15`,
+        `/quiet-day-opportunities?serviceId=${fixture.services[0]!.id}&days=8`,
       ])
         assert.equal((await get(path, token(0))).status, 422, path);
       const summaryResponse = await get("/owner-summary", token(0));
@@ -284,6 +288,101 @@ test(
         await prisma.messageJob.count(),
         await prisma.voucher.count(),
       ]);
+      // Future openings use booking's actual staff/resource validation, not history.
+      const { quietDayResponseSchema } = await import("@glampro_suite/shared");
+      const { runAsTenant } = await import("../lib/tenant-context.js");
+      const { isAppointmentSlotAvailable, createAppointment } =
+        await import("../services/appointment.service.js");
+      assert.equal(
+        (await get(`/quiet-day-opportunities?serviceId=${fixture.services[1]!.id}`, token(0)))
+          .status,
+        404,
+      );
+      await runAsPlatform(() =>
+        prisma.tenantOperatingHours.create({
+          data: {
+            tenantId: ids[0]!,
+            sundayOpen: "09:00",
+            sundayClose: "12:00",
+            mondayOpen: "09:00",
+            mondayClose: "12:00",
+            tuesdayOpen: "09:00",
+            tuesdayClose: "12:00",
+            wednesdayOpen: "09:00",
+            wednesdayClose: "12:00",
+            thursdayOpen: "09:00",
+            thursdayClose: "12:00",
+            fridayOpen: "09:00",
+            fridayClose: "12:00",
+            saturdayOpen: "09:00",
+            saturdayClose: "12:00",
+          },
+        }),
+      );
+      const quiet = quietDayResponseSchema.parse(
+        (await (await get(quietPath, token(0))).json()).data,
+      );
+      assert.equal(quiet.discountPercentage, 0);
+      assert.equal(quiet.opportunities.length, 1);
+      const opening = quiet.opportunities[0]!;
+      assert.equal(
+        await runAsTenant(ids[0]!, () =>
+          isAppointmentSlotAvailable(
+            prisma,
+            fixture.services[0]!.id,
+            opening.staffId,
+            new Date(opening.startsAt),
+          ),
+        ),
+        true,
+      );
+      assert.deepEqual(
+        await runAsPlatform(async () => [
+          await prisma.messageJob.count(),
+          await prisma.voucher.count(),
+        ]),
+        before,
+      );
+      const resource = await runAsPlatform(() =>
+        prisma.resource.create({
+          data: {
+            tenantId: ids[0]!,
+            name: "Quiet preview room",
+            kind: "ROOM",
+            status: "INACTIVE",
+            services: { create: { tenantId: ids[0]!, serviceId: fixture.services[0]!.id } },
+          },
+        }),
+      );
+      const blocked = quietDayResponseSchema.parse(
+        (await (await get(quietPath, token(0))).json()).data,
+      );
+      assert.deepEqual(blocked.opportunities, []);
+      await runAsPlatform(() =>
+        prisma.resource.update({ where: { id: resource.id }, data: { status: "ACTIVE" } }),
+      );
+      const bookable = quietDayResponseSchema.parse(
+        (await (await get(quietPath, token(0))).json()).data,
+      ).opportunities[0]!;
+      const booked = await runAsTenant(ids[0]!, () =>
+        createAppointment({
+          serviceId: fixture.services[0]!.id,
+          staffId: bookable.staffId,
+          startsAt: bookable.startsAt,
+        }),
+      );
+      assert.equal(booked.appointment.startsAt, bookable.startsAt);
+      assert.equal(
+        await runAsTenant(ids[0]!, () =>
+          isAppointmentSlotAvailable(
+            prisma,
+            fixture.services[0]!.id,
+            bookable.staffId,
+            new Date(bookable.startsAt),
+          ),
+        ),
+        false,
+      );
       const promoResponse = await get("/slow-day-promos", token(0));
       assert.equal(promoResponse.status, 200);
       const promos = (await promoResponse.json()) as {
@@ -311,6 +410,21 @@ test(
         ]),
         before,
       );
+      const catalogueGrant = await runAsPlatform(() =>
+        prisma.tenantModule.findFirstOrThrow({
+          where: { tenantId: ids[0]!, module: { code: "catalogue" } },
+        }),
+      );
+      await runAsPlatform(() => prisma.tenantModule.delete({ where: { id: catalogueGrant.id } }));
+      assert.equal((await get(quietPath, token(0))).status, 403);
+      await runAsPlatform(() =>
+        prisma.tenantModule.create({
+          data: {
+            tenantId: ids[0]!,
+            moduleId: catalogueGrant.moduleId,
+          },
+        }),
+      );
       // Disable a user: existing tokens must no longer access these endpoints.
       await runAsPlatform(() =>
         prisma.user.update({ where: { id: fixture.users[0]!.id }, data: { disabled: true } }),
@@ -320,6 +434,7 @@ test(
         prisma.tenant.update({ where: { id: ids[0]! }, data: { status: "EXPIRED" } }),
       );
       assert.equal((await get("/owner-summary", token(2))).status, 403);
+      assert.equal((await get(quietPath, token(2))).status, 403);
     } finally {
       await purge();
       await new Promise<void>((resolve, reject) =>

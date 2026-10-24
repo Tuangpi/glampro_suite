@@ -351,6 +351,16 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ### Owner assistant expansion — approved October 23, 2026
 
+OA-04 implementation verified October 24: guarded dashboard previews check one
+service over tomorrow through seven salon-local days, using shared booking hours,
+staff/shift/conflict/resource validation. Fewer than three non-cancelled booking
+starts/day is a disclosed screening rule, not utilisation. Ten staff/120 slot
+checks and one opening/day bound work; no reservation or profit/demand claim.
+No discretionary assistant discount ceiling is approved: the new preview permits
+only regular-price/0% suggestions and cannot alter or stack existing offers.
+Legacy historical promo draft API is separate and unchanged. No migration, offer
+publication, sending or deployment. Details: docs/owner-quiet-days.md.
+
 OA-03 implementation verified October 24: explicit nullable service rebooking days
 inherit existing company Messaging days (28 if unset). Owner/manager dashboard
 recommendations use current global and exact preferred-channel marketing permission,

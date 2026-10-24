@@ -90,12 +90,31 @@ owner-facing experience; they do not authorize deployment or outbound messages.
 
 ### OA-04 — Future quiet-day opportunities
 
-- Status: TODO
+- Status: DONE — local implementation and disposable acceptance verified October 24, 2026.
 - Dependencies: OA-01, OA-02
 - Expected result: Bounded future opportunities using existing staff/resource booking
   checks, non-discount suggestions first and explicit capacity-data limitations.
 - Completion check: Suggested slots agree with booking checks; no unsupported
   utilisation/profit claims; discount limits and offer interactions verified.
+- Delivered: owner/manager dashboard service picker with paginated catalogue,
+  tomorrow-through-seven-day preview, exact salon-local window/as-of evidence,
+  explicit low-booking screening rule (<3 non-cancelled starts/day), and regular-price
+  suggestions only. Shared booking hours/context and appointment availability check
+  enforce staff eligibility, shifts/breaks, conflicts and linked resources.
+- Bounded to ten staff, 120 staff/slot checks and one opening/day; partial results
+  disclosed. Company-wide data, unconfigured shifts, duration fallback and no
+  reservation/forecast/profit guarantees are explicit. No new navigation, migration,
+  recipient selection, publication, approval, persistence or sending.
+- Discount policy: no discretionary ceiling approved; new preview permits only 0%
+  and rejects discount request fields. No existing voucher, package/member price or
+  offer is changed/stacked. Legacy historical promo draft API preserved separately;
+  discount expansion and controlled delivery require explicit policy/OA-05 work.
+- Verified: API focused 24/24; shared 174/174; full web 671/671 (two workers);
+  disposable HTTP acceptance 1/1 (including role/module/tenant refusal, resource
+  unavailability and actual booking of a suggested slot); public-booking regression
+  17/17. API/web builds/typechecks, workspace lint and diff/format checks pass.
+  No application database changes, owner browser walkthrough or real-provider calls.
+  See docs/owner-quiet-days.md. OA-05 not started.
 
 ### OA-05 — Draft approvals and controlled delivery
 

@@ -98,7 +98,12 @@ function localDate(instant: Date, timeZone: string): string {
     .join("-");
 }
 
-async function slotContext(db: Tx, tenantId: string, serviceId: string) {
+export async function slotContext(
+  db: Tx,
+  tenantId: string,
+  serviceId: string,
+  staffLimit?: number,
+) {
   const service = await db.service.findFirst({ where: { id: serviceId, status: "ACTIVE" } });
   if (!service) throw notFound("Service not found.", "SERVICE_NOT_FOUND");
   const [hours, candidates] = await Promise.all([
@@ -112,6 +117,7 @@ async function slotContext(db: Tx, tenantId: string, serviceId: string) {
       },
       select: { id: true },
       orderBy: { id: "asc" },
+      ...(staffLimit === undefined ? {} : { take: staffLimit }),
     }),
   ]);
   return {
@@ -122,7 +128,7 @@ async function slotContext(db: Tx, tenantId: string, serviceId: string) {
   };
 }
 
-function withinHours(
+export function withinHours(
   context: Awaited<ReturnType<typeof slotContext>>,
   start: Date,
   timeZone: string,

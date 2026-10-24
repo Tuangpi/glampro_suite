@@ -2,9 +2,9 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **OA-03**, service-aware rebooking
-  recommendations, local/disposable checks complete October 24. Recommended next:
-  **OA-04**, future quiet-day opportunities (TODO); not started.
+- Current task: **None**. Most recently completed: **OA-04**, future quiet-day
+  opportunities, local/disposable checks complete October 24. Recommended next:
+  **OA-05**, draft approvals and controlled delivery (TODO); not started.
 - **OA-02** dashboard briefing/evidence workspace owner acceptance recorded.
   **TK2610-0028** multi-outlet disposable acceptance verified October 24.
   Company roles apply at every
@@ -20,6 +20,36 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — OA-04 future quiet-day opportunities complete locally
+
+- Added guarded read-only `/ai-assistant/quiet-day-opportunities` and dashboard
+  workspace with explicit paginated service selection, retry/loading/qualified empty
+  states, exact timezone/window/as-of evidence and partial-search warnings.
+- Screens tomorrow through seven local days with <3 non-cancelled booking starts;
+  uses shared public-booking context/hours and actual appointment checker. Returns
+  at most one opening/day, checks at most ten staff and 120 staff/slot combinations.
+  No utilisation/profit/demand inference or reservation. Existing historical promo
+  API remains separate and backward compatible.
+- No approved discretionary assistant discount ceiling: only regular-price/0%
+  suggestions, enforced by shared contract; discount query fields refused. No
+  voucher/offer/member/package changes or stacking, recipients, saved drafts,
+  approval, activation, new main navigation, migration or outbound delivery.
+- Verified: focused API **24/24** (including seven quiet-day checks for shift/break,
+  conflict/resource exclusion, DST, fallback, bounds and failure propagation);
+  shared **174/174**, full web **671/671** across 84 files (two workers), disposable
+  HTTP **1/1**, public-booking regressions **17/17**. Actual suggested-slot booking,
+  subsequent conflict and role/module/tenant refusal verified live on disposable DB.
+  API/web production builds/typechecks and workspace lint pass. Initial unit run
+  missed the salon-clock mock; corrected test fixture and reran, no production guard
+  weakened. No full API suite or owner browser walkthrough claimed.
+- Replayed existing 46 migrations on a fresh disposable loopback database at
+  127.0.0.1:55440/package_expiry_test. Application DB/accounts unchanged. No provider
+  called, commit, push or deployment. Documentation: docs/owner-quiet-days.md.
+- Logs: /tmp/oa04-api-final.log, /tmp/oa04-http-final.log,
+  /tmp/oa04-booking-regression.log, /tmp/oa04-web-full.log,
+  /tmp/oa04-shared-tests.log, /tmp/oa04-api-build.log, /tmp/oa04-web-build.log,
+  /tmp/oa04-lint.log. OA-05 is next ready and was not started.
 
 ## October 24, 2026 — OA-03 service-aware rebooking complete locally
 
