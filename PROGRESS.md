@@ -2,9 +2,11 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **MAINT-01**, dependency security
-  and repository health, October 24. Full/production audits: 0 vulnerabilities;
-  dependency tree, root formatting, workspace build/typecheck/lint and regressions pass.
+- Current task: **None**. Most recently completed: **PRINT-01**, thermal receipt
+  layouts and local preview verification. Web 697/697; build/typecheck/lint pass.
+  Physical printer/driver validation remains separate. Recommended next local work:
+  assess per-outlet hours as an extension to accepted TK2610-0007; not started.
+  VERIFY-01 API/shared and MAINT-01 audit results below are historical, not rerun here.
 - **OA-07 remains BLOCKED** on operational inputs, not acceptance. Outcome/local
   verification and synthetic recovery complete. All acceptance is user-confirmed;
   do not request again. Target/provider evidence and specific retention/security
@@ -23,6 +25,51 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — PRINT-01 thermal receipt layouts complete locally
+
+- Standard default retained; selectable 80/58 mm previews reuse server-backed
+  ReceiptView. Added stored GST registration, long-name wrapping, monochrome print
+  styles and unrelated-content isolation without absolute positioning. Totals,
+  tenders, tax, refunds/voids and email content calculations unchanged.
+- Files: apps/web/src/components/sale/ReceiptView.tsx and ReceiptView.test.tsx,
+  apps/web/src/styles/receipt-print.css, apps/web/src/index.css,
+  docs/thermal-receipts.md; TASKS.md/PROGRESS.md preserve prior VERIFY-01 changes.
+- Verified focused receipt/POS 52/52, full web 697/697 (87 files), web production
+  build/typecheck and lint. Headless installed Chrome, compiled CSS and synthetic
+  45-line receipts: standard/80/58 mm previews have no horizontal overflow; PDFs
+  retain first/last lines, stored GST and refund details, exclude app chrome and
+  controls. At 58 mm GST wraps but normalized PDF text retains its full value.
+- Initial temporary fixture exporter used a Vite-transformed URL unsupported by
+  node:fs; corrected to filesystem path and reran successfully. Temporary test
+  removed. No dependency added, database/provider operation, deployment or commit.
+- PDFs use Chrome default sheets, not configured thermal paper. Physical printer
+  margins, feeds/cutting and readability remain unverified. Driver owns paper size;
+  instructions request matching width, 100% scale and disabled headers/footers.
+- Logs: /tmp/print01-{focused,build,lint,web}.log; HTML/PDF checks in
+  /tmp/print01-{standard,80,58}.{html,pdf}. Temp artifacts are not durable evidence.
+- Next: assess per-outlet hours as extension of TK2610-0007; not started.
+  OA-07 operational gates and accepted accounting/transfer limitations unchanged.
+
+## October 24, 2026 — VERIFY-01 local regression verification complete
+
+- Fresh workspace build, typecheck, lint and root formatting checks all pass.
+- Shared 179/179; web 693/693 across 86 files; full sequential API 576 passed,
+  0 failed, 18 explicit opt-in acceptance skips. Existing route/service coverage
+  exercises appointments, consent, receipts, package/prepaid redemption, split
+  tenders, refund/void accounting, stock and tenant/role refusals.
+- Replayed all 47 migrations on a new disposable PostgreSQL 18 cluster at loopback
+  port 55445, database verify01_test. Cluster stopped successfully; application
+  database, accounts and real providers untouched. No browser/printer walkthrough
+  or separate opt-in acceptance rerun claimed. Existing user acceptance preserved.
+- No regression reproduced and no application code changed. Only TASKS.md and
+  PROGRESS.md updated. Test logs emitted non-failing PostgreSQL concurrent-query
+  deprecation and npm unknown-config warnings; these are not test failures.
+- Evidence: /tmp/glampro-verify01-{build,migrations,types,lint,shared,web,api,format}.log
+  and matching exit files; /tmp/glampro-verify01-stop.log confirms shutdown.
+  Temporary logs are not durable release evidence. No deployment, commit or push.
+- Next local recommendation: dedicated thermal receipt layout and preview checks;
+  hardware validation remains separate. OA-07 operational blockers unchanged.
 
 ## October 24, 2026 — MAINT-01 dependency security and health complete
 

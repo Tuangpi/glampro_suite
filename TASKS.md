@@ -24,6 +24,46 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### PRINT-01 — Thermal receipt layout and local preview
+
+- Status: DONE — October 24, 2026, local layout and automated preview verification.
+- Expected result: Preserve standard receipt printing and add selectable 80 mm/
+  58 mm layouts using the existing server-backed receipt, with wrapping, GST
+  registration and reversal details retained. No sale/payment calculation changes.
+- Completion check: Component regression tests, web build/typecheck/lint and
+  headless browser print/PDF checks where available. Actual printer testing is
+  separate and must not be claimed without hardware.
+- Dependencies: VERIFY-01 complete. Paper selection is local to the receipt view;
+  match the printer driver paper width, scale and margins before physical printing.
+- Result: Standard default plus 80/58 mm previews; print-only content isolation,
+  long-name wrapping, stored GST registration and existing refund/void evidence.
+  Focused receipt/POS tests 52/52; full web 697/697 (87 files); web build/typecheck
+  and lint pass. Chrome preview widths approximately 302/219 px, no overflow;
+  45-line PDFs retain first/last items, GST and refund evidence, omit controls/chrome.
+- Limits: PDF checks use default sheet size, not a thermal driver; no hardware
+  acceptance. Initial temporary export fixture URL error corrected and rerun;
+  temporary fixture removed. See docs/thermal-receipts.md for setup and checks.
+- Next: Assess outlet-specific hours against accepted TK2610-0007 scope; do not
+  silently replace prior acceptance or reopen accounting/transfer policies.
+
+### VERIFY-01 — Local core-workflow regression verification
+
+- Status: DONE — October 24, 2026, fresh automated regression verification.
+- Expected result: Refresh local regression evidence for the current implementation;
+  investigate failures without expanding feature scope or reopening accepted limitations.
+- Completion check: Workspace build/typecheck/lint/format, shared/web tests and full
+  sequential API tests against fresh disposable PostgreSQL; disclose opt-in skips
+  and any manual/browser workflows not exercised. Fix regressions only if reproduced.
+- Safety: Do not migrate, seed or reset the application database; no real provider
+  calls, deployment, account cleanup or external applications. Existing OA-07 blockers remain.
+- Result: Build/typecheck/lint/format pass; shared 179/179, web 693/693 (86 files),
+  sequential API 576 passed / 0 failed / 18 opt-in skips. All 47 migrations replayed
+  on fresh disposable PostgreSQL port 55445; cluster stopped after verification.
+- Limits: No new browser/hardware walkthrough or separate opt-in acceptance run.
+  Existing acceptance remains recorded; no application-source regression fix needed.
+  Logs: /tmp/glampro-verify01-{build,migrations,types,lint,shared,web,api,format}.log.
+  Thermal receipt work is the recommended next local deliverable, not started.
+
 ### MAINT-01 — Dependency security and repository health
 
 - Status: DONE — October 24, 2026, compatible fixes and full local verification.

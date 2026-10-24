@@ -1,0 +1,123 @@
+/* Width previews share the print layout. The driver owns roll length/paper size;
+   do not force a fixed page height that would clip or waste a long receipt. */
+.receipt-print-root[data-receipt-paper="80"] {
+  --receipt-width: 80mm;
+}
+
+.receipt-print-root[data-receipt-paper="58"] {
+  --receipt-width: 58mm;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) {
+  box-sizing: border-box;
+  width: var(--receipt-width);
+  max-width: 100%;
+  gap: 3mm;
+  padding: 2mm;
+  background: white;
+  color: black;
+  font-size: 10pt;
+  line-height: 1.35;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) > section {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) > section > header,
+.receipt-print-root:not([data-receipt-paper="standard"]) > section > footer,
+.receipt-print-root:not([data-receipt-paper="standard"]) > section > div {
+  padding: 2mm 0;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) > section > header {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2mm;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) dl {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2mm;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) li {
+  gap: 2mm;
+  padding: 2mm 0;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-item-name {
+  overflow: visible;
+  white-space: normal;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-actions {
+  flex-shrink: 1;
+}
+
+@page receipt {
+  size: auto;
+  margin: 0;
+}
+
+@media print {
+  /* Remove unrelated content without leaving its layout space behind. Keep the
+     ancestor chain so the receipt remains in normal flow and can paginate. */
+  body:has(.receipt-print-root)
+    *:not(:has(.receipt-print-root)):not(.receipt-print-root):not(.receipt-print-root *) {
+    display: none !important;
+  }
+
+  body:has(.receipt-print-root) *:has(.receipt-print-root) {
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .receipt-print-root {
+    display: block;
+    padding: 2mm;
+    color: black;
+    background: white;
+  }
+
+  .receipt-print-root:not([data-receipt-paper="standard"]) {
+    page: receipt;
+  }
+
+  .receipt-print-root * {
+    color: black !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    overflow-wrap: anywhere;
+  }
+
+  .receipt-print-root > section {
+    overflow: visible;
+  }
+
+  .receipt-print-root .receipt-item-name,
+  .receipt-print-root h3 {
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .receipt-print-root li,
+  .receipt-print-root dl > div,
+  .receipt-print-root > [role="status"] {
+    break-inside: avoid;
+  }
+}
