@@ -145,12 +145,28 @@ owner-facing experience; they do not authorize deployment or outbound messages.
 
 ### OA-06 — Bounded conversational explanations
 
-- Status: TODO
+- Status: DONE — local implementation and disposable PostgreSQL/HTTP acceptance verified October 24, 2026.
 - Dependencies: OA-01, OA-02, OA-03, OA-04
 - Expected result: Supported business questions backed by verified facts; optional
   language provider only after separate data/cost/provider decision.
 - Completion check: Evidence/period fidelity, ambiguous and unsupported requests,
   injection resistance, restricted data, budgets and factual fallback on AI failure.
+- Delivered: dashboard read-only Q&A with nine supported English templates, explicit
+  salon-local today/yesterday/seven-day/custom (31-day maximum) reporting windows,
+  exact shared metric evidence/as-of and entitled source links. Rebooking/quiet-day
+  responses explain policy only, not fresh recipient/availability checks.
+- Deterministic allowlist refuses instruction/action/restricted-data requests;
+  ambiguous requests clarify. Source failures return unavailable without zeroes,
+  stale figures or internal errors. No language provider, history persistence,
+  migration, personal/clinical records, outbound action or new main navigation.
+- Bounds: 300-character questions, 3,000-character answers, 20 authenticated
+  company/user requests per 15 minutes per API process. No distributed quota claim.
+- Verified: full web 688/688, shared 177/177, focused API 32/32; disposable HTTP 1/1
+  includes real tenant-separated metrics, current role/module/disabled/closed-account
+  refusals, strict input/injection boundaries, no-store and independent rate budgets.
+  Production build/API/web typechecks, workspace lint and scoped formatting/diff pass.
+- No full API suite, owner browser UAT, application DB access, provider call,
+  deployment, commit or push. See docs/owner-explanations.md. OA-07 next; not started.
 
 ### OA-07 — Outcomes and release readiness
 

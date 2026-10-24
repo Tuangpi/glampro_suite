@@ -7,6 +7,12 @@ import { aiAssistantService } from "../services/ai-assistant.service.js";
 import { quietDayQuerySchema, type QuietDayQuery } from "@glampro_suite/shared";
 import { quietDayOpportunities } from "../services/quiet-day.service.js";
 import {
+  assistantExplanationInputSchema,
+  type AssistantExplanationInput,
+} from "@glampro_suite/shared";
+import { assistantExplanation } from "../services/assistant-explanation.service.js";
+import { assistantExplanationLimiter } from "../middleware/rateLimit.js";
+import {
   assistantDraftInputSchema,
   assistantDraftEditSchema,
   assistantDraftActionSchema,
@@ -30,6 +36,21 @@ import {
 
 const router = Router();
 router.use(auth, requireRole("SUPER_ADMIN", "MANAGER"), requireModule("dashboard"));
+router.post(
+  "/explain",
+  assistantExplanationLimiter,
+  validate(assistantExplanationInputSchema),
+  async (req, res, next) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      res.json({
+        data: await assistantExplanation(validated<AssistantExplanationInput>(req, "body")),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 router.use("/drafts", requireModule("customers"), requireModule("appointments"));
 router.post(
   "/drafts/:id/retention-review",

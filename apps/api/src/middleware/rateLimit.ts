@@ -1,6 +1,26 @@
 import rateLimit from "express-rate-limit";
+import { currentScope } from "../lib/tenant-context.js";
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
+
+/** Authenticated explanation budget per company and user, per API process. No prompt storage. */
+export const assistantExplanationLimiter = rateLimit({
+  windowMs: FIFTEEN_MINUTES,
+  limit: 20,
+  keyGenerator: () => {
+    const scope = currentScope();
+    if (scope?.kind !== "tenant" || !scope.actorId)
+      throw new Error("Explanation limiter requires authentication.");
+    return `${scope.tenantId}:${scope.actorId}`;
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    statusCode: 429,
+    message: "Explanation limit reached. Try again in 15 minutes.",
+    code: "ASSISTANT_RATE_LIMITED",
+  },
+});
 
 const tooManyRequests = {
   statusCode: 429,

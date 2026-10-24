@@ -23,6 +23,7 @@ export * from "./schemas/appointment.js";
 export * from "./schemas/resource.js";
 export * from "./schemas/report.js";
 export * from "./schemas/ai-assistant.js";
+export * from "./schemas/assistant-explanation.js";
 export * from "./schemas/settings.js";
 export * from "./schemas/outlet.js";
 export * from "./schemas/consent.js";

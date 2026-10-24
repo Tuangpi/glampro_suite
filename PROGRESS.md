@@ -2,9 +2,9 @@
 
 ## Current State
 
-- Current task: **None**. Most recently completed: **OA-05**, draft approvals and
-  controlled delivery, local/disposable checks complete October 24. Recommended next:
-  **OA-06**, bounded conversational explanations (TODO); not started.
+- Current task: **None**. Most recently completed: **OA-06**, bounded deterministic
+  explanations, local/disposable checks complete October 24. Recommended next:
+  **OA-07**, outcomes and release readiness (TODO); not started.
 - **OA-02** dashboard briefing/evidence workspace owner acceptance recorded.
   **TK2610-0028** multi-outlet disposable acceptance verified October 24.
   Company roles apply at every
@@ -20,6 +20,39 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — OA-06 bounded explanations complete locally
+
+- Added owner/manager dashboard Q&A and read-only `/ai-assistant/explain` POST.
+  Nine fixed English questions use an exact normalized allowlist, not general NLP.
+  Metric answers reuse ownerMetrics, with explicit salon-local period controls,
+  half-open UTC window/timezone/as-of evidence, decimal strings and entitled links.
+  Rebooking/quiet-day questions explain policy only and direct to existing panels.
+- Strict shared request/response validation; ambiguous questions clarify, unsupported
+  instructions/restricted-data/actions refuse, fact-source failure returns unavailable
+  without cached facts/fabricated zeroes/internal errors. No arbitrary SQL, personal
+  or clinical data, external language provider, migration, saved history or actions.
+- 300-character question/3,000-character response, at most 31 custom calendar days,
+  20 requests/company/user/15 minutes per process. In-memory quota is not distributed.
+  No model spending. UI clears results on changed question/period or lost identity/
+  role/modules, validates responses and never keeps prior facts after refusal/error.
+- Verified: full web **688/688** (86 files, two workers), shared **177/177**, focused
+  API **32/32**, disposable PostgreSQL/HTTP **1/1**. HTTP verifies real tenant-separated
+  facts, role/module/disabled/closed-account refusals, strict bounds/injection refusal,
+  no-store, independent rate budgets, no draft/message writes. Unit tests cover DST,
+  exact windows/decimals/negative net/empty days and fact-source failures. Production
+  build (API/web typechecks), workspace lint and scoped format/diff checks pass.
+- Initial normalization test caught trailing-space handling; trimmed before stripping
+  punctuation and reran. Initial parallel web typecheck preceded shared build; rerun
+  after shared build and complete production build pass. No assertions weakened.
+- Existing **47 migrations** replayed on fresh disposable loopback port 55444/database
+  oa06_acceptance. No new migration/application DB access. No full API suite, browser
+  UAT, real provider call, deployment, commit or push. Docs: docs/owner-explanations.md.
+- Logs: /tmp/oa06-api-final.log, /tmp/oa06-http-final.log, /tmp/oa06-web-full.log,
+  /tmp/oa06-shared-final.log, /tmp/oa06-build.log, /tmp/oa06-lint-final.log.
+- OA-07 next ready; not started. Owner walkthrough, optional provider decision and
+  multi-instance operational budgets remain separately gated.
+- Cleanup: fixture tenant count is zero; disposable PostgreSQL cluster stopped.
 
 ## October 24, 2026 — OA-05 draft approvals and controlled SMS delivery complete locally
 

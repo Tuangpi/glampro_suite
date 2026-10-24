@@ -3,6 +3,7 @@ import StatTile from "@/components/ui/StatTile";
 import OwnerBriefing from "@/components/dashboard/OwnerBriefing";
 import RebookingRecommendations from "@/components/dashboard/RebookingRecommendations";
 import QuietDayOpportunities from "@/components/dashboard/QuietDayOpportunities";
+import AssistantQuestions from "@/components/dashboard/AssistantQuestions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
@@ -84,6 +85,7 @@ export default function Dashboard() {
         </p>
       ) : null}
       <OwnerBriefing />
+      <AssistantQuestions />
       <RebookingRecommendations />
       <QuietDayOpportunities />
     </div>

@@ -351,6 +351,17 @@ not establish full roadmap compliance. Consult the decision sections and task fi
 
 ### Owner assistant expansion — approved October 23, 2026
 
+OA-06 implementation verified October 24: bounded read-only dashboard Q&A, nine
+fixed English templates, shared aggregate facts and explicit salon-local windows
+(at most 31 custom calendar days), exact evidence/as-of and policy-only rebooking/
+quiet-day explanations. Unknown/injection/action/restricted-data requests refuse;
+ambiguity clarifies and source failure returns unavailable, never invented figures.
+No language provider, model context, personal/clinical records, conversation storage,
+migration or action execution. Questions bounded to 300 characters; 20 requests per
+company/user/15 minutes per API process, not a distributed quota. Existing tenant,
+owner/manager and module boundaries apply. See docs/owner-explanations.md for limits
+and outstanding owner UAT/provider/operational release gates. No rollout performed.
+
 OA-05 implementation verified October 24: persisted SMS-only draft versions,
 exact sender/destination/body preview, explicit approval then idempotent queueing,
 append-only actor/version audit and execution-time authorization/eligibility checks.
