@@ -27,7 +27,7 @@ export function resolveSeedAdmin(environment: NodeJS.ProcessEnv) {
     };
   }
   return {
-    email: environment.ADMIN_EMAIL ?? "superadmin@gmail.com",
+    email: environment.ADMIN_EMAIL ?? "admin@gmail.com",
     name: environment.ADMIN_NAME ?? "Glampro Administrator",
     password: environment.ADMIN_PASSWORD ?? "admin12345",
     globalRole: "SUPER_ADMIN" as const,

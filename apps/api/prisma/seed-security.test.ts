@@ -24,6 +24,11 @@ describe("production seed security", () => {
     assert.equal(resolveSeedAdmin(valid).globalRole, "SUPER_ADMIN");
   });
   it("preserves development-only defaults", () => {
-    assert.equal(resolveSeedAdmin({}).globalRole, "SUPER_ADMIN");
+    assert.deepEqual(resolveSeedAdmin({}), {
+      email: "admin@gmail.com",
+      name: "Glampro Administrator",
+      password: "admin12345",
+      globalRole: "SUPER_ADMIN",
+    });
   });
 });

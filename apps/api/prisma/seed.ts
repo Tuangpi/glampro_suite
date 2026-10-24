@@ -3,7 +3,8 @@
  *
  * `SEED_MODE=production` creates exactly one administrator from
  * `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` and touches nothing else;
- * `SEED_MODE=development` (default) also creates the demo salon crew. Re-running
+ * `SEED_MODE=development` (default) also creates a separate platform administrator
+ * and the demo salon crew. Re-running
  * after a fresh `db:reset` refreshes the demo instead of duplicating it — every
  * catalogue row is looked up by its natural key, and the bookings and sales are
  * written by their fixed ids / idempotency keys.
@@ -19,6 +20,7 @@ import {
   DEMO_DEPARTMENTS,
   DEMO_GIFT_CARDS,
   DEMO_PACKAGES,
+  DEMO_PLATFORM_ADMIN,
   DEMO_PRODUCTS,
   DEMO_SALES,
   DEMO_SERVICES,
@@ -101,6 +103,26 @@ async function seedTenant(): Promise<string> {
 
   console.log(`  ✔ tenant ${tenant.slug} (${tenant.id})`);
   return tenant.id;
+}
+
+/** Development only. Never reset credentials or re-enable an existing operator. */
+async function seedDemoPlatformAdmin(): Promise<void> {
+  const { email, name, password } = DEMO_PLATFORM_ADMIN;
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(26102302)::text`;
+    if (await tx.platformAdmin.findUnique({ where: { email }, select: { id: true } })) return;
+    const admin = await tx.platformAdmin.create({ data: { email, name, passwordHash } });
+    await tx.auditLog.create({
+      data: {
+        actorPlatformAdminId: admin.id,
+        action: "platform.demo-seed",
+        targetType: "PlatformAdmin",
+        targetId: admin.id,
+      },
+    });
+  });
+  console.log("  ✔ development platform administrator (email verification required)");
 }
 
 function isCore(code: string): boolean {
@@ -847,6 +869,8 @@ async function reconcileProductStock(tenantId: string): Promise<void> {
 async function main(): Promise<void> {
   if (SEED_MODE === "production") resolveAdmin();
 
+  if (SEED_MODE === "development") await runAsPlatform(seedDemoPlatformAdmin);
+
   const tenantId = await seedTenant();
 
   // Platform data first, unscoped (see TENANCY.md §7): the module catalogue
@@ -856,7 +880,7 @@ async function main(): Promise<void> {
   await runAsPlatform(seedModules);
 
   await runAsTenant(tenantId, async () => {
-    // The crew is `DEMO_STAFF` in development (the administrator, the manager,
+    // The crew is `DEMO_STAFF` in development (the company administrator,
     // the front desk and the three performers) and the single administrator in
     // production. One list, written once: the update branch deliberately does
     // **not** touch `passwordHash`, so re-seeding refreshes

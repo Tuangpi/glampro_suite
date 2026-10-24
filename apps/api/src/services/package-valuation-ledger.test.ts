@@ -88,7 +88,7 @@ test(
             `CREATE FUNCTION valuation_test_reject_movement() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced valuation movement failure'; END $$`,
           );
           await prisma.$executeRawUnsafe(
-            `CREATE TRIGGER valuation_test_reject_movement BEFORE INSERT ON package_valuation_movements FOR EACH ROW EXECUTE FUNCTION valuation_test_reject_movement()`,
+            `CREATE TRIGGER valuation_test_reject_movement BEFORE INSERT ON package_valuation_movements FOR EACH ROW WHEN (NEW."tenantId" = '${tenant.id}') EXECUTE FUNCTION valuation_test_reject_movement()`,
           );
           try {
             await assert.rejects(

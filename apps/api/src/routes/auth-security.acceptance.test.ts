@@ -9,7 +9,7 @@ test(
   {
     skip: process.env.SEC01_ACCEPTANCE !== "1",
   },
-  async () => {
+  async (t) => {
     const url = new URL(process.env.DATABASE_URL ?? "");
     assert.equal(url.hostname, "127.0.0.1");
     assert.equal(url.port, "55439");
@@ -169,12 +169,143 @@ test(
       );
       assert.equal((await post("two-factor/disable", {}, staffToken)).status, 200);
       assert.equal(messages.length, 3);
+
+      await t.test(
+        "cashier receipt HTTP delivery uses stored values through loopback SMTP",
+        async () => {
+          const { runAsTenant } = await import("../lib/tenant-context.js");
+          const { createSale, getSale, refundSale } = await import("../services/sale.service.js");
+          const { buildReceiptEmail } = await import("../services/receipt-email.service.js");
+          const { getSalonProfile } = await import("../services/settings.service.js");
+          const { signAccessToken } = await import("../lib/tokens.js");
+          const scoped = <T>(fn: () => T) => runAsTenant(tenantId, fn);
+          const cashier = await scoped(() =>
+            prisma.user.create({
+              data: {
+                tenantId,
+                name: "Cashier",
+                email: "cashier@sec01.test",
+                globalRole: "CASHIER",
+                passwordHash: "unused",
+              },
+            }),
+          );
+          const { token: cashierToken } = signAccessToken({
+            id: cashier.id,
+            email: cashier.email!,
+            globalRole: cashier.globalRole,
+            tokenVersion: cashier.tokenVersion,
+            realm: "web",
+            tenantId,
+          });
+          await runAsPlatform(async () => {
+            for (const code of ["sales", "catalogue"])
+              await prisma.module.upsert({
+                where: { code },
+                update: { isCore: true },
+                create: { code, name: code, category: "Core", isCore: true },
+              });
+            await prisma.tenant.update({
+              where: { id: tenantId },
+              data: { gstEnabled: true, gstRegistrationNumber: "GST-LOCAL-SNAPSHOT" },
+            });
+          });
+          const sale = await scoped(async () => {
+            const service = await prisma.service.create({
+              data: {
+                tenantId,
+                name: "Local <receipt> service",
+                memberPrice: 100,
+                nonmemberPrice: 100,
+              },
+            });
+            return createSale({
+              staffId: cashier.id,
+              lines: [
+                { itemType: "SERVICE", itemId: service.id, quantity: 1, discountPercent: 10 },
+              ],
+              payments: [
+                { method: "CASH", amount: 40 },
+                { method: "CARD", amount: 50 },
+              ],
+            });
+          });
+          assert.equal(sale.totalAmount, "90.00");
+          assert.equal(sale.discountAmount, "10.00");
+          assert.notEqual(sale.taxAmount, "0.00");
+          await runAsPlatform(() =>
+            prisma.tenant.update({
+              where: { id: tenantId },
+              data: { gstRegistrationNumber: "GST-CHANGED" },
+            }),
+          );
+          async function email(id: string, recipient: string, token = cashierToken) {
+            const response = await fetch(
+              `${base.replace(/\/auth$/, "")}/sales/${id}/receipt/email`,
+              {
+                method: "POST",
+                headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+                body: JSON.stringify({ email: recipient }),
+              },
+            );
+            return { status: response.status, body: await response.json() };
+          }
+          const recipient = "receipt@sec01.test";
+          const sent = await email(sale.id, recipient);
+          assert.equal(sent.status, 200);
+          assert.equal(sent.body.data.sent, true);
+          assert.equal(sent.body.data.to, recipient);
+          assert.ok(sent.body.data.messageId);
+          assert.equal(messages.length, 4);
+          // Nodemailer's quoted-printable soft wraps are not receipt line breaks.
+          const captured = messages.at(-1)!.replace(/=\r\n/g, "");
+          assert.match(captured, /To: receipt@sec01.test/);
+          assert.match(captured, /GST-LOCAL-SNAPSHOT/);
+          assert.doesNotMatch(captured, /GST-CHANGED/);
+          assert.match(captured, /Total: S\$90\.00/);
+          assert.match(captured, /Cash: S\$40\.00/);
+          assert.match(captured, /Card: S\$50\.00/);
+          assert.match(captured, /Local &lt;receipt&gt; service/);
+          assert.deepEqual(await scoped(() => getSale(sale.id)), sale);
+
+          await scoped(() =>
+            refundSale(
+              sale.id,
+              {
+                reason: "Local test refund",
+                restock: false,
+                payouts: [{ method: "CASH", amount: 90 }],
+              },
+              cashier.id,
+            ),
+          );
+          assert.equal((await email(sale.id, recipient)).status, 200);
+          assert.equal(messages.length, 5);
+          assert.match(messages.at(-1)!.replace(/=\r\n/g, ""), /REFUND RECORDED: S\$90\.00/);
+          assert.equal((await email(sale.id, "invalid-address")).status, 422);
+          assert.equal((await email(sale.id, recipient, "invalid-token")).status, 401);
+          assert.equal(messages.length, 5, "refused requests must not send email");
+
+          // Stop the capture transport: a refused SMTP connection must not claim delivery.
+          await new Promise<void>((resolve) => smtp.close(() => resolve()));
+          const failed = await email(sale.id, recipient);
+          assert.equal(failed.status, 503);
+          assert.equal(failed.body.code, "EMAIL_SEND_FAILED");
+          assert.equal(messages.length, 5);
+          const current = await scoped(() => getSale(sale.id));
+          assert.equal(current.refundAmount, "90.00");
+          const content = await scoped(async () =>
+            buildReceiptEmail(current, await getSalonProfile()),
+          );
+          assert.match(content.text, /GST-LOCAL-SNAPSHOT/);
+        },
+      );
     } finally {
       http.closeAllConnections();
       await new Promise<void>((resolve) => http.close(() => resolve()));
       await runAsPlatform(() => prisma.tenant.deleteMany({ where: { id: tenantId } }));
       await prisma.$disconnect();
-      await new Promise<void>((resolve) => smtp.close(() => resolve()));
+      if (smtp.listening) await new Promise<void>((resolve) => smtp.close(() => resolve()));
     }
   },
 );

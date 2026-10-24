@@ -198,10 +198,22 @@ test(
       const serialized = JSON.stringify(audit);
       assert.ok(!serialized.includes(session.refreshToken));
       assert.ok(!serialized.includes(input.challenge));
+
+      // A configured but stopped inbox must fail closed with an actionable error.
+      await new Promise<void>((resolve) => smtp.close(() => resolve()));
+      const unavailable = await post("/platform/auth/login", { email, password });
+      assert.equal(unavailable.status, 503);
+      assert.equal(unavailable.body.code, "EMAIL_SEND_FAILED");
+      assert.match(unavailable.body.message, /SMTP server is running/);
+      assert.equal(unavailable.body.data, undefined);
+      const failedLogin = await prisma.platformAdmin.findUniqueOrThrow({ where: { id: admin.id } });
+      assert.equal(failedLogin.loginChallengeHash, null);
+      assert.equal(failedLogin.loginCodeHash, null);
+      assert.equal(failedLogin.loginChallengeExpiresAt, null);
     } finally {
       http.closeAllConnections();
       await new Promise<void>((resolve) => http.close(() => resolve()));
-      await new Promise<void>((resolve) => smtp.close(() => resolve()));
+      if (smtp.listening) await new Promise<void>((resolve) => smtp.close(() => resolve()));
       await prisma.$disconnect();
     }
   },

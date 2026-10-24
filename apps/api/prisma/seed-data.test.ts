@@ -18,6 +18,7 @@ import {
   DEMO_DEPARTMENTS,
   DEMO_GIFT_CARDS,
   DEMO_PACKAGES,
+  DEMO_PLATFORM_ADMIN,
   DEMO_PRODUCTS,
   DEMO_SALES,
   DEMO_SERVICES,
@@ -53,6 +54,21 @@ const staffEmails = new Set(DEMO_STAFF.map((row) => row.email));
 const customerByEmail = new Map(DEMO_CUSTOMERS.map((row) => [row.email, row]));
 
 describe("demo dataset catalogue", () => {
+  it("separates the platform administrator from the company owner and staff", () => {
+    assert.deepEqual(DEMO_PLATFORM_ADMIN, {
+      email: "superadmin@gmail.com",
+      name: "Glampro Platform Administrator",
+      password: "superadmin12345",
+    });
+    assert.ok(!staffEmails.has(DEMO_PLATFORM_ADMIN.email));
+    const owners = DEMO_STAFF.filter((user) => user.globalRole === "SUPER_ADMIN");
+    assert.equal(owners.length, 1);
+    assert.equal(DEMO_STAFF[0], owners[0], "the seed assigns ownership to the first crew member");
+    assert.equal(owners[0]?.email, "admin@gmail.com");
+    assert.equal(owners[0]?.password, "admin12345");
+    assert.equal(staffEmails.size, DEMO_STAFF.length);
+  });
+
   it("names departments the catalogue agrees on", () => {
     const departments = new Set(DEMO_DEPARTMENTS);
     assert.ok(departments.size > 0, "expected at least one department");

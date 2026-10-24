@@ -24,13 +24,111 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### PLATFORM-UX — Company management workspace
+
+- Status: **DONE**. Approved and implemented October 24, 2026.
+- Expected result: responsive company directory, on-demand onboarding, focused company
+  details with overview/subscription/modules/activity tabs, and confirmed lifecycle actions.
+  Preserve platform authentication, invitation warnings and existing API contracts.
+- Completion check: platform interaction tests, web typecheck/lint/build, and diff review.
+- Dependencies: existing SAAS-03/SAAS-04 implementation.
+- Evidence: full web 737/737 across 92 files; web lint, build (including typecheck),
+  platform formatting and git whitespace checks pass. Authenticated visual browser
+  review was not performed. No backend, database, dependency or authentication changes.
+
+### MSG-01 — Local messaging and assistant verification
+
+- Status: DONE — October 24, 2026, local automated verification only.
+- Dependencies: REG-01 complete; existing SEC-01 and OA-05 implementations.
+- Expected result: Owner verification and receipts captured only by loopback SMTP;
+  approved SMS lifecycle verified with injected fake sender; UI accurately labels
+  supported assistant channels. No WhatsApp/promotion expansion or real messaging.
+- Completion check: Disposable PostgreSQL/HTTP acceptance for owner email, receipt
+  transport and assistant approval/consent/retry/deduplication/delivery state;
+  focused messaging/UI tests and relevant build/typecheck/lint/format checks.
+- Safety: Fresh disposable databases only; no application migration, production
+  credentials, real recipients/providers, deployment or changes to accepted policy.
+- Result: Extended SEC-01 loopback SMTP acceptance through actual cashier receipt
+  HTTP requests, including stored GST/discount/split tender/refund evidence,
+  rejected requests and refused SMTP connection. Added explicit SMS-only/gated
+  WhatsApp/promotion UI regression. No production code or dependency changes.
+- Verified: Owner/receipt SMTP acceptance 2/2; fake-provider OA-05 1/1; read-only
+  OA-06 HTTP acceptance 1/1; focused API 59/59; focused UI 24/24; full web 734/734;
+  shared 187/187; workspace build/typecheck/lint pass. All 51 migrations replayed
+  into each of three disposable databases. No tests skipped in these focused runs.
+- Limits: Full API regression not repeated (REG-01 previously 592/0/24 skips).
+  No browser walkthrough or real SMTP/provider/handset verification; OA-07 remains
+  blocked on operational inputs. See docs/local-messaging-verification.md.
+
+### REG-01 — Messaging suppression and platform-routing regressions
+
+- Status: DONE — October 24, 2026, local regression verification only.
+- Expected result: Remove wall-clock and lazy-import timing dependence without
+  weakening suppression, routing or salon-provider isolation assertions.
+- Completion check: Reproduce/investigate both recorded failures; focused and full
+  API/web/shared regressions, build/typecheck/lint/format and disclosed acceptance
+  skips. Use disposable PostgreSQL only; preserve existing valuation changes.
+- Baseline: Messaging reproduces 24 pass / 1 fail on fresh disposable PostgreSQL.
+  Web focused 4/4 and full 733/733 pass; cold login heading took 933 ms in the
+  focused run, supporting the recorded lazy-import timeout rather than bad routing.
+- Result: Rebooking fixtures now use a genuinely past completed visit and a due
+  instant older than any quiet-hour deferral; assert the exact job is SUPPRESSED,
+  has no provider SID and sends no marketing. Separate current-opt-in withdrawal
+  regression added. Routing awaits real lazy imports inside act, retaining the
+  real portal and no-salon-provider/no-fetch assertions. No production code change.
+- Verified: Messaging 26/26, routing 4/4 plus three repeats, web 733/733,
+  shared 187/187; full sequential API 592 pass / 0 fail / 24 opt-in skips.
+  All 51 migrations replayed on fresh disposable PostgreSQL port 55451; stopped.
+  Workspace build, explicit typecheck, lint and formatting pass. See PROGRESS.md
+  for skip accounting. No application DB/provider operation or deployment.
+
 ### VALUE-01 — Monetary session-package liability reporting
 
-- Status: IN PROGRESS — October 24, 2026, policy version 1 approved; implementation
-  includes exact-cent storage, transactional ledger and current report API/UI.
-  Public activation controls and expanded lifecycle acceptance are implemented/tested;
-  remaining lifecycle matrix and large-tenant performance verification are outstanding.
+- Status: DONE — October 24, 2026, approved local implementation and task completion
+  check met. Exact-cent storage, transactional lifecycle ledger, reconciled current
+  report API/UI and guarded activation implemented. This is not production rollout
+  authorization or a clean whole-repository regression claim.
+- Closure evidence: isolated lifecycle/HTTP acceptance 10/10; report/activation UI
+  and hook tests 24/24; shared 187/187; workspace build/typecheck (through build),
+  lint and formatting/diff checks pass. Existing pure/storage/activation evidence is
+  retained in prior checkpoints. Extended synthetic report benchmark passes with
+  10k unpaid source sales and 500 expired holdings: correct debt aggregation,
+  deterministic one-time expiry and ten reconciled reads. Post-GC heap readings
+  levelled at 79 MiB in this local run; no production memory/latency guarantee.
+- Explicit limitations, not new VALUE-01 implementation gates: production-scale
+  load/target hardware, migration/deployment authorization and manual browser smoke
+  remain outstanding. Later collection has no existing application service; no new
+  collection feature was requested or fabricated. Existing voucher eligibility is
+  preserved. No live salon activation or application DB migration occurred.
+- Repository verification issues remain visible: latest full API run/retry from
+  rollback checkpoint 590 pass / 1 messaging suppression failure / 24 skips;
+  current full web run/retry 732 pass / 1 platform-login routing failure. Focused
+  valuation tests pass; no unrelated assertions weakened or code changed. Earlier
+  IN PROGRESS checkpoint bullets below are historical, superseded by this closure.
 - Dependencies: SESS-01 complete; explicit valuation-policy approval received.
+- Rollback follow-up: RESTORE / TRANSFER_IN / PURCHASE_VOID forced valuation
+  failures preserve operational records, valuation evidence, debt and audit; safe
+  retries reconcile. Duplicate redemption voids restore once and retain original
+  reason/actor. Purchase void racing redemption or transfer leaves one coherent
+  winner. Combined disposable acceptance 10/10; API typecheck/lint/build pass.
+  No production source change. Still IN PROGRESS; next reporting expiry/debt-load,
+  sustained memory/lock contention and manual browser verification.
+  Full API run and repeat: 590 pass / 1 fail / 24 opt-in skips; existing messaging
+  rebooking suppression expects ALREADY_REBOOKED but receives null (line 295),
+  reproduced in messaging suite alone. Root cause unverified; not fixed in this
+  valuation test increment. Repository format/diff checks pass.
+- October 24 follow-up: whole-set valuation, mixed-sale voucher exclusion,
+  transfer-back/current-owner restoration, competing transfer/redemption/report,
+  and post-expiry restoration accepted on disposable DB (combined acceptance 6/6).
+  API regression 591 pass / 0 fail / 24 opt-in skips. API build/typecheck/lint and
+  repository format/diff checks pass. Synthetic report benchmark 1/1: 10k holdings /
+  50k movements took 550–580 ms; heap before/after 229/684 MiB (not peak/retained),
+  competing prepaid lock observed at 601 ms. Production performance still unverified;
+  expiry/debt-heavy and sustained-memory/lock-load checks remain. Voucher discounts
+  do not apply to package lines by existing POS rules; no later collection service
+  exists, so end-to-end collection remains unavailable. Next: failure rollback on
+  reversal/transfer, broader void races, reporting load/memory and browser checks.
+  No application DB access, migration or activation; still IN PROGRESS.
 - Latest checkpoint: owner/manager reports activation API/UI requires explicit SGD /
   policy 1 / no-backfill confirmation and reason, with immutable evidence and server
   permission/subscription checks. Disposable HTTP + extended ledger acceptance 2/2;

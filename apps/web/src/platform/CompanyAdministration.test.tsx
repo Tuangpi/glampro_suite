@@ -42,10 +42,12 @@ it("requires a reason, changes lifecycle and refreshes company data and audit", 
   const changed = vi.fn().mockResolvedValue(undefined);
   render(<CompanyAdministration id="company-a" onChange={changed} />);
   fireEvent.click(await screen.findByRole("button", { name: "Suspend company" }));
-  await screen.findByRole("alert");
+  expect(screen.getByRole("button", { name: "Suspend company" })).toBeDisabled();
   expect(platformApi.lifecycle).not.toHaveBeenCalled();
   fireEvent.change(screen.getByLabelText("Change reason"), { target: { value: "Payment review" } });
   fireEvent.click(screen.getByRole("button", { name: "Suspend company" }));
+  expect(platformApi.lifecycle).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Confirm suspension" }));
   await waitFor(() => expect(changed).toHaveBeenCalledOnce());
   expect(platformApi.lifecycle).toHaveBeenCalledWith("company-a", {
     action: "suspend",
@@ -73,7 +75,9 @@ it("records a decimal subscription without charging or silently reactivating", a
   expect(platformApi.lifecycle).not.toHaveBeenCalled();
 });
 it("limits module options to add-ons, reports failures and pages audit", async () => {
-  render(<CompanyAdministration id="company-a" onChange={vi.fn()} />);
+  const { rerender } = render(
+    <CompanyAdministration id="company-a" tab="modules" onChange={vi.fn()} />,
+  );
   await screen.findByLabelText("Add-on module");
   expect(screen.queryByRole("option", { name: "Customers" })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Change reason"), {
@@ -83,6 +87,22 @@ it("limits module options to add-ons, reports failures and pages audit", async (
   fireEvent.click(screen.getByRole("button", { name: "Save add-on access" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Audit unavailable");
   expect(screen.getByLabelText("Change reason")).toHaveValue("Purchased add-on");
+  rerender(<CompanyAdministration id="company-a" tab="activity" onChange={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "Next audit page" }));
   await waitFor(() => expect(platformApi.audit).toHaveBeenLastCalledWith("company-a", 2));
+});
+
+it("lets the operator back out of cancellation without changing access", async () => {
+  render(<CompanyAdministration id="company-a" onChange={vi.fn()} />);
+  await screen.findByLabelText("Change reason");
+  fireEvent.change(screen.getByLabelText("Change reason"), {
+    target: { value: "Closure requested" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel company" }));
+  expect(screen.getByRole("group", { name: "Confirm company access change" })).toHaveTextContent(
+    "blocked from signing in",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Keep current access" }));
+  expect(screen.queryByRole("button", { name: "Confirm cancellation" })).not.toBeInTheDocument();
+  expect(platformApi.lifecycle).not.toHaveBeenCalled();
 });

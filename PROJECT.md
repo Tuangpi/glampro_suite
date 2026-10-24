@@ -16,6 +16,16 @@ These are product direction, not verified pricing, provider or grant commitments
 
 ## Session-package valuation — VALUE-01, approved October 24, 2026
 
+**Local implementation complete October 24, 2026.** Original task completion checks
+are met with isolated lifecycle/rollback/race reconciliation, guarded activation,
+report UI/hook tests and synthetic unpaid/expiry-load diagnostics. This does not
+authorize migration, live activation or rollout. Manual browser smoke and target
+production performance remain unverified. The subsequent REG-01 verification fixes
+the recorded messaging fixture and platform-login test timing failures: full API
+592 pass / 0 fail / 24 opt-in skips, web 733/733 and shared 187/187; workspace
+build/typecheck/lint/format pass. Opt-in acceptance was not rerun. Historical partial checkpoints
+below are superseded by this local completion status, not erased.
+
 The user approved all seven points of policy version 1 in
 `docs/package-valuation-policy-draft.md`. Implement remaining package purchase
 value, not statutory accounting liability: actual discounted contracted net purchase
@@ -42,6 +52,14 @@ requires a reason and performs no legacy backfill. Existing activation evidence 
 immutable. Local disposable acceptance is expanded, but the task remains IN PROGRESS:
 remaining lifecycle cases and large-tenant locked-report performance are unverified.
 No application migration, live salon activation or deployment is authorized or claimed.
+
+Further disposable checks now cover whole-service-set valuation, mixed-sale voucher
+exclusion (existing vouchers only discount services/products), transfer-back,
+conflicting transfer/redemption and post-expiry exact restoration. A synthetic
+10k-holding/50k-movement benchmark exercises full reconciliation, but memory growth
+and prepaid-lock blocking require further investigation; production-scale readiness
+is not verified. Later receivable collection has no application service and is not
+claimed as an accepted end-to-end workflow. See the implementation notes for evidence.
 
 ## Session-package transfer — SESS-01, approved October 24, 2026
 
@@ -224,6 +242,14 @@ accounts were not changed. Existing prepaid/treatment migration drift remains a
 separate release concern recorded under SAAS-02.
 
 ### Company administration — SAAS-04, October 23, 2026
+
+October 24 operator UI refinement (PLATFORM-UX): the scoped platform workspace now
+uses a responsive company directory, separate on-demand onboarding, and company
+overview/subscription/module-access/activity tabs with keyboard navigation. Audit
+metadata is expandable. Suspension/cancellation require an explicit confirmation
+in addition to the existing audited reason. API contracts and authentication remain
+unchanged; no dependencies added. Full web interaction regression/build/lint verified;
+authenticated visual browser review not performed.
 
 Platform company details include current effective status, the latest 100 subscription
 periods, module access and paginated company-administration audit history. Platform-only

@@ -3,7 +3,8 @@ import { platformLoginSchema } from "@glampro_suite/shared";
 import { prisma } from "./lib/prisma.js";
 import { hashPassword } from "./lib/password.js";
 
-// Explicit CLI only; never run on server startup or seed. Supply secrets through
+// Production bootstrap CLI; never run on server startup. Development seeding
+// creates its own demo operator separately. Supply secrets through
 // a private environment, not command-line arguments or committed dotenv files.
 try {
   const input = platformLoginSchema.parse({

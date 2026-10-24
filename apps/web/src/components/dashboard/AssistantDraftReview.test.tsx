@@ -32,6 +32,13 @@ beforeEach(() => {
   vi.resetAllMocks();
   get.mockResolvedValue({ drafts: [draft], nextCursor: null });
 });
+it("labels supported assistant channels without offering WhatsApp or promotion delivery", async () => {
+  mount();
+  await screen.findByText(draft.body);
+  expect(screen.getByText(/SMS only\. WhatsApp and promotions are gated\./)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /WhatsApp|promotion/i })).not.toBeInTheDocument();
+  expect(post).not.toHaveBeenCalled();
+});
 it("displays exact provider body and explicitly approves the displayed version", async () => {
   mount();
   await screen.findByText(draft.body);

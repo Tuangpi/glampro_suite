@@ -2,7 +2,20 @@
 
 ## Current State
 
-- Current task: **VALUE-01 IN PROGRESS**. User approved all seven valuation-policy
+- **PLATFORM-UX DONE — October 24, 2026:** responsive wider operator workspace,
+  company directory, separate onboarding view and overview/subscription/modules/activity
+  tabs. Suspension/cancellation now require explicit confirmation. Full web 737/737,
+  web lint/build/typecheck and platform formatting/whitespace checks pass.
+  Authenticated visual browser review remains unperformed; local headless fetch did
+  not establish a rendered management view. No API/database/authentication changes.
+  Current task: None; next task not auto-selected. Prior work below is preserved.
+
+- Current task: **None**. **MSG-01 DONE** — local SMTP receipt/owner verification,
+  fake-provider approved SMS acceptance and truthful assistant-channel UI verified.
+  **REG-01 DONE** — messaging suppression fixture and
+  platform routing lazy-import timing fixed; full isolated API/web regressions pass.
+  **VALUE-01 DONE** for approved local implementation on
+  October 24, 2026; rollout remains unauthorized. User approved all seven valuation-policy
   points on October 24, 2026; policy version 1 and implementation plan recorded.
   Exact-cent core and immutable activation/purchase storage implemented and tested.
   Internal activation service and strict SGD confirmation contract now tested.
@@ -10,16 +23,23 @@
   Company-wide current report API now processes expiry and reconciles evidence.
   Report UI now displays separate active/expired/unvalued and unpaid disclosures.
   Public activation API/UI and expanded lifecycle acceptance now implemented/tested.
-  Broader lifecycle matrix and large-tenant reporting performance remain unverified.
+  Whole-set/voucher-exclusion/transfer-back/expired-restoration acceptance now passes.
+  Reversal/transfer/purchase-void failure rollback and competing void acceptance pass.
+  Synthetic 10k unpaid-sale / 500-expiry backlog checks now pass; production scale unverified.
   Migrations disposable-only.
-  Most recently completed: **SESS-01**, whole remaining
+  Most recently completed: **MSG-01**. Earlier **REG-01**, **VALUE-01** and **SESS-01**, whole remaining
   session-package transfer, same-company owner/manager controls and reversal safety.
-  New isolated HTTP acceptance 1/1; existing package-set/treatment-session acceptance
+  Earlier SESS-01 evidence: isolated HTTP acceptance 1/1; package-set/treatment-session acceptance
   2/2; full API 581 pass / 0 fail / 19 opt-in skips; web 716/716, shared 183/183;
   workspace build/typecheck/lint/format pass. All 49 migrations replayed on two
   disposable databases; temporary PostgreSQL stopped. No application migration.
-  Next: remaining lifecycle matrix and large-tenant reporting performance checks
-  under the approved policy; #6 is not selected. Physical printing and rollout
+  Next: no task auto-selected; the six-step local priority sequence is complete
+  within approved scope. Real integrations/hardware and OA-07 operating inputs
+  remain separate. Recorded repository regressions are resolved.
+  Latest REG-01: API 592 pass / 0 fail / 24 opt-in skips; web 733/733; shared 187/187;
+  build/typecheck/lint/format pass. MSG-01: focused API 59/59, acceptance 4/4,
+  full web 734/734 and shared 187/187; build/typecheck/lint pass. #6 complete locally;
+  authorized rollout/browser/target-load checks remain separate. Physical printing and rollout
   authorization remain separate; existing HOURS-02 working changes preserved.
 - **OA-07 remains BLOCKED** on operational inputs, not acceptance. Outcome/local
   verification and synthetic recovery complete. All acceptance is user-confirmed;
@@ -39,6 +59,184 @@
 - TK2610-0026 remains blocked/deferred. P2 is not entirely complete.
 - SaaS onboarding still requires authorized migrations, configured SMTP and
   trusted SALON_PORTAL_ORIGIN; salon and platform login use web port 5173.
+
+## October 24, 2026 — MSG-01 local messaging and assistant verification complete
+
+- Selected the next approved local deliverable after REG-01, not blocked OA-07.
+  Reused SEC-01 capture-only SMTP, OA-05 fake sender and OA-06 read-only HTTP
+  acceptance. No toolkit/provider connection, live customer, SMTP credentials,
+  production change or channel expansion was needed.
+- Extended SEC-01 acceptance with cashier-authenticated receipt HTTP requests:
+  discounted/split payment sale, stored GST despite changed company settings,
+  escaped HTML, unchanged source sale, refund receipt, invalid address/token with
+  no send, and SMTP refusal yielding 503 EMAIL_SEND_FAILED. Existing owner/staff
+  code enrollment/login/replay/revocation checks also passed through loopback SMTP.
+  First fixture attempt lacked catalogue entitlement; corrected fixture and reran
+  successfully, without changing production authorization.
+- OA-05 acceptance verifies explicit approval, stale/concurrent edits, deduplication,
+  exact SMS payload, consent/phone/role/tenant changes, retries, uncertain delivery,
+  quota and append-only history. OA-06 verifies HTTP factual/refusal boundaries.
+  UI regression explicitly pins SMS-only wording and gated WhatsApp/promotions.
+- Verified: SEC-01/receipt 2/2; OA-05 1/1; OA-06 1/1; focused messaging/receipt/
+  assistant API 59/59; focused UI 24/24; full web 734/734; shared 187/187.
+  Workspace build, explicit typecheck and lint pass. No skips in executed focused
+  acceptance/API/UI suites. Full API not rerun; REG-01 592/0/24 remains historical.
+- All 51 migrations replayed on three fresh disposable databases using one
+  temporary PostgreSQL cluster at each acceptance suite's required loopback port:
+  oa05_acceptance 55443, sec01_acceptance 55439, oa06_acceptance 55444.
+  Cluster stopped cleanly; all three ports report no response. Final scoped
+  formatting and diff checks pass after formatting the new verification guide.
+  Captured SMTP is memory-only, not forwarded. Provider payloads use fake sender.
+  Added docs/local-messaging-verification.md for rerun commands and limits.
+- Evidence: /tmp/msg01-{assistant,email,explanation,api-focused,web-focused,web-full,
+  shared,build,typecheck,lint}.log and associated exit files; migration logs under
+  /tmp/msg01-*. Temporary evidence is not durable release storage.
+- No production implementation/dependency changes; existing regression/valuation
+  working changes preserved. No application DB migration, real providers, browser
+  walkthrough, deployment, commit or push. Hardware/live delivery and OA-07 inputs
+  remain unverified. No next task started.
+
+## October 24, 2026 — REG-01 messaging and portal regression fixes
+
+- Messaging reproduced 24 pass / 1 fail on fresh disposable PostgreSQL. The worker
+  correctly defers recently due rebooking during quiet hours before suppression;
+  the old fixture assumed immediate processing and used a future completed visit.
+  Fixtures now use a completed visit 90 days ago and a job two days overdue, so
+  quiet-hour adjustment cannot leave it future-due. Exact job/status/reason/provider
+  evidence and no-marketing-send assertions retained/strengthened. Added independent
+  current marketing-opt-in withdrawal coverage with zero provider calls.
+- Platform baseline passed focused/full (4/4 and 733/733); cold heading took 933 ms.
+  Recorded Loading-only failure is consistent with cold lazy-module transform
+  exceeding the default DOM timeout. Await real dynamic imports inside React act;
+  no portal mock, weakened assertion or global timeout increase. Updated focused
+  run passed even with 1188 ms cold import/render; three more 4/4 repeats pass.
+- Verification: messaging 26/26; full web 733/733 (92 files); shared 187/187;
+  sequential API 592 passed / 0 failed / 24 skipped. Workspace build, explicit
+  typecheck, lint, formatting and final diff checks pass.
+- Skip accounting: existing opt-in flags were not enabled for this regression run.
+  Skipped coverage: outlet foundation/HTTP; valuation storage, activation service/
+  HTTP, ledger, lifecycle and synthetic performance; assistant read-only HTTP,
+  OA-05/OA-06; SEC-01; COMM-01; SAAS-02/03/04; package expiry/service-set;
+  prepaid family/sharing/transfer; session transfer; treatment consent/disposal/
+  session linking. Runner reports 24 skipped tests; 25 SKIP lines include the
+  skipped valuation-storage suite. None is claimed newly accepted or rerun.
+- All 51 migrations replayed on fresh disposable PostgreSQL 18, loopback 55451,
+  database regression_two_test. Temporary cluster stopped; port no longer responds.
+  Existing valuation working changes preserved. No production code, application
+  DB/accounts, providers, migrations to application data, deployment, commit or push.
+- Evidence: /tmp/regression-two-{api-baseline,api-focused,api-full,web-baseline,
+  web-full-baseline,web-focused,web-full,web-repeat-1,web-repeat-2,web-repeat-3,
+  shared,build,lint,format,typecheck,migrations,stop}.log. Temp logs are not durable
+  release artifacts. No next task started; #6 remains a separate local deliverable.
+- This clean regression supersedes VALUE-01's historical repository-failure notes;
+  it does not change valuation rollout, manual browser or hardware limitations.
+
+## October 24, 2026 — VALUE-01 local implementation complete
+
+- User requested a definite finish rather than successive open-ended test increments.
+  Rechecked the original TASKS.md completion check: approved policy recorded,
+  isolated lifecycle reconciliation verified, and UI distinguishes valued sessions,
+  unknown legacy holdings and separate monetary bases. These checks are met.
+  VALUE-01 marked DONE for local implementation only; deployment was never authorized.
+- Extended synthetic performance fixture adds 10,000 completed unpaid source sales
+  (SGD 75 each), 500 expired grants and ten report reads. Verifies SGD 1,000,000
+  active net, SGD 50,000 expired net, SGD 750,000 whole-source outstanding and
+  exactly 51,500 movements on every refresh (expiry does not duplicate).
+- Local loaded report samples: 7370/2824/1149/1109/1265/1084/1151/1177/1260/1459 ms;
+  first includes expiry writes. Explicit post-GC heap readings: 47/52/58/63/68/74/
+  79/79/79/79 MiB. Baseline 10k-holding reads 2964/2727/2643 ms; competing lock
+  observed at 2871 ms. Other checks ran concurrently; timings are environment/load
+  dependent. No latency or memory SLO asserted, no production readiness claim.
+- Final focused acceptance 10/10; report/activation UI/hook 24/24; shared 187/187;
+  workspace build and lint pass, API typecheck pass, format/diff checks pass.
+  Full web and repeat: 732 passed / 1 failed, platform-login routing test remains
+  on Loading instead of Operator sign in (App.test.tsx:33). Previous full API run
+  and repeat: 590 passed / 1 messaging suppression failure / 24 opt-in skips.
+  Full API not rerun here; neither full regression is claimed clean. No unrelated
+  fixes, disabled checks or weakened assertions. Production code unchanged this increment.
+- Follow-up limitations: manual browser walkthrough not performed (no installed
+  browser automation dependency); target-hardware/sustained production load and
+  authorized migration/rollout remain separate. No later-collection application
+  service exists; do not invent that new feature as a valuation completion gate.
+  Existing voucher eligibility preserved; package voucher attribution pure tests
+  and mixed-sale exclusion integration are covered. No application DB access,
+  live activation, migration, deployment, commit or push.
+- Evidence: /tmp/value01-close-{performance,acceptance,web,web-retry,web-focused,
+  shared,typecheck,lint,lint-all,build}.log. Used previously migrated disposable
+  PostgreSQL 18 at port 55462. No new migration replay claimed. Next: None selected;
+  known regressions and rollout verification remain documented, not auto-started.
+
+## October 24, 2026 — VALUE-01 rollback and competing void acceptance (partial)
+
+- Expanded existing disposable lifecycle test with tenant-scoped forced failures at
+  RESTORE, TRANSFER_IN and PURCHASE_VOID. Deep before/after comparisons cover
+  holding, immutable snapshot/movements, projection, sale rows, redemption markers,
+  transfer history, outstanding debt, points, performance, commissions and tenant
+  audit. Failures leave all compared evidence unchanged; retries reconcile.
+- Transfer failure is injected on the second paired movement, after ownership and
+  transfer event writes, verifying those and TRANSFER_OUT roll back atomically.
+  Purchase-void failure preserves source debt and holding; retry deletes the holding
+  while retaining immutable purchase evidence. No production code changes.
+- Concurrent duplicate redemption voids create one RESTORE, restore three sessions
+  once, retain the winning original reason/actor and ignore a later replacement
+  reason. Purchase void versus redemption/transfer with concurrent report permits
+  one state-changing winner and a coherent final report; cleanup also reconciles.
+- Combined HTTP/ledger/lifecycle acceptance 10/10 passed on previously migrated
+  disposable PostgreSQL 18, port 55462. API typecheck/lint/build passed. Verified
+  failure trigger/function cleanup (both absent). Full API regression and repeat:
+  590 passed / 1 failed / 24 opt-in skips. Existing messaging rebooking-suppression
+  test at messaging.service.test.ts:295 expects ALREADY_REBOOKED but receives null;
+  same failure reproduced with that messaging suite alone. Root cause unverified;
+  not fixed or hidden under VALUE-01. This regression is not a clean pass.
+  No web/shared source changes; their suites and the synthetic benchmark not rerun.
+  Evidence: /tmp/value01-rollback-{lifecycle,acceptance,api-all,typecheck,lint,build}.log.
+  Regression retry and isolated reproduction: /tmp/value01-rollback-api-retry.log
+  and /tmp/value01-rollback-messaging.log. Repository format/diff checks passed.
+- VALUE-01 remains IN PROGRESS. Next: expiry/debt-heavy reporting and sustained
+  memory/lock-load checks, manual browser walkthrough. Prior synthetic measurements
+  are not production readiness evidence. Later collection application workflow is
+  still unavailable, not fabricated or newly added to scope. Messaging regression
+  remains an additional verification issue. No application DB
+  access/migration, live activation, deployment, commit or push.
+
+## October 24, 2026 — VALUE-01 remaining lifecycle and synthetic scale (partial)
+
+- Added disposable lifecycle acceptance for whole-service-set purchase/draw valuation,
+  transfer back after recipient redemption, exact restoration to the current owner,
+  original sale customers, forbidden purchase void despite transfer back, competing
+  transfer/redemption/report, mixed-sale voucher exclusion and whole-source debt.
+  Post-expiry redemption void restores exact original cents into EXPIRED only;
+  retry is idempotent, expired draw/transfer refuse, permitted purchase void retains
+  evidence. Combined ledger + HTTP + lifecycle acceptance: 6/6 passed.
+- Corrected older forced-failure movement trigger to filter its fixture tenant:
+  first parallel acceptance run exposed cross-fixture interference. No application
+  logic or assertions weakened; combined parallel run then passed.
+- Added opt-in storage-fixture benchmark at 1,000 holdings/5,000 movements and
+  10,000 holdings/50,000 movements (grant plus two draw/restore pairs per holding).
+  Three report samples: 112/108/83 ms and 580/550/561 ms respectively. Larger sample
+  process heap before/after: 229/684 MiB, not isolated peak or retained memory.
+  Competing prepaid-lock acquisition observed at 601 ms; scheduling-dependent.
+  No performance SLO asserted and no application optimization made.
+- Performance test passed, but is NOT production readiness evidence: synthetic
+  no-expiry/no-debt fixtures bypass POS setup and original source-sale rows; no
+  production concurrency, expired backlog, unpaid-sale fanout, sustained memory or
+  target hardware measurement. Current all-evidence read still holds prepaid lock.
+- Inspection verified vouchers apply only to SERVICE/PRODUCT, not PACKAGE;
+  mixed-sale test confirms the package's immutable value is not reduced. Pure
+  allocation already covers nonzero stored voucher attribution. No later receivable
+  collection application service exists; end-to-end collection remains unavailable,
+  not simulated as a successful workflow and not newly added to scope.
+- Checks: full isolated API 591 pass / 0 fail / 24 opt-in skips; acceptance opt-ins
+  6/6 and benchmark 1/1 run separately; API typecheck/lint/build and repository
+  formatting/diff checks passed. No web or shared source changes, suites not rerun.
+  Evidence: /tmp/value01-next-{lifecycle,acceptance,performance,api-all,typecheck,
+  lint,build,format}.log. Reused previously migrated disposable PostgreSQL 18,
+  port 55462; no migration replay or application database access this increment.
+- VALUE-01 remains IN PROGRESS. Next: rollback on valuation failure during reversal/
+  transfer, broader void races, expiry-heavy/unpaid-heavy memory and lock-load
+  checks, manual browser walkthrough. Production performance and later collection
+  workflow remain unverified. No application activation, migration, deployment,
+  commit or push.
 
 ## October 24, 2026 — VALUE-01 lifecycle acceptance and activation controls (partial)
 

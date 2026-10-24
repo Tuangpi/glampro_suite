@@ -279,20 +279,75 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
       assert.equal(choice.marketing, false);
     });
   });
-  it("suppresses rebooking after a new booking and never sends marketing without current opt-in", async () => {
-    const completed = await inA(() => book({ ...bookingInput(), status: "COMPLETED" }));
+  it("suppresses rebooking after a new booking without sending marketing", async () => {
+    const completed = await inA(() =>
+      book({
+        ...bookingInput(),
+        startsAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+        status: "COMPLETED",
+      }),
+    );
+    const rebooking = await inA(() =>
+      prisma.messageJob.findFirstOrThrow({
+        where: { appointmentId: completed.id, kind: "REBOOKING" },
+      }),
+    );
     await inA(async () => {
-      await prisma.messageJob.updateMany({
-        where: { appointmentId: completed.id },
-        data: { dueAt: new Date(Date.now() - 60000) },
+      await prisma.messageJob.update({
+        where: { id: rebooking.id },
+        // Even after quiet-hour adjustment this is overdue at any local hour.
+        data: { dueAt: new Date(Date.now() - 2 * 86400000) },
       });
       await book(bookingInput());
     });
-    await runMessageBatch(async () => "SMfuturebooking");
+    const sentKinds: ProviderInput["kind"][] = [];
+    await runMessageBatch(async (input) => {
+      sentKinds.push(input.kind);
+      return "SMfuturebooking";
+    });
     const job = await inA(() =>
-      prisma.messageJob.findFirstOrThrow({ where: { appointmentId: completed.id } }),
+      prisma.messageJob.findFirstOrThrow({ where: { id: rebooking.id } }),
     );
+    assert.equal(job.status, "SUPPRESSED");
     assert.equal(job.errorCode, "ALREADY_REBOOKED");
+    assert.equal(job.providerSid, null);
+    assert.ok(!sentKinds.includes("REBOOKING"));
+  });
+  it("suppresses queued rebooking when current marketing opt-in is withdrawn", async () => {
+    const completed = await inA(() =>
+      book({
+        ...bookingInput(),
+        startsAt: new Date(Date.now() - 90 * 86400000).toISOString(),
+        status: "COMPLETED",
+      }),
+    );
+    const rebooking = await inA(() =>
+      prisma.messageJob.findFirstOrThrow({
+        where: { appointmentId: completed.id, kind: "REBOOKING" },
+      }),
+    );
+    await inA(async () => {
+      await prisma.messageJob.update({
+        where: { id: rebooking.id },
+        data: { dueAt: new Date(Date.now() - 2 * 86400000) },
+      });
+      await prisma.customer.update({
+        where: { id: customerId },
+        data: { marketingOptIn: false },
+      });
+    });
+    let sends = 0;
+    await runMessageBatch(async () => {
+      sends++;
+      return "SMmustnotsend";
+    });
+    const job = await inA(() =>
+      prisma.messageJob.findFirstOrThrow({ where: { id: rebooking.id } }),
+    );
+    assert.equal(job.status, "SUPPRESSED");
+    assert.equal(job.errorCode, "CONSENT_REQUIRED");
+    assert.equal(job.providerSid, null);
+    assert.equal(sends, 0);
   });
   it("suppresses changed destinations and current consent withdrawal without fallback", async () => {
     const job = await newDueJob();

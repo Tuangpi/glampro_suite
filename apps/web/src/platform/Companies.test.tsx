@@ -48,12 +48,14 @@ it("loads searchable companies, opens details and resends a pending invitation",
   fireEvent.click(screen.getByRole("button", { name: "Resend invitation" }));
   await screen.findByText("New invitation sent. Previous links are invalid.");
   expect(platformApi.resendInvitation).toHaveBeenCalledWith("company-a");
+  fireEvent.click(screen.getByRole("button", { name: /Back to companies/ }));
   fireEvent.change(screen.getByLabelText("Search companies"), { target: { value: "salon" } });
   await waitFor(() => expect(platformApi.companies).toHaveBeenLastCalledWith("salon", 1));
 });
 it("creates a company and distinguishes failed email delivery from failed creation", async () => {
   render(<Companies />);
   await screen.findByRole("button", { name: "Salon A" });
+  fireEvent.click(screen.getByRole("button", { name: "+ Create company" }));
   vi.mocked(platformApi.createCompany).mockResolvedValue({ company, invitationDelivery: "failed" });
   for (const [label, value] of [
     ["Company name", "Salon A"],
@@ -66,11 +68,12 @@ it("creates a company and distinguishes failed email delivery from failed creati
   fireEvent.click(screen.getByRole("button", { name: "Create company and invite owner" }));
   await screen.findByText(/Company created, but invitation email failed/);
   expect(platformApi.createCompany).toHaveBeenCalledOnce();
-  expect(screen.getByLabelText("Company name")).toHaveValue("");
+  expect(screen.queryByLabelText("Company name")).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Resend invitation" })).toBeInTheDocument();
 });
 it("displays create errors and preserves form values for correction", async () => {
   render(<Companies />);
+  fireEvent.click(screen.getByRole("button", { name: "+ Create company" }));
   vi.mocked(platformApi.createCompany).mockRejectedValue(new Error("Slug already used"));
   for (const [label, value] of [
     ["Company name", "Salon A"],
@@ -83,4 +86,32 @@ it("displays create errors and preserves form values for correction", async () =
   fireEvent.click(screen.getByRole("button", { name: "Create company and invite owner" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Slug already used");
   expect(screen.getByLabelText("Company name")).toHaveValue("Salon A");
+});
+
+it("keeps creation separate from browsing and supports keyboard company tabs", async () => {
+  render(<Companies />);
+  expect(screen.queryByLabelText("Company name")).not.toBeInTheDocument();
+  fireEvent.click(await screen.findByRole("button", { name: "Salon A" }));
+  await screen.findByRole("article", { name: "Company details" });
+  expect(screen.queryByLabelText("Search companies")).not.toBeInTheDocument();
+  const overview = screen.getByRole("tab", { name: "Overview" });
+  expect(overview).toHaveAttribute("aria-selected", "true");
+  fireEvent.keyDown(overview, { key: "ArrowRight" });
+  expect(screen.getByRole("tab", { name: "Subscription" })).toHaveFocus();
+  expect(screen.getByRole("tab", { name: "Subscription" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  fireEvent.keyDown(screen.getByRole("tab", { name: "Subscription" }), { key: "Home" });
+  expect(overview).toHaveFocus();
+  expect(screen.getByRole("tabpanel", { name: "Overview" })).toBeVisible();
+});
+
+it("shows list failures and allows retry without leaving the directory", async () => {
+  vi.mocked(platformApi.companies).mockRejectedValueOnce(new Error("Connection lost"));
+  render(<Companies />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Connection lost");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh companies" }));
+  await screen.findByRole("button", { name: "Salon A" });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });

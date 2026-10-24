@@ -67,19 +67,17 @@ export interface SeedStaffUser {
  * idempotently.
  */
 
+export const DEMO_PLATFORM_ADMIN = {
+  email: "superadmin@gmail.com",
+  name: "Glampro Platform Administrator",
+  password: "superadmin12345",
+} as const;
+
 export const DEMO_STAFF: SeedStaffUser[] = [
   {
-    email: "superadmin@gmail.com",
-    name: "Glampro Administrator",
-    globalRole: "SUPER_ADMIN",
-    // Matches `resolveAdmin()`'s default; that function overwrites this row's
-    // password again a few lines later (or with `ADMIN_PASSWORD` if set).
-    password: "superadmin12345",
-  },
-  {
     email: "admin@gmail.com",
-    name: "Maya Manager",
-    globalRole: "MANAGER",
+    name: "Glampro Demo Administrator",
+    globalRole: "SUPER_ADMIN",
     password: "admin12345",
   },
   {

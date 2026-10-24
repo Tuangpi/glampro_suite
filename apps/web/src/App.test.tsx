@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 import { describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -29,6 +29,11 @@ describe("portal routing", () => {
             <App />
           </MemoryRouter>,
         );
+        // Cold lazy-module transforms can outlast the DOM query timeout under
+        // suite load. Await the actual import without mocking the portal tree.
+        await act(async () => {
+          await vi.dynamicImportSettled();
+        });
         expect(
           await screen.findByRole("heading", { name: "Operator sign in" }),
         ).toBeInTheDocument();

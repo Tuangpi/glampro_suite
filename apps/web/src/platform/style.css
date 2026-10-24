@@ -110,6 +110,413 @@
   gap: 12px;
   margin: 12px 0;
 }
+.platform-portal .portal-header {
+  justify-content: space-between;
+  padding-bottom: 24px;
+  border-bottom: 1px solid #e5e1ee;
+  margin-bottom: 32px;
+}
+.platform-portal .brand-group,
+.platform-portal .operator-menu {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.platform-portal .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 13px;
+  background: #58378b;
+  color: white;
+  font-size: 26px;
+  font-weight: 750;
+}
+.platform-portal .brand {
+  font-size: 20px;
+  display: block;
+}
+.platform-portal .brand-caption,
+.platform-portal .operator-identity span {
+  display: block;
+  color: #655c73;
+  font-size: 12px;
+  margin-top: 3px;
+}
+.platform-portal .operator-identity {
+  font-size: 14px;
+}
+.platform-portal.platform-workspace main {
+  max-width: 1280px;
+  padding: 28px 40px 64px;
+}
+.platform-portal .workspace-content {
+  background: transparent;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+}
+.platform-portal .workspace-greeting {
+  color: #655c73;
+  font-size: 14px;
+}
+.platform-portal .companies {
+  margin-top: 18px;
+}
+.platform-portal .page-heading,
+.platform-portal .detail-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 28px;
+}
+.platform-portal .page-heading h1 {
+  font-size: clamp(26px, 3vw, 34px);
+  letter-spacing: -1px;
+  margin: 8px 0;
+}
+.platform-portal .muted {
+  color: #655c73;
+}
+.platform-portal .page-heading p,
+.platform-portal .detail-heading p {
+  margin: 0;
+}
+.platform-portal .eyebrow {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  font-weight: 750;
+  color: #715792;
+}
+.platform-portal .card {
+  background: #fff;
+  border: 1px solid #e5e1ee;
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: 0 4px 18px #24203904;
+}
+.platform-portal .directory-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 16px;
+}
+.platform-portal .directory-toolbar label {
+  flex: 1;
+  max-width: 560px;
+  font-size: 13px;
+}
+.platform-portal input,
+.platform-portal select {
+  border-color: #d7d0e2;
+  background: #fff;
+  color: #242039;
+}
+.platform-portal button {
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 150ms ease;
+}
+.platform-portal button:not(:disabled):hover {
+  background: #45266f;
+}
+.platform-portal button.button-secondary {
+  color: #4f4265;
+  background: #fff;
+  border: 1px solid #ddd6e8;
+}
+.platform-portal button.button-secondary:not(:disabled):hover {
+  background: #f4f0fa;
+}
+.platform-portal button.button-danger {
+  color: #962337;
+  background: #fff0f2;
+  border: 1px solid #f0c7cf;
+}
+.platform-portal button.button-danger:not(:disabled):hover {
+  background: #fce1e7;
+}
+.platform-portal button.button-warning {
+  color: #855313;
+  background: #fff5df;
+  border: 1px solid #ead4a6;
+}
+.platform-portal button.button-warning:not(:disabled):hover {
+  background: #f9eaca;
+}
+.platform-portal button:disabled {
+  cursor: not-allowed;
+}
+.platform-portal .company-list-heading,
+.platform-portal .company-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 130px 150px;
+  gap: 20px;
+  align-items: center;
+}
+.platform-portal .company-list-heading {
+  color: #655c73;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  font-size: 11px;
+  background: #faf9fc;
+  padding: 14px 12px;
+  border-radius: 8px;
+}
+.platform-portal .company-list {
+  margin: 0;
+}
+.platform-portal .company-list li {
+  margin: 0;
+  padding: 16px 12px;
+  border-bottom: 1px solid #eeeaf3;
+}
+.platform-portal button.company-name {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  text-align: left;
+  min-width: 0;
+  padding: 0;
+  color: #242039;
+  background: transparent;
+}
+.platform-portal button.company-name:not(:disabled):hover {
+  color: #58378b;
+  background: transparent;
+}
+.platform-portal .company-name small {
+  display: block;
+  color: #655c73;
+  font-size: 12px;
+  margin-top: 5px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.platform-portal .company-name strong {
+  overflow-wrap: anywhere;
+}
+.platform-portal .company-avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #f0eafa;
+  color: #715792;
+  font-size: 13px;
+}
+.platform-portal .status-badge {
+  display: inline-block;
+  width: fit-content;
+  padding: 6px 10px;
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.4px;
+  background: #f0edf5;
+  color: #655c73;
+}
+.platform-portal .status-active {
+  background: #e6f5ed;
+  color: #226344;
+}
+.platform-portal .status-suspended,
+.platform-portal .status-expired {
+  background: #fff3dd;
+  color: #855313;
+}
+.platform-portal .status-cancelled {
+  background: #fce9ed;
+  color: #962337;
+}
+.platform-portal .pagination {
+  align-items: center;
+  justify-content: flex-end;
+  margin-top: 20px;
+  color: #655c73;
+  font-size: 13px;
+}
+.platform-portal .empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #655c73;
+}
+.platform-portal .company-detail {
+  margin: 0;
+}
+.platform-portal .detail-heading {
+  margin: 28px 0 22px;
+}
+.platform-portal .detail-heading h2 {
+  margin: 8px 0;
+  font-size: 28px;
+}
+.platform-portal .detail-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid #e5e1ee;
+  margin-bottom: 24px;
+}
+.platform-portal .detail-tabs button {
+  white-space: nowrap;
+  background: transparent;
+  color: #655c73;
+  border-radius: 8px 8px 0 0;
+  border-bottom: 3px solid transparent;
+}
+.platform-portal .detail-tabs button[aria-selected="true"] {
+  background: #f5f0fc;
+  color: #58378b;
+  border-bottom-color: #58378b;
+}
+.platform-portal .detail-tabs button:not(:disabled):hover {
+  background: #f5f0fc;
+  color: #58378b;
+}
+.platform-portal [hidden] {
+  display: none !important;
+}
+.platform-portal [role="tabpanel"]:focus-visible,
+.platform-portal select:focus-visible,
+.platform-portal summary:focus-visible {
+  outline: 3px solid #a28fc6;
+  outline-offset: 3px;
+}
+.platform-portal dl {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) 3fr;
+  gap: 0 24px;
+  margin-bottom: 28px;
+}
+.platform-portal dt,
+.platform-portal dd {
+  margin: 0;
+  padding: 14px 0;
+  border-bottom: 1px solid #eeeaf3;
+  font-size: 14px;
+}
+.platform-portal .form-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 24px;
+  background: #faf9fc;
+  border: 1px solid #eeeaf3;
+  border-radius: 12px;
+}
+.platform-portal .form-grid h4,
+.platform-portal .form-grid p,
+.platform-portal .form-grid button {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.platform-portal .form-grid button {
+  justify-self: start;
+}
+.platform-portal .change-reason {
+  background: #faf9fc;
+  border-radius: 10px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+}
+.platform-portal .change-reason p:first-child {
+  margin-top: 0;
+}
+.platform-portal .confirmation {
+  background: #fff5f5;
+  border: 1px solid #f0c7cf;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 20px;
+}
+.platform-portal .confirmation h4 {
+  margin-top: 0;
+}
+.platform-portal .module-list,
+.platform-portal .audit-list {
+  padding: 0;
+  list-style: none;
+}
+.platform-portal .module-list li,
+.platform-portal .audit-list li {
+  padding: 18px 0;
+  border-bottom: 1px solid #eeeaf3;
+  line-height: 1.6;
+}
+.platform-portal .audit-list p {
+  color: #655c73;
+  font-size: 13px;
+  margin: 6px 0;
+}
+.platform-portal summary {
+  cursor: pointer;
+  color: #58378b;
+  font-size: 13px;
+}
+.platform-portal pre {
+  background: #faf9fc;
+  padding: 16px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.platform-portal [role="status"] {
+  color: #226344;
+}
+.platform-portal .create-company {
+  max-width: 860px;
+}
+@media (max-width: 760px) {
+  .platform-portal.platform-workspace main {
+    padding: 20px 16px 40px;
+  }
+  .platform-portal .card {
+    padding: 20px;
+  }
+  .platform-portal .operator-menu {
+    gap: 8px;
+  }
+  .platform-portal .operator-identity {
+    width: 100%;
+  }
+  .platform-portal .directory-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .platform-portal .company-list-heading {
+    display: none;
+  }
+  .platform-portal .company-list li {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 16px;
+    padding: 20px 0;
+  }
+  .platform-portal .company-list li > button:last-child {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .platform-portal .form-grid {
+    grid-template-columns: 1fr;
+    padding: 18px;
+  }
+  .platform-portal dl {
+    grid-template-columns: 1fr;
+  }
+  .platform-portal dt {
+    border-bottom: 0;
+    padding-bottom: 2px;
+  }
+  .platform-portal dd {
+    padding-top: 2px;
+  }
+  .platform-portal .pagination {
+    justify-content: space-between;
+  }
+}
 .platform-portal article {
   margin: 24px 0;
   padding: 20px;

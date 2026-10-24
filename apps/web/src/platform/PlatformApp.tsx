@@ -57,27 +57,46 @@ export default function PlatformApp() {
   if (pathname !== destination) return <Navigate to={destination} replace />;
 
   return (
-    <div className="platform-portal">
+    <div className={`platform-portal ${admin ? "platform-workspace" : "platform-auth"}`}>
       <main>
-        <header>
-          <span className="brand">Glampro Suite</span>
-          <span className="badge">Platform administration</span>
-        </header>
-        {error && <p role="alert">{error}</p>}
-        {admin ? (
-          <section>
-            <h1>Welcome, {admin.name}</h1>
-            <p>Signed in as {admin.email}</p>
-            <p>This is your operator workspace, separate from company-owner accounts.</p>
-            <Companies />
-            <div className="actions">
-              <button disabled={busy} onClick={() => void sessionAction("check")}>
+        <header className="portal-header">
+          <div className="brand-group">
+            <span className="brand-mark" aria-hidden="true">
+              G
+            </span>
+            <div>
+              <span className="brand">Glampro Suite</span>
+              <span className="brand-caption">Platform administration</span>
+            </div>
+          </div>
+          {admin && (
+            <div className="operator-menu">
+              <div className="operator-identity">
+                <strong>{admin.name}</strong>
+                <span>{admin.email}</span>
+              </div>
+              <button
+                className="button-secondary"
+                disabled={busy}
+                onClick={() => void sessionAction("check")}
+              >
                 Check session
               </button>
-              <button disabled={busy} onClick={() => void sessionAction("logout")}>
+              <button
+                className="button-secondary"
+                disabled={busy}
+                onClick={() => void sessionAction("logout")}
+              >
                 Sign out
               </button>
             </div>
+          )}
+        </header>
+        {error && <p role="alert">{error}</p>}
+        {admin ? (
+          <section className="workspace-content">
+            <p className="workspace-greeting">Welcome, {admin.name}</p>
+            <Companies />
           </section>
         ) : (
           <section>
