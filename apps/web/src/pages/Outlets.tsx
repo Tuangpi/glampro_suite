@@ -27,8 +27,7 @@ export default function Outlets() {
     write.mutate(() => post("/outlets", { name, slug }));
   }
   return (
-    <main className="space-y-6 p-6">
-      <h1 className="text-2xl font-bold">Outlets</h1>
+    <div className="space-y-6">
       <p>
         Customers, credit and stock quantities are shared across this company. Select an outlet in
         the top bar for branch sales and reporting. “All outlets” includes historical tenant-wide
@@ -149,6 +148,6 @@ export default function Outlets() {
           </form>
         </>
       )}
-    </main>
+    </div>
   );
 }

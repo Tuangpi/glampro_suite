@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/settings/PrivacyNoticeCard", () => ({
   default: () => <div>Privacy notice settings</div>,
 }));
+vi.mock("@/pages/Outlets", () => ({
+  default: () => <input aria-label="Outlet draft" />,
+}));
 vi.mock("@/components/settings/MessagingCard", () => ({
   default: () => <div>WhatsApp and SMS settings</div>,
 }));
@@ -173,6 +176,36 @@ function renderSettings(category = "salon") {
 }
 
 describe("Settings", () => {
+  it("opens outlets from a direct link without loading salon settings", () => {
+    render(
+      <MemoryRouter initialEntries={["/settings?section=outlets"]}>
+        <Settings />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("region", { name: "Outlets" })).toBeVisible();
+    expect(screen.getByLabelText("Settings category")).toHaveValue("outlets");
+    expect(useSalonProfile).not.toHaveBeenCalled();
+  });
+
+  it("loads outlets on demand and preserves outlet drafts across categories", async () => {
+    renderSettings();
+    expect(screen.queryByLabelText("Outlet draft")).not.toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "outlets");
+    await userEvent.type(screen.getByLabelText("Outlet draft"), "East branch");
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "salon");
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "outlets");
+    expect(screen.getByLabelText("Outlet draft")).toHaveValue("East branch");
+  });
+
+  it("falls back to salon details for an unknown section", () => {
+    render(
+      <MemoryRouter initialEntries={["/settings?section=unknown"]}>
+        <Settings />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("region", { name: "Salon details" })).toBeVisible();
+  });
+
   it("switches categories using the desktop menu and marks the current category", async () => {
     renderSettings();
     const nav = screen.getByRole("navigation", { name: "Settings categories" });

@@ -24,6 +24,16 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### Outlet navigation follow-up — October 25, 2026
+
+- Completed the approved small navigation change: outlet management now lives in
+  Settings → Outlets; the top-bar outlet selector and existing write permissions
+  are unchanged. `/outlets` redirects with replacement to `/settings?section=outlets`.
+- Verification: full web 776/776 across 94 files; web lint, typecheck and production
+  build pass. Tests cover direct links, unknown-section fallback, on-demand mounting,
+  draft preservation, legacy redirect and read-only outlet management.
+- Authenticated browser visual review not performed. No API/database/dependency changes.
+
 ### DASHBOARD-UX — Simplify the daily dashboard
 
 - Status: **DONE**. Approved and implemented October 25, 2026.

@@ -1,5 +1,6 @@
 import { lazy } from "react";
 import type { RouteObject } from "react-router";
+import { Navigate } from "react-router";
 
 import AppShell from "@/components/layouts/AppShell";
 import { ProtectedRoute, PublicOnlyRoute } from "@/components/layouts/RouteGuards";
@@ -17,7 +18,6 @@ const Products = lazy(() => import("@/pages/Products"));
 const Staff = lazy(() => import("@/pages/Staff"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const Settings = lazy(() => import("@/pages/Settings"));
-const Outlets = lazy(() => import("@/pages/Outlets"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const PublicBooking = lazy(() => import("@/pages/PublicBooking"));
 
@@ -57,7 +57,7 @@ const routes: RouteObject[] = [
       // Screen 11. The API refuses the profile write for anyone else
       // (`requireRole("SUPER_ADMIN", "MANAGER")`), which is the actual boundary.
       { path: "settings", element: lazyRoute(<Settings />) },
-      { path: "outlets", element: lazyRoute(<Outlets />) },
+      { path: "outlets", element: <Navigate to="/settings?section=outlets" replace /> },
       { path: "*", element: lazyRoute(<NotFound />) },
     ],
   },

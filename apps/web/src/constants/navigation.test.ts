@@ -66,7 +66,8 @@ describe("navItems", () => {
     // ADR 0005: the handoff rail draws seven destinations plus Settings in its
     // foot, and services are a tab on the Products screen rather than a
     // destination of their own. Eight entries in total, six for every role.
-    expect(navItems).toHaveLength(9);
+    expect(navItems).toHaveLength(8);
+    expect(navItems.map((item) => item.label)).not.toContain("Outlets");
     expect(visibleNavItems()).toHaveLength(6);
     expect(navItems.map((item) => item.label)).not.toContain("Services");
     expect(navItems.some((item) => item.path.startsWith("/services"))).toBe(false);
@@ -101,7 +102,7 @@ describe("entitlements", () => {
 
   it("treats an empty list as a real answer, not as unknown", () => {
     const labels = visibleNavItems("SUPER_ADMIN", []).map((item) => item.label);
-    expect(labels).toEqual(["Outlets", "Settings"]);
+    expect(labels).toEqual(["Settings"]);
   });
 
   it("keeps Settings, which is not a switchable module", () => {

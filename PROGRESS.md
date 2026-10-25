@@ -2,6 +2,13 @@
 
 ## Current State
 
+- **Outlet navigation follow-up complete — October 25, 2026:** moved management
+  into Settings → Outlets with `/settings?section=outlets` deep linking and a
+  replacement redirect from `/outlets`. Main rail entry removed; top-bar picker,
+  outlet APIs and write permissions unchanged. Full web 776/776 across 94 files;
+  web lint/typecheck/production build pass. Authenticated visual review not performed.
+  Current task: None. No next task selected.
+
 - **DASHBOARD-UX DONE — October 25, 2026:** compact greeting/salon-local date,
   permission-aware sale/appointment shortcuts, daily metric retry/loading states,
   responsive briefing checks and one assistant tool mounted at a time using shared

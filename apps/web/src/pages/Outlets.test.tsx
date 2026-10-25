@@ -72,4 +72,12 @@ describe("outlet administration", () => {
       expect(mocks.patch).toHaveBeenCalledWith("/outlets/central", { status: "SUSPENDED" }),
     );
   });
+  it("keeps outlet management read-only for suspended tenants", async () => {
+    mocks.readOnly = true;
+    mount();
+    await screen.findByText("Central");
+    expect(screen.queryByRole("button", { name: "Create outlet" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Suspend" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save availability" })).not.toBeInTheDocument();
+  });
 });

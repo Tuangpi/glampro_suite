@@ -20,7 +20,8 @@ import MessagingCard from "@/components/settings/MessagingCard";
 import ResourcesCard from "@/components/settings/ResourcesCard";
 import CommissionRules from "@/components/settings/CommissionRules";
 
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
+import Outlets from "@/pages/Outlets";
 
 import type {
   ModuleSummary,
@@ -55,6 +56,11 @@ import TwoFactorCard from "@/components/TwoFactorCard";
 const SETTINGS_SECTIONS = [
   { id: "salon", label: "Salon details", description: "Business details, tax and preferences." },
   {
+    id: "outlets",
+    label: "Outlets",
+    description: "Manage branches, opening hours and catalogue availability.",
+  },
+  {
     id: "booking",
     label: "Booking & hours",
     description: "Online booking, opening hours and resources.",
@@ -85,15 +91,22 @@ type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
 
 export default function Settings() {
   const { isReadOnly, user } = useAuth();
-  const [activeSection, setActiveSection] = useState<SettingsSection>("salon");
-  const [visited, setVisited] = useState<SettingsSection[]>(["salon"]);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get("section");
+  const activeSection =
+    SETTINGS_SECTIONS.find((section) => section.id === requestedSection)?.id ?? "salon";
+  const [visited, setVisited] = useState<SettingsSection[]>([activeSection]);
 
   const canEdit =
     !isReadOnly && (user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER");
 
   function selectSection(section: SettingsSection) {
-    setActiveSection(section);
-    setVisited((current) => (current.includes(section) ? current : [...current, section]));
+    setVisited((current) => [...new Set([...current, activeSection, section])]);
+    setSearchParams((current) => {
+      const next = new URLSearchParams(current);
+      next.set("section", section);
+      return next;
+    });
   }
 
   return (
@@ -151,7 +164,7 @@ export default function Settings() {
               aria-labelledby={`settings-heading-${section.id}`}
               hidden={activeSection !== section.id}
             >
-              {visited.includes(section.id) && (
+              {(activeSection === section.id || visited.includes(section.id)) && (
                 <div className="flex flex-col gap-5">
                   <header>
                     <h3
@@ -163,6 +176,7 @@ export default function Settings() {
                     <p className="mt-1 text-sm text-ink-muted">{section.description}</p>
                   </header>
                   {section.id === "salon" && <ProfileCard canEdit={canEdit} />}
+                  {section.id === "outlets" && <Outlets />}
                   {section.id === "booking" && (
                     <>
                       <ProfileCard canEdit={canEdit} booking />
