@@ -2,6 +2,15 @@
 
 ## Current State
 
+- **DASHBOARD-UX DONE — October 25, 2026:** compact greeting/salon-local date,
+  permission-aware sale/appointment shortcuts, daily metric retry/loading states,
+  responsive briefing checks and one assistant tool mounted at a time using shared
+  keyboard-accessible tabs. Switching tools clears unsaved input; saved drafts persist.
+  Full web 771/771 across 93 files; lint/typecheck/production build and changed-file
+  formatting/whitespace checks pass. Local dashboard HTTP 200; authenticated visual
+  browser review not performed. No backend/database/dependency changes.
+  Current task: None. Most recently completed: DASHBOARD-UX. No next task selected.
+
 - **REPORTS-UX DONE — October 24, 2026:** four focused report tabs, four primary
   metrics, salon-local presets, invalid-date guards and expandable valuation audit
   details. Full web 750/750; lint/typecheck/build pass. Authenticated visual browser

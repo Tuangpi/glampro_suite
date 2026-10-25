@@ -180,3 +180,14 @@ it("shows a genuine empty period without inferred opportunities or send controls
   expect(screen.getByText(/No suggested checks/)).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /send|approve|activate/i })).not.toBeInTheDocument();
 });
+
+it("keeps qualifications visible and puts the exact reporting window on demand", () => {
+  mount();
+  expect(screen.getByText(/not cash-only takings or profit/)).toBeVisible();
+  const toggle = screen.getByText("Reporting window");
+  const details = toggle.closest("details")!;
+  expect(details).not.toHaveAttribute("open");
+  fireEvent.click(toggle);
+  expect(details).toHaveAttribute("open");
+  expect(within(details).getByText(/end excluded/)).toBeVisible();
+});

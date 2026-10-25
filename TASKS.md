@@ -24,6 +24,22 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### DASHBOARD-UX — Simplify the daily dashboard
+
+- Status: **DONE**. Approved and implemented October 25, 2026.
+- Expected result: compact greeting and salon-local date, permission-aware shortcuts,
+  clear daily metrics, focused owner briefing and one assistant tool at a time.
+  Preserve data semantics, access controls, financial disclosures and messaging safeguards.
+- Completion check: dashboard interactions and existing assistant regressions,
+  full web tests, lint/typecheck/build, formatting and diff review.
+- Dependencies: existing dashboard, briefing and assistant components.
+- Evidence: full web 771/771 across 93 files; web lint, typecheck and production
+  build pass. Changed source/test formatting and git whitespace checks pass.
+  Tests cover salon-local date, permission/read-only shortcuts, keyboard tab
+  navigation, single-tool mounting, access loss, loading/error/retry states,
+  cached-metric suppression and expandable briefing dates with visible qualifications.
+  Authenticated browser visual review not performed. No backend/database/dependency changes.
+
 ### REPORTS-UX — Simplify the reporting workspace
 
 - Status: **DONE**. Approved and implemented October 24, 2026.

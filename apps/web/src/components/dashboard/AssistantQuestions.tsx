@@ -9,6 +9,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { post } from "@/lib/api";
 import Button from "@/components/ui/Button";
+import { CONTROL_CLASS } from "@/components/ui/Field";
 
 export default function AssistantQuestions() {
   const { user, tenant, entitlements } = useAuth();
@@ -71,13 +72,13 @@ function Workspace() {
   }
   return (
     <section
-      className="rounded-card border border-line bg-surface p-6"
+      className="rounded-card border border-line bg-surface p-4 sm:p-6"
       aria-labelledby="assistant-questions-title"
     >
-      <h2 id="assistant-questions-title" className="text-xl">
+      <h2 id="assistant-questions-title" className="text-lg">
         Ask about verified business facts
       </h2>
-      <p>
+      <p className="mt-2 max-w-3xl text-sm text-ink-body">
         Bounded, read-only explanations. No external AI provider, saved conversation history or
         automatic actions. Choose a supported question; other wording may need clarification. Do not
         enter personal or clinical information.
@@ -98,15 +99,17 @@ function Workspace() {
         ))}
       </div>
       <form
-        className="mt-4 flex flex-col gap-3"
+        className="mt-4 grid gap-4 sm:grid-cols-2"
         onSubmit={(e) => {
           e.preventDefault();
           void ask();
         }}
       >
-        <label className="flex flex-col">
+        <label className="flex flex-col gap-1.5 text-sm font-medium text-ink sm:col-span-2">
           Business question
           <textarea
+            rows={3}
+            className={`${CONTROL_CLASS} min-h-24 resize-y p-3 font-regular`}
             value={question}
             maxLength={300}
             disabled={busy}
@@ -116,9 +119,10 @@ function Workspace() {
             }}
           />
         </label>
-        <label>
+        <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium text-ink">
           Reporting period
           <select
+            className={`${CONTROL_CLASS} min-h-control px-3 font-regular`}
             value={period}
             disabled={busy}
             onChange={(e) => {
@@ -134,10 +138,11 @@ function Workspace() {
         </label>
         {period === "custom" && (
           <>
-            <label>
+            <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium text-ink">
               From date{" "}
               <input
                 type="date"
+                className={`${CONTROL_CLASS} min-h-control px-3 font-regular`}
                 required
                 value={from}
                 disabled={busy}
@@ -147,10 +152,11 @@ function Workspace() {
                 }}
               />
             </label>
-            <label>
+            <label className="flex min-w-0 flex-col gap-1.5 text-sm font-medium text-ink">
               To date (inclusive){" "}
               <input
                 type="date"
+                className={`${CONTROL_CLASS} min-h-control px-3 font-regular`}
                 required
                 min={from}
                 value={to}
@@ -163,7 +169,11 @@ function Workspace() {
             </label>
           </>
         )}
-        <Button type="submit" disabled={busy || !question.trim()}>
+        <Button
+          className="sm:col-span-2 sm:justify-self-start"
+          type="submit"
+          disabled={busy || !question.trim()}
+        >
           Explain using verified facts
         </Button>
       </form>

@@ -78,11 +78,11 @@ function Briefing({ tenantId, userId }: { tenantId: string; userId: string }) {
   return (
     <section
       aria-labelledby="owner-briefing-title"
-      className="rounded-card border border-line bg-surface p-6"
+      className="rounded-card border border-line bg-surface p-4 sm:p-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 id="owner-briefing-title" className="text-xl">
+          <h2 id="owner-briefing-title" className="text-lg">
             Owner briefing
           </h2>
           <p className="mt-1 text-sm text-ink-muted">
@@ -109,10 +109,17 @@ function Briefing({ tenantId, userId }: { tenantId: string; userId: string }) {
       )}
       {facts && (
         <>
-          <p className="mt-4 text-sm text-ink-muted">
-            As of {stamp(facts.asOf)} · {facts.timeZone}. Reporting window: {stamp(facts.from)} to{" "}
-            {stamp(facts.to)} (end excluded).
+          <p className="mt-4 text-sm text-ink-body">
+            As of {stamp(facts.asOf)} · {facts.timeZone}
           </p>
+          <details className="mt-2 text-sm text-ink-body">
+            <summary className="w-fit cursor-pointer rounded-sm py-1 focus-visible:outline-2 focus-visible:outline-purple">
+              Reporting window
+            </summary>
+            <p className="mt-1">
+              {stamp(facts.from)} to {stamp(facts.to)} (end excluded).
+            </p>
+          </details>
           {(query.isStale || query.isFetching) && (
             <p role="status" className="mt-2 text-sm text-ink-muted">
               {query.isFetching
@@ -134,9 +141,12 @@ function Briefing({ tenantId, userId }: { tenantId: string; userId: string }) {
           </p>
           <h3 className="mt-5 font-bold">Suggested checks</h3>
           {actions.length ? (
-            <ul className="mt-3 space-y-3">
+            <ul className="mt-3 grid gap-3 lg:grid-cols-3">
               {actions.map((action) => (
-                <li key={action.path}>
+                <li
+                  key={action.path}
+                  className="rounded-md border border-line-soft bg-surface-muted p-4"
+                >
                   <h4 className="font-bold">{action.title}</h4>
                   <p className="text-sm text-ink-muted">{action.reason}</p>
                   <Link

@@ -33,10 +33,10 @@ function Workspace({ tenantId, userId }: { tenantId: string; userId: string }) {
   return (
     <section
       aria-labelledby="rebooking-title"
-      className="rounded-card border border-line bg-surface p-6"
+      className="rounded-card border border-line bg-surface p-4 sm:p-6"
     >
-      <div className="flex items-center justify-between gap-3">
-        <h2 id="rebooking-title" className="text-xl">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 id="rebooking-title" className="text-lg">
           Rebooking recommendations
         </h2>
         <Button

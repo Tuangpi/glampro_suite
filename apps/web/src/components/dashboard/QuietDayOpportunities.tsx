@@ -46,9 +46,9 @@ function Workspace({ tenantId, userId }: { tenantId: string; userId: string }) {
   return (
     <section
       aria-labelledby="quiet-days-title"
-      className="rounded-card border border-line bg-surface p-6"
+      className="rounded-card border border-line bg-surface p-4 sm:p-6"
     >
-      <h2 id="quiet-days-title" className="text-xl">
+      <h2 id="quiet-days-title" className="text-lg">
         Future quiet-day opportunities
       </h2>
       <p className="my-2 text-sm text-ink-muted">
@@ -74,7 +74,7 @@ function Workspace({ tenantId, userId }: { tenantId: string; userId: string }) {
             disabled={services.isFetching}
             onChange={(event) => setServiceId(event.target.value)}
           />
-          <div className="my-2 flex items-center gap-3">
+          <div className="my-3 flex flex-wrap items-center gap-3">
             <Button
               variant="secondary"
               disabled={page === 1 || services.isFetching}

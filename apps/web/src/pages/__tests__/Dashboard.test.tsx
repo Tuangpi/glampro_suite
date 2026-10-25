@@ -9,7 +9,12 @@ const { useDashboardSummary, useSystemStatus } = vi.hoisted(() => ({
 vi.mock("@/hooks/useDashboard", () => ({ useDashboardSummary }));
 vi.mock("@/hooks/useSystemStatus", () => ({ useSystemStatus }));
 vi.mock("@/contexts/AuthContext", () => ({
-  useAuth: () => ({ user: { name: "Ava Owner" } }),
+  useAuth: () => ({
+    user: { name: "Ava Owner" },
+    tenant: null,
+    entitlements: [],
+    isReadOnly: false,
+  }),
 }));
 
 const { default: Dashboard } = await import("@/pages/Dashboard");
@@ -33,25 +38,21 @@ describe("Dashboard", () => {
   it("renders the business summary without developer diagnostics", () => {
     render(<Dashboard />);
 
-    expect(screen.getByText("Welcome, Ava to Glampro Suite")).toBeInTheDocument();
+    expect(screen.getByText("Welcome back, Ava")).toBeInTheDocument();
     expect(screen.getByText("S$125.50")).toBeInTheDocument();
     expect(screen.getByText("Today’s income · 3 sales")).toBeInTheDocument();
     expect(screen.getByText("4")).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Manage your sales, appointments, customers, stock and reports in one place.",
-      ),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Here is your salon at a glance.")).toBeInTheDocument();
     expect(screen.queryByText(/system status|Salon Pro|design system/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /re-check status/i })).not.toBeInTheDocument();
     expect(useSystemStatus).not.toHaveBeenCalled();
   });
 
   it("shows dashes while the summary is loading without inventing zeroes", () => {
-    useDashboardSummary.mockReturnValue({ data: undefined, isError: false });
+    useDashboardSummary.mockReturnValue({ data: undefined, isError: false, isPending: true });
     render(<Dashboard />);
     expect(screen.getAllByText("—")).toHaveLength(4);
-    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Loading today’s figures");
     expect(useSystemStatus).not.toHaveBeenCalled();
   });
 
@@ -60,7 +61,8 @@ describe("Dashboard", () => {
     render(<Dashboard />);
     expect(screen.getByText(/figures could not be loaded/i)).toBeInTheDocument();
     expect(screen.getAllByText("—")).toHaveLength(4);
-    expect(screen.getByRole("status")).toHaveTextContent("Please try again shortly.");
+    expect(screen.getByRole("status")).toHaveTextContent("No current figures are available.");
+    expect(screen.getByRole("button", { name: "Retry figures" })).toBeInTheDocument();
     expect(screen.queryByText(/until the server|make up-d|API/i)).not.toBeInTheDocument();
     expect(useSystemStatus).not.toHaveBeenCalled();
   });
