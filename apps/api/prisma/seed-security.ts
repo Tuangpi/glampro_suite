@@ -19,11 +19,15 @@ export function resolveSeedAdmin(environment: NodeJS.ProcessEnv) {
         "Production seeding requires a non-default ADMIN_PASSWORD of at least 12 characters.",
       );
     }
+    if (Buffer.byteLength(environment.ADMIN_PASSWORD!, "utf8") > 72) {
+      throw new Error("ADMIN_PASSWORD exceeds bcrypt's 72-byte limit.");
+    }
+    const name = environment.ADMIN_NAME?.trim() || "Glampro Administrator";
+    if (name.length > 120) throw new Error("ADMIN_NAME must not exceed 120 characters.");
     return {
       email,
-      name: environment.ADMIN_NAME?.trim() || "Glampro Administrator",
+      name,
       password: environment.ADMIN_PASSWORD!,
-      globalRole: "SUPER_ADMIN" as const,
     };
   }
   return {

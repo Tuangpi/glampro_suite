@@ -1,8 +1,9 @@
 /**
  * Development / bootstrap seed.
  *
- * `SEED_MODE=production` creates exactly one administrator from
- * `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` and touches nothing else;
+ * `SEED_MODE=production` initializes a platform administrator from
+ * `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` and the shared module catalogue,
+ * without creating a salon or tenant users;
  * `SEED_MODE=development` (default) also creates a separate platform administrator
  * and the demo salon crew. Re-running
  * after a fresh `db:reset` refreshes the demo instead of duplicating it — every
@@ -84,10 +85,6 @@ const SEED_MODE =
     : "development";
 const BCRYPT_ROUNDS = 10;
 
-function resolveAdmin(): SeedUser {
-  return resolveSeedAdmin(process.env);
-}
-
 const DEMO_TENANT = {
   slug: "glampro-demo",
   name: "Glampro Demo Salon",
@@ -123,6 +120,31 @@ async function seedDemoPlatformAdmin(): Promise<void> {
     });
   });
   console.log("  ✔ development platform administrator (email verification required)");
+}
+
+/** Production initialization only; never overwrite credentials or provision extra operators. */
+async function seedProductionPlatformAdmin(
+  admin: ReturnType<typeof resolveSeedAdmin>,
+): Promise<void> {
+  const { email, name, password } = admin;
+  const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(26102302)::text`;
+    if (await tx.platformAdmin.findUnique({ where: { email }, select: { id: true } })) return;
+    if (await tx.platformAdmin.count()) {
+      throw new Error("Platform already initialized; refusing to create another administrator.");
+    }
+    const operator = await tx.platformAdmin.create({ data: { email, name, passwordHash } });
+    await tx.auditLog.create({
+      data: {
+        actorPlatformAdminId: operator.id,
+        action: "platform.bootstrap",
+        targetType: "PlatformAdmin",
+        targetId: operator.id,
+      },
+    });
+  });
+  console.log("  ✔ production platform administrator (email verification required)");
 }
 
 function isCore(code: string): boolean {
@@ -867,7 +889,15 @@ async function reconcileProductStock(tenantId: string): Promise<void> {
  */
 
 async function main(): Promise<void> {
-  if (SEED_MODE === "production") resolveAdmin();
+  if (SEED_MODE === "production") {
+    const admin = resolveSeedAdmin(process.env);
+    await runAsPlatform(async () => {
+      await seedProductionPlatformAdmin(admin);
+      await seedModules();
+    });
+    console.log("Seed complete.");
+    return;
+  }
 
   if (SEED_MODE === "development") await runAsPlatform(seedDemoPlatformAdmin);
 
@@ -880,23 +910,19 @@ async function main(): Promise<void> {
   await runAsPlatform(seedModules);
 
   await runAsTenant(tenantId, async () => {
-    // The crew is `DEMO_STAFF` in development (the company administrator,
-    // the front desk and the three performers) and the single administrator in
-    // production. One list, written once: the update branch deliberately does
+    // The development crew is `DEMO_STAFF` (the company administrator,
+    // the front desk and the three performers). The update branch deliberately does
     // **not** touch `passwordHash`, so re-seeding refreshes
     // the crew without resetting credentials a developer changed since.
     //
     // `User` is tenant-scoped, so these queries run inside `runAsTenant` —
     // the extension throws outside a scope rather than writing unscoped.
-    const crew: SeedUser[] =
-      SEED_MODE === "production"
-        ? [resolveAdmin()]
-        : DEMO_STAFF.map((row) => ({
-            email: row.email,
-            name: row.name,
-            password: row.password,
-            globalRole: row.globalRole,
-          }));
+    const crew: SeedUser[] = DEMO_STAFF.map((row) => ({
+      email: row.email,
+      name: row.name,
+      password: row.password,
+      globalRole: row.globalRole,
+    }));
 
     console.log(`Seeding ${crew.length} user(s) in ${SEED_MODE} mode…`);
 
@@ -932,7 +958,7 @@ async function main(): Promise<void> {
     }
 
     const owner = await prisma.user.findUnique({
-      where: { email: crew[0]?.email ?? resolveAdmin().email },
+      where: { email: DEMO_STAFF[0]!.email },
       select: { id: true },
     });
     if (!owner) throw new Error("Seed failed: the owner account was not created.");

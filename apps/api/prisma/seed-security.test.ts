@@ -21,7 +21,16 @@ describe("production seed security", () => {
   });
   it("accepts explicit non-default production credentials", () => {
     assert.equal(resolveSeedAdmin(valid).email, valid.ADMIN_EMAIL);
-    assert.equal(resolveSeedAdmin(valid).globalRole, "SUPER_ADMIN");
+    assert.equal("globalRole" in resolveSeedAdmin(valid), false);
+  });
+  it("enforces platform name and bcrypt password limits", () => {
+    assert.throws(() => resolveSeedAdmin({ ...valid, ADMIN_PASSWORD: "a".repeat(73) }));
+    assert.throws(() => resolveSeedAdmin({ ...valid, ADMIN_PASSWORD: "é".repeat(37) }));
+    assert.throws(() => resolveSeedAdmin({ ...valid, ADMIN_NAME: "a".repeat(121) }));
+    assert.equal(
+      resolveSeedAdmin({ ...valid, ADMIN_NAME: " Platform Operator " }).name,
+      "Platform Operator",
+    );
   });
   it("preserves development-only defaults", () => {
     assert.deepEqual(resolveSeedAdmin({}), {

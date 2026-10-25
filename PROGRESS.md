@@ -2,6 +2,15 @@
 
 ## Current State
 
+- **Production seed correction complete — October 25, 2026:** production `ADMIN_*`
+  initializes a `PlatformAdmin` and shared modules, without creating a salon or
+  tenant users. Repeat runs preserve operator credentials/disabled status and refuse
+  another email after initialization. Development demo behavior is unchanged;
+  existing application data is not converted or removed. Focused pure tests 19/19,
+  production and development acceptance tests on separate fresh temporary PostgreSQL
+  databases, API typecheck/lint, formatting and whitespace checks pass. No application
+  database seed, migration or deployment performed. Current task: None; next: None.
+
 - **CART-UX compact-row follow-up DONE — October 25, 2026:** divided item rows
   replace nested cards; quantity/removal share a group, discount actions are quieter,
   staff selection retains accessible labels, and the header has a count badge.

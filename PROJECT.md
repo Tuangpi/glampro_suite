@@ -194,7 +194,11 @@ After authorized migration, bootstrap the first operator with
 through the environment. Never put passwords in command arguments, git or logs.
 Bootstrap is explicit, transactional and advisory-locked, requires a strong password
 of at most 72 UTF-8 bytes, refuses existing initialization and records an audit.
-It is never invoked by server startup or seed. Additional operator provisioning,
+It is never invoked by server startup. Production seeding also supports first-operator
+initialization directly using `ADMIN_EMAIL`, `ADMIN_NAME` and `ADMIN_PASSWORD`, without
+requiring `PLATFORM_ADMIN_*` or the separate bootstrap command. That seed initializes
+shared modules but creates no salon or tenant users. Repeat runs preserve operator
+credentials/status; a different email is refused once initialized. Additional operator provisioning,
 credential recovery/change and operator management UI are not implemented here.
 
 Verification found pre-existing migration/schema drift in prepaid/treatment foreign
