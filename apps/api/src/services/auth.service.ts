@@ -636,23 +636,23 @@ async function loginWithTwoFactor(user: {
       },
     }),
   );
-  console.log("codeHash", code);
-  // try {
-  //   await sendTwoFactorCode(user.email, code);
-  // } catch (error) {
-  //   // Only clear this attempt: a newer login may already have replaced its code.
-  //   await runAsPlatform(() =>
-  //     prisma.user.updateMany({
-  //       where: { id: user.id, twoFactorCode: codeHash },
-  //       data: { twoFactorCode: null, twoFactorCodeExpiresAt: null },
-  //     }),
-  //   );
-  //   throw new HttpError(
-  //     503,
-  //     "Verification email could not be sent. Check that the configured SMTP server is running, then try signing in again.",
-  //     { code: "EMAIL_SEND_FAILED", cause: error },
-  //   );
-  // }
+
+  try {
+    await sendTwoFactorCode(user.email, code);
+  } catch (error) {
+    // Only clear this attempt: a newer login may already have replaced its code.
+    await runAsPlatform(() =>
+      prisma.user.updateMany({
+        where: { id: user.id, twoFactorCode: codeHash },
+        data: { twoFactorCode: null, twoFactorCodeExpiresAt: null },
+      }),
+    );
+    throw new HttpError(
+      503,
+      "Verification email could not be sent. Check that the configured SMTP server is running, then try signing in again.",
+      { code: "EMAIL_SEND_FAILED", cause: error },
+    );
+  }
 
   return { requiresTwoFactor: true, challenge };
 }
