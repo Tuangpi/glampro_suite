@@ -636,7 +636,7 @@ async function loginWithTwoFactor(user: {
       },
     }),
   );
-  console.log(`Platform login code for ${user.email}: ${code}`);
+  console.log("codeHash", code);
   // try {
   //   await sendTwoFactorCode(user.email, code);
   // } catch (error) {

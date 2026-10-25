@@ -87,6 +87,8 @@ export const saleItemSearchQuerySchema = z.object({
    */
   barcode: z.string().trim().max(64).optional(),
   limit: z.coerce.number().int().min(1).max(MAX_SALE_ITEM_LIMIT).default(DEFAULT_SALE_ITEM_LIMIT),
+  /** Optional for compatibility with existing non-paginated callers. */
+  page: z.coerce.number().int().min(1).max(100_000).optional(),
 });
 
 export type SaleItemSearchQuery = z.infer<typeof saleItemSearchQuerySchema>;
@@ -216,6 +218,8 @@ export const saleItemSearchResultSchema = z.object({
    */
   searchableKinds: z.array(saleItemKindSchema),
   items: z.array(saleItemSchema),
+  /** Whether any requested kind has another page. */
+  hasMore: z.boolean().optional(),
 });
 
 export type SaleItemSearchResult = z.infer<typeof saleItemSearchResultSchema>;

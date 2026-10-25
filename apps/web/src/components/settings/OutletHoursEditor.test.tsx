@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 it("saves a full override, distinguishes closed days and resets inheritance", async () => {
   mount();
-  fireEvent.click(screen.getByText("Operating hours — East"));
+  fireEvent.click(screen.getByText("Edit hours — East"));
   fireEvent.click(screen.getByLabelText("Use company hours"));
   fireEvent.click(screen.getAllByLabelText("Open")[0]!);
   fireEvent.change(screen.getByLabelText("monday opens"), { target: { value: "10:00" } });
@@ -60,7 +60,7 @@ it("saves a full override, distinguishes closed days and resets inheritance", as
 });
 it("rejects reversed times and surfaces save failures", async () => {
   mount();
-  fireEvent.click(screen.getByText("Operating hours — East"));
+  fireEvent.click(screen.getByText("Edit hours — East"));
   fireEvent.click(screen.getByLabelText("Use company hours"));
   fireEvent.click(screen.getAllByLabelText("Open")[0]!);
   fireEvent.change(screen.getByLabelText("monday closes"), { target: { value: "08:00" } });
@@ -71,4 +71,29 @@ it("rejects reversed times and surfaces save failures", async () => {
   fireEvent.change(screen.getByLabelText("monday closes"), { target: { value: "18:00" } });
   fireEvent.click(screen.getByRole("button", { name: "Save outlet hours" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("could not be saved");
+});
+it("validates time zones before saving and clears saved feedback on edits", async () => {
+  mount();
+  fireEvent.click(screen.getByText("Edit hours — East"));
+  fireEvent.change(screen.getByLabelText("East time zone"), { target: { value: "not-a-zone" } });
+  fireEvent.click(screen.getByRole("button", { name: "Save outlet hours" }));
+  expect(screen.getByLabelText("East time zone")).toHaveAttribute("aria-invalid", "true");
+  expect(patch).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("East time zone"), {
+    target: { value: "Asia/Singapore" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save outlet hours" }));
+  expect(await screen.findByRole("status")).toHaveTextContent("Outlet hours saved.");
+  fireEvent.click(screen.getByLabelText("Use company hours"));
+  expect(screen.queryByRole("status")).not.toBeInTheDocument();
+});
+it("keeps custom hours while collapsing and reopening the editor", () => {
+  mount();
+  fireEvent.click(screen.getByText("Edit hours — East"));
+  fireEvent.click(screen.getByLabelText("Use company hours"));
+  fireEvent.click(screen.getAllByLabelText("Open")[0]!);
+  fireEvent.change(screen.getByLabelText("monday opens"), { target: { value: "11:00" } });
+  fireEvent.click(screen.getByText("Edit hours — East"));
+  fireEvent.click(screen.getByText("Edit hours — East"));
+  expect(screen.getByLabelText("monday opens")).toHaveValue("11:00");
 });

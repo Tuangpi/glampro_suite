@@ -5,7 +5,7 @@
  *
  * - **The category tabs are the server's `searchableKinds`**, not a list the
  *   browser keeps. An add-on the salon has not bought gets no tab, and a second
- *   tab does not fetch: one search answered every kind.
+ *   tab fetches only its own bounded catalog page.
  * - **The cart re-prices a line from the customer** (`isMember`), because the
  *   search returns both prices for exactly that reason.
  * - **A granting line forces a customer** before payment, and the tender posts
@@ -52,12 +52,12 @@ vi.mock("@/hooks/useSale", async () => {
   return { ...actual, useSaleItems, useSaleCustomers };
 });
 
-const { useServiceList, useStaffList } = vi.hoisted(() => ({
-  useServiceList: vi.fn(),
+const { useCartServices, useStaffList } = vi.hoisted(() => ({
+  useCartServices: vi.fn(),
   useStaffList: vi.fn(),
 }));
 
-vi.mock("@/hooks/useServices", () => ({ useServiceList }));
+vi.mock("@/hooks/useServices", () => ({ useCartServices }));
 vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
 // This panel's API and retry/return behavior has its own focused tests.
 vi.mock("@/components/sale/DirectTipsPanel", () => ({ default: () => null }));
@@ -217,7 +217,7 @@ beforeEach(() => {
   role.value = "SUPER_ADMIN";
   useSaleItems.mockReturnValue(itemsResult(["SERVICE", "PRODUCT"], [SERVICE, PRODUCT]));
   useSaleCustomers.mockReturnValue(listResult([CUSTOMER]));
-  useServiceList.mockReturnValue(listResult([]));
+  useCartServices.mockReturnValue([{ data: { id: "s1", departmentId: null } }]);
   useStaffList.mockReturnValue(listResult([]));
   getErrorMessage.mockReturnValue("Something went wrong.");
   post.mockReset().mockResolvedValue(receipt());
@@ -228,6 +228,74 @@ beforeEach(() => {
 });
 
 describe("sale workspace", () => {
+  it("keeps the empty cart tall and its content scrollable", () => {
+    renderSale();
+    expect(cartPanel()).toHaveClass(
+      "h-[min(90dvh,46rem)]",
+      "min-h-96",
+      "lg:h-[max(36rem,calc(100dvh-10rem))]",
+      "[&>div]:overflow-y-auto",
+      "[&>footer]:shrink-0",
+    );
+    expect(screen.getByText("The cart is empty").closest(".h-full")).not.toBeNull();
+  });
+
+  it("pages the selected category without clearing the cart and resets for search and tabs", async () => {
+    const user = userEvent.setup();
+    useSaleItems.mockReturnValue({
+      ...itemsResult(["SERVICE", "PRODUCT"], [SERVICE, PRODUCT]),
+      data: { searchableKinds: ["SERVICE", "PRODUCT"], items: [SERVICE, PRODUCT], hasMore: true },
+    });
+    renderSale();
+    expect(useSaleItems).toHaveBeenLastCalledWith({
+      kind: "SERVICE",
+      page: 1,
+      limit: 24,
+      search: undefined,
+    });
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    const pages = screen.getByLabelText("Sale list pages");
+    expect(within(pages).getByRole("button", { name: "Previous" })).toBeDisabled();
+    await user.click(within(pages).getByRole("button", { name: "Next" }));
+    expect(useSaleItems).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }));
+    expect(cartPanel()).toHaveTextContent("Root colour");
+    await user.type(screen.getByRole("searchbox", { name: "Search the catalogue" }), "root");
+    await waitFor(() =>
+      expect(useSaleItems).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 1, search: "root" }),
+      ),
+    );
+    await user.click(within(pages).getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("tab", { name: "Products" }));
+    expect(useSaleItems).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "PRODUCT", page: 1 }),
+    );
+    expect(cartPanel()).toHaveTextContent("Root colour");
+  });
+
+  it("does not reset catalogue paging when the initial search debounce elapses", async () => {
+    const user = userEvent.setup();
+    useSaleItems.mockReturnValue({
+      ...itemsResult(["SERVICE"], [SERVICE]),
+      data: { searchableKinds: ["SERVICE"], items: [SERVICE], hasMore: true },
+    });
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+    expect(useSaleItems).toHaveBeenLastCalledWith(expect.objectContaining({ page: 2 }));
+  });
+
+  it("does not offer unrelated staff while a cart service detail is unavailable", async () => {
+    useCartServices.mockReturnValue([{ data: undefined, isError: true }]);
+    useStaffList.mockReturnValue(
+      listResult([{ id: "nails", name: "Nail staff", departments: [{ id: "nails" }] }]),
+    );
+    const user = userEvent.setup();
+    renderSale();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    expect(useCartServices).toHaveBeenLastCalledWith(["s1"]);
+    expect(screen.queryByRole("option", { name: /Nail staff/ })).not.toBeInTheDocument();
+  });
   it("keeps secondary panels closed and customer selection beside the cart", () => {
     renderSale();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -263,7 +331,7 @@ describe("sale workspace", () => {
     await user.click(screen.getByRole("button", { name: "View cart" }));
     expect(scroll).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
     expect(cartWorkspace).toHaveFocus();
-    expect(screen.queryByLabelText("Discount percent for Root colour")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Discount percent for Root colour")).not.toBeVisible();
   });
 });
 
@@ -484,7 +552,7 @@ describe("performer identities", () => {
       email: "sam.a@example.test",
       departments: [{ id: "hair" }],
     };
-    useServiceList.mockReturnValue(listResult([{ id: "s1", departmentId: "hair" }]));
+    useCartServices.mockReturnValue([{ data: { id: "s1", departmentId: "hair" } }]);
     useStaffList.mockReturnValue(
       listResult([
         sam,
@@ -558,7 +626,7 @@ describe("the cart", () => {
 
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
 
-    expect(within(cartPanel()).getByText("1 line · 1 item")).toBeInTheDocument();
+    expect(within(cartPanel()).getByText("1 item")).toBeInTheDocument();
     // Twice: the line's own total and the cart's total — one item at one price.
     expect(within(cartPanel()).getAllByText("S$80.00")).toHaveLength(2);
     expect(screen.getByLabelText("Quantity of Root colour")).toHaveValue(1);
@@ -575,7 +643,7 @@ describe("the cart", () => {
     await user.click(add);
     await user.click(add);
 
-    expect(within(cartPanel()).getByText("1 line · 2 items")).toBeInTheDocument();
+    expect(within(cartPanel()).getByText("2 items")).toBeInTheDocument();
     expect(within(cartPanel()).getAllByText("S$25.00")).toHaveLength(2);
   });
 
@@ -608,7 +676,7 @@ describe("the cart", () => {
     first.unmount();
     renderSale();
 
-    expect(await screen.findByText("1 line · 1 item")).toBeInTheDocument();
+    expect(await screen.findByText("1 item")).toBeInTheDocument();
     expect(screen.getByText("Mrs Loi")).toBeInTheDocument();
     expect(within(cartPanel()).getAllByText("S$70.00")).toHaveLength(2);
   });
@@ -645,7 +713,7 @@ describe("taking payment", () => {
     // starts from nothing rather than from the last customer's shopping.
     expect(screen.getByRole("tab", { name: "Services" })).toBeInTheDocument();
     expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument();
-    expect(within(cartPanel()).queryByText("1 line · 1 item")).not.toBeInTheDocument();
+    expect(within(cartPanel()).queryByText("1 item")).not.toBeInTheDocument();
   });
 
   it("shows the GST included in the total, without changing what was paid", async () => {
@@ -962,7 +1030,7 @@ describe("holding a cart", () => {
     renderSale();
 
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
-    await user.click(screen.getByRole("button", { name: "Hold" }));
+    await user.click(screen.getByRole("button", { name: "Hold cart" }));
 
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith("/sales", {
@@ -1012,19 +1080,19 @@ describe("picking a parked cart up", () => {
     const user = userEvent.setup();
     const first = renderSale();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
-    await user.click(screen.getByRole("button", { name: "Hold" }));
+    await user.click(screen.getByRole("button", { name: "Hold cart" }));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const firstKey = post.mock.calls[0]![1].idempotencyKey;
     first.unmount();
     renderSale();
-    await user.click(await screen.findByRole("button", { name: "Hold" }));
+    await user.click(await screen.findByRole("button", { name: "Hold cart" }));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
     expect(post.mock.calls[1]![1].idempotencyKey).toBe(firstKey);
     await waitFor(() =>
       expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument(),
     );
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
-    await user.click(screen.getByRole("button", { name: "Hold" }));
+    await user.click(screen.getByRole("button", { name: "Hold cart" }));
     await waitFor(() => expect(post).toHaveBeenCalledTimes(3));
     expect(post.mock.calls[2]![1].idempotencyKey).not.toBe(firstKey);
   });
@@ -1040,11 +1108,11 @@ describe("picking a parked cart up", () => {
     const user = userEvent.setup();
     renderSale();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
-    await user.click(screen.getByRole("button", { name: "Hold" }));
+    await user.click(screen.getByRole("button", { name: "Hold cart" }));
     expect(screen.getByRole("button", { name: "Take payment" })).toBeDisabled();
-    expect(within(cartPanel()).getByRole("button", { name: "Clear" })).toBeDisabled();
+    expect(within(cartPanel()).getByRole("button", { name: "Clear cart" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
-    expect(screen.getByText("1 line · 1 item")).toBeInTheDocument();
+    expect(screen.getByText("1 item")).toBeInTheDocument();
     finish(heldCart());
     await waitFor(() =>
       expect(within(cartPanel()).getByText("The cart is empty")).toBeInTheDocument(),
@@ -1078,7 +1146,7 @@ describe("picking a parked cart up", () => {
     first.unmount();
     renderSale();
     expect(await screen.findByText(/Ringing up the/)).toBeInTheDocument();
-    await user.click(await screen.findByRole("button", { name: "Hold" }));
+    await user.click(await screen.findByRole("button", { name: "Hold cart" }));
     expect(post).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Take payment" }));
     await user.click(
@@ -1098,7 +1166,7 @@ describe("picking a parked cart up", () => {
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
 
     // Pickup uses current catalogue prices; completion checks them again.
-    expect(await screen.findByText("1 line · 1 item")).toBeInTheDocument();
+    expect(await screen.findByText("1 item")).toBeInTheDocument();
     expect(within(cartPanel()).getAllByText("S$70.00")).toHaveLength(2);
     expect(screen.getByText(/Ringing up the/)).toBeInTheDocument();
 
@@ -1197,7 +1265,7 @@ describe("historical sale browsing", () => {
     expect(screen.getByRole("button", { name: "Refund sale" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Back to cart" }));
     expect(screen.getByText(/Ringing up the/)).toBeInTheDocument();
-    expect(screen.getByText("1 line · 1 item")).toBeInTheDocument();
+    expect(screen.getByText("1 item")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Take payment" }));
     await user.click(
       within(await screen.findByRole("dialog")).getByRole("button", { name: "Take payment" }),
@@ -1241,7 +1309,7 @@ describe("historical sale browsing", () => {
     await user.click(screen.getByRole("button", { name: "Browse sale history" }));
     await user.click(await screen.findByRole("button", { name: "Open receipt #1042" }));
     await screen.findByRole("alert");
-    expect(screen.getByText("1 line · 1 item")).toBeInTheDocument();
+    expect(screen.getByText("1 item")).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
 });

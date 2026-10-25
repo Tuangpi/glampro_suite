@@ -2,6 +2,59 @@
 
 ## Current State
 
+- **CART-UX compact-row follow-up DONE — October 25, 2026:** divided item rows
+  replace nested cards; quantity/removal share a group, discount actions are quieter,
+  staff selection retains accessible labels, and the header has a count badge.
+  Larger checkout total; existing height, action order and sale behavior preserved.
+  Full web 802/802 across 96 files, lint, typecheck/production build and changed-source
+  formatting pass. Local `/sale` HTTP 200; authenticated browser visual review not
+  performed. Unrelated working changes preserved. Current task: None. Next: None selected.
+
+- **CART-UX layout follow-up complete — October 25, 2026:** Hold cart on the
+  left and Take payment on the right in one compact 44px row, without icons.
+  Cart increased to `max(36rem, 100dvh - 10rem)` on desktop and
+  `min(90dvh, 46rem)` with a 24rem minimum on smaller screens. This adds item
+  space while preserving scrolling and the non-shrinking footer; short screens
+  may require page scrolling. Focused cart/sale 63/63, web lint, typecheck/build,
+  formatting and whitespace checks pass. Browser visual review not performed.
+  Current task: None. Next: None selected.
+
+- **CART-UX DONE — October 25, 2026:** clearer item hierarchy, grouped 44px
+  quantity controls, collapsible discount editor, separate removal/staff controls,
+  full-width 52px payment/hold actions, clear-cart confirmation and stronger totals.
+  Customer warning disappears after selection; wider XL cart retains existing height
+  and mobile shortcut. Initial unchanged-search debounce no longer resets paging.
+  Full web 800/800 across 96 files; web lint, typecheck/production build, source
+  formatting and whitespace checks pass. Authenticated visual review not performed.
+  Existing working changes preserved; no backend/database/dependencies/deployment.
+  Current task: None. Most recently completed: CART-UX. Next: None selected.
+
+- **Cart height follow-up complete — October 25, 2026:** increased desktop cart
+  to `max(30rem, 100dvh - 14rem)` and smaller-screen height to `min(80dvh, 38rem)`
+  with a 20rem minimum. Scrollable items and non-shrinking footer preserved.
+  Focused sale tests 54/54, web typecheck/production build and formatting pass.
+  Authenticated visual review not performed; short viewports may need page scrolling.
+  Latest user-requested increment adds 32px on desktop; the same checks were rerun and pass.
+
+- **SALE-CATALOG DONE — October 25, 2026:** responsive taller cart with centered
+  empty state, scrollable lines and fixed footer; 24-item server-side category
+  pages with search/tab resets; cart-service detail reads replace the truncated
+  service catalog lookup. Tabs persist while stale sellable rows are hidden.
+  Full web 791/791 (95 files), focused sale API 62/62, shared 188/188, workspace
+  lint, API/web typecheck and production web build pass. Synthetic 805-item checks
+  cover every kind; actual database paging regression passes. Browser visual review
+  and production timing not performed. Existing staff-list ceiling remains 200.
+  No migrations/dependencies/deployment; unrelated working changes preserved.
+  Current task: None. Most recently completed: SALE-CATALOG. Next: None selected.
+
+- **Outlet UI follow-up complete — October 25, 2026:** shared cards and status
+  badges, compact add form, suspension confirmation, responsive hours controls,
+  time-zone validation and isolated action feedback. Loading/empty/retry states
+  added; top-bar selector, permissions and API contracts unchanged. Manual catalogue
+  IDs retained because list requests carry selected-outlet context. Focused 40/40;
+  full web 786/786 across 94 files; lint/typecheck/production build pass.
+  Authenticated browser visual review not performed. Current task: None; next: None.
+
 - **Outlet navigation follow-up complete — October 25, 2026:** moved management
   into Settings → Outlets with `/settings?section=outlets` deep linking and a
   replacement redirect from `/outlets`. Main rail entry removed; top-bar picker,

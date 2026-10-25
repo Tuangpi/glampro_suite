@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CatalogStatusValue,
   CreateServiceInput,
@@ -77,6 +77,16 @@ export function useService(id: string | null) {
     queryKey: queryKeys.services.detail(id ?? ""),
     queryFn: () => get<ServiceDetail>(`/services/${id}`),
     enabled: id !== null,
+  });
+}
+
+/** Resolve only cart services, including those restored from a saved or held cart. */
+export function useCartServices(ids: string[]) {
+  return useQueries({
+    queries: [...new Set(ids)].map((id) => ({
+      queryKey: queryKeys.services.detail(id),
+      queryFn: () => get<ServiceDetail>(`/services/${id}`),
+    })),
   });
 }
 

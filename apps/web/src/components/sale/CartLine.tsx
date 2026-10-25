@@ -13,7 +13,7 @@
  * (who rang it up, defaulted server-side) attributes those. `staffOptions` is
  * the picker this line may offer, already narrowed by the page.
  */
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { Minus, Plus, Trash } from "@/components/icons";
 import IconButton from "@/components/ui/IconButton";
@@ -71,6 +71,7 @@ export default function CartLine({
   // rate of one percent.
   const [discountDraft, setDiscountDraft] = useState<string | null>(null);
   const [discountOpen, setDiscountOpen] = useState(false);
+  const discountId = useId();
 
   function commit(raw: string) {
     setDraft(null);
@@ -97,108 +98,121 @@ export default function CartLine({
   const discounted = line.discountPercent !== undefined && line.discountPercent > 0;
 
   return (
-    <li className="flex flex-col gap-2 rounded-md border border-line-soft bg-surface px-3 py-2.5">
+    <li className="flex min-w-0 flex-col gap-3 py-4">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="truncate text-sm font-bold text-ink">{line.name}</p>
-          <p className="text-xs text-ink-muted">
+          <p className="text-sm font-bold break-words text-ink">{line.name}</p>
+          <p className="mt-1 text-xs text-ink-muted">
             {discounted
               ? `${formatPrice(unitPrice)} each · ${line.discountPercent}% off ${formatPrice(listPrice)}`
               : `${formatPrice(unitPrice)} each`}
           </p>
         </div>
-        <p className="shrink-0 text-sm font-heavy text-ink">{formatPrice(totalCents / 100)}</p>
+        <p className="shrink-0 text-base font-heavy text-ink tabular-nums">
+          {formatPrice(totalCents / 100)}
+        </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-1.5">
-        <IconButton
-          label={`One fewer ${line.name}`}
-          icon={<Minus />}
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => onQuantity(key, line.quantity - 1)}
-        />
-        {/* A raw input rather than `Input`: the stepper is one control among three
+      <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+        <div className="flex items-center gap-1">
+          <div
+            role="group"
+            aria-label={`Quantity controls for ${line.name}`}
+            className="flex items-center rounded-md border border-line bg-surface"
+          >
+            <IconButton
+              label={`One fewer ${line.name}`}
+              icon={<Minus />}
+              disabled={disabled}
+              onClick={() => onQuantity(key, line.quantity - 1)}
+            />
+            {/* A raw input rather than `Input`: the stepper is one control among three
             in a row, and a second visible "Quantity" label under the line's own
             name would double the row's height for a caption nobody needs. The
             accessible name carries the line, so a screen reader still hears
             which row the box belongs to. */}
-        <input
-          type="number"
-          min={0}
-          max={10_000}
-          aria-label={`Quantity of ${line.name}`}
-          value={draft ?? String(line.quantity)}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={(event) => commit(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") commit((event.target as HTMLInputElement).value);
-          }}
-          disabled={disabled}
-          className={cn(CONTROL_CLASS, "h-control-sm w-20 text-center")}
-        />
-        <IconButton
-          label={`One more ${line.name}`}
-          icon={<Plus />}
-          size="sm"
-          variant="outline"
-          disabled={disabled}
-          onClick={() => onQuantity(key, line.quantity + 1)}
-        />
-        <span className="flex-1" />
-
-        <button
-          type="button"
-          disabled={disabled}
-          aria-expanded={discountOpen || discounted}
-          onClick={() => setDiscountOpen(!discountOpen)}
-          className="min-h-control px-2 text-xs font-bold text-purple disabled:opacity-60"
-        >
-          {discounted ? "Edit discount" : "Add discount"}
-        </button>
-        {discountOpen || discounted ? (
-          <label className="flex items-center gap-1 text-xs text-ink-muted">
-            <span aria-hidden>%</span>
             <input
               type="number"
               min={0}
-              max={100}
-              step={1}
-              placeholder="off"
-              aria-label={`Discount percent for ${line.name}`}
-              value={discountDraft ?? line.discountPercent ?? ""}
-              onChange={(event) => setDiscountDraft(event.target.value)}
-              onBlur={(event) => commitDiscount(event.target.value)}
+              max={10_000}
+              aria-label={`Quantity of ${line.name}`}
+              value={draft ?? String(line.quantity)}
+              onChange={(event) => setDraft(event.target.value)}
+              onBlur={(event) => commit(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  commitDiscount((event.target as HTMLInputElement).value);
-                }
+                if (event.key === "Enter") commit((event.target as HTMLInputElement).value);
               }}
               disabled={disabled}
-              className={cn(CONTROL_CLASS, "h-control-sm w-16 text-center")}
+              className="h-control w-12 min-w-0 bg-transparent px-1 text-center text-sm font-bold text-ink tabular-nums focus-visible:outline-2 focus-visible:outline-purple disabled:cursor-not-allowed disabled:text-ink-disabled"
             />
-          </label>
-        ) : null}
-
-        <IconButton
-          label={`Remove ${line.name} from the cart`}
-          icon={<Trash />}
-          size="sm"
+            <IconButton
+              label={`One more ${line.name}`}
+              icon={<Plus />}
+              disabled={disabled || line.quantity >= 10_000}
+              onClick={() => onQuantity(key, line.quantity + 1)}
+            />
+          </div>
+          <IconButton
+            label={`Remove ${line.name} from the cart`}
+            icon={<Trash />}
+            disabled={disabled}
+            onClick={() => onRemove(key)}
+          />
+        </div>
+        <button
+          type="button"
+          className="min-h-control rounded-md px-2 text-xs font-bold text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple disabled:cursor-not-allowed disabled:opacity-60"
           disabled={disabled}
-          onClick={() => onRemove(key)}
-        />
+          aria-expanded={discountOpen}
+          aria-controls={discountId}
+          onClick={() => setDiscountOpen(!discountOpen)}
+        >
+          {discountOpen ? "Close discount" : discounted ? "Edit discount" : "Add discount"}
+        </button>
       </div>
 
       {attribution === "service" && staffOptions.length > 0 ? (
-        <Select
-          label={`Who performed ${line.name}`}
-          value={line.staffId ?? ""}
-          onChange={(event) => onStaff(key, event.target.value || undefined)}
-          options={[{ value: "", label: "Unassigned" }, ...performerOptions(staffOptions)]}
-          disabled={disabled}
-        />
+        <div className="flex items-center gap-3">
+          <span aria-hidden="true" className="text-xs text-ink-muted">
+            Staff
+          </span>
+          <div className="min-w-0 flex-1">
+            <Select
+              label={`Who performed ${line.name}`}
+              hideLabel
+              placeholder=""
+              value={line.staffId ?? ""}
+              onChange={(event) => onStaff(key, event.target.value || undefined)}
+              options={[{ value: "", label: "Unassigned" }, ...performerOptions(staffOptions)]}
+              disabled={disabled}
+            />
+          </div>
+        </div>
       ) : null}
+
+      <div id={discountId} hidden={!discountOpen}>
+        <label className="flex items-center justify-between gap-2 rounded-md bg-surface-2 p-2 text-sm text-ink-body">
+          <span>Discount (%)</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            placeholder="off"
+            aria-label={`Discount percent for ${line.name}`}
+            value={discountDraft ?? line.discountPercent ?? ""}
+            onChange={(event) => setDiscountDraft(event.target.value)}
+            onBlur={(event) => commitDiscount(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                commitDiscount((event.target as HTMLInputElement).value);
+              }
+            }}
+            disabled={disabled}
+            className={cn(CONTROL_CLASS, "h-control w-20 text-center")}
+          />
+        </label>
+      </div>
     </li>
   );
 }

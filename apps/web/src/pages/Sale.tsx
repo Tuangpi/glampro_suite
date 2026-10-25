@@ -13,13 +13,12 @@
  *    whose add-on the salon has not bought and names what is left, so a salon
  *    without Packages gets no Packages tab rather than an empty one. The kinds are
  *    never re-listed here, so the tab row cannot drift from what the API accepts.
- *    One search answers **every** kind (`limit` counts rows *per kind*), so
- *    switching tabs costs no request.
+ *    Only the selected category's page is fetched; switching tabs resets paging.
  * 2. **The staff picker is narrowed to the service's branch** — `User.departments`
  *    ∩ `Service.departmentId`, the MVP's service↔staff decision. A service the
  *    salon has not tied to a branch offers the whole team, which is exactly what
  *    `AppointmentFormDrawer` does for a booking (ADR 0013's twin), and the two
- *    reads behind it are the two the booking form already makes.
+ *    service details are resolved by cart ID rather than a truncated catalog list.
  * 3. **A granting line forces a customer** (`PACKAGE`, `VALUE_PACKAGE`,
  *    `GIFT_CARD` buy credit for somebody). The dialog refuses to post without one
  *    and the server refuses the same sale, so the cashier is told before counting
@@ -53,6 +52,7 @@ import PaymentDialog from "@/components/sale/PaymentDialog";
 import ReceiptView from "@/components/sale/ReceiptView";
 import RefundSaleDialog from "@/components/sale/RefundSaleDialog";
 import SaleItemGrid from "@/components/sale/SaleItemGrid";
+import SaleListPagination from "@/components/sale/SaleListPagination";
 import SaleHistoryPanel from "@/components/sale/SaleHistoryPanel";
 import VoidSaleDialog from "@/components/sale/VoidSaleDialog";
 import Button from "@/components/ui/Button";
@@ -64,7 +64,7 @@ import { showToast } from "@/components/ui/toast-store";
 import { SALE_KIND_LABELS, VOID_SALE_ROLES } from "@/constants/sale";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
-import { useServiceList } from "@/hooks/useServices";
+import { useCartServices } from "@/hooks/useServices";
 import { useStaffList } from "@/hooks/useStaff";
 import {
   lineUnitPrice,
@@ -90,11 +90,11 @@ import {
 } from "@/lib/sale-draft-storage";
 
 /**
- * How many rows a picker reads. The number `AppointmentFormDrawer` uses, and for
- * the same reason: a cashier picks from the salon's own shelf, and a second search
- * box per picker is a request the handoff never asked for.
+ * Existing staff-picker size. Catalog paging and cart-service details do not
+ * depend on this list's size.
  */
 const LIST_PAGE_SIZE = 200;
+const CATALOG_PAGE_SIZE = 24;
 
 /** Typing must not fire a query per keystroke; the box still feels immediate. */
 const SEARCH_DEBOUNCE_MS = 300;
@@ -113,6 +113,7 @@ export default function Sale() {
   const [kind, setKind] = useState<SaleItemKind>("SERVICE");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [catalogPage, setCatalogPage] = useState(1);
   /** What the scanner or the cashier typed into the barcode field. */
   const [barcodeInput, setBarcodeInput] = useState("");
   /** While a barcode lookup is in flight, so a held Enter cannot double-add. */
@@ -157,11 +158,14 @@ export default function Sale() {
   // Typing should not fire a query per keystroke, but the box must still feel
   // immediate, so the term is debounced rather than submitted.
   useEffect(() => {
+    // An unchanged search must not reset a page chosen while the timer waits.
+    if (searchInput.trim() === search) return;
     const timer = window.setTimeout(() => {
       setSearch(searchInput.trim());
+      setCatalogPage(1);
     }, SEARCH_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [searchInput]);
+  }, [searchInput, search]);
 
   useEffect(() => {
     setSaleDraftCustomer(draftIdentity, customer);
@@ -206,10 +210,15 @@ export default function Sale() {
   const canVoid = user !== null && VOID_SALE_ROLES.includes(user.globalRole);
   /** The same manager gate the refund route enforces (ADR 0020), mirroring it for the UI. */
   const canRefund = canVoid;
-  // No `kind` filter: one request answers every searchable kind, and the response
-  // names the kinds this salon may sell. See the module comment.
-  const items = useSaleItems({ search: search || undefined });
-  const services = useServiceList({ page: 1, pageSize: LIST_PAGE_SIZE, status: "ACTIVE" });
+  const items = useSaleItems({
+    search: search || undefined,
+    kind,
+    page: catalogPage,
+    limit: CATALOG_PAGE_SIZE,
+  });
+  const services = useCartServices(
+    cart.lines.filter((line) => line.itemType === "SERVICE").map((line) => line.itemId),
+  );
   const staff = useStaffList({ page: 1, pageSize: LIST_PAGE_SIZE, status: "active" });
 
   const isMember = customer?.memberId != null;
@@ -221,10 +230,14 @@ export default function Sale() {
   const activeKind = (kinds.includes(kind) ? kind : kinds[0]) ?? "SERVICE";
 
   const staffRows = staff.data?.data ?? [];
-  const serviceRows = useMemo(() => services.data?.data ?? [], [services.data]);
   const departmentOfService = useMemo(
-    () => new Map(serviceRows.map((service) => [service.id, service.departmentId])),
-    [serviceRows],
+    () =>
+      new Map(
+        services.flatMap((service) =>
+          service.data ? [[service.data.id, service.data.departmentId] as const] : [],
+        ),
+      ),
+    [services],
   );
 
   /**
@@ -236,7 +249,9 @@ export default function Sale() {
    */
   function staffForService(serviceId: string): StaffOption[] {
     const departmentId = departmentOfService.get(serviceId);
-    if (departmentId === null || departmentId === undefined) return staffRows;
+    // Unknown/loading/failed details must not offer staff from another department.
+    if (departmentId === undefined) return [];
+    if (departmentId === null) return staffRows;
     return staffRows.filter((person) =>
       person.departments.some((link) => link.id === departmentId),
     );
@@ -541,6 +556,7 @@ export default function Sale() {
     setRefundError(null);
     setSearchInput("");
     setSearch("");
+    setCatalogPage(1);
     setBarcodeInput("");
     setKind("SERVICE");
   }
@@ -551,7 +567,7 @@ export default function Sale() {
       <SaleItemGrid
         kind={itemKind}
         items={(items.data?.items ?? []).filter((item) => item.kind === itemKind)}
-        isPending={items.isPending}
+        isPending={items.isPending || items.isPlaceholderData}
         isError={items.isError}
         search={search}
         isMember={isMember}
@@ -560,6 +576,7 @@ export default function Sale() {
         onClearSearch={() => {
           setSearchInput("");
           setSearch("");
+          setCatalogPage(1);
         }}
       />
     );
@@ -663,7 +680,7 @@ export default function Sale() {
           ) : null}
         </>
       ) : (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
           <div className="min-w-0">
             <section
               aria-label="Items to sell"
@@ -733,7 +750,10 @@ export default function Sale() {
                   activeId={activeKind}
                   onChange={(id) => {
                     const next = SALE_ITEM_KINDS.find((candidate) => candidate === id);
-                    if (next) setKind(next);
+                    if (next) {
+                      setKind(next);
+                      setCatalogPage(1);
+                    }
                   }}
                   items={kinds.map((itemKind) => ({
                     id: itemKind,
@@ -748,6 +768,12 @@ export default function Sale() {
                 // The grid below says which of the two it is.
                 gridFor(activeKind)
               )}
+              <SaleListPagination
+                page={catalogPage}
+                hasMore={items.data?.hasMore ?? false}
+                disabled={items.isPending || items.isFetching || items.isError}
+                onPageChange={setCatalogPage}
+              />
             </section>
           </div>
 
@@ -791,11 +817,30 @@ export default function Sale() {
               </div>
             ) : null}
 
+            {services.some((service) => service.isError) ? (
+              <div role="alert" className="rounded-card border border-line bg-surface p-3 text-sm">
+                <p>
+                  Service details could not be loaded. Staff choices are unavailable for affected
+                  services.
+                </p>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    for (const service of services) {
+                      if (service.isError) void service.refetch();
+                    }
+                  }}
+                >
+                  Retry service details
+                </Button>
+              </div>
+            ) : null}
             <CartPanel
               lines={cart.lines}
               isMember={isMember}
               staffForService={staffForService}
-              needsCustomer={needsCustomer}
+              needsCustomer={needsCustomer && !customer}
               disabled={cartLocked}
               onQuantity={cart.setQuantity}
               onStaff={cart.setStaff}

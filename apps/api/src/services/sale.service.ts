@@ -120,7 +120,11 @@ function nameWhere(search: string | undefined) {
  */
 
 /** Sellable services. */
-async function searchServices(search: string | undefined, limit: number): Promise<SaleItem[]> {
+async function searchServices(
+  search: string | undefined,
+  limit: number,
+  skip = 0,
+): Promise<SaleItem[]> {
   const rows = await prisma.service.findMany({
     where: { ...nameWhere(search), status: "ACTIVE" },
     select: {
@@ -134,6 +138,7 @@ async function searchServices(search: string | undefined, limit: number): Promis
     // `id` breaks ties so the grid's order is stable when two services share a name.
     orderBy: [{ name: "asc" }, { id: "asc" }],
     take: limit,
+    skip,
   });
 
   return rows.map((row) => ({
@@ -148,7 +153,11 @@ async function searchServices(search: string | undefined, limit: number): Promis
 }
 
 /** Sellable products. `lowStock` is computed here, never in the browser (ADR 0010). */
-async function searchProducts(search: string | undefined, limit: number): Promise<SaleItem[]> {
+async function searchProducts(
+  search: string | undefined,
+  limit: number,
+  skip = 0,
+): Promise<SaleItem[]> {
   const threshold = await resolveLowStockThreshold();
 
   const rows = await prisma.product.findMany({
@@ -164,6 +173,7 @@ async function searchProducts(search: string | undefined, limit: number): Promis
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     take: limit,
+    skip,
   });
 
   return rows.map((row) => ({
@@ -184,7 +194,11 @@ async function searchProducts(search: string | undefined, limit: number): Promis
  * read — the count the till draws and the count the catalogue tab draws then come
  * from the same query.
  */
-async function searchPackages(search: string | undefined, limit: number): Promise<SaleItem[]> {
+async function searchPackages(
+  search: string | undefined,
+  limit: number,
+  skip = 0,
+): Promise<SaleItem[]> {
   const rows = await prisma.package.findMany({
     where: { ...nameWhere(search), status: "ACTIVE" },
     select: {
@@ -197,6 +211,7 @@ async function searchPackages(search: string | undefined, limit: number): Promis
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     take: limit,
+    skip,
   });
 
   return rows.map((row) => ({
@@ -211,7 +226,11 @@ async function searchPackages(search: string | undefined, limit: number): Promis
 }
 
 /** Sellable prepaid credit. Legacy `valuepackages`. */
-async function searchValuePackages(search: string | undefined, limit: number): Promise<SaleItem[]> {
+async function searchValuePackages(
+  search: string | undefined,
+  limit: number,
+  skip = 0,
+): Promise<SaleItem[]> {
   const rows = await prisma.valuePackage.findMany({
     where: { ...nameWhere(search), status: "ACTIVE" },
     select: {
@@ -223,6 +242,7 @@ async function searchValuePackages(search: string | undefined, limit: number): P
     },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     take: limit,
+    skip,
   });
 
   return rows.map((row) => ({
@@ -239,12 +259,17 @@ async function searchValuePackages(search: string | undefined, limit: number): P
 }
 
 /** Sellable card templates. No status to filter on, and an absent expiry is "never". */
-async function searchGiftCards(search: string | undefined, limit: number): Promise<SaleItem[]> {
+async function searchGiftCards(
+  search: string | undefined,
+  limit: number,
+  skip = 0,
+): Promise<SaleItem[]> {
   const rows = await prisma.giftCard.findMany({
     where: nameWhere(search),
     select: { id: true, name: true, value: true, expiresAt: true },
     orderBy: [{ name: "asc" }, { id: "asc" }],
     take: limit,
+    skip,
   });
 
   return rows.map((row) => ({
@@ -264,18 +289,19 @@ function readKind(
   kind: SaleItemKind,
   search: string | undefined,
   limit: number,
+  skip = 0,
 ): Promise<SaleItem[]> {
   switch (kind) {
     case "SERVICE":
-      return searchServices(search, limit);
+      return searchServices(search, limit, skip);
     case "PRODUCT":
-      return searchProducts(search, limit);
+      return searchProducts(search, limit, skip);
     case "PACKAGE":
-      return searchPackages(search, limit);
+      return searchPackages(search, limit, skip);
     case "VALUE_PACKAGE":
-      return searchValuePackages(search, limit);
+      return searchValuePackages(search, limit, skip);
     case "GIFT_CARD":
-      return searchGiftCards(search, limit);
+      return searchGiftCards(search, limit, skip);
   }
 }
 
@@ -359,7 +385,9 @@ export async function searchSaleItems(query: SaleItemSearchQuery): Promise<SaleI
     : searchableKinds;
 
   const groups = await Promise.all(
-    requested.map((kind) => readKind(kind, query.search, query.limit)),
+    requested.map((kind) =>
+      readKind(kind, query.search, query.limit + 1, ((query.page ?? 1) - 1) * query.limit),
+    ),
   );
 
   // A scanned or typed barcode resolves to **one** product, and it is always in
@@ -384,11 +412,12 @@ export async function searchSaleItems(query: SaleItemSearchQuery): Promise<SaleI
   // (AGENTS.md rule 6).
   return saleItemSearchResultSchema.parse({
     searchableKinds,
+    hasMore: groups.some((group) => group.length > query.limit),
     items: [
       ...(exact ? [exact] : []),
       // The exact match may also be a name match; it is listed once.
       ...groups
-        .flat()
+        .flatMap((group) => group.slice(0, query.limit))
         .filter((item) => !(exact && item.kind === exact.kind && item.id === exact.id)),
     ].sort(byNameThenKind),
   });

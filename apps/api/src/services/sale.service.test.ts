@@ -541,6 +541,28 @@ describe(
       assert.deepEqual(second.items, first.items);
     });
 
+    it("pages products in the database with a stable order and an accurate last page", async () => {
+      const page = (number: number) =>
+        runAsTenant(TENANT_A, () =>
+          searchSaleItems({ ...NO_FILTERS, kind: "PRODUCT", limit: 1, page: number }),
+        );
+      const first = await page(1);
+      const second = await page(2);
+      const beyond = await page(3);
+      assert.equal(first.hasMore, true);
+      assert.equal(second.hasMore, false);
+      assert.deepEqual(
+        first.items.map((item) => item.name),
+        [nameOf(TENANT_A, "Serum")],
+      );
+      assert.deepEqual(
+        second.items.map((item) => item.name),
+        [nameOf(TENANT_A, "Shampoo")],
+      );
+      assert.deepEqual(beyond.items, []);
+      assert.equal(beyond.hasMore, false);
+    });
+
     it("judges low stock against this salon's own threshold", async () => {
       const forA = await runAsTenant(TENANT_A, () =>
         searchSaleItems({ ...NO_FILTERS, kind: "PRODUCT" }),

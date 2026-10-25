@@ -281,6 +281,8 @@ export function cartLinesFrom(sale: SaleDetail, items: ResumeSale["items"]): Car
 export interface SaleItemFilters {
   search?: string;
   kind?: SaleItemKind;
+  page?: number;
+  limit?: number;
 }
 
 /**
@@ -288,9 +290,8 @@ export interface SaleItemFilters {
  *
  * The filters object is the last element of the key (the `queryKeys.ts`
  * convention), so the mutation below invalidates every search and every kind
- * with one prefix. `limit` is sent explicitly rather than left to the schema
- * default, so the picker's one-page-per-kind is a decision on this line rather
- * than an accident of the default. `?kind=` narrows the rows only.
+ * with one prefix. Page, size and category belong in the key so navigating never
+ * mixes catalog pages. Unpaged callers retain the shared default size.
  */
 export function useSaleItems(filters: SaleItemFilters = {}) {
   return useQuery({
@@ -299,9 +300,12 @@ export function useSaleItems(filters: SaleItemFilters = {}) {
       get<SaleItemSearchResult>("/sales/items", {
         search: filters.search || undefined,
         kind: filters.kind,
-        limit: DEFAULT_SALE_ITEM_LIMIT,
+        limit: filters.limit ?? DEFAULT_SALE_ITEM_LIMIT,
+        page: filters.page,
       }),
-    placeholderData: (previous) => previous,
+    // Keep category tabs mounted, but never expose another page's sellable rows.
+    placeholderData: (previous) =>
+      previous ? { ...previous, items: [], hasMore: false } : undefined,
   });
 }
 

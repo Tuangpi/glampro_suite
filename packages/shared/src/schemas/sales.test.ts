@@ -92,6 +92,13 @@ describe("voucher and refund contracts", () => {
 });
 
 describe("saleItemSearchQuerySchema", () => {
+  it("accepts page query strings and rejects invalid or unbounded offsets", () => {
+    assert.equal(saleItemSearchQuerySchema.parse({ page: "34", limit: "24" }).page, 34);
+    assert.equal(saleItemSearchQuerySchema.parse({}).page, undefined);
+    for (const page of [0, -1, 1.5, 100_001, "invalid"]) {
+      assert.equal(saleItemSearchQuerySchema.safeParse({ page }).success, false);
+    }
+  });
   it("defaults the limit and leaves search and kind absent rather than empty", () => {
     const parsed = saleItemSearchQuerySchema.parse({});
 

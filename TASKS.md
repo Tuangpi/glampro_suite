@@ -24,6 +24,59 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### CART-UX — Polish the seller cart
+
+- Status: **DONE**. Approved and completed October 25, 2026.
+- Expected result: clearer item controls, larger touch targets, consistent payment/hold
+  actions, exact totals, clear-cart confirmation and conditional customer guidance.
+  Preserve existing cart height, sale rules and in-progress catalog work.
+- Completion check: cart interaction and sale regression tests, web lint/typecheck/build,
+  formatting and diff review. Record any browser verification limitations.
+- Dependencies: existing sale cart, shared UI components and design tokens.
+- Approved compact-row redesign follow-up: **DONE** October 25, 2026.
+  Replaced nested item cards with dividers, added a count badge, grouped quantity
+  and removal controls, quieted discount actions, compacted accessible staff selection,
+  and emphasized checkout totals. Existing height, button order and sale rules preserved.
+  Full web 802/802 across 96 files, lint, typecheck/production build and changed-source
+  formatting pass. Authenticated browser visual review not performed.
+- Evidence: full web 800/800 across 96 files, web lint, typecheck/production
+  build, changed-source formatting and diff whitespace checks pass. Eight focused
+  cart cases cover totals, confirmation/cancel, quantity/discount/staff/removal,
+  pending/read-only locks, quantity ceiling, guidance and empty state.
+- Full-suite execution exposed the initial unchanged-search debounce resetting
+  catalog paging; guarded it and added a dedicated regression test.
+- Authenticated browser visual review not performed. No dependencies, backend,
+  database, deployment or commit changes. Existing working changes preserved.
+- User-requested layout follow-up: payment/hold now share one 44px horizontal
+  row (Hold cart left, Take payment right), with icons removed. Desktop cart
+  increased to `max(36rem, 100dvh - 10rem)`; smaller screens use
+  `min(90dvh, 46rem)` and a 24rem minimum. Focused cart/sale 63/63, web lint,
+  typecheck/production build and formatting/whitespace pass. Short viewports
+  may need page scrolling; browser visual review remains unperformed.
+
+### SALE-CATALOG — Taller cart and paged sale catalog
+
+- Status: **DONE**. Approved and completed October 25, 2026.
+- Expected result: responsive taller cart, 24-item server-side category pages,
+  search/category page resets, preserved barcode/cart behavior and service-specific
+  department lookup independent of the first 200 catalog rows.
+- Completion check: focused contract/API/web regression tests, typecheck, lint,
+  production web build and diff review. No database migration or dependencies.
+- Dependencies: existing sale search, cart and service-detail endpoints.
+- Evidence: full web 791/791 across 95 files; focused sale API 62/62 (including
+  database-backed paging); shared 188/188; workspace lint, API/web typecheck and
+  production web build pass. Synthetic persistence checks browse 805 items in each
+  of all five kinds with 25-row maximum reads and no duplicate/missing IDs.
+- Category tabs persist during loading without stale sellable rows. Service-detail
+  failures hide affected staff choices and offer retry. Existing staff-list limit
+  remains 200; no staff-directory scalability change was requested.
+- Authenticated browser visual review and production-scale timing not performed.
+  No migration, dependency, deployment, commit or push.
+- User-requested height follow-up: desktop minimum raised to 30rem with
+  `100dvh - 14rem` available height; smaller-screen cap raised to 38rem/80dvh
+  with a 20rem minimum. Focused sale 54/54, web typecheck/build and formatting pass.
+  Short viewports can scroll the page; authenticated visual review remains unperformed.
+
 ### Outlet navigation follow-up — October 25, 2026
 
 - Completed the approved small navigation change: outlet management now lives in
@@ -33,6 +86,13 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
   build pass. Tests cover direct links, unknown-section fallback, on-demand mounting,
   draft preservation, legacy redirect and read-only outlet management.
 - Authenticated browser visual review not performed. No API/database/dependency changes.
+- Approved UI follow-up complete: shared outlet cards/status badges, on-demand
+  creation with field validation, suspension confirmation, responsive hours editor,
+  time-zone validation, loading/empty/retry states and operation-specific feedback.
+  Catalogue assignment retains manual IDs because existing list requests carry the
+  selected outlet context; no company-wide search contract was added.
+- UI verification: focused 40/40; full web 786/786 across 94 files; lint,
+  typecheck and production build pass. Browser visual review remains unperformed.
 
 ### DASHBOARD-UX — Simplify the daily dashboard
 
