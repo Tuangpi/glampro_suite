@@ -8,9 +8,11 @@
   commission, existing exact-cent redemption value, separate tracking, payroll later.
 - Implementation: sale attribution plus configurable required-attribution API policy,
   immutable redemption coverage/original-value/own-rate evidence, explicit whole-set
-  performer UI, linked evidence corrections and voids. No new earnings are posted.
-- Remaining: transactional financial postings, current-open-period financial correction/
-  reversal integration, broader family/permission/concurrency acceptance and admin UI.
+  performer UI, internal exact financial posting seam and linked current-open-period
+  financial correction/void integration. Normal POS still posts no version-1 earnings.
+- Remaining: eligibility/cutover integration, broader family/correction-route/release
+  acceptance and browser walkthrough. Required-attribution policy admin UI is implemented.
+  No earnings activation.
 - Verification limitation: API lint/typecheck blocked by existing unused platform-auth
   sendTwoFactorCode import. Scoped lint, focused tests, shared and web checks pass.
 - No application database migration, production change or deployment authorized/performed.
@@ -19,6 +21,62 @@
   stop after its completion; do not automatically implement the whole project.
 
 ## Recent notes
+
+### SC-003 — October 26, 2026 — IN PROGRESS, policy administration checkpoint
+
+- Preserved all uncommitted financial checkpoint changes. Added required-attribution card
+  under Settings → Team & commissions for salon managers/admins; suspended salons get
+  read-only controls. Three switches use the existing append-only policy API with a
+  required reason and optimistic revision. No earnings or eligibility activation.
+- First edit pins flags and revision together. Background updates preserve drafts and
+  block stale publication; explicit reload discards only after a successful read. Failed
+  writes/reloads retain edits, pending requests block duplicate submission, and load errors
+  never masquerade as optional defaults. Shared policy-view type added, no migration.
+- Added nine card tests and four Settings wiring checks. Real HTTP acceptance verifies
+  anonymous/staff/platform denial, owner 2FA, disabled/revoked/changed-role sessions,
+  tenant isolation, strict input, concurrent publication (one success/one conflict),
+  actor/reason persistence and suspended-write refusal. Add-on expiry/missing-grant checks
+  run explicitly by temporarily toggling only the disposable module fixture, then restoring it.
+- Verified: shared 196/196; focused web 46/46; focused API/PostgreSQL 70/70, no skips.
+  After making module-denial assertions unconditional, reran policy HTTP acceptance 1/1.
+  Shared build/lint, web lint/typecheck/production build and changed API lint pass.
+  Full API typecheck still reports only the existing unused sendTwoFactorCode import.
+  A new cache-refresh test initially asserted before React Query notified its observer;
+  changed it to wait for the rendered result, then reran the entire focused web suite.
+- No browser walkthrough, full API/web suite, application migration, activation, deployment,
+  commit or push. Reused/stopped /tmp/glampro-sc003r-pg, port 55464. Logs:
+  /tmp/sc003ui-{final-api,final-web2,shared,web-build,policy-final,api-types}.log.
+  SC-003 remains IN PROGRESS. Next: broader family/financial-correction route permissions
+  and release acceptance, browser walkthrough, eligibility/reporting cutover integration.
+
+### SC-003 — October 26, 2026 — IN PROGRESS, financial integration checkpoint
+
+- Initial git status was clean; prior evidence work was already present in the checkout.
+- Added internal transaction-only redemption posting seam. It validates original movement,
+  currency, ordinals, service coverage, own rates/exact candidate amounts and revision links.
+  Unknown attribution/value, stale snapshots, legacy sale earnings and mutually exclusive
+  covered-line service/FOC/credit-spend earnings fail closed. No POS/route caller or activation.
+- Extended immutable commission event JSON with optional redemption snapshot/source-time/
+  correction link; existing primitive event hashes remain compatible. No migration needed.
+- Corrections reverse every active linked earning and repost the new split with original
+  service-time own rates/value, in the current server-time open period. Voids reverse exact
+  values, including disabled original staff. Incompatible/unlinked entries still fail closed.
+  Missing/locked periods roll back source, snapshot and financial effects together.
+- Enabled disposable PostgreSQL acceptance covers concurrent posting/correction/void retries,
+  injected posting rollback, locked-period corrections, missing-current-period rollback,
+  later rate non-retroactivity, unknown attribution, legacy cutover refusal, staff/tenant
+  rejection, disabled-staff reversal, exact final zero and one-time session restoration.
+- Final verification: shared 196/196; focused API 69/69 (including sale 57/57 and both
+  enabled PostgreSQL acceptance tests), no skips. Shared build/lint, changed API lint,
+  web typecheck and scoped formatting/whitespace checks pass. Full API typecheck still
+  reports only the existing unused platform-auth sendTwoFactorCode import, left unchanged.
+  No full API/web suite, web production build or browser walkthrough in this checkpoint.
+- Reused the existing disposable cluster /tmp/glampro-sc003r-pg (port 55464), then stopped
+  it after verification; synthetic immutable financial fixtures remain only there.
+  Logs: /tmp/sc003p-final-{shared,api,api-types,api-lint,web-types}.log.
+  SC-003 remains IN PROGRESS; do not start SC-004. No application migration, deployment,
+  activation, commit or push. Next: broader family/permission/concurrency release acceptance,
+  required-attribution policy admin UI, and eligibility/reporting cutover integration.
 
 ### SC-003 — October 26, 2026 — IN PROGRESS, redemption evidence checkpoint
 

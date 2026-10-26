@@ -54,6 +54,9 @@ export const publishCommissionAttributionPolicySchema = commissionAttributionPol
   })
   .strict();
 export type CommissionAttributionPolicy = z.infer<typeof commissionAttributionPolicySchema>;
+export type CommissionAttributionPolicyView = CommissionAttributionPolicy & {
+  revision: string | null;
+};
 export type PublishCommissionAttributionPolicy = z.infer<
   typeof publishCommissionAttributionPolicySchema
 >;

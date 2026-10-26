@@ -56,6 +56,11 @@ vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
 vi.mock("@/components/settings/CommissionRules", () => ({
   default: () => <section aria-label="Company commission defaults" />,
 }));
+vi.mock("@/components/settings/CommissionAttributionPolicy", () => ({
+  default: ({ canEdit }: { canEdit: boolean }) => (
+    <section aria-label="Commission attribution policy" data-editable={canEdit} />
+  ),
+}));
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
     isReadOnly: auth.readOnly,
@@ -176,6 +181,29 @@ function renderSettings(category = "salon") {
 }
 
 describe("Settings", () => {
+  it.each(["SUPER_ADMIN", "MANAGER"])("shows attribution policy for %s", (role) => {
+    auth.role = role;
+    renderSettings("team");
+    expect(screen.getByRole("region", { name: "Commission attribution policy" })).toHaveAttribute(
+      "data-editable",
+      "true",
+    );
+  });
+  it("hides attribution policy from staff", () => {
+    auth.role = "STAFF";
+    renderSettings("team");
+    expect(
+      screen.queryByRole("region", { name: "Commission attribution policy" }),
+    ).not.toBeInTheDocument();
+  });
+  it("passes suspended read-only state to attribution policy", () => {
+    auth.readOnly = true;
+    renderSettings("team");
+    expect(screen.getByRole("region", { name: "Commission attribution policy" })).toHaveAttribute(
+      "data-editable",
+      "false",
+    );
+  });
   it("opens outlets from a direct link without loading salon settings", () => {
     render(
       <MemoryRouter initialEntries={["/settings?section=outlets"]}>

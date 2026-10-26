@@ -15,6 +15,13 @@ import { resolveCommission } from "./commission-rules.js";
 import { commissionAmount } from "./commission-ledger.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { readCommissionAttributionPolicy } from "./commission-attribution-policy.js";
+import {
+  activeRedemptionEarnings,
+  assertRedemptionEarnings,
+  currentCommissionPeriod,
+  postRedemptionSnapshot,
+  reverseRedemptionEarnings,
+} from "./redemption-commission-posting.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 export const redemptionCoverageSchema = z
@@ -272,14 +279,19 @@ export async function correctRedemptionAttribution(
       throw conflict(
         "Redemption attribution changed or has no verifiable snapshot. Reload before correcting.",
       );
-    // Until financial correction/repost is integrated, never silently correct posted money.
-    if (
+    const active = await activeRedemptionEarnings(tx, redemptionId);
+    if (active.length) assertRedemptionEarnings(previous, active);
+    else if (
       await tx.employeeCommission.count({
-        where: { ledgerVersion: 1, sourceType: "REDEMPTION", sourceId: redemptionId },
+        where: {
+          ledgerVersion: 1,
+          sourceType: "REDEMPTION",
+          sourceId: redemptionId,
+        },
       })
     )
       throw conflict(
-        "Posted redemption corrections require financial reversal and repost integration.",
+        "Redemption earnings were already reversed; reconcile the source before correcting attribution.",
       );
     const original = redemptionCommissionEvidenceSchema.parse(previous.evidence);
     const performers = canonicalShares(input.performers);
@@ -297,7 +309,7 @@ export async function correctRedemptionAttribution(
         original.valuation?.netCents,
       ),
     });
-    return tx.commissionRedemptionSnapshot.create({
+    const corrected = await tx.commissionRedemptionSnapshot.create({
       data: {
         tenantId: scope.tenantId,
         redemptionId,
@@ -310,6 +322,12 @@ export async function correctRedemptionAttribution(
         evidence,
       },
     });
+    if (active.length) {
+      const posting = await currentCommissionPeriod(tx);
+      await reverseRedemptionEarnings(tx, corrected, active, actorId, input.reason, posting);
+      await postRedemptionSnapshot(tx, corrected, actorId, posting);
+    }
+    return corrected;
   });
 }
 
@@ -325,12 +343,19 @@ export async function voidRedemptionCommissionEvidence(
     orderBy: { revision: "desc" },
   });
   if (!previous || previous.eventType === "VOID") return;
-  if (
-    await tx.employeeCommission.count({
-      where: { ledgerVersion: 1, sourceType: "REDEMPTION", sourceId: redemptionId },
-    })
-  )
-    throw conflict("Posted redemption void requires financial reversal integration.");
+  const active = await activeRedemptionEarnings(tx, redemptionId);
+  if (active.length) {
+    if (!actorId) throw forbidden("Posted redemption void requires an authenticated manager.");
+    assertRedemptionEarnings(previous, active);
+    await reverseRedemptionEarnings(
+      tx,
+      previous,
+      active,
+      actorId,
+      "Source redemption voided; original attribution retained",
+      await currentCommissionPeriod(tx),
+    );
+  }
   const evidence = redemptionCommissionEvidenceSchema.parse({
     ...redemptionCommissionEvidenceSchema.parse(previous.evidence),
     previousSnapshotId: previous.id,

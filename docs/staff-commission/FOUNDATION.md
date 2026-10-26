@@ -168,9 +168,18 @@ performers can be explicit on the tender; inference is allowed only when every c
 line has the same split. Conflicting/missing splits stay unknown; no service-price
 weighting is introduced. Required-attribution policies are optional by default and
 can require sellers, service performers and/or resolved redemption performers.
-Corrections and voids refuse sources with version-1 earnings until transactional
-financial reversal/repost integration is implemented. Snapshot candidate amounts are
-not earnings, paid-session eligibility evidence, collection evidence or report totals.
+Managers/admins can publish these requirements in Settings → Team & commissions with
+a reason and revision check. Suspended salons see read-only controls; stale drafts must
+be explicitly reloaded. This attribution policy is not a financial activation switch.
+An internal posting seam now validates immutable source/value/rate evidence, rejects
+legacy and mutually exclusive covered-line earnings, and links version-1 money to its
+attribution revision. It has no normal POS/route caller and does not authorize paid-session
+eligibility. Corrections reverse all active linked earnings and repost the corrected
+own-rate split transactionally; voids reverse active earnings exactly. Both require the
+period containing current server time, never a future period or reopened history.
+Unknown/incompatible/unlinked financial evidence fails closed. Snapshot candidate amounts
+remain evidence, not earnings, paid-session eligibility, collection evidence or report
+totals; `PENDING_RELEASE` remains unchanged even in synthetic internal posting tests.
 
 SC-003: attribution and mutually exclusive event integration; SC-004: package
 catalogue validation/configuration and activation policy; SC-006: persisted explicit

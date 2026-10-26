@@ -67,7 +67,17 @@ SC-006 is a launch dependency, not an optional advanced feature.
   original ordinal value and own-rate candidate evidence; explicit whole-set performer
   UI; linked evidence corrections/voids. Disposable acceptance and regression checks
   recorded in PROGRESS.md. Financial posting/current-open-period reversals and remaining
-  release acceptance are unfinished. Evidence-only corrections refuse posted earnings.
+  release acceptance are unfinished.
+- Financial checkpoint: internal snapshot-linked exact redemption posting seam (not wired
+  into POS); transactional own-rate correction/repost and void reversal into a current
+  open period; incompatible legacy/covered-line earnings fail closed. New earnings
+  remain disabled in normal flows pending eligibility/reporting cutover. Broader release
+  acceptance, policy admin UI and browser walkthrough remain unfinished.
+- Policy administration checkpoint: manager/admin Settings card with explicit required
+  attribution switches, reasons, revision-pinned drafts, conflict/reload handling and
+  read-only support. UI and real HTTP permission/concurrency acceptance pass; see
+  PROGRESS.md. Policy UI is implemented, but browser walkthrough, broader release
+  acceptance and eligibility/reporting cutover remain unfinished. No earnings activation.
 
 ## SC-004 — Commission administration
 

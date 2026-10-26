@@ -113,6 +113,15 @@ export const commissionEventSchema = z
     ruleId: id.nullable(),
     ruleSource: z.string().min(1).max(64),
     reason: z.string().trim().min(3).max(500),
+    /** Internal immutable attribution/value link; never accepted from a POS request. */
+    redemptionEvidence: z
+      .object({
+        snapshotId: id,
+        sourceOccurredAt: z.string().datetime({ offset: true }),
+        correctsSnapshotId: id.nullable(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 export type CommissionEvent = z.infer<typeof commissionEventSchema>;
