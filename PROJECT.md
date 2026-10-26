@@ -1,5 +1,12 @@
 # Glampro Suite
 
+## Staff commission — separate project
+
+Approved October 26, 2026. The authoritative scope, policies, tasks, and handoff
+are in `docs/staff-commission/PROJECT.md`, `docs/staff-commission/TASKS.md`, and
+`docs/staff-commission/PROGRESS.md`. Use those files for this feature; existing
+commission/valuation history below remains reference, not new completion evidence.
+
 ## Goal and scope
 
 Improve the existing salon-management product for Singapore salons, nail studios,

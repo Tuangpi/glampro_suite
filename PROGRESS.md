@@ -2,6 +2,11 @@
 
 ## Current State
 
+- **Staff commission planning — October 26, 2026:** the approved extension has its
+  own scope, tasks, and handoff in `docs/staff-commission/PROJECT.md`,
+  `docs/staff-commission/TASKS.md`, and `docs/staff-commission/PROGRESS.md`.
+  Use that folder for current SC task status; no feature implementation is claimed.
+
 - **Production seed correction complete — October 25, 2026:** production `ADMIN_*`
   initializes a `PlatformAdmin` and shared modules, without creating a salon or
   tenant users. Repeat runs preserve operator credentials/disabled status and refuse

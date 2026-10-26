@@ -1,5 +1,12 @@
 # Glampro Suite — tasks
 
+## Staff commission — separate tracker
+
+The October 26, 2026 approved extension is tracked exclusively in
+`docs/staff-commission/TASKS.md` (SC-001–SC-007), with scope and current state in
+that folder's PROJECT.md and PROGRESS.md. Do not duplicate these tasks here or
+treat historical commission acceptance as acceptance of the new implementation.
+
 ## How to use
 
 Single merged tracker: DOCX requirements, PDF IDs and existing local work. See
