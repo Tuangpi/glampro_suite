@@ -326,6 +326,7 @@ model Tenant {
   packageValuationMovements PackageValuationMovement[]
   sessionPackageTransferEvents SessionPackageTransferEvent[]
   commissionRules CommissionRule[]
+  commissionPeriods CommissionPeriod[]
   prepaidTransferEvents PrepaidTransferEvent[]
   prepaidFamilies PrepaidFamily[]
   prepaidFamilyMembers PrepaidFamilyMember[]
@@ -1500,7 +1501,23 @@ model EmployeeCommission {
   /// Percentage of the sale, e.g. `15.50`.
   rate     Decimal @db.Decimal(5, 2)
   /// Derived at sale time and stored so a later rate change does not rewrite history.
-  amount   Decimal @db.Decimal(12, 2)
+  amount   Decimal @db.Decimal(24, 10)
+  /// Null is legacy. Version 1 entries are immutable and not yet released in POS/reports.
+  ledgerVersion Int?
+  eventKey String?
+  eventHash String?
+  kind String?
+  entryType String?
+  sourceType String?
+  sourceId String?
+  occurredAt DateTime?
+  periodId String?
+  currency String?
+  share Int?
+  actorId String?
+  reason String?
+  snapshot Json?
+  reversesId String?
   /// Nullable for historical rows; populated only by the advanced rule engine.
   saleLineId String?
   basis Decimal? @db.Decimal(12, 2)
@@ -1519,7 +1536,25 @@ model EmployeeCommission {
 
   @@index([tenantId])
   @@index([userId])
+  @@unique([tenantId, eventKey])
+  @@unique([tenantId, reversesId])
+  @@index([tenantId, periodId, userId, kind])
   @@map("employee_commissions")
+}
+
+/// Explicit half-open boundaries. Calendar/timezone policy is supplied by the company.
+model CommissionPeriod {
+  id String @id @default(cuid())
+  tenantId String
+  startsAt DateTime
+  endsAt DateTime
+  timezone String
+  approvedAt DateTime?
+  lockedAt DateTime?
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+  @@index([tenantId, startsAt, endsAt])
+  @@map("commission_periods")
 }
 
 /// Append-only configuration events. Null rate explicitly inherits the next level.

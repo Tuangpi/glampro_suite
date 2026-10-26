@@ -88,3 +88,20 @@ test("foreign staff, kinds and targets ignored; products default to zero", () =>
     "5",
   );
 });
+
+test("package override sits below staff item and above department; null inherits, zero stops", () => {
+  const packageInput = { ...input, itemKind: "PACKAGE_REDEMPTION" as const };
+  const rules = [
+    rule("ITEM", "20"),
+    rule("PACKAGE", "15", { staffId: null, targetId: "facial" }),
+    rule("DEPARTMENT", "10"),
+  ].map((r) => ({ ...r, itemKind: "PACKAGE_REDEMPTION" }));
+  assert.equal(resolveCommission(rules, packageInput, at).rate, "20");
+  rules[0]!.rate = null;
+  assert.equal(resolveCommission(rules, packageInput, at).rate, "15");
+  rules[1]!.rate = "0";
+  assert.equal(resolveCommission(rules, packageInput, at).rate, "0");
+  rules[1]!.rate = null;
+  assert.equal(resolveCommission(rules, packageInput, at).rate, "10");
+  assert.equal(resolveCommission([], packageInput, at).rate, "0");
+});

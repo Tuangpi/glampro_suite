@@ -2811,10 +2811,12 @@ async function reverseForVoid(
   await tx.customerOutstanding.deleteMany({ where: { saleId: sale.id } });
   await tx.employeePerformance.deleteMany({ where: { saleId: sale.id } });
   await tx.employeeCommission.updateMany({
-    where: { saleId: sale.id, paidAt: { not: null } },
+    where: { saleId: sale.id, ledgerVersion: null, paidAt: { not: null } },
     data: { reconciliationRequired: true },
   });
-  await tx.employeeCommission.deleteMany({ where: { saleId: sale.id, paidAt: null } });
+  await tx.employeeCommission.deleteMany({
+    where: { saleId: sale.id, ledgerVersion: null, paidAt: null },
+  });
 }
 
 /**
@@ -3048,7 +3050,7 @@ export async function refundSale(
           })),
         });
       const commissions = await tx.employeeCommission.findMany({
-        where: { saleId: sale.id, refundAdjustment: false },
+        where: { saleId: sale.id, ledgerVersion: null, refundAdjustment: false },
       });
       for (const commission of commissions) {
         if (commission.paidAt !== null) {

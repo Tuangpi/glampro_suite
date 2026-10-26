@@ -25,7 +25,7 @@ SC-006 is a launch dependency, not an optional advanced feature.
 
 ## SC-002 — Commission foundation and collection design
 
-- Status: TODO.
+- Status: DONE — local foundation and disposable PostgreSQL verification, October 26, 2026.
 - Dependencies: SC-001.
 - Expected result: code-informed design and implemented shared/API commission kinds,
   compatible rate resolution, snapshots, auditable event/reversal ledger, precision,
@@ -38,6 +38,13 @@ SC-006 is a launch dependency, not an optional advanced feature.
   precision, atomic rollback, tenancy, and period rules. Run applicable lint/typecheck;
   verify schema changes only on disposable databases. Document integration contracts
   and any unresolved blocker before downstream implementation.
+- Evidence: FOUNDATION.md records integration/collection/eligibility/legacy/permission
+  contracts. Shared 190/190, focused API/resolver/tenancy 13/13 and enabled disposable
+  PostgreSQL acceptance 1/1 pass; all 52 migrations replay from empty. Shared build/lint,
+  changed API lint and web typecheck pass. Full API lint/typecheck are blocked solely
+  by the existing unused platform-auth sendTwoFactorCode import; no new diagnostics.
+  New earnings remain disconnected from POS/public routes and excluded from legacy
+  reporting until downstream cutover. No application migration or deployment.
 
 ## SC-003 — Seller and therapist attribution
 

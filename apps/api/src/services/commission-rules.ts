@@ -40,13 +40,24 @@ export function resolveCommission(
         b.createdAt.getTime() - a.createdAt.getTime() ||
         b.id.localeCompare(a.id),
     );
-  for (const scope of ["ITEM", "DEPARTMENT", "STAFF", "COMPANY"]) {
+  for (const scope of ["ITEM", "PACKAGE", "DEPARTMENT", "STAFF", "COMPANY"]) {
     const rule = candidates.find(
       (row) =>
         row.scope === scope &&
-        row.staffId === (scope === "COMPANY" ? null : input.staffId) &&
+        row.staffId === (scope === "COMPANY" || scope === "PACKAGE" ? null : input.staffId) &&
         row.targetId ===
-          (scope === "ITEM" ? input.itemId : scope === "DEPARTMENT" ? input.departmentId : null) &&
+          (scope === "ITEM" || scope === "PACKAGE"
+            ? input.itemId
+            : scope === "DEPARTMENT"
+              ? input.departmentId
+              : null) &&
+        (scope !== "PACKAGE" ||
+          [
+            "PACKAGE_SALE",
+            "PACKAGE_REDEMPTION",
+            "STORED_CREDIT_SALE",
+            "STORED_CREDIT_SPEND",
+          ].includes(input.itemKind)) &&
         (scope !== "DEPARTMENT" || input.departmentId !== null),
     );
     if (rule?.rate !== null && rule?.rate !== undefined)

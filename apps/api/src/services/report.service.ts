@@ -239,6 +239,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
       // by its sale date would drop it when the sale predates the commission.
       prisma.employeeCommission.findMany({
         where: {
+          ledgerVersion: null,
           OR: [
             { refundAdjustment: false, sale: { status: "COMPLETED", soldAt } },
             { refundAdjustment: true, createdAt: { gte: from, lte: to } },
@@ -264,6 +265,7 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
       }),
       prisma.employeeCommission.count({
         where: {
+          ledgerVersion: null,
           reconciliationRequired: true,
           OR: [
             { sale: { refund: { refundedAt: { gte: from, lte: to } } } },
