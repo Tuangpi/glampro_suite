@@ -2,21 +2,85 @@
 
 ## Current State
 
-- Current task: None.
+- Current task: SC-003 — IN PROGRESS (seller and therapist attribution).
 - Most recently completed: SC-002 — DONE (local foundation and collection design).
 - Approval: October 26, 2026; recommended policies accepted. Collection-based sale
   commission, existing exact-cent redemption value, separate tracking, payroll later.
-- Implementation: shared kinds, compatible resolver, versioned EmployeeCommission events,
-  exact precision, idempotent posting/reversals and period guards. Integration contract
-  is FOUNDATION.md. New posting is not enabled in POS or public APIs.
+- Implementation: sale attribution plus configurable required-attribution API policy,
+  immutable redemption coverage/original-value/own-rate evidence, explicit whole-set
+  performer UI, linked evidence corrections and voids. No new earnings are posted.
+- Remaining: transactional financial postings, current-open-period financial correction/
+  reversal integration, broader family/permission/concurrency acceptance and admin UI.
 - Verification limitation: API lint/typecheck blocked by existing unused platform-auth
   sendTwoFactorCode import. Scoped lint, focused tests, shared and web checks pass.
 - No application database migration, production change or deployment authorized/performed.
-- Recommended next task: SC-003 — Seller and therapist attribution.
+- Recommended next task: Resume SC-003; do not start SC-004.
 - Continue using this folder, not the large root task history. Select one task and
   stop after its completion; do not automatically implement the whole project.
 
 ## Recent notes
+
+### SC-003 — October 26, 2026 — IN PROGRESS, redemption evidence checkpoint
+
+- Added append-only tenant-scoped required-attribution policies with manager-only
+  read/publication routes, optimistic revisions and actor/reason audit. Defaults remain
+  optional; completion (including held carts), not incomplete drafts, enforces sellers
+  and service performers. Redemption policy rejects missing/ambiguous session splits.
+- Added immutable package-redemption snapshots: covered line IDs/service quantities,
+  original valuation movement/purchase/ordinals/currency/net cents, event-time own-rate
+  decisions and exact ten-decimal candidate amounts. These are **pending-release evidence**,
+  not EmployeeCommission earnings. Legacy unknown value stays null, never guessed zero.
+- Whole service sets retain their original combined session value. Explicit tender
+  performers override line inference; otherwise only identical covered-line splits
+  resolve. Conflicting splits remain unknown, with no current-price weighting. POS
+  payment dialog supports an explicit whole-session/set split without a seller group.
+- Added manager-only linked correction endpoint with revision/hash-checked retries;
+  void appends linked evidence without rewriting attribution. Both fail closed if
+  version-1 redemption earnings exist, pending financial reversal/repost integration.
+- Acceptance exposed old database SERVICE/PRODUCT-only rule constraints. Added a
+  separate migration allowing foundation kinds/package scope internally; public rule
+  publication still refuses these kinds. No earnings activation or backfill.
+- Disposable cluster from the earlier session was unavailable after resumption; created
+  /tmp/glampro-sc003r-pg, port 55464/database commission_redemption_test. All 55 migrations
+  replayed from empty. API focused suite 68/68 (including sale 57/57 and enabled acceptance),
+  including additional required-policy/held-cart/immutability coverage in the final run.
+  Final consolidated checks: shared 195/195, focused API 68/68 (no skips), focused web
+  77/77; shared build/lint, web lint/typecheck/production build, changed API lint and
+  Prisma schema validation pass. Scoped formatting and whitespace checks pass.
+- Verification caught optional seller UI type narrowing and a test actor-context error;
+  both corrected. Web production build/typecheck, shared/web lint and changed API lint
+  pass. API typecheck still reports only the existing unused sendTwoFactorCode import.
+- Still incomplete: no financial earning/reversal/repost integration or current-open-period
+  correction handling, no policy admin UI, no full route/family/concurrency release matrix,
+  no browser walkthrough. Keep SC-003 IN PROGRESS; SC-004 is not started. No application
+  migration, activation, deployment, commit or push.
+
+### SC-003 — October 26, 2026 — IN PROGRESS, attribution capture checkpoint
+
+- Added shared attribution schema: independent seller/performer groups, each 1–4
+  distinct staff, integer basis-point shares totaling 10000. No cashier fallback,
+  earnings claim, automatic historical attribution or rate/basis input from clients.
+- Added POS editor, browser draft preservation, submission, held-cart resumption and
+  receipt API serialization. Cart keys include explicit attribution so differently
+  credited lines cannot merge silently. Existing single-staff behavior is unchanged.
+- Sale writes recheck enabled tenant staff inside the transaction and validate performer
+  service/department eligibility. Migration adds nullable SaleLine attribution and a
+  trigger preventing completed-line attribution updates; corrections are not yet exposed.
+- Fresh disposable PostgreSQL 18 on port 55464/database commission_attribution_test:
+  all 53 migrations replay successfully. Entire sale.service.test.ts passes 57/57,
+  no skips, including new hold/completion/foreign-credit rollback/immutability test.
+  Initial new test used a nonexistent fixture helper; corrected it and reran successfully.
+- Shared tests 193/193; focused web editor/cart/draft/Sale page 74/74. Shared build/lint,
+  web lint/typecheck/production build and changed API ESLint pass. API typecheck still
+  fails solely on existing unused sendTwoFactorCode import in platform-auth.service.ts;
+  no new diagnostics. Scoped formatting and diff checks pass. No browser walkthrough.
+- Remaining SC-003: configurable required-attribution policy; immutable redemption
+  attribution/coverage and exact-value commission postings; event-time own-rate splits;
+  linked wrong-staff corrections and session-void reversals, including current-open-period
+  handling; synthetic service-set/transfer/family/concurrency/permission acceptance.
+  Preserve collection-based sale commission release gate until SC-006 and SC-005.
+- No application migration, seed, activation, deployment, commit or push. Disposable
+  cluster stopped after checks. Task remains IN PROGRESS; resume before another SC task.
 
 ### SC-002 — October 26, 2026 — DONE
 

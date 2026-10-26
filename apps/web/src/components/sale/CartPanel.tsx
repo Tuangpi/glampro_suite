@@ -18,7 +18,12 @@ import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import Modal from "@/components/ui/Modal";
 import CartLine, { type StaffOption } from "@/components/sale/CartLine";
-import { lineUnitPrice, listUnitPrice, type CartLine as CartLineState } from "@/hooks/useSale";
+import {
+  cartLineKey,
+  lineUnitPrice,
+  listUnitPrice,
+  type CartLine as CartLineState,
+} from "@/hooks/useSale";
 import { cartTotalCents } from "@/lib/money";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
@@ -34,6 +39,8 @@ export interface CartPanelProps {
   disabled: boolean;
   onQuantity: (key: string, quantity: number) => void;
   onStaff: (key: string, staffId: string | undefined) => void;
+  sellerOptions?: StaffOption[];
+  onAttribution?: (key: string, value: CartLineState["attribution"]) => void;
   /** Sets or clears a line's discount rate, in percent (ADR 0017). */
   onDiscount: (key: string, percent: number | undefined) => void;
   onRemove: (key: string) => void;
@@ -53,6 +60,8 @@ export default function CartPanel({
   disabled,
   onQuantity,
   onStaff,
+  sellerOptions,
+  onAttribution,
   onDiscount,
   onRemove,
   onClear,
@@ -169,7 +178,7 @@ export default function CartPanel({
           <ul aria-label="Cart items" className="divide-y divide-line-soft px-5">
             {priced.map(({ line, unitPrice, listPrice }) => (
               <CartLine
-                key={`${line.itemType}:${line.itemId}:${line.staffId ?? ""}`}
+                key={cartLineKey(line)}
                 line={line}
                 unitPrice={unitPrice}
                 listPrice={listPrice}
@@ -177,6 +186,8 @@ export default function CartPanel({
                 staffOptions={line.itemType === "SERVICE" ? staffForService(line.itemId) : []}
                 onQuantity={onQuantity}
                 onStaff={onStaff}
+                sellerOptions={sellerOptions}
+                onAttribution={onAttribution}
                 onDiscount={onDiscount}
                 onRemove={onRemove}
                 disabled={locked}

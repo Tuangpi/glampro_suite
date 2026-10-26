@@ -844,6 +844,8 @@ export default function Sale() {
               disabled={cartLocked}
               onQuantity={cart.setQuantity}
               onStaff={cart.setStaff}
+              sellerOptions={staffRows}
+              onAttribution={cart.setAttribution}
               onDiscount={cart.setDiscount}
               onRemove={cart.removeLine}
               onClear={cart.clearCart}
@@ -923,6 +925,7 @@ export default function Sale() {
       ) : null}
       {checkoutOpen ? (
         <PaymentDialog
+          staff={staffRows}
           key={JSON.stringify([cart.lines, customer?.id, isMember])}
           totalCents={totalCents}
           lines={cart.lines.map((line) => ({

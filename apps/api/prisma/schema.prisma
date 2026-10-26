@@ -327,6 +327,8 @@ model Tenant {
   sessionPackageTransferEvents SessionPackageTransferEvent[]
   commissionRules CommissionRule[]
   commissionPeriods CommissionPeriod[]
+  commissionRedemptionSnapshots CommissionRedemptionSnapshot[]
+  commissionAttributionPolicies CommissionAttributionPolicy[]
   prepaidTransferEvents PrepaidTransferEvent[]
   prepaidFamilies PrepaidFamily[]
   prepaidFamilyMembers PrepaidFamilyMember[]
@@ -1557,6 +1559,40 @@ model CommissionPeriod {
   @@map("commission_periods")
 }
 
+/// Append-only attribution/rate/value evidence; not an additional monetary ledger.
+model CommissionRedemptionSnapshot {
+  id String @id @default(cuid())
+  tenantId String
+  redemptionId String
+  revision Int
+  eventKey String
+  eventHash String
+  eventType String
+  actorId String?
+  reason String
+  evidence Json
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@unique([tenantId, redemptionId, revision])
+  @@unique([tenantId, eventKey])
+  @@index([tenantId, redemptionId, createdAt])
+  @@map("commission_redemption_snapshots")
+}
+
+model CommissionAttributionPolicy {
+  id String @id @default(cuid())
+  tenantId String
+  requireSellers Boolean
+  requireServicePerformers Boolean
+  requireRedemptionPerformers Boolean
+  actorId String
+  reason String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  @@index([tenantId, createdAt, id])
+  @@map("commission_attribution_policies")
+}
+
 /// Append-only configuration events. Null rate explicitly inherits the next level.
 /// Target ids are validated within the tenant; snapshots/history survive archival.
 model CommissionRule {
@@ -1758,6 +1794,8 @@ model SalePayment {
 /// sale time, exactly as legacy stored `name` on every line, so a receipt still
 /// reads correctly after the catalogue row is renamed or archived.
 model SaleLine {
+  /// Explicit seller/performer splits. Null means no new attribution evidence.
+  attribution Json?
   /// Applied commission decision, including explicit zero. Null for legacy/held lines.
   commissionSnapshot Json?
   id       String @id @default(cuid())

@@ -36,6 +36,9 @@
  * till is stating what the holding covers, not asking the cashier to type it.
  */
 import { useState } from "react";
+import CommissionAttributionEditor from "./CommissionAttributionEditor";
+import type { StaffOption } from "./CartLine";
+import type { CommissionShares } from "@glampro_suite/shared";
 
 import {
   MAX_SALE_PAYMENTS,
@@ -68,9 +71,11 @@ interface TenderDraft {
   amount: string;
   /** The package or credit a redemption tender spends; unused by the money tenders. */
   holdingId?: string;
+  performers?: CommissionShares;
 }
 
 export interface PaymentDialogProps {
+  staff?: StaffOption[];
   /** The cart total in whole cents, derived the same way the cart panel draws it. */
   totalCents: number;
   /** The cart, for pricing what a package covers. */
@@ -102,6 +107,7 @@ export interface PaymentDialogProps {
 let nextTenderId = 1;
 
 export default function PaymentDialog({
+  staff = [],
   totalCents,
   lines,
   customerId,
@@ -240,7 +246,7 @@ export default function PaymentDialog({
   function chooseMethod(id: number, method: SalePaymentMethod) {
     const first =
       method === "PACKAGE" ? packages[0] : method === "PREPAID_CREDIT" ? credits[0] : undefined;
-    setTender(id, { method, amount: "", holdingId: first?.id });
+    setTender(id, { method, amount: "", holdingId: first?.id, performers: undefined });
   }
 
   function addTender() {
@@ -323,6 +329,9 @@ export default function PaymentDialog({
         // the amount this sheet derived, which is exactly what the server recomputes.
         amount: Number(centsToPrice(tenderCents[index] ?? 0)),
         ...(isRedemptionPaymentMethod(tender.method) ? { holdingId: tender.holdingId } : {}),
+        ...(tender.method === "PACKAGE" && tender.performers
+          ? { performers: tender.performers }
+          : {}),
       })),
       idempotencyKey,
       voucher === null ? null : voucher.code,
@@ -539,6 +548,22 @@ export default function PaymentDialog({
                   )}
                 </div>
 
+                {tender.method === "PACKAGE" ? (
+                  <div className="mt-2">
+                    <p className="text-xs text-ink-muted">
+                      Optional session/set performers. This split applies to the whole original
+                      session value, not current service prices. If omitted, identical covered-line
+                      splits are retained; conflicting splits remain unknown. No new earnings are
+                      enabled.
+                    </p>
+                    <CommissionAttributionEditor
+                      value={tender.performers ? { performers: tender.performers } : undefined}
+                      performers={staff}
+                      disabled={isPending}
+                      onChange={(value) => setTender(tender.id, { performers: value?.performers })}
+                    />
+                  </div>
+                ) : null}
                 {isRedemption ? (
                   <p className="text-xs text-ink-muted">
                     {tender.method === "PACKAGE"

@@ -1,5 +1,13 @@
 import { Router } from "express";
 import {
+  publishCommissionAttributionPolicySchema,
+  type PublishCommissionAttributionPolicy,
+} from "@glampro_suite/shared";
+import {
+  readCommissionAttributionPolicy,
+  publishCommissionAttributionPolicy,
+} from "../services/commission-attribution-policy.js";
+import {
   commissionOptionsQuerySchema,
   commissionPreviewSchema,
   commissionQuerySchema,
@@ -18,6 +26,30 @@ import {
 
 export const commissionsRouter = Router();
 commissionsRouter.use(auth, requireModule("staff"), requireRole("SUPER_ADMIN", "MANAGER"));
+commissionsRouter.get("/attribution-policy", async (_req, res, next) => {
+  try {
+    res.json({ data: await readCommissionAttributionPolicy() });
+  } catch (error) {
+    next(error);
+  }
+});
+commissionsRouter.post(
+  "/attribution-policy",
+  requireWritableTenant(),
+  validate(publishCommissionAttributionPolicySchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await publishCommissionAttributionPolicy(
+          validated<PublishCommissionAttributionPolicy>(req, "body"),
+          req.user!.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 commissionsRouter.get("/", validate(commissionQuerySchema, "query"), async (req, res, next) => {
   try {
     const query = validated<{ staffId?: string; page: number }>(req, "query");

@@ -1,4 +1,10 @@
 import { Router } from "express";
+import { z } from "zod";
+import {
+  correctRedemptionAttributionSchema,
+  type CorrectRedemptionAttribution,
+} from "@glampro_suite/shared";
+import { correctRedemptionAttribution } from "../services/redemption-commission-evidence.js";
 import {
   directTipParamsSchema,
   recordDirectTipSchema,
@@ -71,6 +77,43 @@ import {
  * list and the single receipt do not — reading stays open (TENANCY.md §6).
  */
 export const salesRouter = Router();
+
+salesRouter.post(
+  "/:id/redemptions/:redemptionId/attribution-corrections",
+  auth,
+  requireModule("sales"),
+  requireModule("packages"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(
+    z.object({ id: z.string().min(1).max(128), redemptionId: z.string().min(1).max(128) }),
+    "params",
+  ),
+  validate(correctRedemptionAttributionSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id, redemptionId } = validated<{ id: string; redemptionId: string }>(req, "params");
+      const result = await correctRedemptionAttribution(
+        id,
+        redemptionId,
+        validated<CorrectRedemptionAttribution>(req, "body"),
+        req.user.id,
+      );
+      res.json({
+        data: {
+          id: result.id,
+          redemptionId: result.redemptionId,
+          revision: result.revision,
+          eventType: result.eventType,
+          recordedAt: result.createdAt.toISOString(),
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 salesRouter.get(
   "/:id/direct-tips",

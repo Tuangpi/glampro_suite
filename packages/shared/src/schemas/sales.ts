@@ -18,6 +18,7 @@
  * price.
  */
 import { z } from "zod";
+import { commissionAttributionSchema, commissionSharesSchema } from "./commission-attribution.js";
 
 import {
   DEFAULT_SALE_ITEM_LIMIT,
@@ -280,6 +281,7 @@ export const saleLineInputSchema = z.object({
   /** A line of zero is not a line; the till removes it instead of posting it. */
   quantity: z.coerce.number().int().min(1).max(10_000),
   staffId: z.string().min(1).max(64).optional(),
+  attribution: commissionAttributionSchema.optional(),
   /** Absent is a line nobody discounted. */
   discountPercent: discountPercentSchema.optional(),
 });
@@ -313,8 +315,16 @@ export const salePaymentInputSchema = z
     amount: moneySchema,
     sessionId: z.string().trim().max(255).optional(),
     holdingId: z.string().min(1).max(64).optional(),
+    /** One explicit split for the redeemed session/set; never a list-price allocation. */
+    performers: commissionSharesSchema.optional(),
   })
   .superRefine((tender, ctx) => {
+    if (tender.performers && tender.method !== "PACKAGE")
+      ctx.addIssue({
+        code: "custom",
+        message: "Redemption performers require a package tender.",
+        path: ["performers"],
+      });
     if (isRedemptionPaymentMethod(tender.method)) {
       if (tender.holdingId === undefined) {
         ctx.addIssue({
@@ -516,6 +526,7 @@ export type SaleList = z.infer<typeof saleListSchema>;
  */
 export const saleLineSchema = z.object({
   id: z.string(),
+  attribution: commissionAttributionSchema.nullable().optional(),
   itemType: saleItemKindSchema,
   /** The catalogue row's id, which the receipt does not need and history does. */
   itemId: z.string(),

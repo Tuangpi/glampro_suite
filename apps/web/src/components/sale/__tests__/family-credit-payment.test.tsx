@@ -67,3 +67,58 @@ it("keeps the draft and displays a refused family payment rather than claiming s
   expect(screen.getByText("Family membership changed")).toBeInTheDocument();
   expect(screen.getByRole("dialog")).toBeInTheDocument();
 });
+
+it("posts explicit whole-session performers without a seller or client rate", async () => {
+  mocks.holdings.mockReturnValue({
+    data: {
+      holdings: [
+        {
+          id: "package-holding",
+          kind: "PACKAGE",
+          name: "Session package",
+          quantityRemaining: 2,
+          serviceIds: ["service"],
+          expiresAt: null,
+        },
+      ],
+    },
+  });
+  const onConfirm = vi.fn();
+  render(
+    <PaymentDialog
+      totalCents={1000}
+      lines={[{ itemType: "SERVICE", itemId: "service", quantity: 1, unitPriceCents: 1000 }]}
+      staff={[{ id: "therapist", name: "Therapist" }]}
+      customerId="c1"
+      hasCustomer
+      needsCustomer={false}
+      hasManualDiscount={false}
+      isPending={false}
+      errorMessage={null}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+    />,
+  );
+  await userEvent.selectOptions(screen.getByLabelText("Tender 1"), "PACKAGE");
+  await userEvent.click(screen.getByRole("button", { name: "Commission attribution" }));
+  expect(screen.queryByRole("button", { name: "Add seller" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Add therapist" }));
+  await userEvent.selectOptions(
+    screen.getByRole("combobox", { name: /performers staff/i }),
+    "therapist",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save attribution" }));
+  await userEvent.click(screen.getByRole("button", { name: "Take payment" }));
+  expect(onConfirm).toHaveBeenCalledWith(
+    [
+      {
+        method: "PACKAGE",
+        amount: 10,
+        holdingId: "package-holding",
+        performers: [{ staffId: "therapist", share: 10000 }],
+      },
+    ],
+    expect.any(String),
+    null,
+  );
+});

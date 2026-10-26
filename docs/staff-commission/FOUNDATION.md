@@ -161,6 +161,17 @@ manager/admin. Period APIs and payment-state audit are SC-005, not delivered her
 
 ## Remaining release work
 
+SC-003 evidence checkpoint (October 26, 2026): POS now captures append-only redemption
+coverage, original ordinal valuation and own-rate candidate snapshots, with linked
+evidence corrections/voids. No new EmployeeCommission postings are enabled. Whole-set
+performers can be explicit on the tender; inference is allowed only when every covered
+line has the same split. Conflicting/missing splits stay unknown; no service-price
+weighting is introduced. Required-attribution policies are optional by default and
+can require sellers, service performers and/or resolved redemption performers.
+Corrections and voids refuse sources with version-1 earnings until transactional
+financial reversal/repost integration is implemented. Snapshot candidate amounts are
+not earnings, paid-session eligibility evidence, collection evidence or report totals.
+
 SC-003: attribution and mutually exclusive event integration; SC-004: package
 catalogue validation/configuration and activation policy; SC-006: persisted explicit
 allocation/ratios, refund deltas, eligibility and audited overrides; SC-005: report

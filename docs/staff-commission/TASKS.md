@@ -48,7 +48,7 @@ SC-006 is a launch dependency, not an optional advanced feature.
 
 ## SC-003 — Seller and therapist attribution
 
-- Status: TODO.
+- Status: IN PROGRESS.
 - Dependencies: SC-002.
 - Expected result: POS seller/performer attribution, up to four staff with validated
   splits, purchase/redemption commission integration, original-value preservation,
@@ -59,6 +59,15 @@ SC-006 is a launch dependency, not an optional advanced feature.
   voids, concurrent retries, failure rollback, and permission/tenant isolation.
   Existing sale/redemption flows and typechecks remain passing. No collection-based
   sale commission release before SC-006 and SC-005.
+- Earlier checkpoint: explicit split capture/persistence/UI implemented and verified (shared
+  193/193, focused web 74/74, disposable sale database tests 57/57; 53 migrations replay).
+  At that checkpoint, policy/redemption/correction integration remained outstanding.
+  Do not treat capture as earned commission.
+- Continued checkpoint: required-attribution API policies; immutable redemption coverage,
+  original ordinal value and own-rate candidate evidence; explicit whole-set performer
+  UI; linked evidence corrections/voids. Disposable acceptance and regression checks
+  recorded in PROGRESS.md. Financial posting/current-open-period reversals and remaining
+  release acceptance are unfinished. Evidence-only corrections refuse posted earnings.
 
 ## SC-004 — Commission administration
 

@@ -20,6 +20,7 @@ export * from "./schemas/catalogue.js";
 export * from "./schemas/sales.js";
 export * from "./schemas/staff.js";
 export * from "./schemas/commission.js";
+export * from "./schemas/commission-attribution.js";
 export * from "./schemas/shift.js";
 export * from "./schemas/appointment.js";
 export * from "./schemas/resource.js";

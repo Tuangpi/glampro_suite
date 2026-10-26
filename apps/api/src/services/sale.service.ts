@@ -27,6 +27,11 @@
 import { resolveCommission } from "./commission-rules.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import {
+  captureRedemptionCommission,
+  voidRedemptionCommissionEvidence,
+} from "./redemption-commission-evidence.js";
+import { readCommissionAttributionPolicy } from "./commission-attribution-policy.js";
+import {
   allocatePackage,
   GST_INCLUSIVE_DIVISOR_STRING,
   GST_RATE_DECIMAL_STRING,
@@ -36,6 +41,7 @@ import {
   isRedemptionPaymentMethod,
   normalizeBarcode,
   saleDetailSchema,
+  commissionAttributionSchema,
   saleItemSearchResultSchema,
   saleListSchema,
   resumeSaleSchema,
@@ -1369,6 +1375,64 @@ async function writeLines(
   saleId: string,
   priced: PricedLine[],
 ): Promise<void> {
+  const creditedIds = [
+    ...new Set(
+      priced.flatMap((line) =>
+        [
+          ...(line.input.attribution?.sellers ?? []),
+          ...(line.input.attribution?.performers ?? []),
+        ].map((credit) => credit.staffId),
+      ),
+    ),
+  ];
+  await lockCommissionConfiguration(tx, tenantId);
+  const sale = await tx.sale.findFirst({ where: { id: saleId }, select: { status: true } });
+  const policy = await readCommissionAttributionPolicy(tx);
+  // Drafts may remain incomplete. Completion is authoritative, including held carts.
+  if (sale?.status === "COMPLETED") {
+    for (const line of priced) {
+      if (policy.requireSellers && !line.input.attribution?.sellers)
+        throw badRequest("Select sellers: seller attribution is required by salon policy.");
+      if (
+        policy.requireServicePerformers &&
+        line.item.itemType === "SERVICE" &&
+        !line.input.attribution?.performers
+      )
+        throw badRequest("Select performers: service attribution is required by salon policy.");
+    }
+  }
+  if (creditedIds.length > 0) {
+    // Recheck inside the write transaction. No platform/cashier attribution fallback.
+    const credited = await tx.user.findMany({
+      where: { id: { in: creditedIds }, disabled: false },
+      select: { id: true },
+    });
+    if (credited.length !== creditedIds.length)
+      throw badRequest("Credited staff must be enabled members of this salon.");
+  }
+  for (const line of priced) {
+    if (line.input.attribution) commissionAttributionSchema.parse(line.input.attribution);
+    if (line.input.attribution?.performers && line.item.itemType !== "SERVICE")
+      throw badRequest("Performers may only be assigned to service lines.");
+    if (line.input.attribution?.performers) {
+      const service = await tx.service.findFirst({
+        where: { id: line.item.itemId },
+        select: { departmentId: true },
+      });
+      if (!service) throw badRequest("Attributed service is unavailable.");
+      if (service.departmentId) {
+        const eligible = await tx.user.findMany({
+          where: {
+            id: { in: line.input.attribution.performers.map((row) => row.staffId) },
+            departments: { some: { departmentId: service.departmentId } },
+          },
+          select: { id: true },
+        });
+        if (eligible.length !== line.input.attribution.performers.length)
+          throw badRequest("Performing therapists must belong to the service department.");
+      }
+    }
+  }
   await tx.saleLine.createMany({
     data: priced.map((line, index) => ({
       tenantId,
@@ -1396,6 +1460,7 @@ async function writeLines(
       taxAmount: line.taxAmount,
       taxRate: line.taxRate,
       staffId: line.input.staffId ?? null,
+      attribution: line.input.attribution ?? Prisma.DbNull,
       position: index,
     })),
   });
@@ -1485,6 +1550,8 @@ async function redeemPayments(
   }
 
   const usedAt = new Date();
+  // Publisher/period lock precedes holding locks on all commission-aware redemptions.
+  await lockCommissionConfiguration(tx, tenantId);
   const allocated = priced.map(() => 0);
   for (const tender of redemptions) {
     // `salePaymentInputSchema` requires a holding on a redemption tender, and the
@@ -1586,6 +1653,12 @@ async function redeemPackage(
       "HOLDING_NOT_COVERED",
     );
   }
+  const coveredLines = allocation.units
+    .map((units, index) => ({
+      position: index,
+      quantity: units - (allocated[index] ?? 0),
+    }))
+    .filter((line) => line.quantity > 0);
   allocated.splice(0, allocated.length, ...allocation.units);
 
   const drawn = await tx.customerPackageHolding.updateMany({
@@ -1614,6 +1687,26 @@ async function redeemPackage(
     },
   });
   await recordPackageRedemption(tx, holding.id, redemption.id, sessions);
+  const storedLines = await tx.saleLine.findMany({
+    where: { saleId },
+    select: { id: true, position: true },
+  });
+  await captureRedemptionCommission(
+    tx,
+    redemption.id,
+    coveredLines.map((coveredLine) => {
+      const line = priced[coveredLine.position]!;
+      const stored = storedLines.find((row) => row.position === coveredLine.position);
+      if (!stored) throw new Error("Redemption covered sale line is missing.");
+      return {
+        saleLineId: stored.id,
+        serviceId: line.item.itemId,
+        quantity: coveredLine.quantity,
+        performers: line.input.attribution?.performers ?? null,
+      };
+    }),
+    tender.performers,
+  );
 }
 
 /** One credit tender: draws money off a value-package holding. */
@@ -2105,6 +2198,7 @@ const SALE_SELECT = {
       taxRate: true,
       staffId: true,
       staff: { select: { name: true } },
+      attribution: true,
     },
     // Cart order, which is why `SaleLine.position` exists.
     orderBy: { position: "asc" },
@@ -2172,6 +2266,8 @@ function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>
       taxRate: amount(line.taxRate),
       staffId: line.staffId,
       staffName: line.staff?.name ?? null,
+      attribution:
+        line.attribution === null ? null : commissionAttributionSchema.parse(line.attribution),
     })),
     payments: row.payments.map((tender) => ({
       method: tender.method,
@@ -2744,6 +2840,8 @@ async function reverseForVoid(
     select: { id: true, holdingId: true, itemType: true, quantity: true, amount: true },
   });
 
+  if (redemptions.some((row) => row.itemType === "PACKAGE"))
+    await lockCommissionConfiguration(tx, tenantId);
   for (const redemption of redemptions) {
     if (redemption.holdingId !== null) {
       if (redemption.itemType === "PACKAGE") {
@@ -2757,6 +2855,13 @@ async function reverseForVoid(
             "REVERSAL_HOLDING_MISSING",
           );
         await restorePackageRedemption(tx, redemption.holdingId, redemption.id);
+        await voidRedemptionCommissionEvidence(
+          tx,
+          redemption.id,
+          await tx.sale
+            .findFirst({ where: { id: sale.id }, select: { voidedById: true } })
+            .then((row) => row?.voidedById ?? null),
+        );
       } else if (redemption.itemType === "VALUE_PACKAGE" && redemption.amount !== null) {
         const restored = await tx.customerValuePackageHolding.updateMany({
           where: { id: redemption.holdingId },

@@ -75,6 +75,7 @@ export interface CartLine {
   memberPrice: string | null;
   /** Who gets credit for this line. Absent for product lines (the MVP rule). */
   staffId?: string;
+  attribution?: SaleLineInput["attribution"];
   /**
    * The reduction the cashier applied, as a **rate** (ADR 0017). The one price-shaped
    * thing the till may send, and a rate rather than an amount so it cannot name a price:
@@ -93,8 +94,11 @@ export interface CartLine {
  * lines, because the second click names a different performer — merging on the
  * item alone would silently re-attribute the first line.
  */
-export function cartLineKey(line: Pick<CartLine, "itemType" | "itemId" | "staffId">): string {
-  return `${line.itemType}:${line.itemId}:${line.staffId ?? ""}`;
+export function cartLineKey(
+  line: Pick<CartLine, "itemType" | "itemId" | "staffId" | "attribution">,
+): string {
+  const base = `${line.itemType}:${line.itemId}:${line.staffId ?? ""}`;
+  return line.attribution ? `${base}:${JSON.stringify(line.attribution)}` : base;
 }
 
 /**
@@ -251,6 +255,7 @@ export function toSaleLineInputs(lines: CartLine[]): SaleLineInput[] {
     itemId: line.itemId,
     quantity: line.quantity,
     ...(line.staffId ? { staffId: line.staffId } : {}),
+    ...(line.attribution ? { attribution: line.attribution } : {}),
     // Absent rather than `0` when nobody discounted: the rate is what the receipt
     // discloses, and "0% off" is a disclosure of nothing (ADR 0017).
     ...(line.discountPercent ? { discountPercent: line.discountPercent } : {}),
@@ -271,6 +276,7 @@ export function cartLinesFrom(sale: SaleDetail, items: ResumeSale["items"]): Car
       price: item.price,
       memberPrice: item.memberPrice,
       ...(line.staffId ? { staffId: line.staffId } : {}),
+      ...(line.attribution ? { attribution: line.attribution } : {}),
       ...(Number(line.discountPercent) > 0
         ? { discountPercent: Number(line.discountPercent) }
         : {}),
@@ -339,6 +345,7 @@ export interface SaleCart {
   addItem: (item: SaleItem, staffId: string | undefined, isMember: boolean) => boolean;
   setQuantity: (key: string, quantity: number) => void;
   setStaff: (key: string, staffId: string | undefined) => void;
+  setAttribution: (key: string, attribution: SaleLineInput["attribution"]) => void;
   /** Sets or clears a line's discount rate; `undefined` clears it (ADR 0017). */
   setDiscount: (key: string, percent: number | undefined) => void;
   removeLine: (key: string) => void;
@@ -390,6 +397,11 @@ export function useSaleCart(): SaleCart {
     },
     setStaff: (key, staffId) => {
       update((lines) => setCartLineStaff(lines, key, staffId));
+    },
+    setAttribution: (key, attribution) => {
+      update((lines) =>
+        lines.map((line) => (cartLineKey(line) === key ? { ...line, attribution } : line)),
+      );
     },
     setDiscount: (key, percent) => {
       update((lines) => setCartLineDiscount(lines, key, percent));

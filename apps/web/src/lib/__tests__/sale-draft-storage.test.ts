@@ -39,6 +39,15 @@ const CUSTOMER: CustomerSummary = {
 };
 
 describe("sale draft storage", () => {
+  it("retains separate seller and performer splits without inferring the cashier", () => {
+    const identity = saleDraftIdentity("attribution-tenant", "cashier");
+    const attribution = {
+      sellers: [{ staffId: "seller", share: 10000 }],
+      performers: [{ staffId: "therapist", share: 10000 }],
+    };
+    setSaleDraftLines(identity, [{ ...LINE, attribution }]);
+    expect(readSaleDraft(identity).lines[0]?.attribution).toEqual(attribution);
+  });
   it("keeps hold retry keys durable and scoped to the submitted cart and identity", () => {
     const identity = saleDraftIdentity("retry-tenant", "retry-user");
     setSaleDraftLines(identity, [LINE]);

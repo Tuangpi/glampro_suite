@@ -14,6 +14,8 @@
  * the picker this line may offer, already narrowed by the page.
  */
 import { useId, useState } from "react";
+import type { CommissionAttribution } from "@glampro_suite/shared";
+import CommissionAttributionEditor from "./CommissionAttributionEditor";
 
 import { Minus, Plus, Trash } from "@/components/icons";
 import IconButton from "@/components/ui/IconButton";
@@ -47,6 +49,8 @@ export interface CartLineProps {
   onDiscount: (key: string, percent: number | undefined) => void;
   onRemove: (key: string) => void;
   disabled: boolean;
+  sellerOptions?: StaffOption[];
+  onAttribution?: (key: string, value: CommissionAttribution | undefined) => void;
 }
 
 export default function CartLine({
@@ -60,6 +64,8 @@ export default function CartLine({
   onDiscount,
   onRemove,
   disabled,
+  sellerOptions,
+  onAttribution,
 }: CartLineProps) {
   const { formatPrice } = useSalonFormatting();
   const key = cartLineKey(line);
@@ -99,6 +105,15 @@ export default function CartLine({
 
   return (
     <li className="flex min-w-0 flex-col gap-3 py-4">
+      {onAttribution && sellerOptions ? (
+        <CommissionAttributionEditor
+          value={line.attribution}
+          sellers={sellerOptions}
+          performers={line.itemType === "SERVICE" ? staffOptions : undefined}
+          disabled={disabled}
+          onChange={(value) => onAttribution(key, value)}
+        />
+      ) : null}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-sm font-bold break-words text-ink">{line.name}</p>

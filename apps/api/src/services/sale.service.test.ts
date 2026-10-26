@@ -751,6 +751,54 @@ describe(
       });
     });
 
+    it("retains explicit attribution through hold/resume/completion and rejects foreign credit atomically", async () => {
+      const staffId = await staffIdOf(TENANT_A);
+      const foreignId = await staffIdOf(TENANT_B);
+      const itemId = await idOf(TENANT_A, nameOf(TENANT_A, "Cut"));
+      const attribution = {
+        sellers: [{ staffId, share: 10000 }],
+        performers: [{ staffId, share: 10000 }],
+      };
+      await runAsTenant(TENANT_A, async () => {
+        const held = await createSale({
+          idempotencyKey: randomUUID(),
+          hold: true,
+          lines: [{ itemType: "SERVICE", itemId, quantity: 1, attribution }],
+          payments: [],
+        });
+        assert.deepEqual(held.lines[0]?.attribution, attribution);
+        const completed = await completeSale(held.id, {
+          lines: [{ itemType: "SERVICE", itemId, quantity: 1, attribution }],
+          payments: [{ method: "CASH", amount: 50 }],
+        });
+        assert.deepEqual(completed.lines[0]?.attribution, attribution);
+        assert.equal(completed.lines[0]?.staffId, null);
+        assert.equal(await prisma.employeeCommission.count({ where: { saleId: completed.id } }), 0);
+        await assert.rejects(
+          prisma.saleLine.update({
+            where: { id: completed.lines[0]!.id },
+            data: { attribution: { sellers: [{ staffId: foreignId, share: 10000 }] } },
+          }),
+        );
+        const count = await prisma.sale.count();
+        await assert.rejects(
+          createSale({
+            idempotencyKey: randomUUID(),
+            lines: [
+              {
+                itemType: "SERVICE",
+                itemId,
+                quantity: 1,
+                attribution: { sellers: [{ staffId: foreignId, share: 10000 }] },
+              },
+            ],
+            payments: [{ method: "CASH", amount: 50 }],
+          }),
+        );
+        assert.equal(await prisma.sale.count(), count);
+      });
+    });
+
     it("records direct staff tips once, without changing sale accounting, and preserves return history after void", async () => {
       const actor = await staffIdOf(TENANT_A);
       const foreign = await staffIdOf(TENANT_B);
