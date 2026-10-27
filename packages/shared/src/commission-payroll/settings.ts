@@ -43,6 +43,7 @@ export const payrollAssignmentWriteSchema = z.strictObject({
 });
 export const payrollStaffSettingsSchema = z.strictObject({
   expectedRevision: revision,
+  expectedJoinDate: payrollBusinessDateSchema.nullable(),
   joinDate: payrollBusinessDateSchema,
   stageEndOverride: z.number().int().min(0).max(1200).nullable(),
   reason,

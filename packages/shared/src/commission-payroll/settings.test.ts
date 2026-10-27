@@ -62,6 +62,7 @@ test("assignment requests reject duplicate staff, invalid dates and unknown fiel
 test("staff settings require an evidenced date and bounded override", () => {
   const input = {
     joinDate: "2026-09-01",
+    expectedJoinDate: null,
     stageEndOverride: null,
     expectedRevision: 0,
     reason: "Employment date",
@@ -72,6 +73,14 @@ test("staff settings require an evidenced date and bounded override", () => {
     false,
   );
   assert.equal(payrollStaffSettingsSchema.safeParse({ ...input, joinDate: null }).success, false);
+  assert.equal(
+    payrollStaffSettingsSchema.safeParse({ ...input, expectedJoinDate: undefined }).success,
+    false,
+  );
+  assert.equal(
+    payrollStaffSettingsSchema.safeParse({ ...input, expectedJoinDate: "2026-02-30" }).success,
+    false,
+  );
 });
 test("plan creation validates the complete definition, not only plan metadata", () => {
   const definition = hairPayrollExample();

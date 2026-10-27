@@ -144,23 +144,33 @@ export type CreateStaffInput = z.infer<typeof createStaffSchema>;
  * `disabled` is a first-class field, not a delete: a disabled user keeps their
  * appointments and their commission history.
  */
-export const updateStaffSchema = z.object({
-  posPin: z
-    .string()
-    .regex(/^\d{6}$/, "Use a six-digit PIN.")
-    .nullable()
-    .optional(),
-  name: z.string().trim().min(1, "Name is required").max(200).optional(),
-  globalRole: globalRoleSchema.optional(),
-  phone: z.string().trim().max(64).nullable().optional(),
-  position: z.string().trim().max(120).nullable().optional(),
-  commissionRate: commissionRateSchema.optional(),
-  color: z.string().trim().max(32).nullable().optional(),
-  avatar: z.string().trim().max(500).nullable().optional(),
-  startDate: z.iso.date().nullable().optional(),
-  endDate: z.iso.date().nullable().optional(),
-  disabled: z.boolean().optional(),
-  departmentIds: z.array(z.string().min(1)).max(50).optional(),
-});
+export const updateStaffSchema = z
+  .object({
+    posPin: z
+      .string()
+      .regex(/^\d{6}$/, "Use a six-digit PIN.")
+      .nullable()
+      .optional(),
+    name: z.string().trim().min(1, "Name is required").max(200).optional(),
+    globalRole: globalRoleSchema.optional(),
+    phone: z.string().trim().max(64).nullable().optional(),
+    position: z.string().trim().max(120).nullable().optional(),
+    commissionRate: commissionRateSchema.optional(),
+    color: z.string().trim().max(32).nullable().optional(),
+    avatar: z.string().trim().max(500).nullable().optional(),
+    startDate: z.iso.date().nullable().optional(),
+    expectedStartDate: z.iso.date().nullable().optional(),
+    endDate: z.iso.date().nullable().optional(),
+    disabled: z.boolean().optional(),
+    departmentIds: z.array(z.string().min(1)).max(50).optional(),
+  })
+  .superRefine((input, context) => {
+    if (input.startDate !== undefined && input.expectedStartDate === undefined)
+      context.addIssue({
+        code: "custom",
+        path: ["expectedStartDate"],
+        message: "Reload the staff record before changing the start date.",
+      });
+  });
 
 export type UpdateStaffInput = z.infer<typeof updateStaffSchema>;

@@ -31,6 +31,7 @@ function useRevisionFields<T>(value: RevisionValue<T>) {
     fields,
     setFields,
     revision: snapshot.revision,
+    snapshot,
     stale:
       snapshot.revision !== value.revision || JSON.stringify(snapshot) !== JSON.stringify(value),
     reload: () => {
@@ -191,6 +192,7 @@ export function PayrollStaffSettingsForm({ value, canEdit, save }: FormProps<Sta
     joinDate: form.fields.joinDate ?? "",
     stageEndOverride: form.fields.stageEndOverride,
     expectedRevision: form.revision,
+    expectedJoinDate: form.snapshot.joinDate,
   });
   return (
     <FormFrame
@@ -209,6 +211,7 @@ export function PayrollStaffSettingsForm({ value, canEdit, save }: FormProps<Sta
             joinDate: parsed.data.joinDate,
             stageEndOverride: parsed.data.stageEndOverride,
             expectedRevision: form.revision,
+            expectedJoinDate: form.snapshot.joinDate,
           });
       }}
     >

@@ -215,7 +215,10 @@ export default function StaffFormDrawer({
             // Payroll can update this same authoritative date while this drawer is open.
             // Do not write the drawer's old value back unless the identity form changed it.
             ...(form.startDate !== originalStartDate
-              ? { startDate: clearable(form.startDate) }
+              ? {
+                  startDate: clearable(form.startDate),
+                  expectedStartDate: originalStartDate || null,
+                }
               : {}),
             endDate: clearable(form.endDate),
             disabled: form.disabled,
@@ -409,6 +412,11 @@ export default function StaffFormDrawer({
             value={form.startDate}
             onChange={(event) => setField("startDate", event.target.value)}
             error={fieldError("startDate")}
+            hint={
+              isEditing
+                ? "For staff with payroll settings or plan history, change the join date in payroll settings below with a reason."
+                : undefined
+            }
           />
           <Input
             label="End date"

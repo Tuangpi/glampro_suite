@@ -10,6 +10,7 @@ import {
 } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
+import { updateStaff } from "./staff.service.js";
 import {
   readPayrollConfiguration,
   createPayrollPlan,
@@ -75,6 +76,94 @@ test(
         assert.equal(config.settings.minimumDepositPct, "30");
         const date = config.today;
         const reason = "Synthetic verification";
+        const dateStaffId = `${tenantId}-date-race`;
+        await prisma.user.create({
+          data: { id: dateStaffId, tenantId, name: "Date race", passwordHash: "unused" },
+        });
+        await assert.rejects(updateStaff(dateStaffId, { startDate: "2026-09-01" }), /Reload/);
+        await updateStaff(dateStaffId, { startDate: "2026-09-01", expectedStartDate: null });
+        await assert.rejects(
+          updateStaff(dateStaffId, {
+            startDate: null,
+            expectedStartDate: null,
+            name: "Must not persist",
+          }),
+          /changed/,
+        );
+        await assert.rejects(
+          savePayrollStaffSettings(dateStaffId, {
+            expectedRevision: 0,
+            expectedJoinDate: null,
+            joinDate: "2026-08-01",
+            stageEndOverride: null,
+            reason,
+          }),
+          /changed/,
+        );
+        assert.equal(
+          await prisma.payrollConfigurationEvent.count({
+            where: { kind: "STAFF", targetId: dateStaffId },
+          }),
+          0,
+        );
+        const dateRace = await Promise.allSettled([
+          updateStaff(dateStaffId, { startDate: "2026-07-01", expectedStartDate: "2026-09-01" }),
+          savePayrollStaffSettings(dateStaffId, {
+            expectedRevision: 0,
+            expectedJoinDate: "2026-09-01",
+            joinDate: "2026-08-01",
+            stageEndOverride: null,
+            reason,
+          }),
+        ]);
+        assert.equal(dateRace.filter((result) => result.status === "fulfilled").length, 1);
+        const winner = await prisma.user.findFirstOrThrow({ where: { id: dateStaffId } });
+        const winnerDate = winner.startDate!.toISOString().slice(0, 10);
+        assert.equal(winner.name, "Date race");
+        assert.equal(winnerDate, dateRace[0]!.status === "fulfilled" ? "2026-07-01" : "2026-08-01");
+        // Ensure payroll ownership is established regardless of which writer won.
+        const dateRevision = dateRace[1]!.status === "fulfilled" ? 1 : 0;
+        await savePayrollStaffSettings(dateStaffId, {
+          expectedRevision: dateRevision,
+          expectedJoinDate: winnerDate,
+          joinDate: winnerDate,
+          stageEndOverride: null,
+          reason,
+        });
+        await assert.rejects(
+          updateStaff(dateStaffId, {
+            startDate: null,
+            expectedStartDate: winnerDate,
+            name: "Must not persist",
+          }),
+          /payroll settings/,
+        );
+        await updateStaff(dateStaffId, { name: "Profile only" });
+        assert.equal(
+          (await prisma.user.findFirstOrThrow({ where: { id: dateStaffId } }))
+            .startDate!.toISOString()
+            .slice(0, 10),
+          winnerDate,
+        );
+        const dateAuditCount = await prisma.payrollConfigurationEvent.count({
+          where: { kind: "STAFF", targetId: dateStaffId },
+        });
+        await assert.rejects(
+          savePayrollStaffSettings(dateStaffId, {
+            expectedRevision: dateRevision,
+            expectedJoinDate: winnerDate,
+            joinDate: "2026-06-01",
+            stageEndOverride: null,
+            reason,
+          }),
+          /changed/,
+        );
+        assert.equal(
+          await prisma.payrollConfigurationEvent.count({
+            where: { kind: "STAFF", targetId: dateStaffId },
+          }),
+          dateAuditCount,
+        );
         const metadata = {
           name: "Hair",
           description: "Synthetic",
@@ -157,6 +246,7 @@ test(
         );
         await savePayrollStaffSettings(staffId, {
           expectedRevision: 0,
+          expectedJoinDate: null,
           joinDate: "2026-09-01",
           stageEndOverride: null,
           reason,
@@ -324,6 +414,7 @@ test(
               await assert.rejects(
                 savePayrollStaffSettings(staffId, {
                   expectedRevision: 0,
+                  expectedJoinDate: null,
                   joinDate: date,
                   stageEndOverride: null,
                   reason,
@@ -453,6 +544,54 @@ test(
             tenantId,
           }).token;
         const ownerToken = token(ownerId, "SUPER_ADMIN");
+        const staffHeaders = {
+          Authorization: `Bearer ${ownerToken}`,
+          "Content-Type": "application/json",
+        };
+        const patchDate = (body: object) =>
+          fetch(`${root.replace("/payroll-configuration", "/staff")}/${staffId}`, {
+            method: "PATCH",
+            headers: staffHeaders,
+            body: JSON.stringify(body),
+          });
+        assert.equal((await patchDate({ startDate: "2026-08-01" })).status, 422);
+        assert.equal(
+          (await patchDate({ startDate: "2026-08-01", expectedStartDate: null })).status,
+          409,
+        );
+        assert.equal(
+          (await patchDate({ startDate: null, expectedStartDate: "2026-09-01" })).status,
+          400,
+        );
+        const payrollDate = (body: object) =>
+          fetch(`${root}/staff/${staffId}/settings`, {
+            method: "POST",
+            headers: staffHeaders,
+            body: JSON.stringify(body),
+          });
+        assert.equal(
+          (
+            await payrollDate({
+              expectedRevision: 1,
+              joinDate: "2026-09-01",
+              stageEndOverride: null,
+              reason: "HTTP concurrency",
+            })
+          ).status,
+          422,
+        );
+        assert.equal(
+          (
+            await payrollDate({
+              expectedRevision: 1,
+              expectedJoinDate: null,
+              joinDate: "2026-09-01",
+              stageEndOverride: null,
+              reason: "HTTP concurrency",
+            })
+          ).status,
+          409,
+        );
         assert.equal((await fetch(root)).status, 401);
         assert.equal(
           (await fetch(root, { headers: { Authorization: `Bearer ${token(staffId, "STAFF")}` } }))

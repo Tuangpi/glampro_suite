@@ -49,6 +49,21 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## Known source discrepancies resolved
 
+### CP-003 employment-date concurrency (October 27, 2026)
+
+- `User.startDate` remains the single authoritative join date. Payroll settings
+  writes require both the captured payroll-event revision and `expectedJoinDate`
+  (date or null); staff date writes require `expectedStartDate`. Compare while
+  holding the same tenant configuration lock, not in a separate preflight read.
+- A staff member with payroll settings or assignment history changes join date
+  only through the owner-only reasoned payroll workflow. General staff PATCH may
+  still update unrelated profile fields or repeat an unchanged date with a matching
+  expectation. Missing comparisons fail closed; stale comparisons return conflict.
+  This intentionally tightens date-write API compatibility; clients must reload
+  and supply the captured date, never substitute the proposed date as expectation.
+- This is configuration safety, not acceptance of immutable approved statements,
+  required-plan staff creation, outlet assignment policy or historical preview.
+
 ### CP-002 arithmetic and fallback contract (October 27, 2026)
 
 - Use dependency-free bigint rational arithmetic in the existing shared package;

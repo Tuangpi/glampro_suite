@@ -25,7 +25,7 @@ import type {
   StaffSummary,
   UpdateStaffInput,
 } from "@glampro_suite/shared";
-import { staffSummarySchema } from "@glampro_suite/shared";
+import { staffSummarySchema, payrollAssignmentSchema } from "@glampro_suite/shared";
 
 import { badRequest, conflict, notFound } from "../lib/http-error.js";
 import { randomBytes } from "node:crypto";
@@ -33,6 +33,10 @@ import { hashPassword } from "../lib/password.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertDepartmentsExist } from "./department.service.js";
+import { requireScope } from "../lib/tenant-context.js";
+import { lockCommissionConfiguration } from "./commission.service.js";
+
+type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /**
  * Columns the screen reads.
@@ -191,14 +195,18 @@ function rethrowUnique(error: unknown): never {
  * `undefined` leaves the links alone and `[]` clears them, which is the difference
  * between a form that did not send the field and a picker the user emptied.
  */
-async function linkDepartments(userId: string, departmentIds: string[] | undefined): Promise<void> {
+async function linkDepartments(
+  userId: string,
+  departmentIds: string[] | undefined,
+  db: Pick<Transaction, "staffDepartment"> = prisma,
+): Promise<void> {
   if (departmentIds === undefined) return;
 
   const unique = [...new Set(departmentIds)];
-  await prisma.staffDepartment.deleteMany({ where: { userId } });
+  await db.staffDepartment.deleteMany({ where: { userId } });
 
   if (unique.length > 0) {
-    await prisma.staffDepartment.createMany({
+    await db.staffDepartment.createMany({
       data: unique.map((departmentId) => ({ tenantId: "", userId, departmentId })),
     });
   }
@@ -269,39 +277,76 @@ export async function createStaff(input: CreateStaffInput): Promise<StaffDetail>
  * not for this.
  */
 export async function updateStaff(id: string, input: UpdateStaffInput): Promise<StaffDetail> {
-  const { departmentIds, startDate, endDate, disabled, posPin, commissionRate, ...fields } = input;
+  const {
+    departmentIds,
+    startDate,
+    expectedStartDate,
+    endDate,
+    disabled,
+    posPin,
+    commissionRate,
+    ...fields
+  } = input;
   await assertDepartmentsExist(departmentIds);
+  // Hash before acquiring the tenant configuration lock.
+  const pinHash = typeof posPin === "string" ? await hashPassword(posPin) : null;
 
-  const existing = await prisma.user.findFirst({
-    where: { id },
-    select: { id: true, email: true, commissionRate: true },
+  await prisma.$transaction(async (tx) => {
+    const scope = requireScope("User");
+    if (scope.kind === "tenant") await lockCommissionConfiguration(tx, scope.tenantId);
+    const existing = await tx.user.findFirst({
+      where: { id },
+      select: { id: true, email: true, commissionRate: true, startDate: true },
+    });
+    if (!existing) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
+    if (startDate !== undefined) {
+      if (expectedStartDate === undefined)
+        throw badRequest("Reload the staff record before changing the start date.");
+      if (toDate(existing.startDate) !== expectedStartDate)
+        throw conflict("Staff start date changed. Reload before saving.");
+      // Payroll join dates must pass the audited payroll configuration workflow.
+      const payrollSettings = await tx.payrollConfigurationEvent.findFirst({
+        where: { kind: "STAFF", targetId: id },
+      });
+      const assignments = await tx.payrollConfigurationEvent.findFirst({
+        where: { kind: "ASSIGNMENT", targetId: "company" },
+        orderBy: { revision: "desc" },
+      });
+      const hasPayrollHistory =
+        payrollSettings ||
+        payrollAssignmentSchema
+          .array()
+          .parse(assignments?.payload ?? [])
+          .some((row) => row.staffId === id);
+      if (hasPayrollHistory && startDate !== expectedStartDate)
+        throw badRequest("Change this staff join date through payroll settings with a reason.");
+    }
+    if (commissionRate !== undefined && !existing.commissionRate.equals(commissionRate))
+      throw badRequest(
+        "Publish commission changes through the commission rules settings so effective dates and history are retained.",
+      );
+    if (!existing.email && fields.globalRole && !["STAFF", "CASHIER"].includes(fields.globalRole))
+      throw badRequest("PIN-only staff cannot have a management role.");
+
+    await tx.user.update({
+      where: { id },
+      data: {
+        ...fields,
+        ...(posPin !== undefined
+          ? {
+              posPinHash: pinHash,
+              posPinVersion: { increment: 1 },
+            }
+          : {}),
+        ...(disabled !== undefined ? { disabled, disabledAt: disabled ? new Date() : null } : {}),
+        // Absent means "leave it alone" and must stay absent; `null` clears the date.
+        ...(startDate !== undefined ? { startDate: toDateValue(startDate) ?? null } : {}),
+        ...(endDate !== undefined ? { endDate: toDateValue(endDate) ?? null } : {}),
+      },
+    });
+
+    await linkDepartments(id, departmentIds, tx);
   });
-  if (!existing) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
-  if (commissionRate !== undefined && !existing.commissionRate.equals(commissionRate))
-    throw badRequest(
-      "Publish commission changes through the commission rules settings so effective dates and history are retained.",
-    );
-  if (!existing.email && fields.globalRole && !["STAFF", "CASHIER"].includes(fields.globalRole))
-    throw badRequest("PIN-only staff cannot have a management role.");
-
-  await prisma.user.update({
-    where: { id },
-    data: {
-      ...fields,
-      ...(posPin !== undefined
-        ? {
-            posPinHash: posPin === null ? null : await hashPassword(posPin),
-            posPinVersion: { increment: 1 },
-          }
-        : {}),
-      ...(disabled !== undefined ? { disabled, disabledAt: disabled ? new Date() : null } : {}),
-      // Absent means "leave it alone" and must stay absent; `null` clears the date.
-      ...(startDate !== undefined ? { startDate: toDateValue(startDate) ?? null } : {}),
-      ...(endDate !== undefined ? { endDate: toDateValue(endDate) ?? null } : {}),
-    },
-  });
-
-  await linkDepartments(id, departmentIds);
 
   return getStaff(id);
 }

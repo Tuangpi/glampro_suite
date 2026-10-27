@@ -272,6 +272,7 @@ it("routes structured join-date settings with required reason and revision", asy
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/staff/amy/settings", {
       expectedRevision: 0,
       reason: "Correct employment date",
+      expectedJoinDate: "2026-09-01",
       joinDate: "2026-08-01",
       stageEndOverride: null,
     }),

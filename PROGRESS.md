@@ -13,7 +13,8 @@
   checkpoint. Structured stages/incentives/category filters/component ordering,
   selected-stage charts, settings/metadata forms, staff payroll workflow, keyed
   version comparison and audit paging added; build/typecheck/lint and disposable
-  service/HTTP acceptance pass; final full web 891/891 (104 files). See the CP handoff for
+  service/HTTP acceptance pass; latest join-date concurrency protection verified,
+  full web 892/892 (104 files), shared 244/244 and staff HTTP 22/22. See the CP handoff for
   evidence and remaining acceptance work. Resume CP-003, not CP-004.
   The old SC tracker is archived with original contents preserved and is no longer
   authoritative. Configuration API/UI and disposable migration only; no POS/earnings

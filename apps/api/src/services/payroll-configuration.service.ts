@@ -365,8 +365,10 @@ export async function assignPayrollPlan(raw: PayrollAssignmentWrite) {
 export async function savePayrollStaffSettings(id: string, raw: PayrollStaffSettingsWrite) {
   const input = payrollStaffSettingsSchema.parse(raw);
   return write(async (tx) => {
-    await staffRecord(tx, id);
-    const { expectedRevision, reason, ...payload } = input;
+    const staff = await staffRecord(tx, id);
+    if ((staff.startDate?.toISOString().slice(0, 10) ?? null) !== input.expectedJoinDate)
+      throw conflict("Staff join date changed. Reload before saving.");
+    const { expectedRevision, expectedJoinDate: _expectedJoinDate, reason, ...payload } = input;
     const result = await event(tx, "STAFF", id, expectedRevision, reason, payload);
     // User remains the authoritative staff identity and employment date.
     await tx.user.update({

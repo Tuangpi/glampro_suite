@@ -11,12 +11,49 @@
   POS/earnings, activation and deployment remain unchanged. No dependencies added.
 - No policy question currently blocks local work; decisions adopted under delegation
   are in DECISIONS.md, including explicit deviations from SRS proposed defaults.
-- Latest continuation: revision-safe metadata editor; opt-in staff create→payroll
-  continuation and edit payroll panel; keyed rule-version comparison; paginated
-  audit API/UI with salary/outlet filtering. Configuration only; no earnings activation.
+- Latest continuation: authoritative join-date comparisons on both staff/payroll
+  writes under the same tenant lock; payroll-history date edits require the audited
+  owner workflow. Full web 892/892, shared 244/244, disposable acceptance and staff
+  HTTP regression pass. Configuration only; no earnings activation.
 - Next: outlet assignment semantics, authoritative impact-preview input integration,
   staff requirement/concurrency enforcement and remaining API/UI/browser acceptance.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 27, 2026 — CP-003 employment-date concurrency continuation
+
+- Resumed CP-003; inspection reconfirmed outlet assignments cannot safely be enabled
+  by removing the company-plan guard. Current assignment/period contracts select one
+  staff plan and do not define concurrent outlet-specific pooling/selection. No
+  inferred staff home outlet, multi-plan calculation or earnings behavior was added.
+- Closed the independently actionable date race: payroll writes require captured
+  `expectedJoinDate` plus payroll revision; staff date writes require captured
+  `expectedStartDate`. Both compare inside transactions under the existing tenant
+  configuration lock. Stale writes fail with conflict, including when another API
+  changed the User date without changing its payroll revision. Comparison fields
+  never reach persisted profile/audit payloads.
+- Staff with payroll settings or assignment history must change dates through
+  owner-only payroll settings with a reason. Identity-only changes remain available;
+  unchanged start dates are still omitted by the drawer. Staff update and department
+  replacement now share a transaction; PIN hashing occurs before lock acquisition.
+  Existing PIN/commission/role/tenant checks remain. No schema or migration added.
+- Web sends snapshot dates, including null for initially unset dates and refreshed
+  expectations only after explicit reload. Help explains the payroll date workflow.
+  API compatibility: old date-changing clients must reload/send comparison fields;
+  unchanged-date/profile-only requests need no new field. See DECISIONS.md.
+- Verification: full web **892/892** (104 files, one worker); shared **244/244**;
+  focused web **46/46**; disposable CP service/HTTP acceptance and staff route
+  regression **22/22** pass. Fresh PostgreSQL 18 at localhost:55474 replayed existing
+  migrations only. Acceptance covers stale date rejection before first payroll event,
+  no partial writes/audits, concurrent staff/payroll writers with exactly one winner,
+  audited-workflow bypass refusal, unrelated profile edits, HTTP 422/409/400 and
+  existing salary/outlet isolation. Root build, workspace typechecks and lint pass.
+  Logs: `/tmp/cp003-date-{acceptance,staff-api,shared-tests,web-focused,web-full,build,types,lint}.log`.
+- Remaining CP-003: outlet assignment contract/integration, required-plan/join-date
+  staff create/edit enforcement, authoritative historical input integration and
+  authenticated browser acceptance. Historical preview remains unavailable; no
+  legacy payable totals used. Full API regression and browser walkthrough not run.
+  No application database operations, activation, dependencies, deployment, commit
+  or push. CP-003 remains IN PROGRESS; do not automatically start CP-004.
 
 ## October 27, 2026 — CP-003 metadata, staff workflow, comparison and audit continuation
 

@@ -128,6 +128,7 @@ it("requires a valid join date and supports explicit zero or automatic stage ove
   await user.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
   expect(save).toHaveBeenLastCalledWith({
     expectedRevision: 2,
+    expectedJoinDate: null,
     joinDate: "2026-09-01",
     stageEndOverride: 0,
   });
@@ -135,6 +136,7 @@ it("requires a valid join date and supports explicit zero or automatic stage ove
   await user.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
   expect(save).toHaveBeenLastCalledWith({
     expectedRevision: 2,
+    expectedJoinDate: null,
     joinDate: "2026-09-01",
     stageEndOverride: null,
   });
@@ -174,6 +176,10 @@ it("detects employment date changes from the staff API even when the payroll rev
   expect(screen.getByRole("button", { name: "Save staff payroll settings" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Reload staff payroll settings" }));
   expect(screen.getByLabelText("Staff join date")).toHaveValue("2026-08-01");
+  await user.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({ expectedJoinDate: "2026-08-01", expectedRevision: 1 }),
+  );
 });
 
 it("submits structured salon settings and preserves nullable cutoff semantics", async () => {

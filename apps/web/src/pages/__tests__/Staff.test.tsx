@@ -440,6 +440,25 @@ describe("the add-staff form", () => {
 });
 
 describe("the edit form", () => {
+  it("compares an edited start date against the date originally loaded", async () => {
+    const user = userEvent.setup();
+    useStaffList.mockReturnValue(listOf([staffRow()]));
+    render(<Staff />);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.clear(screen.getByLabelText("Start date"));
+    await user.type(screen.getByLabelText("Start date"), "2026-09-01");
+    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(updateMutate).toHaveBeenCalledWith({
+        id: "u1",
+        input: expect.objectContaining({
+          startDate: "2026-09-01",
+          expectedStartDate: "2021-03-04",
+        }),
+      }),
+    );
+  });
   it("has no password box and no editable email, and disables the account instead of deleting it", async () => {
     const user = userEvent.setup();
     useStaffList.mockReturnValue(listOf([staffRow()]));

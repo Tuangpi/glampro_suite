@@ -10,6 +10,24 @@ import {
 } from "./staff.js";
 
 describe("staffListQuerySchema", () => {
+  it("requires a compared start date only when changing or clearing that date", () => {
+    assert.equal(updateStaffSchema.safeParse({ name: "Amy" }).success, true);
+    assert.equal(updateStaffSchema.safeParse({ startDate: "2026-09-01" }).success, false);
+    assert.equal(updateStaffSchema.safeParse({ startDate: null }).success, false);
+    assert.equal(
+      updateStaffSchema.safeParse({ startDate: "2026-09-01", expectedStartDate: null }).success,
+      true,
+    );
+    assert.equal(
+      updateStaffSchema.safeParse({ startDate: null, expectedStartDate: "2026-09-01" }).success,
+      true,
+    );
+    assert.equal(
+      updateStaffSchema.safeParse({ startDate: "2026-09-01", expectedStartDate: "invalid" })
+        .success,
+      false,
+    );
+  });
   it("defaults to showing everyone, disabled included", () => {
     assert.equal(staffListQuerySchema.parse({}).status, "all");
   });

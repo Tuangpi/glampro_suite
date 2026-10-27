@@ -59,6 +59,10 @@ Existing implementation and reference tests need verification, not automatic cre
   use the selected calculator stage. JSON import remains an optional advanced tool.
 - Follow-up: salary profiles, staff join-date/stage overrides and salon settings now
   use structured shared-schema-validated forms with explicit revision-conflict reload.
+- Follow-up: staff/payroll join-date writes now compare captured authoritative dates
+  under the same tenant lock. Payroll history requires the reasoned owner workflow;
+  disposable races and staff HTTP regression pass. Required-plan creation and full
+  staff lifecycle requirement enforcement are still incomplete.
 - Remaining: authoritative last-closed-month impact preview; outlet-scoped plan
   assignment semantics; staff create/edit requirement enforcement and remaining
   API/UI/browser acceptance. Metadata editing, opt-in create→payroll continuation,
