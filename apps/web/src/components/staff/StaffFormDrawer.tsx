@@ -24,7 +24,13 @@
  */
 import { useState } from "react";
 
-import { PASSWORD_MIN_LENGTH, type GlobalRole, type StaffDetail } from "@glampro_suite/shared";
+import {
+  PASSWORD_MIN_LENGTH,
+  createStaffSchema,
+  type CreateStaffInput,
+  type GlobalRole,
+  type StaffDetail,
+} from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
 import Checkbox from "@/components/ui/Checkbox";
@@ -34,6 +40,7 @@ import Select from "@/components/ui/Select";
 import StaffRoster from "@/components/staff/StaffRoster";
 import CommissionRules from "@/components/settings/CommissionRules";
 import PayrollPlans from "@/components/settings/PayrollPlans";
+import StaffPayrollCreation from "./StaffPayrollCreation";
 import { useAuth } from "@/contexts/AuthContext";
 import { showToast } from "@/components/ui/toast-store";
 import { ROLE_OPTIONS } from "@/constants/staff";
@@ -134,6 +141,14 @@ export default function StaffFormDrawer({
 }: StaffFormDrawerProps) {
   const [createdStaff, setCreatedStaff] = useState<StaffDetail | null>(null);
   const [configurePayroll, setConfigurePayroll] = useState(false);
+  const [initialPayroll, setInitialPayroll] = useState(false);
+  const [commissionRole, setCommissionRole] = useState<
+    "" | "COMMISSION_EARNING" | "NON_COMMISSION"
+  >("");
+  const [classificationReason, setClassificationReason] = useState("");
+  const [payrollAssignment, setPayrollAssignment] = useState<
+    CreateStaffInput["payrollAssignment"] | null
+  >(null);
   const staff = createdStaff ?? initialStaff;
   const { user, isReadOnly } = useAuth();
   const canConfigureCommission =
@@ -197,6 +212,14 @@ export default function StaffFormDrawer({
       localErrors["posPin"] = "Use a six-digit PIN.";
     if (form.pinOnly && ["SUPER_ADMIN", "MANAGER"].includes(form.globalRole))
       localErrors["globalRole"] = "PIN-only staff cannot have a management role.";
+    if (!isEditing && (initialPayroll || commissionRole === "COMMISSION_EARNING")) {
+      if (!form.startDate)
+        localErrors["startDate"] = "A join date is required with a payroll plan.";
+      if (!payrollAssignment) {
+        setFormError("Choose an initial payroll plan before creating staff.");
+        return;
+      }
+    }
     if (Object.keys(localErrors).length > 0) {
       setFieldErrors(localErrors);
       return;
@@ -229,7 +252,7 @@ export default function StaffFormDrawer({
         });
         showToast("success", "Staff member updated.");
       } else {
-        const created = await createStaff.mutateAsync({
+        const input = {
           name,
           ...(form.pinOnly
             ? { posPin: form.posPin }
@@ -241,7 +264,24 @@ export default function StaffFormDrawer({
           startDate: optional(form.startDate),
           endDate: optional(form.endDate),
           departmentIds: form.departmentIds,
-        });
+          ...((initialPayroll || commissionRole === "COMMISSION_EARNING") && payrollAssignment
+            ? { payrollAssignment }
+            : {}),
+          ...(commissionRole
+            ? { payrollClassification: { commissionRole, reason: classificationReason } }
+            : {}),
+        };
+        const parsed = createStaffSchema.safeParse(input);
+        if (!parsed.success) {
+          setFieldErrors(
+            Object.fromEntries(
+              parsed.error.issues.map((issue) => [issue.path.join("."), issue.message]),
+            ),
+          );
+          setFormError(parsed.error.issues.map((issue) => issue.message).join(" "));
+          return;
+        }
+        const created = await createStaff.mutateAsync(parsed.data);
         showToast("success", "Staff member added.");
         if (configurePayroll && canConfigureCommission) {
           setCreatedStaff(created);
@@ -467,6 +507,43 @@ export default function StaffFormDrawer({
           />
         ) : null}
         {staff && open ? <StaffRoster staffId={staff.id} /> : null}
+        {!staff && user?.globalRole === "SUPER_ADMIN" && !isReadOnly && (
+          <>
+            <Select
+              label="Initial commission classification"
+              value={commissionRole}
+              options={[
+                { value: "", label: "Not classified — review required" },
+                { value: "COMMISSION_EARNING", label: "Commission earning — plan required" },
+                { value: "NON_COMMISSION", label: "Non-commission" },
+              ]}
+              onChange={(event) => setCommissionRole(event.target.value as typeof commissionRole)}
+            />
+            {commissionRole && (
+              <Input
+                label="Classification reason"
+                value={classificationReason}
+                onChange={(event) => setClassificationReason(event.target.value)}
+                required
+              />
+            )}
+            <Checkbox
+              label="Assign payroll plan during creation"
+              checked={initialPayroll || commissionRole === "COMMISSION_EARNING"}
+              disabled={commissionRole === "COMMISSION_EARNING"}
+              onChange={(event) => {
+                setInitialPayroll(event.target.checked);
+                setPayrollAssignment(null);
+              }}
+            />
+            {(initialPayroll || commissionRole === "COMMISSION_EARNING") && (
+              <StaffPayrollCreation
+                value={payrollAssignment ?? null}
+                onChange={setPayrollAssignment}
+              />
+            )}
+          </>
+        )}
         {!staff && canConfigureCommission && (
           <Checkbox
             label="Configure payroll after creation"

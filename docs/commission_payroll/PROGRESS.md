@@ -11,13 +11,189 @@
   POS/earnings, activation and deployment remain unchanged. No dependencies added.
 - No policy question currently blocks local work; decisions adopted under delegation
   are in DECISIONS.md, including explicit deviations from SRS proposed defaults.
-- Latest continuation: authoritative join-date comparisons on both staff/payroll
-  writes under the same tenant lock; payroll-history date edits require the audited
-  owner workflow. Full web 892/892, shared 244/244, disposable acceptance and staff
-  HTTP regression pass. Configuration only; no earnings activation.
+- Latest continuation: active edits/reactivation reject missing or unknown audited
+  classification under the tenant configuration lock. Classified staff still
+  require join date and applicable plan coverage. Suspension/disabled maintenance
+  remain possible; owner-audited setup is required before reactivation.
+  Identity-only creation remains an open lifecycle gap; earnings stay inactive.
 - Next: outlet assignment semantics, authoritative impact-preview input integration,
   staff requirement/concurrency enforcement and remaining API/UI/browser acceptance.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 27, 2026 — CP-003 unclassified active-edit enforcement
+
+- Removed the unclassified active-edit exemption. Missing/unknown classification
+  now rejects active staff edits/reactivation under the tenant configuration lock,
+  before identity or branch-link writes. Role/title changes do not bypass setup.
+  Suspension and disabled maintenance remain available; owner-only reasoned
+  classification/date setup restores manager edits/reactivation.
+- Added service assertions for owner/manager rejection, rollback of identity,
+  branch links and audit count, disabled maintenance, manager repair refusal and
+  successful recovery. HTTP PIN reset verifies rejection before explicit synthetic
+  setup, then existing reset/session-revocation behavior. Profile fixtures explicitly
+  classify staff; uniquely named synthetic tenants retain immutable audit evidence.
+- Focused disposable lifecycle/staff HTTP **23/23**. API typecheck, lint and build
+  (including shared prebuild) pass. Full serial API with CP-003 enabled:
+  **623 passed, 34 separately gated skips, zero failures**, exit 0, about 309 s.
+  Web/shared tests and authenticated browser acceptance not run for this API-only
+  increment. No claim of parallel API reliability.
+- Reused stopped disposable PostgreSQL 18 cluster
+  `/tmp/cp003-edit-guard-pg-gzy72041`, localhost:55474,
+  database `payroll_configuration_test`. Logs: `/tmp/cp003-unclassified-*.log`.
+  Cluster stopped after verification and localhost:55474 confirmed inactive.
+  No application database writes, dependencies, migration changes, earnings
+  activation, deployment, commit or push. Existing working changes preserved.
+- CP-003 remains IN PROGRESS: mandatory creation, outlet pooling, authoritative
+  historical inputs and authenticated browser acceptance remain open. CP-004 not started.
+
+## October 27, 2026 — CP-003 classified staff edit/reactivation guard
+
+- General staff PATCH now checks latest audited classification within its tenant
+  configuration lock. Active classified staff require a join date; commission
+  earners require current-month and ongoing plan coverage. Payroll settings and
+  staff updates reuse the same coverage validator. No schema/UI/dependency changes.
+- Rejections happen before identity/department writes. Disabling remains possible
+  for inconsistent records; reactivation fails until the owner repairs payroll
+  settings. Unclassified legacy staff remain a deliberate, incomplete compatibility
+  path rather than being silently labeled non-commission.
+- Disposable lifecycle assertions cover valid classified profile edit, invalid
+  edit rollback of name/department/audit, disable/reactivation checks, owner repair,
+  manager reactivation after repair and classified non-commission missing-date
+  recovery. Synthetic inconsistent imported evidence is test-only.
+- Focused disposable lifecycle/staff HTTP **23/23**, API typecheck and lint pass.
+  Full serial API with CP-003 enabled **623 passed, 34 gated skips, zero failures**,
+  exit 0, approximately 336 seconds. API production build (including shared
+  prebuild), changed-file formatting and whitespace checks pass. Web/shared tests
+  not rerun for this API-only increment. Authenticated browser acceptance and
+  parallel API regression not run; prior parallel timeout limitation remains.
+- Fresh PostgreSQL 18 cluster `/tmp/cp003-edit-guard-pg-gzy72041`, localhost:55474,
+  database `payroll_configuration_test`; existing migrations replayed only there.
+  Disposable cluster stopped after verification and port confirmed inactive.
+  Logs: `/tmp/cp003-edit-guard-*.log`. Prior scratch-cluster path was no longer
+  present, so no application database was reused. No earnings activation,
+  deployment, dependencies, commit or push; prior working changes preserved.
+- CP-003 stays IN PROGRESS. Mandatory unclassified create/edit lifecycle integration,
+  outlet assignment/pooling, authoritative historical inputs and authenticated
+  browser acceptance remain open. CP-004 was not started.
+
+## October 27, 2026 — CP-003 atomic classified creation
+
+- Added optional reasoned `payrollClassification` to shared staff creation contract
+  and owner-only creation drawer. Join date required for classified creation;
+  commission-earning choice requires an initial plan and enables its picker.
+  Non-commission classified creation does not require a plan.
+- Reused payroll STAFF validation within the existing owner-verified locked
+  transaction. Identity, department links, assignment and classification audit
+  commit atomically. Refactored existing settings write to share its transaction
+  helper without nesting transactions. No schema changes or dependencies.
+- Disposable cases cover missing plan, future-only assignment rollback of identity/
+  links/audit, successful classified creation and non-commission creation, plus
+  manager denial. UI test verifies one request carries dated classification and
+  initial assignment; shared contracts verify join-date/plan/reason requirements.
+- Focused checks: shared **247/247**, staff UI **22/22**, disposable lifecycle and
+  staff HTTP **23/23**. Final full web **898/898** (105 files, one worker); full serial
+  API with CP-003 enabled **623 passed, 34 gated skips, zero failures**, exit 0,
+  approximately 265 seconds. Root build, workspace typechecks, lint, changed-file
+  formatting and whitespace checks pass. Parallel API was not repeated; previous
+  transaction-timeout limitation remains. Authenticated browser acceptance not run.
+- Logs: `/tmp/cp003-classified-create-*.log`; only existing disposable cluster at
+  localhost:55474 / `payroll_configuration_test` used. Disposable cluster stopped
+  after verification; port confirmed inactive. No application DB writes,
+  earnings activation, dependencies, deployment, commit or push. Earlier working
+  changes preserved.
+- CP-003 remains IN PROGRESS: mandatory create/edit lifecycle enforcement,
+  outlet assignment/pooling, authoritative historical inputs and authenticated
+  browser acceptance remain open. CP-004 was not started.
+
+## October 27, 2026 — CP-003 explicit commission classification
+
+- Added optional explicit `commissionRole` to reasoned payroll STAFF settings.
+  Existing unclassified staff read as null, visibly requiring review. Login roles,
+  job titles and legacy rates do not determine classification. Older callers omit
+  the field without clearing an existing audited classification; invalid/null
+  writes fail schema validation. No schema migration or dependencies added.
+- Owner classification as commission earning requires authoritative join date,
+  current-month-end plan coverage and an open-ended assignment. Plan removal is
+  rejected until explicit reasoned reclassification. All writes share existing
+  tenant configuration lock, owner checks and optimistic revisions.
+- Structured staff payroll form exposes classification, captures it with the
+  revision, preserves local edits on refresh and requires explicit reload. Added
+  shared contract, UI stale/submission and disposable lifecycle rollback/stale/
+  omission/plan-removal/scheduled-removal assertions.
+- Verified: shared **246/246**, focused payroll UI **30/30**, disposable lifecycle
+  acceptance **1/1**. Full web **897/897**, 105 files, one worker; complete serial
+  API suite with CP-003 enabled **623 passed, 34 separately gated skips, zero
+  failures**, approximately 314 seconds, exit 0. Root build, workspace typechecks,
+  lint, changed-file formatting and whitespace checks pass. Parallel API regression
+  was not repeated; preceding timeout reliability limitation remains recorded.
+- Reused only the stopped disposable PostgreSQL cluster from the preceding
+  continuation at localhost:55474, database `payroll_configuration_test`.
+  Cluster stopped after checks and port verified inactive.
+  Logs: `/tmp/cp003-role-*.log`. No application DB, earnings activation, deployment,
+  commit or push. Existing uncommitted work preserved.
+- CP-003 remains IN PROGRESS. Mandatory staff create/edit classification/plan/date
+  enforcement, outlet pooling, authoritative historical inputs and authenticated
+  browser acceptance remain open. CP-004 was not started.
+
+## October 27, 2026 — CP-003 assignment/join-date consistency
+
+- Resumed the existing dirty working tree without discarding the prior atomic
+  staff creation continuation. CP-004 remains untouched.
+- Assignment creation/replacement now rejects dates before `User.startDate`.
+  Owner payroll date edits reject join dates after any existing assignment start.
+  Both validations run inside the shared tenant configuration lock before audit
+  writes; rejected edits preserve dates, assignment revisions and audit history.
+- Disposable CP-003 lifecycle acceptance passes with additional rejection/rollback
+  assertions in both directions. API typecheck and lint exit 0; source formatting
+  and whitespace checks pass. Default API regression: 657 tests, 622 passed,
+  35 skipped, zero failures. Skipped tests are separately gated acceptance suites.
+- Final-source regression with CP-003 enabled: parallel run had 621 passed,
+  two failures and 34 skipped. Existing resource-series and sale-tip/void tests
+  exceeded database transaction timeouts under concurrency. No timeouts or tests
+  were weakened. The same complete suite with `--test-concurrency=1` passed:
+  **623 passed, 34 skipped, zero failures**, exit 0, approximately 253 seconds.
+  CP-003 acceptance passes in both final runs. Parallel reliability remains a
+  verification limitation, not a clean regression claim.
+- Fresh PostgreSQL 18 cluster: `/tmp/cp003-lifecycle-pg-rhgzdce6`, localhost:55474,
+  database `payroll_configuration_test`; existing migrations replayed only there.
+  Cluster stopped after verification; localhost:55474 checked inactive.
+  Check logs use `/tmp/cp003-lifecycle-`. No application database writes, schema
+  changes, dependencies, earnings activation, deployment, commit or push.
+- CP-003 stays IN PROGRESS. Mandatory lifecycle enforcement, explicit commission
+  role classification, outlet assignment/pooling semantics, authoritative historical
+  impact inputs and authenticated browser acceptance remain open. This bounded
+  safety fix does not claim FR-ASN-01 acceptance or CP-004 progress.
+
+## October 27, 2026 — CP-003 atomic staff/initial-plan continuation
+
+- Resumed CP-003 from a clean working tree. Added optional `payrollAssignment`
+  to staff creation and an owner-only company-context plan picker in the drawer.
+  Shared schema requires join date, non-null plan, date, reason and captured
+  assignment revision for this path. Existing identity-only creation remains.
+- Identity, department links and assignment evidence now commit together. Reused
+  assignment validation in the same owner-verified, writable-tenant configuration
+  transaction; password/PIN hashing happens before acquiring the tenant lock.
+  Ordinary identity creation also commits branch links atomically. Plan publication,
+  company scope, prospective/locked-period and stale-revision guards remain intact.
+- Failed creation retains form state; explicit plan reload resets the selection
+  instead of silently rebasing a stale write. Existing post-create continuation
+  remains available for payroll settings. No mirrored staff records or schema changes.
+- Remaining: FR-ASN-01 mandatory plan/join-date enforcement across create/edit,
+  commission-role classification, outlet assignment/pooling contract, authoritative
+  historical inputs and authenticated browser acceptance. Optional atomic creation
+  is not full lifecycle acceptance. CP-003 stays IN PROGRESS; do not start CP-004.
+- Verified: shared **245/245**, staff UI **18/18**, plan-picker UI **3/3**;
+  disposable payroll lifecycle acceptance and staff HTTP **22/22** pass. Acceptance
+  covers missing-plan/manager/stale-revision rollback of staff, department links
+  and audit, plus successful identity/date/link/assignment persistence. Workspace
+  typechecks, root build, lint, changed-file Prettier and whitespace checks pass.
+  Full web regression **896/896** (105 files, one worker) passes.
+- Used a fresh PostgreSQL 18 cluster `/tmp/cp003-create-pg-*`, localhost:55474,
+  replaying existing migrations only; cluster stopped and port checked inactive.
+  Logs use `/tmp/cp003-create-` with acceptance, staff-api, shared, web-focused,
+  picker, web-full, types, build, lint and format `.log` suffixes. Full API regression
+  and authenticated browser walkthrough not run. No application database writes,
+  schema changes, earnings activation, dependencies, deployment, commit or push.
 
 ## October 27, 2026 — CP-003 employment-date concurrency continuation
 

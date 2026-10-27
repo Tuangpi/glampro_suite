@@ -34,6 +34,10 @@ import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertDepartmentsExist } from "./department.service.js";
 import { requireScope } from "../lib/tenant-context.js";
+import {
+  createStaffWithPayroll,
+  assertStaffPayrollLifecycle,
+} from "./payroll-configuration.service.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
@@ -221,42 +225,60 @@ function toDateValue(value: string | null | undefined): Date | null | undefined 
 /**
  * Creates the person **and their login** in one call.
  *
- * There is no second table to write: a staff member *is* this row, so this create is
- * the whole record and the `StaffDepartment` links are the one follow-up. The
+ * A staff member is this User row. Department links and optional payroll assignment
+ * are created in the same transaction. The
  * password is hashed on the way in and never stored or logged in the clear, and
  * `tokenVersion` keeps its default, so the new account's first sign-in is ordinary.
  */
 export async function createStaff(input: CreateStaffInput): Promise<StaffDetail> {
-  const { password, posPin, departmentIds, email, globalRole, startDate, endDate, ...profile } =
-    input;
+  const {
+    password,
+    posPin,
+    departmentIds,
+    email,
+    globalRole,
+    startDate,
+    endDate,
+    payrollAssignment,
+    payrollClassification,
+    ...profile
+  } = input;
   await assertDepartmentsExist(departmentIds);
-
+  if (payrollClassification && !startDate)
+    throw badRequest("A join date is required with a payroll classification.");
+  if (payrollClassification?.commissionRole === "COMMISSION_EARNING" && !payrollAssignment)
+    throw badRequest("Commission-earning staff require an initial payroll plan.");
+  if (payrollAssignment && !startDate)
+    throw badRequest("A join date is required with a payroll plan.");
   const existing = email
     ? await prisma.user.findFirst({ where: { email }, select: { id: true } })
     : null;
   if (existing) throw emailTaken();
-
-  const created = await prisma.user
-    .create({
+  // Hash before acquiring the configuration lock.
+  const passwordHash = await hashPassword(password ?? randomBytes(32).toString("hex"));
+  const posPinHash = posPin ? await hashPassword(posPin) : null;
+  const create = async (tx: Transaction) => {
+    const row = await tx.user.create({
       data: {
-        // Placeholder: `scopeCreateData` overwrites it with the scope's tenant, so a
-        // handler cannot create a user in another salon even if it tried.
         tenantId: "",
         ...profile,
         email: email ?? null,
-        // The contract defaults this too; repeating it here means the column can
-        // never be written as `undefined` if the schema is reshaped.
         globalRole: globalRole ?? "STAFF",
-        passwordHash: await hashPassword(password ?? randomBytes(32).toString("hex")),
-        posPinHash: posPin ? await hashPassword(posPin) : null,
+        passwordHash,
+        posPinHash,
         startDate: toDateValue(startDate) ?? null,
         endDate: toDateValue(endDate) ?? null,
       },
       select: { id: true },
-    })
-    .catch(rethrowUnique);
-
-  await linkDepartments(created.id, departmentIds);
+    });
+    await linkDepartments(row.id, departmentIds, tx);
+    return row;
+  };
+  const created = await (
+    payrollAssignment || payrollClassification
+      ? createStaffWithPayroll(payrollAssignment, create, payrollClassification)
+      : prisma.$transaction(create)
+  ).catch(rethrowUnique);
 
   return getStaff(created.id);
 }
@@ -296,7 +318,7 @@ export async function updateStaff(id: string, input: UpdateStaffInput): Promise<
     if (scope.kind === "tenant") await lockCommissionConfiguration(tx, scope.tenantId);
     const existing = await tx.user.findFirst({
       where: { id },
-      select: { id: true, email: true, commissionRate: true, startDate: true },
+      select: { id: true, email: true, commissionRate: true, startDate: true, disabled: true },
     });
     if (!existing) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
     if (startDate !== undefined) {
@@ -327,6 +349,13 @@ export async function updateStaff(id: string, input: UpdateStaffInput): Promise<
       );
     if (!existing.email && fields.globalRole && !["STAFF", "CASHIER"].includes(fields.globalRole))
       throw badRequest("PIN-only staff cannot have a management role.");
+
+    await assertStaffPayrollLifecycle(
+      tx,
+      id,
+      startDate !== undefined ? (toDateValue(startDate) ?? null) : existing.startDate,
+      disabled ?? existing.disabled,
+    );
 
     await tx.user.update({
       where: { id },

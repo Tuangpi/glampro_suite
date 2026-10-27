@@ -46,6 +46,8 @@ export const payrollStaffSettingsSchema = z.strictObject({
   expectedJoinDate: payrollBusinessDateSchema.nullable(),
   joinDate: payrollBusinessDateSchema,
   stageEndOverride: z.number().int().min(0).max(1200).nullable(),
+  /** Omitted preserves the audited classification; legacy staff remain unclassified. */
+  commissionRole: z.enum(["COMMISSION_EARNING", "NON_COMMISSION"]).optional(),
   reason,
 });
 export const payrollProfileSchema = z.strictObject({

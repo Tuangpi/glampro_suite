@@ -49,6 +49,102 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## Known source discrepancies resolved
 
+### CP-003 unclassified active-edit enforcement (October 27, 2026)
+
+- Active staff PATCH now fails closed when the latest audited commission
+  classification is absent or unrecognized. Login role, position and legacy rate
+  cannot substitute for owner-reviewed payroll setup. The error directs callers
+  to the existing owner-only, reasoned payroll settings workflow.
+- Suspension and maintenance while disabled remain possible. Reactivation requires
+  an explicit supported classification, authoritative join date and, for commission
+  earners, the existing current-month and ongoing plan coverage checks. Validate
+  under the tenant configuration lock before identity or department-link writes.
+- This supersedes the earlier unclassified **edit** compatibility exception only.
+  Identity-only creation remains an open lifecycle gap; no automatic classification,
+  historical rewrite, earnings activation or full FR-ASN-01 acceptance is claimed.
+- HTTP fixtures explicitly record synthetic classification rather than infer it
+  from roles. Immutable test audit is retained with uniquely named test tenants;
+  cleanup does not disable triggers or delete configuration evidence.
+
+### CP-003 classified staff edit/reactivation guard (October 27, 2026)
+
+- General staff PATCH validates the latest audited payroll classification while
+  holding the same tenant configuration lock as payroll writes. Active classified
+  staff require an authoritative join date; commission earners also require
+  current-month-end and open-ended plan coverage using the payroll validator.
+- Reject inconsistent active edits before updating identity or department links.
+  The caller cannot evade these guards through login-role, title or department
+  changes, or by omitting date fields from PATCH.
+- Disabling an account must remain available even when its payroll configuration
+  is inconsistent. Disabled profiles may be maintained; reactivation requires
+  valid classified configuration. Owner-only audited payroll repair/reclassification
+  remains the recovery path; managers do not gain classification-write privileges.
+- Legacy unclassified records still need explicit lifecycle/cutover work. This
+  guard does not classify them automatically, activate earnings or establish full
+  FR-ASN-01 acceptance.
+
+### CP-003 atomic classified staff creation (October 27, 2026)
+
+- Staff creation may supply a reasoned `payrollClassification`. It requires an
+  authoritative join date; commission-earning classification also requires an
+  initial assignment. Identity, department links, assignment and classification
+  audit commit together using the existing owner-verified configuration lock.
+- Reuse payroll settings validation inside that transaction, not a second service
+  transaction after identity creation. A future-only plan fails current-month
+  coverage and rolls back the whole creation. Non-commission classification may
+  be created without a plan, but still requires join date, reason and owner access.
+- This is the classified creation path, not a silent compatibility cutover.
+  Identity-only creation remains unclassified, manager permissions are not expanded,
+  and mandatory create/edit lifecycle enforcement is still open. Do not claim
+  FR-ASN-01 accepted until those paths are integrated and verified.
+
+### CP-003 explicit commission classification (October 27, 2026)
+
+- Payroll commission classification is independent of `globalRole` (login
+  permissions), free-text position and legacy flat commission rate. Do not infer
+  eligibility from any of those fields. Owner-only reasoned STAFF configuration
+  events hold `COMMISSION_EARNING` or `NON_COMMISSION` without a mirrored user row.
+- Existing events without classification read as null: **Not classified — review
+  required**, not an automatic exemption. Omitted classification preserves the
+  previous audited value; explicit null/empty/unknown classifications are rejected.
+- Marking staff commission earning requires their authoritative join date, an
+  assignment covering the last day of the current salon-local payroll month and
+  an open-ended assignment (no scheduled removal). Assignment removal is blocked
+  while classified commission earning. Explicitly reclassify with a reason first.
+- All comparisons and writes share the tenant configuration lock and revision
+  checks. This policy applies to configuration only; it does not activate earnings,
+  reprice historical activity or make classification an authentication permission.
+- Mandatory create/edit classification and plan/join-date lifecycle enforcement
+  remain open. This incremental workflow is not FR-ASN-01 acceptance. Future work
+  must resolve legacy unclassified staff deliberately, not silently exempt them.
+
+### CP-003 assignment/join-date consistency (October 27, 2026)
+
+- An initial or replacement plan assignment cannot start before the authoritative
+  staff join date. An audited join-date edit cannot move that date after any
+  existing assignment start, including closed historical assignments.
+- Validate both directions under the tenant configuration lock, before writing
+  assignment history or staff settings audit. Rejected changes leave dates,
+  timelines and audit revisions unchanged. This does not classify commission roles
+  or satisfy mandatory plan/join-date enforcement for every staff lifecycle path.
+
+### CP-003 atomic initial assignment (October 27, 2026)
+
+- Add an optional `payrollAssignment` to staff creation: non-null plan, prospective
+  assignment date, captured company assignment revision and audit reason. A join
+  date is required when supplied. Identity, department links and assignment audit
+  use one transaction under the existing tenant configuration lock; hashes are
+  computed before locking. Reuse existing owner verification, company-only plan,
+  publication, writable-tenant and locked-period checks. No earnings activation.
+- Keep identity-only creation compatible. This incremental workflow is **not**
+  acceptance of FR-ASN-01: mandatory join dates/commission-role plan enforcement
+  and existing-staff lifecycle coverage remain open. No commission-earning role
+  classification is inferred from authentication roles, departments or a flat rate.
+- The owner UI explicitly opts into atomic assignment and retains failed form
+  input. Assignment revisions refresh only by explicit reload/reselection, never
+  by silently retrying a conflicting write. The existing post-create continuation
+  remains available for additional settings and is separate from atomic creation.
+
 ### CP-003 employment-date concurrency (October 27, 2026)
 
 - `User.startDate` remains the single authoritative join date. Payroll settings

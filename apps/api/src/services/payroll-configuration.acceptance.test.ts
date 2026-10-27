@@ -10,7 +10,7 @@ import {
 } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
-import { updateStaff } from "./staff.service.js";
+import { createStaff, updateStaff } from "./staff.service.js";
 import {
   readPayrollConfiguration,
   createPayrollPlan,
@@ -76,9 +76,94 @@ test(
         assert.equal(config.settings.minimumDepositPct, "30");
         const date = config.today;
         const reason = "Synthetic verification";
+        const legacy = await prisma.user.create({
+          data: {
+            tenantId,
+            name: "Unclassified legacy staff",
+            email: `${tenantId}-legacy@example.test`,
+            passwordHash: "unused",
+          },
+        });
+        const legacyDepartment = await prisma.department.create({
+          data: { tenantId, name: "Legacy lifecycle branch" },
+        });
+        const legacyAuditCount = await prisma.payrollConfigurationEvent.count();
+        for (const actorId of [ownerId, managerId]) {
+          await assert.rejects(
+            scope(
+              () =>
+                updateStaff(legacy.id, {
+                  name: "Must not persist",
+                  globalRole: "MANAGER",
+                  position: "Non-commission",
+                  departmentIds: [legacyDepartment.id],
+                }),
+              actorId,
+            ),
+            /audited payroll classification/,
+          );
+        }
+        assert.equal(
+          (await prisma.user.findFirstOrThrow({ where: { id: legacy.id } })).name,
+          "Unclassified legacy staff",
+        );
+        assert.equal(await prisma.staffDepartment.count({ where: { userId: legacy.id } }), 0);
+        assert.equal(await prisma.payrollConfigurationEvent.count(), legacyAuditCount);
+        await scope(() => updateStaff(legacy.id, { disabled: true }), managerId);
+        await updateStaff(legacy.id, { name: "Suspended legacy staff" });
+        await assert.rejects(
+          scope(() => updateStaff(legacy.id, { disabled: false }), managerId),
+          /audited payroll classification/,
+        );
+        assert.equal(
+          (await prisma.user.findFirstOrThrow({ where: { id: legacy.id } })).disabled,
+          true,
+        );
+        await assert.rejects(
+          scope(
+            () =>
+              savePayrollStaffSettings(legacy.id, {
+                expectedRevision: 0,
+                expectedJoinDate: null,
+                joinDate: date,
+                stageEndOverride: null,
+                commissionRole: "NON_COMMISSION",
+                reason,
+              }),
+            managerId,
+          ),
+          /not permitted/,
+        );
+        await savePayrollStaffSettings(legacy.id, {
+          expectedRevision: 0,
+          expectedJoinDate: null,
+          joinDate: date,
+          stageEndOverride: null,
+          commissionRole: "NON_COMMISSION",
+          reason,
+        });
+        await scope(
+          () =>
+            updateStaff(legacy.id, {
+              disabled: false,
+              departmentIds: [legacyDepartment.id],
+            }),
+          managerId,
+        );
+        assert.equal(
+          (await prisma.user.findFirstOrThrow({ where: { id: legacy.id } })).disabled,
+          false,
+        );
+        assert.equal(await prisma.staffDepartment.count({ where: { userId: legacy.id } }), 1);
         const dateStaffId = `${tenantId}-date-race`;
         await prisma.user.create({
-          data: { id: dateStaffId, tenantId, name: "Date race", passwordHash: "unused" },
+          data: {
+            id: dateStaffId,
+            tenantId,
+            name: "Date race",
+            passwordHash: "unused",
+            disabled: true,
+          },
         });
         await assert.rejects(updateStaff(dateStaffId, { startDate: "2026-09-01" }), /Reload/);
         await updateStaff(dateStaffId, { startDate: "2026-09-01", expectedStartDate: null });
@@ -251,6 +336,22 @@ test(
           stageEndOverride: null,
           reason,
         });
+        await assert.rejects(
+          savePayrollStaffSettings(staffId, {
+            expectedRevision: 1,
+            expectedJoinDate: "2026-09-01",
+            joinDate: "2026-09-01",
+            stageEndOverride: null,
+            commissionRole: "COMMISSION_EARNING",
+            reason,
+          }),
+          /require an assignment/,
+        );
+        assert.equal(
+          (await readPayrollConfiguration()).staff.find((s) => s.id === staffId)!.settings
+            .commissionRole,
+          null,
+        );
         assert.equal(
           (await prisma.user.findFirstOrThrow({ where: { id: staffId } }))
             .startDate!.toISOString()
@@ -264,6 +365,48 @@ test(
           fromDate: date,
           reason,
         });
+        // Date edits cannot strand assignment history, and failed writes add no audit.
+        const afterAssignment = await readPayrollConfiguration();
+        const nextYearJoinDate = `${Number(date.slice(0, 4)) + 1}-01-01`;
+        await assert.rejects(
+          savePayrollStaffSettings(staffId, {
+            expectedRevision: 1,
+            expectedJoinDate: "2026-09-01",
+            joinDate: nextYearJoinDate,
+            stageEndOverride: null,
+            reason,
+          }),
+          /after an existing payroll assignment/,
+        );
+        assert.equal((await readPayrollConfiguration()).historyTotal, afterAssignment.historyTotal);
+        assert.equal(
+          (await prisma.user.findFirstOrThrow({ where: { id: staffId } }))
+            .startDate!.toISOString()
+            .slice(0, 10),
+          "2026-09-01",
+        );
+        const preJoinStaff = await prisma.user.create({
+          data: {
+            tenantId,
+            name: "Future join date",
+            passwordHash: "unused",
+            startDate: new Date(`${nextYearJoinDate}T00:00:00Z`),
+          },
+        });
+        await assert.rejects(
+          assignPayrollPlan({
+            expectedRevision: 1,
+            staffIds: [preJoinStaff.id],
+            planId: first.id,
+            fromDate: date,
+            reason,
+          }),
+          /before the staff join date/,
+        );
+        assert.deepEqual(
+          (await readPayrollConfiguration()).assignments,
+          afterAssignment.assignments,
+        );
         await assert.rejects(
           assignPayrollPlan({
             expectedRevision: 0,
@@ -319,6 +462,64 @@ test(
           config.assignments.rows.find((r) => r.planId === first.id)!.toDate,
           `${future.slice(0, 7)}-30`,
         );
+        await assert.rejects(
+          scope(
+            () =>
+              savePayrollStaffSettings(staffId, {
+                expectedRevision: 1,
+                expectedJoinDate: "2026-09-01",
+                joinDate: "2026-09-01",
+                stageEndOverride: null,
+                commissionRole: "COMMISSION_EARNING",
+                reason,
+              }),
+            managerId,
+          ),
+          /permitted/,
+        );
+        await savePayrollStaffSettings(staffId, {
+          expectedRevision: 1,
+          expectedJoinDate: "2026-09-01",
+          joinDate: "2026-09-01",
+          stageEndOverride: null,
+          commissionRole: "COMMISSION_EARNING",
+          reason,
+        });
+        // Older callers omitting classification cannot erase its plan requirement.
+        await savePayrollStaffSettings(staffId, {
+          expectedRevision: 2,
+          expectedJoinDate: "2026-09-01",
+          joinDate: "2026-09-01",
+          stageEndOverride: null,
+          reason,
+        });
+        const classified = await readPayrollConfiguration();
+        assert.equal(
+          classified.staff.find((s) => s.id === staffId)!.settings.commissionRole,
+          "COMMISSION_EARNING",
+        );
+        await assert.rejects(
+          assignPayrollPlan({
+            expectedRevision: classified.assignments.revision,
+            staffIds: [staffId],
+            planId: null,
+            fromDate: `${Number(date.slice(0, 4)) + 2}-01-01`,
+            reason,
+          }),
+          /Change the classification first/,
+        );
+        assert.deepEqual((await readPayrollConfiguration()).assignments, classified.assignments);
+        await assert.rejects(
+          savePayrollStaffSettings(staffId, {
+            expectedRevision: 2,
+            expectedJoinDate: "2026-09-01",
+            joinDate: "2026-09-01",
+            stageEndOverride: null,
+            commissionRole: "NON_COMMISSION",
+            reason,
+          }),
+          /changed/,
+        );
         await savePayrollProfile(staffId, {
           expectedRevision: 0,
           basicSalary: "2345.67",
@@ -338,6 +539,41 @@ test(
           }),
           /changed/,
         );
+        await savePayrollStaffSettings(staffId, {
+          expectedRevision: 3,
+          expectedJoinDate: "2026-09-01",
+          joinDate: "2026-09-01",
+          stageEndOverride: null,
+          commissionRole: "NON_COMMISSION",
+          reason,
+        });
+        const removalDate = `${Number(date.slice(0, 4)) + 2}-01-01`;
+        await assignPayrollPlan({
+          expectedRevision: (await readPayrollConfiguration()).assignments.revision,
+          staffIds: [staffId],
+          planId: null,
+          fromDate: removalDate,
+          reason,
+        });
+        await assert.rejects(
+          savePayrollStaffSettings(staffId, {
+            expectedRevision: 4,
+            expectedJoinDate: "2026-09-01",
+            joinDate: "2026-09-01",
+            stageEndOverride: null,
+            commissionRole: "COMMISSION_EARNING",
+            reason,
+          }),
+          /scheduled plan removal/,
+        );
+        // Restore continuous coverage before continuing the lifecycle fixture.
+        await assignPayrollPlan({
+          expectedRevision: (await readPayrollConfiguration()).assignments.revision,
+          staffIds: [staffId],
+          planId: tp.id,
+          fromDate: removalDate,
+          reason,
+        });
         const managerConfig = await scope(() => readPayrollConfiguration(), managerId);
         assert.ok(managerConfig.staff.every((s) => !("profile" in s)));
         assert.ok(!JSON.stringify(managerConfig).includes("2345.67"));
@@ -507,6 +743,213 @@ test(
           );
           assert.ok(outletHistory.historyTotal < pageOne.historyTotal);
         });
+        const initialDepartment = await prisma.department.create({
+          data: { tenantId, name: "Atomic creation branch" },
+        });
+        const initial = {
+          name: "Atomic payroll identity",
+          posPin: "123456",
+          startDate: "2026-09-01",
+          departmentIds: [initialDepartment.id],
+        };
+        const revisionBeforeCreate = (await readPayrollConfiguration()).assignments.revision;
+        const initialAssignment = {
+          planId: first.id,
+          fromDate: date,
+          expectedRevision: revisionBeforeCreate,
+          reason,
+        };
+        const beforeUsers = await prisma.user.count();
+        const beforeEvents = await prisma.payrollConfigurationEvent.count();
+        const beforeLinks = await prisma.staffDepartment.count();
+        await assert.rejects(
+          createStaff({
+            ...initial,
+            payrollAssignment: { ...initialAssignment, planId: "missing-plan" },
+          }),
+          /not found/i,
+        );
+        await assert.rejects(
+          runAsTenant(
+            tenantId,
+            () => createStaff({ ...initial, payrollAssignment: initialAssignment }),
+            managerId,
+          ),
+          /not permitted/i,
+        );
+        assert.equal(await prisma.user.count(), beforeUsers);
+        assert.equal(await prisma.payrollConfigurationEvent.count(), beforeEvents);
+        assert.equal(await prisma.staffDepartment.count(), beforeLinks);
+        const atomicStaff = await createStaff({ ...initial, payrollAssignment: initialAssignment });
+        assert.equal(atomicStaff.startDate, initial.startDate);
+        assert.equal(atomicStaff.departments[0]?.id, initialDepartment.id);
+        assert.ok(
+          (await readPayrollConfiguration()).assignments.rows.some(
+            (row) => row.staffId === atomicStaff.id && row.planId === first.id,
+          ),
+        );
+        await assert.rejects(
+          createStaff({ ...initial, payrollAssignment: initialAssignment }),
+          /changed/i,
+        );
+        assert.equal(await prisma.user.count(), beforeUsers + 1);
+        assert.equal(await prisma.staffDepartment.count(), beforeLinks + 1);
+        const classifiedInput = {
+          ...initial,
+          payrollClassification: {
+            commissionRole: "COMMISSION_EARNING" as const,
+            reason,
+          },
+        };
+        await assert.rejects(createStaff(classifiedInput), /require an initial payroll plan/);
+        const classifiedRevision = (await readPayrollConfiguration()).assignments.revision;
+        const classifiedAssignment = { ...initialAssignment, expectedRevision: classifiedRevision };
+        const classifiedCount = await prisma.user.count();
+        const classifiedAuditCount = await prisma.payrollConfigurationEvent.count();
+        // A future-only plan cannot satisfy classification for the current payroll month.
+        await assert.rejects(
+          createStaff({
+            ...classifiedInput,
+            payrollAssignment: {
+              ...classifiedAssignment,
+              fromDate: `${Number(date.slice(0, 4)) + 3}-01-01`,
+            },
+          }),
+          /current payroll month/,
+        );
+        assert.equal(await prisma.user.count(), classifiedCount);
+        assert.equal(await prisma.payrollConfigurationEvent.count(), classifiedAuditCount);
+        assert.equal(await prisma.staffDepartment.count(), beforeLinks + 1);
+        const classifiedCreated = await createStaff({
+          ...classifiedInput,
+          payrollAssignment: classifiedAssignment,
+        });
+        assert.equal(
+          (await readPayrollConfiguration()).staff.find((s) => s.id === classifiedCreated.id)!
+            .settings.commissionRole,
+          "COMMISSION_EARNING",
+        );
+        await assert.rejects(
+          scope(
+            () =>
+              createStaff({
+                ...initial,
+                payrollClassification: { commissionRole: "NON_COMMISSION", reason },
+              }),
+            managerId,
+          ),
+          /not permitted/,
+        );
+        const nonCommission = await createStaff({
+          ...initial,
+          payrollClassification: { commissionRole: "NON_COMMISSION", reason },
+        });
+        const classificationConfig = await readPayrollConfiguration();
+        assert.equal(
+          classificationConfig.staff.find((s) => s.id === nonCommission.id)!.settings
+            .commissionRole,
+          "NON_COMMISSION",
+        );
+        assert.ok(
+          !classificationConfig.assignments.rows.some((r) => r.staffId === nonCommission.id),
+        );
+        await updateStaff(classifiedCreated.id, { name: "Valid classified profile edit" });
+        // Synthetic imported inconsistent evidence: lifecycle edits must fail closed.
+        const inconsistent = await prisma.user.create({
+          data: {
+            tenantId,
+            name: "Imported commission earner",
+            passwordHash: "unused",
+            startDate: new Date("2026-09-01T00:00:00Z"),
+          },
+        });
+        await prisma.payrollConfigurationEvent.create({
+          data: {
+            tenantId,
+            kind: "STAFF",
+            targetId: inconsistent.id,
+            revision: 1,
+            actorId: ownerId,
+            reason: "Synthetic imported evidence",
+            payload: {
+              commissionRole: "COMMISSION_EARNING",
+              joinDate: "2026-09-01",
+              stageEndOverride: null,
+            },
+          },
+        });
+        const lifecycleAuditCount = await prisma.payrollConfigurationEvent.count();
+        await assert.rejects(
+          updateStaff(inconsistent.id, {
+            name: "Must roll back",
+            departmentIds: [initialDepartment.id],
+          }),
+          /current payroll month/,
+        );
+        const unchanged = await prisma.user.findFirstOrThrow({ where: { id: inconsistent.id } });
+        assert.equal(unchanged.name, "Imported commission earner");
+        assert.equal(await prisma.staffDepartment.count({ where: { userId: inconsistent.id } }), 0);
+        await updateStaff(inconsistent.id, { disabled: true });
+        await assert.rejects(
+          updateStaff(inconsistent.id, { disabled: false }),
+          /current payroll month/,
+        );
+        assert.equal(
+          (await prisma.user.findFirstOrThrow({ where: { id: inconsistent.id } })).disabled,
+          true,
+        );
+        assert.equal(await prisma.payrollConfigurationEvent.count(), lifecycleAuditCount);
+        // The owner can repair classification before reactivation; managers cannot bypass it.
+        await savePayrollStaffSettings(inconsistent.id, {
+          expectedRevision: 1,
+          expectedJoinDate: "2026-09-01",
+          joinDate: "2026-09-01",
+          stageEndOverride: null,
+          commissionRole: "NON_COMMISSION",
+          reason,
+        });
+        await scope(() => updateStaff(inconsistent.id, { disabled: false }), managerId);
+        assert.equal(
+          (await prisma.user.findFirstOrThrow({ where: { id: inconsistent.id } })).disabled,
+          false,
+        );
+        const missingDate = await prisma.user.create({
+          data: {
+            tenantId,
+            name: "Imported missing join date",
+            passwordHash: "unused",
+            disabled: true,
+          },
+        });
+        await prisma.payrollConfigurationEvent.create({
+          data: {
+            tenantId,
+            kind: "STAFF",
+            targetId: missingDate.id,
+            revision: 1,
+            actorId: ownerId,
+            reason: "Synthetic imported evidence",
+            payload: { commissionRole: "NON_COMMISSION", stageEndOverride: null },
+          },
+        });
+        await assert.rejects(
+          scope(
+            () => updateStaff(missingDate.id, { disabled: false, name: "Must not reactivate" }),
+            managerId,
+          ),
+          /Classified staff require a join date/,
+        );
+        const stillDisabled = await prisma.user.findFirstOrThrow({ where: { id: missingDate.id } });
+        assert.equal(stillDisabled.disabled, true);
+        assert.equal(stillDisabled.name, "Imported missing join date");
+        await savePayrollStaffSettings(missingDate.id, {
+          expectedRevision: 1,
+          expectedJoinDate: null,
+          joinDate: "2026-09-01",
+          stageEndOverride: null,
+          reason,
+        });
+        await updateStaff(missingDate.id, { disabled: false });
         // Locked periods reject prospective dates that would retroactively select new rules.
         await prisma.commissionPeriod.create({
           data: {

@@ -63,7 +63,12 @@ export interface PayrollConfiguration {
     id: string;
     name: string;
     disabled: boolean;
-    settings: { revision: number; joinDate: string | null; stageEndOverride: number | null };
+    settings: {
+      revision: number;
+      joinDate: string | null;
+      stageEndOverride: number | null;
+      commissionRole?: "COMMISSION_EARNING" | "NON_COMMISSION" | null;
+    };
     profile?: Omit<PayrollProfileWrite, "expectedRevision" | "reason"> & { revision: number };
   }[];
   history: {

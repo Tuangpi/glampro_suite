@@ -312,71 +312,176 @@ async function staffRecord(tx: Transaction, id: string) {
   if (!staff) throw notFound("Staff member not found.");
   return staff;
 }
+async function assignInTransaction(tx: Transaction, input: PayrollAssignmentWrite) {
+  await prospective(tx, input.fromDate);
+  const revision = (await latest(tx, "ASSIGNMENT", "company"))?.revision ?? 0;
+  if (input.expectedRevision !== revision) throw conflict("Assignments changed. Reload first.");
+  if (input.planId) {
+    const plan = await planRecord(tx, input.planId);
+    if (plan.archived || plan.outletIds.length)
+      throw badRequest("Company-wide staff require a non-archived company-wide plan.");
+    if (
+      !plan.versions.some(
+        (v) =>
+          v.status === "PUBLISHED" &&
+          v.effectiveFrom <= payrollMonthEnd(input.fromDate.slice(0, 7)),
+      )
+    )
+      throw badRequest("Publish an effective version before assigning this plan.");
+  }
+  const all: PayrollAssignment[] = payrollAssignmentSchema
+    .array()
+    .parse((await latest(tx, "ASSIGNMENT", "company"))?.payload ?? []);
+  for (const staffId of input.staffIds) {
+    const staff = await staffRecord(tx, staffId);
+    if (staff.disabled) throw badRequest("Disabled staff cannot receive new assignments.");
+    const settings = await latest(tx, "STAFF", staffId);
+    if (
+      !input.planId &&
+      (settings?.payload as { commissionRole?: string } | undefined)?.commissionRole ===
+        "COMMISSION_EARNING"
+    )
+      throw badRequest("Commission-earning staff require a plan. Change the classification first.");
+    if (input.planId && !staff.startDate)
+      throw badRequest("Set the staff join date before assigning a plan.");
+    if (input.planId && staff.startDate!.toISOString().slice(0, 10) > input.fromDate)
+      throw badRequest("A payroll assignment cannot start before the staff join date.");
+    const rows = all.filter((row) => row.staffId === staffId);
+    if (rows.some((row) => row.fromDate >= input.fromDate))
+      throw conflict("An assignment exists on or after this date; history cannot be overwritten.");
+    const previous = rows.find((row) => row.toDate === null);
+    if (previous) {
+      const date = new Date(input.fromDate + "T00:00:00Z");
+      date.setUTCDate(date.getUTCDate() - 1);
+      previous.toDate = date.toISOString().slice(0, 10);
+    }
+    if (input.planId)
+      all.push({
+        id: randomUUID(),
+        staffId,
+        planId: input.planId,
+        fromDate: input.fromDate,
+        toDate: null,
+      });
+  }
+  return event(tx, "ASSIGNMENT", "company", revision, input.reason, all);
+}
 export async function assignPayrollPlan(raw: PayrollAssignmentWrite) {
   const input = payrollAssignmentWriteSchema.parse(raw);
+  return write((tx) => assignInTransaction(tx, input), true);
+}
+/** Identity, department links and assignment audit commit together or not at all. */
+export async function createStaffWithPayroll<T extends { id: string }>(
+  assignment: Omit<PayrollAssignmentWrite, "staffIds"> | undefined,
+  create: (tx: Transaction) => Promise<T>,
+  classification?: Pick<PayrollStaffSettingsWrite, "commissionRole" | "reason">,
+): Promise<T> {
   return write(async (tx) => {
-    await prospective(tx, input.fromDate);
-    const revision = (await latest(tx, "ASSIGNMENT", "company"))?.revision ?? 0;
-    if (input.expectedRevision !== revision) throw conflict("Assignments changed. Reload first.");
-    if (input.planId) {
-      const plan = await planRecord(tx, input.planId);
-      if (plan.archived || plan.outletIds.length)
-        throw badRequest("Company-wide staff require a non-archived company-wide plan.");
-      if (
-        !plan.versions.some(
-          (v) =>
-            v.status === "PUBLISHED" &&
-            v.effectiveFrom <= payrollMonthEnd(input.fromDate.slice(0, 7)),
-        )
-      )
-        throw badRequest("Publish an effective version before assigning this plan.");
+    const staff = await create(tx);
+    if (assignment)
+      await assignInTransaction(
+        tx,
+        payrollAssignmentWriteSchema.parse({ ...assignment, staffIds: [staff.id] }),
+      );
+    if (classification) {
+      const record = await staffRecord(tx, staff.id);
+      if (!record.startDate)
+        throw badRequest("A join date is required with a payroll classification.");
+      const joinDate = record.startDate.toISOString().slice(0, 10);
+      await saveStaffSettingsInTransaction(
+        tx,
+        staff.id,
+        payrollStaffSettingsSchema.parse({
+          ...classification,
+          expectedRevision: 0,
+          expectedJoinDate: joinDate,
+          joinDate,
+          stageEndOverride: null,
+        }),
+      );
     }
-    const all: PayrollAssignment[] = payrollAssignmentSchema
-      .array()
-      .parse((await latest(tx, "ASSIGNMENT", "company"))?.payload ?? []);
-    for (const staffId of input.staffIds) {
-      const staff = await staffRecord(tx, staffId);
-      if (staff.disabled) throw badRequest("Disabled staff cannot receive new assignments.");
-      if (input.planId && !staff.startDate)
-        throw badRequest("Set the staff join date before assigning a plan.");
-      const rows = all.filter((row) => row.staffId === staffId);
-      if (rows.some((row) => row.fromDate >= input.fromDate))
-        throw conflict(
-          "An assignment exists on or after this date; history cannot be overwritten.",
-        );
-      const previous = rows.find((row) => row.toDate === null);
-      if (previous) {
-        const date = new Date(input.fromDate + "T00:00:00Z");
-        date.setUTCDate(date.getUTCDate() - 1);
-        previous.toDate = date.toISOString().slice(0, 10);
-      }
-      if (input.planId)
-        all.push({
-          id: randomUUID(),
-          staffId,
-          planId: input.planId,
-          fromDate: input.fromDate,
-          toDate: null,
-        });
-    }
-    return event(tx, "ASSIGNMENT", "company", revision, input.reason, all);
+    return staff;
   }, true);
 }
 export async function savePayrollStaffSettings(id: string, raw: PayrollStaffSettingsWrite) {
   const input = payrollStaffSettingsSchema.parse(raw);
-  return write(async (tx) => {
-    const staff = await staffRecord(tx, id);
-    if ((staff.startDate?.toISOString().slice(0, 10) ?? null) !== input.expectedJoinDate)
-      throw conflict("Staff join date changed. Reload before saving.");
-    const { expectedRevision, expectedJoinDate: _expectedJoinDate, reason, ...payload } = input;
-    const result = await event(tx, "STAFF", id, expectedRevision, reason, payload);
-    // User remains the authoritative staff identity and employment date.
-    await tx.user.update({
-      where: { id },
-      data: { startDate: new Date(input.joinDate + "T00:00:00Z") },
-    });
-    return result;
-  }, true);
+  return write((tx) => saveStaffSettingsInTransaction(tx, id, input), true);
+}
+async function saveStaffSettingsInTransaction(
+  tx: Transaction,
+  id: string,
+  input: PayrollStaffSettingsWrite,
+) {
+  const staff = await staffRecord(tx, id);
+  if ((staff.startDate?.toISOString().slice(0, 10) ?? null) !== input.expectedJoinDate)
+    throw conflict("Staff join date changed. Reload before saving.");
+  const assignments = payrollAssignmentSchema
+    .array()
+    .parse((await latest(tx, "ASSIGNMENT", "company"))?.payload ?? []);
+  if (assignments.some((row) => row.staffId === id && row.fromDate < input.joinDate))
+    throw badRequest("The join date cannot be after an existing payroll assignment.");
+  const previousSettings = await latest(tx, "STAFF", id);
+  const commissionRole =
+    input.commissionRole ??
+    (previousSettings?.payload as { commissionRole?: string } | undefined)?.commissionRole;
+  if (commissionRole === "COMMISSION_EARNING")
+    await assertCommissionPlanCoverage(tx, id, assignments);
+  const { expectedRevision, expectedJoinDate: _expectedJoinDate, reason, ...payload } = input;
+  const result = await event(tx, "STAFF", id, expectedRevision, reason, {
+    ...payload,
+    ...(commissionRole ? { commissionRole } : {}),
+  });
+  // User remains the authoritative staff identity and employment date.
+  await tx.user.update({
+    where: { id },
+    data: { startDate: new Date(input.joinDate + "T00:00:00Z") },
+  });
+  return result;
+}
+
+async function assertCommissionPlanCoverage(
+  tx: Transaction,
+  id: string,
+  assignments: PayrollAssignment[],
+) {
+  const monthEnd = payrollMonthEnd((await today(tx)).slice(0, 7));
+  if (
+    !assignments.some(
+      (row) =>
+        row.staffId === id && row.fromDate <= monthEnd && (!row.toDate || row.toDate >= monthEnd),
+    )
+  )
+    throw badRequest(
+      "Commission-earning staff require an assignment for the current payroll month.",
+    );
+  if (!assignments.some((row) => row.staffId === id && row.toDate === null))
+    throw badRequest("Replace the scheduled plan removal before marking staff commission earning.");
+}
+
+/** Caller must hold the tenant configuration lock in the staff-write transaction. */
+export async function assertStaffPayrollLifecycle(
+  tx: Transaction,
+  id: string,
+  startDate: Date | null,
+  disabled: boolean,
+) {
+  // Never prevent account suspension just because payroll configuration needs repair.
+  if (disabled) return;
+  const settings = await latest(tx, "STAFF", id);
+  const commissionRole = (settings?.payload as { commissionRole?: string } | undefined)
+    ?.commissionRole;
+  if (!["COMMISSION_EARNING", "NON_COMMISSION"].includes(commissionRole ?? ""))
+    throw badRequest(
+      "Active staff require an audited payroll classification. Ask the owner to complete payroll settings first.",
+    );
+  if (!startDate)
+    throw badRequest("Classified staff require a join date. Repair payroll settings first.");
+  if (commissionRole === "COMMISSION_EARNING") {
+    const assignments = payrollAssignmentSchema
+      .array()
+      .parse((await latest(tx, "ASSIGNMENT", "company"))?.payload ?? []);
+    await assertCommissionPlanCoverage(tx, id, assignments);
+  }
 }
 export async function savePayrollProfile(id: string, raw: PayrollProfileWrite) {
   const input = payrollProfileWriteSchema.parse(raw);
@@ -459,6 +564,9 @@ export async function readPayrollConfiguration(historyPage = 1) {
                 (details?.payload as { stageEndOverride?: number | null } | undefined)
                   ?.stageEndOverride ?? null,
               joinDate: s.startDate?.toISOString().slice(0, 10) ?? null,
+              commissionRole:
+                (details?.payload as { commissionRole?: string } | undefined)?.commissionRole ??
+                null,
             },
             ...(user.globalRole === "SUPER_ADMIN"
               ? {

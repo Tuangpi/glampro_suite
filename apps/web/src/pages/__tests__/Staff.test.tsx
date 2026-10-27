@@ -47,6 +47,23 @@ vi.mock("@/hooks/useStaff", () => ({
 }));
 
 vi.mock("@/hooks/useDepartments", () => ({ useDepartments }));
+vi.mock("@/components/staff/StaffPayrollCreation", () => ({
+  default: ({ onChange }: { onChange: (value: unknown) => void }) => (
+    <button
+      type="button"
+      onClick={() =>
+        onChange({
+          planId: "plan",
+          fromDate: "2026-10-27",
+          expectedRevision: 3,
+          reason: "Initial assignment",
+        })
+      }
+    >
+      Choose initial plan
+    </button>
+  ),
+}));
 vi.mock("@/components/staff/StaffRoster", () => ({
   default: () => <section aria-label="Working hours" />,
 }));
@@ -139,6 +156,57 @@ beforeEach(() => {
 });
 
 describe("the table", () => {
+  it("creates a reasoned commission classification and initial plan atomically", async () => {
+    const user = userEvent.setup();
+    render(<Staff />);
+    await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
+    const dialog = within(await screen.findByRole("dialog"));
+    await user.type(screen.getByLabelText("Name"), "Amy");
+    await user.type(screen.getByLabelText("Email"), "amy@example.test");
+    await user.type(screen.getByLabelText("Password"), "correct-horse");
+    await user.selectOptions(
+      screen.getByLabelText("Initial commission classification"),
+      "COMMISSION_EARNING",
+    );
+    expect(screen.getByLabelText("Assign payroll plan during creation")).toBeChecked();
+    expect(screen.getByLabelText("Assign payroll plan during creation")).toBeDisabled();
+    await user.type(screen.getByLabelText("Classification reason"), "Employment agreement");
+    await user.type(screen.getByLabelText("Start date"), "2026-09-01");
+    await user.click(dialog.getByRole("button", { name: "Add staff member" }));
+    expect(createMutate).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Choose initial plan" }));
+    await user.click(dialog.getByRole("button", { name: "Add staff member" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]?.[0]).toMatchObject({
+      payrollClassification: {
+        commissionRole: "COMMISSION_EARNING",
+        reason: "Employment agreement",
+      },
+      payrollAssignment: { planId: "plan", expectedRevision: 3 },
+      startDate: "2026-09-01",
+    });
+  });
+  it("creates identity and an initial plan in one request, requiring a join date", async () => {
+    const user = userEvent.setup();
+    render(<Staff />);
+    await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
+    const dialog = within(await screen.findByRole("dialog"));
+    await user.type(screen.getByLabelText("Name"), "Amy");
+    await user.type(screen.getByLabelText("Email"), "amy@example.test");
+    await user.type(screen.getByLabelText("Password"), "correct-horse");
+    await user.click(screen.getByLabelText("Assign payroll plan during creation"));
+    await user.click(screen.getByRole("button", { name: "Choose initial plan" }));
+    await user.click(dialog.getByRole("button", { name: "Add staff member" }));
+    expect(createMutate).not.toHaveBeenCalled();
+    expect(screen.getByText("A join date is required with a payroll plan.")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Start date"), "2026-09-01");
+    await user.click(dialog.getByRole("button", { name: "Add staff member" }));
+    await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
+    expect(createMutate.mock.calls[0]?.[0]).toMatchObject({
+      startDate: "2026-09-01",
+      payrollAssignment: { planId: "plan", expectedRevision: 3 },
+    });
+  });
   it("creates once then continues payroll setup on the persisted identity", async () => {
     const user = userEvent.setup();
     createMutate.mockResolvedValue(staffRow());

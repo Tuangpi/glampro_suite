@@ -37,7 +37,11 @@ const { hashPassword } = await import("../lib/password.js");
 const PASSWORD = "correct-horse-1";
 const DOMAIN = "staff-rt.test";
 
-const TENANTS = { a: "staffrt-tenant-a", b: "staffrt-tenant-b" } as const;
+const fixtureRun = `${process.pid}-${Date.now()}`;
+const TENANTS = {
+  a: `staffrt-tenant-a-${fixtureRun}`,
+  b: `staffrt-tenant-b-${fixtureRun}`,
+} as const;
 const TENANT_IDS = Object.values(TENANTS);
 
 const HAIR = "staffrt-dept-hair";
@@ -89,13 +93,16 @@ const USERS = [
   },
 ];
 
-/** Removes everything this file created, so runs are repeatable. */
+/** Remove operational fixtures; retain synthetic tenants with immutable payroll audit. */
 async function purge(): Promise<void> {
   await runAsPlatform(async () => {
     await prisma.staffDepartment.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
     await prisma.user.deleteMany({ where: { email: { endsWith: `@${DOMAIN}` } } });
     await prisma.department.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.tenant.deleteMany({ where: { id: { in: TENANT_IDS } } });
+    for (const tenantId of TENANT_IDS) {
+      if (!(await prisma.payrollConfigurationEvent.count({ where: { tenantId } })))
+        await prisma.tenant.deleteMany({ where: { id: tenantId } });
+    }
   });
 }
 
@@ -104,12 +111,33 @@ async function seed(): Promise<void> {
   const passwordHash = await hashPassword(PASSWORD);
 
   await runAsPlatform(async () => {
-    await prisma.tenant.create({ data: { id: TENANTS.a, name: "Staff RT A", slug: "staffrt-a" } });
-    await prisma.tenant.create({ data: { id: TENANTS.b, name: "Staff RT B", slug: "staffrt-b" } });
+    await prisma.tenant.create({ data: { id: TENANTS.a, name: "Staff RT A", slug: TENANTS.a } });
+    await prisma.tenant.create({ data: { id: TENANTS.b, name: "Staff RT B", slug: TENANTS.b } });
 
     for (const user of USERS) {
       await prisma.user.create({ data: { ...user, passwordHash } });
     }
+
+    // Explicit synthetic payroll setup for the profile-edit fixture, independent of login role.
+    await prisma.user.update({
+      where: { id: "staffrt-stylist" },
+      data: { startDate: new Date("2026-01-01T00:00:00Z") },
+    });
+    await prisma.payrollConfigurationEvent.create({
+      data: {
+        tenantId: TENANTS.a,
+        kind: "STAFF",
+        targetId: "staffrt-stylist",
+        revision: 1,
+        actorId: "staffrt-owner",
+        reason: "Synthetic profile-edit fixture classification",
+        payload: {
+          commissionRole: "NON_COMMISSION",
+          joinDate: "2026-01-01",
+          stageEndOverride: null,
+        },
+      },
+    });
 
     await prisma.department.create({ data: { id: HAIR, tenantId: TENANTS.a, name: "Hair" } });
     await prisma.department.create({ data: { id: NAILS, tenantId: TENANTS.b, name: "Nails" } });
@@ -260,6 +288,33 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
           ),
         );
         assert.throws(() => verifyAccessToken(identity.token));
+        // Creation remains unclassified; an active edit must fail until owner setup is recorded.
+        assert.equal(
+          (await request("PATCH", `/api/staff/${staff.id}`, managerToken, { posPin: "135790" }))
+            .status,
+          400,
+        );
+        await runAsPlatform(async () => {
+          await prisma.user.update({
+            where: { id: staff.id },
+            data: { startDate: new Date("2026-01-01T00:00:00Z") },
+          });
+          await prisma.payrollConfigurationEvent.create({
+            data: {
+              tenantId: TENANTS.a,
+              kind: "STAFF",
+              targetId: staff.id,
+              revision: 1,
+              actorId: "staffrt-owner",
+              reason: "Synthetic PIN-edit fixture classification",
+              payload: {
+                commissionRole: "NON_COMMISSION",
+                joinDate: "2026-01-01",
+                stageEndOverride: null,
+              },
+            },
+          });
+        });
         await assert.rejects(
           runAsTenant(TENANTS.a, () =>
             posStaffFromToken(identity.token, "staffrt-manager", "session-b"),

@@ -11,6 +11,10 @@
  * The API never accepts a tenant id; the Prisma extension scopes creation.
  */
 import { z } from "zod";
+import {
+  payrollAssignmentWriteSchema,
+  payrollStaffSettingsSchema,
+} from "../commission-payroll/settings.js";
 
 import { adminPasswordSchema, globalRoleSchema } from "./auth.js";
 import { PASSWORD_MIN_LENGTH } from "../constants.js";
@@ -90,10 +94,41 @@ export const createStaffSchema = z
     color: z.string().trim().max(32).optional(),
     avatar: z.string().trim().max(500).optional(),
     startDate: z.iso.date().optional(),
+    payrollClassification: payrollStaffSettingsSchema
+      .pick({ commissionRole: true, reason: true })
+      .extend({ commissionRole: z.enum(["COMMISSION_EARNING", "NON_COMMISSION"]) })
+      .optional(),
+    payrollAssignment: payrollAssignmentWriteSchema
+      .omit({ staffIds: true })
+      .extend({
+        planId: z.string().trim().min(1).max(128),
+      })
+      .optional(),
     endDate: z.iso.date().optional(),
     departmentIds: z.array(z.string().min(1)).max(50).optional(),
   })
   .superRefine((staff, context) => {
+    if (staff.payrollClassification && !staff.startDate)
+      context.addIssue({
+        code: "custom",
+        path: ["startDate"],
+        message: "A join date is required with a payroll classification.",
+      });
+    if (
+      staff.payrollClassification?.commissionRole === "COMMISSION_EARNING" &&
+      !staff.payrollAssignment
+    )
+      context.addIssue({
+        code: "custom",
+        path: ["payrollAssignment"],
+        message: "Commission-earning staff require an initial payroll plan.",
+      });
+    if (staff.payrollAssignment && !staff.startDate)
+      context.addIssue({
+        code: "custom",
+        path: ["startDate"],
+        message: "A join date is required with a payroll plan.",
+      });
     if (staff.globalRole === "SUPER_ADMIN" && staff.password) {
       const result = adminPasswordSchema.safeParse(staff.password);
       if (!result.success)

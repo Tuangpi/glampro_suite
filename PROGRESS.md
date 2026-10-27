@@ -2,6 +2,14 @@
 
 ## Current State
 
+- **CP-003 unclassified active-edit follow-up — October 27, 2026:** active staff
+  edits/reactivation now require supported owner-audited classification under the
+  tenant configuration lock. Suspension and disabled maintenance remain available.
+  Focused disposable lifecycle/staff HTTP 23/23; API typecheck/lint/build pass.
+  See the [CP handoff](docs/commission_payroll/PROGRESS.md) for full regression
+  results. Mandatory creation, outlet pooling, historical inputs and authenticated
+  browser acceptance remain open. CP-003 stays IN PROGRESS; CP-004 not started.
+
 - **Commission & Payroll management — October 27, 2026:** first-priority workstream
   is now [CP](docs/commission_payroll/PROJECT.md), with
   [tasks](docs/commission_payroll/TASKS.md),
@@ -15,7 +23,28 @@
   version comparison and audit paging added; build/typecheck/lint and disposable
   service/HTTP acceptance pass; latest join-date concurrency protection verified,
   full web 892/892 (104 files), shared 244/244 and staff HTTP 22/22. See the CP handoff for
-  evidence and remaining acceptance work. Resume CP-003, not CP-004.
+  evidence and remaining acceptance work. Latest continuation adds optional atomic
+  staff/department/initial-plan creation, verified web 896/896, shared 245/245,
+  staff HTTP 22/22 and disposable acceptance; mandatory lifecycle enforcement
+  remains incomplete. Latest safety follow-up enforces assignment/join-date ordering
+  in both directions; disposable acceptance, API typecheck/lint and default API
+  serial API regression (623 passed, 34 opt-in skips) pass. Parallel final run had
+  two existing resource/sale transaction timeouts; see CP handoff. Resume CP-003, not CP-004.
+  Latest continuation adds explicit owner-audited commission classification and
+  current/ongoing plan coverage guards, without inferring from login roles. Shared
+  246/246, full web 897/897, serial API 623 passed/34 gated skips, disposable lifecycle,
+  root build, workspace typechecks and lint pass;
+  mandatory create/edit lifecycle enforcement remains open. See CP handoff.
+  Latest increment adds owner-only atomic classified creation: identity, department
+  links, initial plan and classification audit save together; classified staff
+  require join date and commission earners require current-month plan coverage.
+  Shared 247/247, full web 898/898, serial API 623 passed/34 gated skips, root build,
+  workspace typechecks and lint pass. Mandatory lifecycle integration is still open.
+  Latest safety increment guards active classified profile edits/reactivation under
+  the tenant configuration lock; invalid writes roll back while suspension remains
+  available. Focused disposable lifecycle/staff HTTP 23/23, API typecheck/lint pass.
+  Final serial API 623 passed/34 gated skips and API production build pass; web
+  regression not rerun for this API-only increment. CP-003 remains IN PROGRESS.
   The old SC tracker is archived with original contents preserved and is no longer
   authoritative. Configuration API/UI and disposable migration only; no POS/earnings
   activation, application migration or deployment claimed.

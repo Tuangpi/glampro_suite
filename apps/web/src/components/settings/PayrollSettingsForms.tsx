@@ -16,7 +16,11 @@ import Select from "@/components/ui/Select";
 type RevisionValue<T> = T & { revision: number };
 type Profile = Omit<PayrollProfileWrite, "reason" | "expectedRevision">;
 type Settings = Omit<PayrollSettingsWrite, "reason" | "expectedRevision">;
-type StaffSettings = { joinDate: string | null; stageEndOverride: number | null };
+type StaffSettings = {
+  joinDate: string | null;
+  stageEndOverride: number | null;
+  commissionRole?: "COMMISSION_EARNING" | "NON_COMMISSION" | null;
+};
 type FormProps<T> = {
   value: RevisionValue<T>;
   canEdit: boolean;
@@ -193,6 +197,7 @@ export function PayrollStaffSettingsForm({ value, canEdit, save }: FormProps<Sta
     stageEndOverride: form.fields.stageEndOverride,
     expectedRevision: form.revision,
     expectedJoinDate: form.snapshot.joinDate,
+    commissionRole: form.fields.commissionRole ?? undefined,
   });
   return (
     <FormFrame
@@ -212,9 +217,32 @@ export function PayrollStaffSettingsForm({ value, canEdit, save }: FormProps<Sta
             stageEndOverride: parsed.data.stageEndOverride,
             expectedRevision: form.revision,
             expectedJoinDate: form.snapshot.joinDate,
+            ...(parsed.data.commissionRole ? { commissionRole: parsed.data.commissionRole } : {}),
           });
       }}
     >
+      <Select
+        label="Commission role classification"
+        value={form.fields.commissionRole ?? ""}
+        options={[
+          { value: "", label: "Not classified — review required" },
+          { value: "COMMISSION_EARNING", label: "Commission earning — plan required" },
+          { value: "NON_COMMISSION", label: "Non-commission" },
+        ]}
+        onChange={(e) =>
+          form.setFields({
+            ...form.fields,
+            commissionRole: e.target.value
+              ? (e.target.value as "COMMISSION_EARNING" | "NON_COMMISSION")
+              : form.snapshot.commissionRole,
+          })
+        }
+      />
+      <p className="text-sm text-ink-muted">
+        Classification is independent of login permissions and job title. Assign a plan for the
+        current payroll month before marking staff commission earning. This does not activate
+        earnings.
+      </p>
       <Input
         label="Staff join date"
         type="date"

@@ -17,6 +17,35 @@ const profile = {
   salesAlertPct: "40",
 };
 
+it("submits explicit commission classification without inferring it from login role", async () => {
+  const user = userEvent.setup();
+  const save = vi.fn();
+  const value = { revision: 1, joinDate: "2026-09-01", stageEndOverride: null };
+  const { rerender } = render(<PayrollStaffSettingsForm value={value} canEdit save={save} />);
+  expect(screen.getByLabelText("Commission role classification")).toHaveValue("");
+  await user.selectOptions(
+    screen.getByLabelText("Commission role classification"),
+    "COMMISSION_EARNING",
+  );
+  await user.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
+  expect(save).toHaveBeenCalledWith(
+    expect.objectContaining({
+      commissionRole: "COMMISSION_EARNING",
+      expectedRevision: 1,
+    }),
+  );
+  rerender(
+    <PayrollStaffSettingsForm
+      value={{ ...value, revision: 2, commissionRole: "NON_COMMISSION" }}
+      canEdit
+      save={save}
+    />,
+  );
+  expect(screen.getByRole("button", { name: "Save staff payroll settings" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Reload staff payroll settings" }));
+  expect(screen.getByLabelText("Commission role classification")).toHaveValue("NON_COMMISSION");
+});
+
 it("validates metadata and retains its original revision until explicit reload", async () => {
   const save = vi.fn();
   const user = userEvent.setup();

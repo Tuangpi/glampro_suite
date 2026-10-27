@@ -96,3 +96,18 @@ test("plan creation validates the complete definition, not only plan metadata", 
   definition.stages[1]!.fromMonth = 3;
   assert.equal(payrollCreatePlanSchema.safeParse(input).success, false);
 });
+
+test("commission classification is explicit, independent of login roles and cannot be cleared", () => {
+  const input = {
+    expectedRevision: 0,
+    expectedJoinDate: null,
+    joinDate: "2026-10-01",
+    stageEndOverride: null,
+    reason: "Role classification review",
+  };
+  for (const commissionRole of ["COMMISSION_EARNING", "NON_COMMISSION"])
+    assert.equal(payrollStaffSettingsSchema.safeParse({ ...input, commissionRole }).success, true);
+  for (const commissionRole of [null, "", "STAFF", "MANAGER"])
+    assert.equal(payrollStaffSettingsSchema.safeParse({ ...input, commissionRole }).success, false);
+  assert.equal(payrollStaffSettingsSchema.safeParse(input).success, true);
+});

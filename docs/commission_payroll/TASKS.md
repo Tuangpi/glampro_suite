@@ -63,12 +63,37 @@ Existing implementation and reference tests need verification, not automatic cre
   under the same tenant lock. Payroll history requires the reasoned owner workflow;
   disposable races and staff HTTP regression pass. Required-plan creation and full
   staff lifecycle requirement enforcement are still incomplete.
+- Follow-up: optional owner-only atomic staff/department/initial-plan creation is
+  implemented with join-date validation, captured assignment revision and rollback
+  coverage. Mandatory plan/join-date enforcement is still incomplete; this does
+  not satisfy FR-ASN-01. See DECISIONS and PROGRESS.
 - Remaining: authoritative last-closed-month impact preview; outlet-scoped plan
   assignment semantics; staff create/edit requirement enforcement and remaining
   API/UI/browser acceptance. Metadata editing, opt-in create→payroll continuation,
   staff edit payroll panel, keyed rule-version comparison and paginated audit
   retrieval are now implemented; see PROGRESS for verification and limits. Resume CP-003;
   do not start CP-004 merely because this checkpoint passes focused tests.
+- Follow-up: assignment starts cannot precede join dates, and audited join-date
+  edits cannot strand assignment history. Transactional rejection/rollback checks
+  pass. Mandatory role classification/lifecycle enforcement remains open.
+- Follow-up: explicit owner-audited commission classification added to staff payroll
+  settings independently of login roles/positions. Commission-earning classification
+  requires current-month and ongoing plan coverage; plan removal is guarded. Legacy
+  staff remain visibly unclassified; mandatory create/edit lifecycle integration is
+  still open, so this does not satisfy FR-ASN-01 or complete CP-003.
+- Follow-up: owner creation can now atomically save reasoned classification with
+  identity, department links and initial assignment. Classified staff require join
+  date; commission earners require current-month plan coverage. Disposable rollback
+  and UI submission checks pass. Identity-only compatibility and edit lifecycle
+  enforcement remain open; CP-003 stays IN PROGRESS.
+- Follow-up: general staff edits/reactivation now validate latest classified payroll
+  requirements under the tenant configuration lock before identity/link writes.
+  Suspension remains available; repair is through audited payroll settings. Legacy
+  unclassified create/edit enforcement and full lifecycle acceptance remain open.
+- Follow-up: active edits/reactivation now reject missing or unknown audited
+  classification before identity/link writes. Suspension and disabled maintenance
+  remain possible; owner reasoned setup is required for recovery. Mandatory
+  creation, outlet pooling, historical inputs and browser acceptance remain open.
 - Expected result: tenant/outlet-safe persistence and authenticated APIs/UI for
   plans, immutable published versions, assignment history, payroll profiles,
   settings, stages, calculator, chart comparison, impact preview and sample plans.

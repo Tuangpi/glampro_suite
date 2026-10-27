@@ -40,6 +40,74 @@ describe("staffListQuerySchema", () => {
 });
 
 describe("createStaffSchema", () => {
+  it("requires a dated reasoned classification and initial plan for commission earners", () => {
+    const identity = { name: "Amy", posPin: "123456" };
+    const payrollClassification = {
+      commissionRole: "COMMISSION_EARNING",
+      reason: "Employment agreement",
+    };
+    assert.equal(
+      createStaffSchema.safeParse({ ...identity, payrollClassification }).success,
+      false,
+    );
+    assert.equal(
+      createStaffSchema.safeParse({ ...identity, startDate: "2026-10-01", payrollClassification })
+        .success,
+      false,
+    );
+    const input = {
+      ...identity,
+      startDate: "2026-10-01",
+      payrollClassification,
+      payrollAssignment: {
+        planId: "hair",
+        expectedRevision: 0,
+        fromDate: "2026-10-27",
+        reason: "Initial assignment",
+      },
+    };
+    assert.equal(createStaffSchema.safeParse(input).success, true);
+    assert.equal(
+      createStaffSchema.safeParse({
+        ...input,
+        payrollClassification: { ...payrollClassification, reason: " " },
+      }).success,
+      false,
+    );
+    assert.equal(
+      createStaffSchema.safeParse({
+        ...identity,
+        startDate: "2026-10-01",
+        payrollClassification: { ...payrollClassification, commissionRole: "NON_COMMISSION" },
+      }).success,
+      true,
+    );
+  });
+  it("requires a join date, plan, assignment revision and reason for atomic payroll creation", () => {
+    const identity = { name: "Amy", posPin: "123456" };
+    const payrollAssignment = {
+      planId: "plan",
+      expectedRevision: 0,
+      fromDate: "2026-10-27",
+      reason: "Initial assignment",
+    };
+    assert.equal(createStaffSchema.safeParse({ ...identity, payrollAssignment }).success, false);
+    const input = { ...identity, startDate: "2026-09-01", payrollAssignment };
+    assert.equal(createStaffSchema.safeParse(input).success, true);
+    for (const patch of [
+      { planId: null },
+      { reason: " " },
+      { expectedRevision: -1 },
+      { fromDate: "bad" },
+    ])
+      assert.equal(
+        createStaffSchema.safeParse({
+          ...input,
+          payrollAssignment: { ...payrollAssignment, ...patch },
+        }).success,
+        false,
+      );
+  });
   it("accepts PIN-only staff without email and prevents management roles", () => {
     assert.equal(createStaffSchema.safeParse({ name: "Ava", posPin: "123456" }).success, true);
     assert.equal(createStaffSchema.safeParse({ name: "Ava", posPin: "12345" }).success, false);
