@@ -113,6 +113,7 @@ export function useUpdateStaff() {
  * invalidated with the list rather than leaving a tile stale until a reload.
  */
 function invalidateStaff(queryClient: ReturnType<typeof useQueryClient>): void {
+  void queryClient.invalidateQueries({ queryKey: ["payroll-configuration"] });
   void queryClient.invalidateQueries({ queryKey: queryKeys.staff.list() });
   void queryClient.invalidateQueries({ queryKey: queryKeys.staff.count() });
 }

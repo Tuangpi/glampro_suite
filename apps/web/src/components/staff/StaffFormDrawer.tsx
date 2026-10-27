@@ -33,6 +33,7 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import StaffRoster from "@/components/staff/StaffRoster";
 import CommissionRules from "@/components/settings/CommissionRules";
+import PayrollPlans from "@/components/settings/PayrollPlans";
 import { useAuth } from "@/contexts/AuthContext";
 import { showToast } from "@/components/ui/toast-store";
 import { ROLE_OPTIONS } from "@/constants/staff";
@@ -126,7 +127,14 @@ export interface StaffFormDrawerProps {
   onClose: () => void;
 }
 
-export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawerProps) {
+export default function StaffFormDrawer({
+  open,
+  staff: initialStaff,
+  onClose,
+}: StaffFormDrawerProps) {
+  const [createdStaff, setCreatedStaff] = useState<StaffDetail | null>(null);
+  const [configurePayroll, setConfigurePayroll] = useState(false);
+  const staff = createdStaff ?? initialStaff;
   const { user, isReadOnly } = useAuth();
   const canConfigureCommission =
     user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER";
@@ -135,6 +143,7 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
   // unsaved text into the next one — without an effect copying props into state,
   // which renders twice on every open.
   const [form, setForm] = useState<FormState>(() => (staff ? toForm(staff) : EMPTY_FORM));
+  const [originalStartDate, setOriginalStartDate] = useState(() => form.startDate);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -203,7 +212,11 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
             phone: clearable(form.phone),
             position: clearable(form.position),
             ...(form.removePin ? { posPin: null } : form.posPin ? { posPin: form.posPin } : {}),
-            startDate: clearable(form.startDate),
+            // Payroll can update this same authoritative date while this drawer is open.
+            // Do not write the drawer's old value back unless the identity form changed it.
+            ...(form.startDate !== originalStartDate
+              ? { startDate: clearable(form.startDate) }
+              : {}),
             endDate: clearable(form.endDate),
             disabled: form.disabled,
             // Sent even when empty: on update the list *replaces* the selection, so
@@ -213,7 +226,7 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
         });
         showToast("success", "Staff member updated.");
       } else {
-        await createStaff.mutateAsync({
+        const created = await createStaff.mutateAsync({
           name,
           ...(form.pinOnly
             ? { posPin: form.posPin }
@@ -227,6 +240,12 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
           departmentIds: form.departmentIds,
         });
         showToast("success", "Staff member added.");
+        if (configurePayroll && canConfigureCommission) {
+          setCreatedStaff(created);
+          setForm(toForm(created));
+          setOriginalStartDate(toForm(created).startDate);
+          return;
+        }
       }
 
       onClose();
@@ -440,7 +459,21 @@ export default function StaffFormDrawer({ open, staff, onClose }: StaffFormDrawe
           />
         ) : null}
         {staff && open ? <StaffRoster staffId={staff.id} /> : null}
+        {!staff && canConfigureCommission && (
+          <Checkbox
+            label="Configure payroll after creation"
+            checked={configurePayroll}
+            onChange={(event) => setConfigurePayroll(event.target.checked)}
+            hint="Create the staff identity first, then assign a plan and save payroll settings separately. A join date is required before assigning a plan."
+          />
+        )}
       </form>
+      {staff && open && canConfigureCommission ? (
+        <PayrollPlans
+          staffId={staff.id}
+          canEdit={user?.globalRole === "SUPER_ADMIN" && !isReadOnly}
+        />
+      ) : null}
       {staff && open && canConfigureCommission ? (
         <CommissionRules staffId={staff.id} canEdit={!isReadOnly} />
       ) : null}

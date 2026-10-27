@@ -59,6 +59,8 @@ function configuration(): PayrollConfiguration {
     ],
     history: [],
     historyLimit: 100,
+    historyPage: 1,
+    historyTotal: 0,
   };
 }
 beforeEach(() => {
@@ -66,17 +68,83 @@ beforeEach(() => {
   mocks.get.mockResolvedValue(configuration());
   mocks.post.mockResolvedValue({});
 });
-function mount(canEdit = true) {
+function mount(canEdit = true, staffId?: string) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={client}>
-      <PayrollPlans canEdit={canEdit} />
+      <PayrollPlans canEdit={canEdit} staffId={staffId} />
     </QueryClientProvider>,
   );
   return client;
 }
+it("limits the staff panel to the selected identity and saves profiles independently", async () => {
+  const data = configuration();
+  data.staff.push({ ...data.staff[0]!, id: "ben", name: "Ben" });
+  mocks.get.mockResolvedValue(data);
+  mount(true, "amy");
+  const user = userEvent.setup();
+  expect(await screen.findByLabelText("Payroll change reason")).toBeInTheDocument();
+  expect(screen.queryByLabelText("New or duplicate plan name")).not.toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "Ben" })).not.toBeInTheDocument();
+  await user.type(screen.getByLabelText("Payroll change reason"), "Salary review");
+  await user.click(screen.getByRole("button", { name: "Save salary profile" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/payroll-configuration/staff/amy/profile",
+      expect.objectContaining({ expectedRevision: 0, reason: "Salary review" }),
+    ),
+  );
+});
+
+it("preserves unsaved salary fields while changing audit pages", async () => {
+  mocks.get.mockResolvedValue({ ...configuration(), historyTotal: 201 });
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Calculated commission: S$546.40");
+  await user.clear(screen.getByLabelText("Basic monthly salary"));
+  await user.type(screen.getByLabelText("Basic monthly salary"), "1200");
+  await user.click(screen.getByRole("button", { name: "Next audit page" }));
+  await waitFor(() =>
+    expect(mocks.get).toHaveBeenCalledWith("/payroll-configuration", { historyPage: 2 }),
+  );
+  expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("1200");
+});
+it("saves metadata with a reason and does not overwrite unsaved rule edits", async () => {
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Calculated commission: S$546.40");
+  await user.clear(screen.getByLabelText("Plan description"));
+  await user.type(screen.getByLabelText("Plan description"), "Revised description");
+  await user.type(screen.getByLabelText("Plan change reason"), "Metadata review");
+  await user.click(screen.getByRole("button", { name: "Save plan metadata" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/plans/hair/metadata", {
+      expectedRevision: 1,
+      reason: "Metadata review",
+      name: "Hair",
+      description: "Revised description",
+      positions: [],
+      outletIds: [],
+    }),
+  );
+  await user.type(screen.getByLabelText("Component name"), " revised");
+  expect(screen.getByRole("button", { name: "Save plan metadata" })).toBeDisabled();
+});
+
+it("navigates audit pages using server totals rather than truncating history", async () => {
+  mocks.get.mockResolvedValue({ ...configuration(), historyTotal: 201 });
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Calculated commission: S$546.40");
+  expect(screen.getByRole("button", { name: "Previous audit page" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Next audit page" }));
+  await waitFor(() =>
+    expect(mocks.get).toHaveBeenCalledWith("/payroll-configuration", { historyPage: 2 }),
+  );
+  expect(await screen.findByRole("button", { name: "Previous audit page" })).toBeEnabled();
+});
 it("uses the shared exact calculator and discloses historical preview is unavailable", async () => {
   mount();
   expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
@@ -142,7 +210,8 @@ it("keeps manager controls read-only and does not invent missing salary profiles
   await screen.findByText("Calculated commission: S$546.40");
   expect(screen.queryByRole("button", { name: "Publish saved version" })).not.toBeInTheDocument();
   expect(screen.getByLabelText("Component name")).toBeDisabled();
-  expect(screen.queryByLabelText("Salary profile JSON")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Basic monthly salary")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Staff join date")).toBeDisabled();
 });
 it("bulk assigns selected staff with the assignment revision", async () => {
   mount();
@@ -167,6 +236,78 @@ it("fails closed when configuration cannot be loaded", async () => {
   mount();
   expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load commission plans");
   expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
+});
+it("requires a reason for structured salary saves and retains edits after server failure", async () => {
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Calculated commission: S$546.40");
+  await user.clear(screen.getByLabelText("Basic monthly salary"));
+  await user.type(screen.getByLabelText("Basic monthly salary"), "1234.56");
+  await user.click(screen.getByRole("button", { name: "Save salary profile" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Enter a change reason");
+  expect(mocks.post).not.toHaveBeenCalled();
+  await user.type(screen.getByLabelText("Plan change reason"), "Salary review");
+  mocks.post.mockRejectedValueOnce(new Error("Revision conflict"));
+  await user.click(screen.getByRole("button", { name: "Save salary profile" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Revision conflict");
+  expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("1234.56");
+  expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/staff/amy/profile", {
+    expectedRevision: 0,
+    reason: "Salary review",
+    basicSalary: "1234.56",
+    fixedOvertime: "0",
+    levy: "0",
+    salesAlertPct: "40",
+  });
+});
+it("routes structured join-date settings with required reason and revision", async () => {
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Calculated commission: S$546.40");
+  await user.clear(screen.getByLabelText("Staff join date"));
+  await user.type(screen.getByLabelText("Staff join date"), "2026-08-01");
+  await user.type(screen.getByLabelText("Plan change reason"), "Correct employment date");
+  await user.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/staff/amy/settings", {
+      expectedRevision: 0,
+      reason: "Correct employment date",
+      joinDate: "2026-08-01",
+      stageEndOverride: null,
+    }),
+  );
+});
+it("routes structured salon settings with required reason and revision", async () => {
+  mount();
+  const user = userEvent.setup();
+  await screen.findByText("Calculated commission: S$546.40");
+  await user.click(screen.getByText("Salon commission settings (configuration only)"));
+  await user.clear(screen.getByLabelText("Minimum package deposit percentage"));
+  await user.type(screen.getByLabelText("Minimum package deposit percentage"), "45");
+  await user.type(screen.getByLabelText("Plan change reason"), "New deposit policy");
+  await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/settings", {
+      ...PAYROLL_DEFAULT_SETTINGS,
+      expectedRevision: 0,
+      reason: "New deposit policy",
+      minimumDepositPct: "45",
+    }),
+  );
+});
+it("does not discard salary edits or rebase them when configuration is refreshed", async () => {
+  const client = mount();
+  const user = userEvent.setup();
+  await screen.findByText("Calculated commission: S$546.40");
+  await user.clear(screen.getByLabelText("Basic monthly salary"));
+  await user.type(screen.getByLabelText("Basic monthly salary"), "1200");
+  const next = configuration();
+  next.staff[0]!.profile = { ...next.staff[0]!.profile!, revision: 1, basicSalary: "1500" };
+  mocks.get.mockResolvedValue(next);
+  await client.invalidateQueries({ queryKey: ["payroll-configuration"] });
+  expect(await screen.findByRole("alert")).toHaveTextContent("Salary profile changed");
+  expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("1200");
+  expect(screen.getByRole("button", { name: "Save salary profile" })).toBeDisabled();
 });
 it("saves structured stage and incentive edits in the revision-bound draft", async () => {
   mount();

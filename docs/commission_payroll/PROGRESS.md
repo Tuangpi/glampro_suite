@@ -11,11 +11,88 @@
   POS/earnings, activation and deployment remain unchanged. No dependencies added.
 - No policy question currently blocks local work; decisions adopted under delegation
   are in DECISIONS.md, including explicit deviations from SRS proposed defaults.
-- Latest continuation: structured stage/incentive editors, category filters and
-  component ordering implemented; chart now honors selected stage in shared/API/UI.
-- Next: continue CP-003 metadata/profile/settings UX and staff integration, resolve
-  outlet assignments, authoritative impact preview and remaining completion checks.
+- Latest continuation: revision-safe metadata editor; opt-in staff create→payroll
+  continuation and edit payroll panel; keyed rule-version comparison; paginated
+  audit API/UI with salary/outlet filtering. Configuration only; no earnings activation.
+- Next: outlet assignment semantics, authoritative impact-preview input integration,
+  staff requirement/concurrency enforcement and remaining API/UI/browser acceptance.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 27, 2026 — CP-003 metadata, staff workflow, comparison and audit continuation
+
+- Added shared-schema-validated metadata editing with captured revision, retained
+  failed edits and explicit reload. Published definitions remain unchanged. Outlet
+  scope is read-only because the existing service requires duplication to change it.
+  Metadata saves are disabled while rule edits/imports are unsaved.
+- Staff creation optionally keeps the drawer open on the persisted identity for
+  separate payroll setup. Subsequent identity saves update rather than create again.
+  Edit drawers show selected-staff assignments, join date/stage and salary forms;
+  managers remain read-only with salary omitted by the API. Company context is
+  still required. Payroll and identity saves are explicitly separate transactions.
+- Identity writes invalidate payroll data; payroll writes invalidate staff data.
+  Unchanged identity-form join dates are omitted to avoid overwriting a date saved
+  through payroll. Settings forms detect changed server values even when their
+  payroll event revision is unchanged. Explicit concurrent date edits through the
+  legacy staff endpoint still need stronger server-side concurrency enforcement.
+- Version comparison selects any two saved definitions or an unsaved draft, matching
+  components/stages/incentives by stable keys and displaying exact before/after
+  values. Ordered bands/award rows compare as arrays. This is rule comparison, not
+  monetary historical impact. Existing complete JSON history remains available.
+- Audit supports validated 100-event pages and role/outlet-filtered totals using
+  matching predicates. Stable timestamp/ID ordering prevents ties; concurrent new
+  activity can shift offset-page boundaries (disclosed in UI). Paging retains local
+  form state. Large-history cursor/performance acceptance is not claimed.
+- Disposable PostgreSQL 18 migration replay and extended service/HTTP acceptance
+  pass: metadata conflicts/immutable rules, >100 audit events without overlap,
+  invalid pages, manager salary redaction and outlet-filtered totals. Only a fresh
+  `/tmp/cp003-cont-pg-*` database at localhost:55474 was used and stopped afterward.
+  Root build, workspace typechecks and lint pass. Verification logs:
+  `/tmp/cp003-cont-{acceptance,build-final,types-final,lint-last}.log`;
+  final web checks are recorded below. Several full web attempts timed out in the
+  large editor. Memoized exact calculator/61-point curve generation so unrelated
+  edits do not recompute charts; latest web build/typecheck/lint pass. Split one
+  existing combined join-date/salon integration test into two focused tests,
+  preserving all assertions and the default timeout. No checks disabled.
+- Final full web run: **891/891**, 104 files, `--maxWorkers=1`, zero failures;
+  `/tmp/cp003-cont-web-verified.log`. Includes 19 plan, 10 form, two comparison and
+  16 staff tests. Final changed-source/document formatting and whitespace checks
+  pass. Authenticated browser walkthrough and full API regression were not run.
+- Remaining CP-003 work: outlet-scoped assignment contract and integration; required
+  staff-plan/join-date enforcement; authoritative last-closed-month impact preview;
+  remaining concurrency and authenticated browser acceptance. Users are tenant-wide
+  and have no authoritative dated outlet membership; do not invent home outlets
+  from departments or selected UI context. PayrollPlan/Version/ConfigurationEvent
+  are the only new payroll models; authoritative CP monthly bases and frozen inputs
+  are not yet integrated. Preview remains explicitly unavailable rather than using
+  legacy payable totals. Resolve that dependency within CP-003 before claiming DONE.
+- No schema changes, application DB operations, activation, dependencies, deployment,
+  commit or push. CP-003 remains IN PROGRESS; do not start CP-004 automatically.
+
+## October 27, 2026 — CP-003 profile and settings forms continuation
+
+- Replaced JSON-only salary profile, staff employment date/stage override and salon
+  settings controls with existing Input/Select/Checkbox components. Exact monetary
+  strings and nullable/zero override semantics are preserved. Shared schemas block
+  invalid dates, negative money, invalid percentages and out-of-range integers.
+- Forms capture revision and values together. New server revisions retain local
+  edits but block save until explicit reload; failures retain edits. Reload discards
+  local edits and adopts current server values/revision. Existing owner-only writes,
+  reason requirement, manager salary omission and company-context restriction remain.
+- Removed JsonSettings. Pending requests/refetch disable form editing. Staff settings
+  help clarifies that the stage-end override is supported only for two-stage plans.
+  This is settings-screen integration, not staff create/edit workflow acceptance.
+- Verification: full web **881/881** across 103 files, focused form/settings **22/22**;
+  root production build, workspace typechecks, lint, source formatting and whitespace
+  checks pass. Logs: `/tmp/cp003-forms-*`. Initial concurrent root build/typecheck
+  collided while regenerating Prisma; rerunning sequentially regenerated the client
+  cleanly and both passed. No schema edits or application DB operations occurred.
+- No API/shared runtime changes, migration, activation, dependencies, deployment,
+  commit or push. API regression/disposable acceptance and browser walkthrough were
+  not run in this continuation. Legacy earnings remain unchanged.
+- CP-003 remains IN PROGRESS. Next: metadata editor, staff create/edit integration,
+  outlet assignment semantics, authoritative historical preview, richer version
+  comparison, paginated audit and remaining API/UI/browser acceptance. Do not start
+  CP-004 or infer historical payroll bases from legacy payable totals.
 
 ## October 27, 2026 — CP-003 structured definition editor continuation
 

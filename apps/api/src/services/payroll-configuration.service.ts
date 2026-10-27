@@ -392,7 +392,9 @@ export async function savePayrollSettings(raw: PayrollSettingsWrite) {
     return event(tx, "SETTINGS", "company", expectedRevision, reason, payload);
   }, true);
 }
-export async function readPayrollConfiguration() {
+export async function readPayrollConfiguration(historyPage = 1) {
+  if (!Number.isSafeInteger(historyPage) || historyPage < 1 || historyPage > 1000000)
+    throw badRequest("Invalid audit page.");
   return prisma.$transaction(async (tx) => {
     await lockCommissionConfiguration(tx, scope().tenantId);
     const user = await actor(tx);
@@ -416,13 +418,16 @@ export async function readPayrollConfiguration() {
           select: { id: true, name: true, startDate: true, disabled: true },
           orderBy: { name: "asc" },
         });
+    const historyWhere = {
+      kind: { in: kinds },
+      ...(currentOutletId() ? { kind: "PLAN", targetId: { in: plans.map((p) => p.id) } } : {}),
+    };
+    const historyTotal = await tx.payrollConfigurationEvent.count({ where: historyWhere });
     const history = await tx.payrollConfigurationEvent.findMany({
-      where: {
-        kind: { in: kinds },
-        ...(currentOutletId() ? { kind: "PLAN", targetId: { in: plans.map((p) => p.id) } } : {}),
-      },
+      where: historyWhere,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 100,
+      skip: (historyPage - 1) * 100,
     });
     const date = await today(tx);
     return {
@@ -473,6 +478,8 @@ export async function readPayrollConfiguration() {
       ),
       history,
       historyLimit: 100,
+      historyPage,
+      historyTotal,
       earningsActive: false,
     };
   });

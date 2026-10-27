@@ -47,7 +47,13 @@ function handler(fn: (req: Parameters<RequestHandler>[0]) => Promise<unknown>): 
 }
 payrollConfigurationRouter.get(
   "/",
-  handle(() => readPayrollConfiguration()),
+  validate(
+    z.strictObject({ historyPage: z.coerce.number().int().min(1).max(1000000).default(1) }),
+    "query",
+  ),
+  handle((req) =>
+    readPayrollConfiguration(validated<{ historyPage: number }>(req, "query").historyPage),
+  ),
 );
 payrollConfigurationRouter.get(
   "/samples",

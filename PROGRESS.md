@@ -10,9 +10,10 @@
   new management; CP-002 pure engine and fixtures are now DONE (36 new engine
   tests; shared 237/237, typecheck/lint/build pass). Next is CP-003, versioned
   plans, assignments and settings; it is IN PROGRESS with a partial configuration
-  checkpoint. Structured stages/incentives/category filters/component ordering and
-  selected-stage chart parity now added; full web 870/870, shared 243/243,
-  disposable acceptance 1/1, build/typecheck/lint pass. See the CP handoff for
+  checkpoint. Structured stages/incentives/category filters/component ordering,
+  selected-stage charts, settings/metadata forms, staff payroll workflow, keyed
+  version comparison and audit paging added; build/typecheck/lint and disposable
+  service/HTTP acceptance pass; final full web 891/891 (104 files). See the CP handoff for
   evidence and remaining acceptance work. Resume CP-003, not CP-004.
   The old SC tracker is archived with original contents preserved and is no longer
   authoritative. Configuration API/UI and disposable migration only; no POS/earnings

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   hairPayrollExample,
@@ -23,6 +23,13 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import PayrollDefinitionEditor from "./PayrollDefinitionEditor";
+import PayrollVersionComparison from "./PayrollVersionComparison";
+import {
+  PayrollProfileForm,
+  PayrollSalonSettingsForm,
+  PayrollStaffSettingsForm,
+  PayrollPlanMetadataForm,
+} from "./PayrollSettingsForms";
 
 interface Version {
   id: string;
@@ -70,14 +77,18 @@ export interface PayrollConfiguration {
     createdAt: string;
   }[];
   historyLimit: number;
+  historyPage: number;
+  historyTotal: number;
 }
 
 export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; staffId?: string }) {
   const client = useQueryClient();
+  const [historyPage, setHistoryPage] = useState(1);
   const query = useQuery({
-    queryKey: ["payroll-configuration"],
-    queryFn: () => get<PayrollConfiguration>("/payroll-configuration"),
+    queryKey: ["payroll-configuration", historyPage],
+    queryFn: () => get<PayrollConfiguration>("/payroll-configuration", { historyPage }),
     staleTime: 0,
+    placeholderData: (previous) => previous,
   });
   const [selected, setSelected] = useState("");
   const [draft, setDraft] = useState<{
@@ -98,6 +109,31 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
   const mutation = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => post(url, body),
   });
+  const calculatorPlan = query.data?.plans.find((p) => p.id === selected) ?? query.data?.plans[0];
+  const calculatedDefinition =
+    draft && draft.planId === calculatorPlan?.id
+      ? draft.definition
+      : calculatorPlan?.versions[0]?.definition;
+  const selectedComponent =
+    calculatedDefinition?.components.find((c) => c.key === componentKey) ??
+    calculatedDefinition?.components[0];
+  const calculations = useMemo(() => {
+    let calculator: ReturnType<typeof calculatePayrollComponent> | null = null;
+    let comparison: ReturnType<typeof comparePayrollMethods> = [];
+    let curve: ReturnType<typeof payrollCommissionCurve> = [];
+    let calculatorError = "";
+    try {
+      if (selectedComponent) {
+        calculator = calculatePayrollComponent(selectedComponent, base, { stageKey, units });
+        comparison = comparePayrollMethods(selectedComponent, base, { stageKey, units });
+        if (selectedComponent.method.startsWith("TIER_"))
+          curve = payrollCommissionCurve(selectedComponent, "30000", 60, { stageKey, units });
+      }
+    } catch (cause) {
+      calculatorError = cause instanceof Error ? cause.message : "Invalid calculator input.";
+    }
+    return { calculator, comparison, curve, calculatorError };
+  }, [selectedComponent, base, stageKey, units]);
   async function save(url: string, body: object) {
     setError("");
     setNotice("");
@@ -112,6 +148,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
       setAdvanced(null);
       setReason("");
       await client.invalidateQueries({ queryKey: ["payroll-configuration"] });
+      await client.invalidateQueries({ queryKey: ["staff"] });
       setNotice("Configuration saved. Plan-based earnings remain inactive.");
     } catch (cause) {
       setError(getErrorMessage(cause));
@@ -153,23 +190,39 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
         ),
       });
   }
-  let calculator: ReturnType<typeof calculatePayrollComponent> | null = null;
-  let comparison: ReturnType<typeof comparePayrollMethods> = [];
-  let curve: ReturnType<typeof payrollCommissionCurve> = [];
-  let calculatorError = "";
-  try {
-    if (component) {
-      calculator = calculatePayrollComponent(component, base, { stageKey, units });
-      comparison = comparePayrollMethods(component, base, { stageKey, units });
-      if (component.method.startsWith("TIER_"))
-        curve = payrollCommissionCurve(component, "30000", 60, { stageKey, units });
-    }
-  } catch (cause) {
-    calculatorError = cause instanceof Error ? cause.message : "Invalid calculator input.";
-  }
+  const { calculator, comparison, curve, calculatorError } = calculations;
   const activeAssignments = data.assignments.rows.filter(
     (r) => r.fromDate <= data.today && (!r.toDate || r.toDate >= data.today),
   );
+  if (staffId)
+    return (
+      <Card
+        title="Commission plan and payroll"
+        description="Save staff identity changes separately. Plan-based earnings remain inactive."
+      >
+        {error && <p role="alert">{error}</p>}
+        {notice && <p role="status">{notice}</p>}
+        {data.outletId ? (
+          <p>Switch to company context to manage staff assignments and payroll profiles.</p>
+        ) : (
+          <>
+            <Input
+              label="Payroll change reason"
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              disabled={!canEdit || mutation.isPending}
+            />
+            <PayrollAssignments
+              key={`assign-${staffId}-${data.assignments.revision}`}
+              data={data}
+              canEdit={canEdit && !mutation.isPending && !query.isFetching}
+              staffId={staffId}
+              save={save}
+            />
+          </>
+        )}
+      </Card>
+    );
   return (
     <Card
       title="Versioned commission plans"
@@ -271,6 +324,25 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
         )}
         {plan && version && definition && (
           <>
+            <PayrollPlanMetadataForm
+              key={plan.id}
+              value={{
+                revision: plan.revision,
+                name: plan.name,
+                description: plan.description,
+                positions: plan.positions,
+                outletIds: plan.outletIds,
+              }}
+              canEdit={
+                canEdit &&
+                !mutation.isPending &&
+                !query.isFetching &&
+                !plan.archived &&
+                !draft &&
+                advanced === null
+              }
+              save={(body) => save(`/plans/${plan.id}/metadata`, body)}
+            />
             <p>
               {plan.description} · Positions: {plan.positions.join(", ") || "All"} ·{" "}
               {plan.archived
@@ -649,6 +721,11 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
             )}
             <details>
               <summary>Version history and comparison</summary>
+              <PayrollVersionComparison
+                key={plan.id}
+                versions={plan.versions}
+                draft={draft?.definition}
+              />
               {plan.versions.map((v, index) => (
                 <div key={v.id} className="my-2 border-b pb-2">
                   <p>
@@ -753,24 +830,40 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
             <PayrollAssignments
               key={`assign-${data.assignments.revision}`}
               data={data}
-              canEdit={canEdit && !mutation.isPending}
+              canEdit={canEdit && !mutation.isPending && !query.isFetching}
               staffId={staffId}
               save={save}
             />
             <details>
               <summary>Salon commission settings (configuration only)</summary>
-              <JsonSettings
-                key={data.settings.revision}
+              <PayrollSalonSettingsForm
                 value={data.settings}
-                canEdit={canEdit && !mutation.isPending}
+                canEdit={canEdit && !mutation.isPending && !query.isFetching}
                 save={(body) => save("/settings", body)}
-                label="Salon settings JSON"
               />
             </details>
           </>
         )}
         <details>
-          <summary>Configuration audit (latest {data.historyLimit} events)</summary>
+          <summary>Configuration audit ({data.historyTotal} events)</summary>
+          <p>
+            Page {historyPage} of {Math.max(1, Math.ceil(data.historyTotal / data.historyLimit))}.
+            New activity may shift page boundaries; refresh to see the latest events.
+          </p>
+          <Button
+            variant="secondary"
+            disabled={historyPage <= 1 || query.isFetching}
+            onClick={() => setHistoryPage((page) => page - 1)}
+          >
+            Previous audit page
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={historyPage * data.historyLimit >= data.historyTotal || query.isFetching}
+            onClick={() => setHistoryPage((page) => page + 1)}
+          >
+            Next audit page
+          </Button>
           {data.history.map((e) => (
             <div key={e.id}>
               <p>
@@ -786,52 +879,6 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
         </p>
       </div>
     </Card>
-  );
-}
-
-function JsonSettings({
-  value,
-  canEdit,
-  save,
-  label,
-}: {
-  value: object & { revision: number };
-  canEdit: boolean;
-  save: (body: object) => Promise<void>;
-  label: string;
-}) {
-  const { revision, ...fields } = value;
-  const [text, setText] = useState(JSON.stringify(fields, null, 2));
-  const [error, setError] = useState("");
-  return (
-    <div className="space-y-2">
-      <label>
-        {label}
-        <textarea
-          className="block min-h-40 w-full border p-2 font-mono"
-          disabled={!canEdit}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-      </label>
-      {error && <p role="alert">{error}</p>}
-      <Button
-        disabled={!canEdit}
-        onClick={() => {
-          try {
-            const parsed: unknown = JSON.parse(text);
-            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
-              throw new Error("Enter a JSON object.");
-            void save({ ...parsed, expectedRevision: revision });
-            setError("");
-          } catch {
-            setError("Enter a valid JSON object.");
-          }
-        }}
-      >
-        Save {label}
-      </Button>
-    </div>
   );
 }
 
@@ -950,17 +997,13 @@ function PayrollAssignments({
         <div className="space-y-3" key={person.id}>
           <p>Stage schedule (automatic progression; override affects stage selection):</p>
           <pre className="overflow-auto text-xs">{JSON.stringify(schedule, null, 2)}</pre>
-          <JsonSettings
-            key={`staff-${person.id}-${person.settings.revision}`}
-            label="Staff join date and stage override JSON"
+          <PayrollStaffSettingsForm
             value={person.settings}
             canEdit={canEdit}
             save={(body) => save(`/staff/${person.id}/settings`, body)}
           />
           {person.profile && (
-            <JsonSettings
-              key={`profile-${person.id}-${person.profile.revision}`}
-              label="Salary profile JSON"
+            <PayrollProfileForm
               value={person.profile}
               canEdit={canEdit}
               save={(body) => save(`/staff/${person.id}/profile`, body)}

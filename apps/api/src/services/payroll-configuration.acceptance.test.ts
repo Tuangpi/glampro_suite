@@ -21,6 +21,7 @@ import {
   savePayrollStaffSettings,
   savePayrollProfile,
   savePayrollSettings,
+  updatePayrollPlan,
 } from "./payroll-configuration.service.js";
 
 test(
@@ -354,6 +355,67 @@ test(
           minimumDepositPct: "40",
         });
         assert.equal((await readPayrollConfiguration()).settings.minimumDepositPct, "40");
+        // Metadata is revision-checked and must never mutate published rule snapshots.
+        const renamed = await updatePayrollPlan(first.id, {
+          ...metadata,
+          name: "Hair renamed",
+          expectedRevision: 2,
+          reason,
+        });
+        assert.equal(renamed.revision, 3);
+        assert.deepEqual(
+          renamed.versions.find((v) => v.status === "PUBLISHED")!.definition,
+          published.definition,
+        );
+        await assert.rejects(
+          updatePayrollPlan(first.id, {
+            ...metadata,
+            expectedRevision: 2,
+            reason,
+          }),
+          /changed/,
+        );
+        await assert.rejects(
+          updatePayrollPlan(first.id, {
+            ...metadata,
+            outletIds: [outlet.id],
+            expectedRevision: 3,
+            reason,
+          }),
+          /Duplicate/,
+        );
+        // More than one page of immutable evidence must remain accessible.
+        for (let index = 0; index < 103; index++) {
+          const current = (await readPayrollConfiguration()).settings;
+          const { revision, ...payload } = current;
+          await savePayrollSettings({ ...payload, expectedRevision: revision, reason });
+        }
+        const pageOne = await readPayrollConfiguration(1);
+        const pageTwo = await readPayrollConfiguration(2);
+        assert.equal(pageOne.history.length, 100);
+        assert.ok(pageTwo.history.length > 0);
+        assert.equal(pageOne.historyTotal, pageTwo.historyTotal);
+        assert.equal(pageOne.historyTotal, pageOne.history.length + pageTwo.history.length);
+        assert.ok(
+          pageTwo.history.every((entry) => !pageOne.history.some((other) => entry.id === other.id)),
+        );
+        await assert.rejects(readPayrollConfiguration(0), /Invalid audit page/);
+        await scope(async () => {
+          const managerHistory = await readPayrollConfiguration();
+          assert.ok(managerHistory.history.every((entry) => entry.kind !== "PROFILE"));
+          assert.ok(managerHistory.historyTotal < pageOne.historyTotal);
+        }, managerId);
+        await runAtOutlet(outlet.id, async () => {
+          const outletHistory = await readPayrollConfiguration();
+          assert.ok(
+            outletHistory.history.every(
+              (entry) =>
+                entry.kind === "PLAN" &&
+                outletHistory.plans.some((plan) => plan.id === entry.targetId),
+            ),
+          );
+          assert.ok(outletHistory.historyTotal < pageOne.historyTotal);
+        });
         // Locked periods reject prospective dates that would retroactively select new rules.
         await prisma.commissionPeriod.create({
           data: {
@@ -400,6 +462,22 @@ test(
         assert.equal(
           (await fetch(root, { headers: { Authorization: `Bearer ${ownerToken}` } })).status,
           200,
+        );
+        assert.equal(
+          (
+            await fetch(`${root}?historyPage=0`, {
+              headers: { Authorization: `Bearer ${ownerToken}` },
+            })
+          ).status,
+          422,
+        );
+        const auditPage = await fetch(`${root}?historyPage=2`, {
+          headers: { Authorization: `Bearer ${ownerToken}` },
+        });
+        assert.equal(auditPage.status, 200);
+        assert.equal(
+          ((await auditPage.json()) as { data: { historyPage: number } }).data.historyPage,
+          2,
         );
         const calculator = await fetch(`${root}/calculator`, {
           method: "POST",

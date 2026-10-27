@@ -57,10 +57,13 @@ Existing implementation and reference tests need verification, not automatic cre
 - Follow-up: structured stage/incentive controls, category filters and component
   ordering are implemented in the revision-bound draft. Shared/API/UI charts now
   use the selected calculator stage. JSON import remains an optional advanced tool.
+- Follow-up: salary profiles, staff join-date/stage overrides and salon settings now
+  use structured shared-schema-validated forms with explicit revision-conflict reload.
 - Remaining: authoritative last-closed-month impact preview; outlet-scoped plan
-  assignment semantics; metadata editor; structured salary/salon-setting controls;
-  staff create/edit integration and requirement enforcement; richer version
-  comparison, complete paginated history and remaining API/UI acceptance. Resume CP-003;
+  assignment semantics; staff create/edit requirement enforcement and remaining
+  API/UI/browser acceptance. Metadata editing, opt-in create→payroll continuation,
+  staff edit payroll panel, keyed rule-version comparison and paginated audit
+  retrieval are now implemented; see PROGRESS for verification and limits. Resume CP-003;
   do not start CP-004 merely because this checkpoint passes focused tests.
 - Expected result: tenant/outlet-safe persistence and authenticated APIs/UI for
   plans, immutable published versions, assignment history, payroll profiles,

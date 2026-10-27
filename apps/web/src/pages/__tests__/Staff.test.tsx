@@ -53,6 +53,11 @@ vi.mock("@/components/staff/StaffRoster", () => ({
 vi.mock("@/components/settings/CommissionRules", () => ({
   default: () => <section aria-label="Advanced commissions" />,
 }));
+vi.mock("@/components/settings/PayrollPlans", () => ({
+  default: ({ staffId, canEdit }: { staffId: string; canEdit: boolean }) => (
+    <section aria-label="Staff payroll" data-staff-id={staffId} data-can-edit={String(canEdit)} />
+  ),
+}));
 
 /** The signed-in member of the salon. Only the role and the suspension matter here. */
 const auth = vi.hoisted(() => ({
@@ -134,6 +139,28 @@ beforeEach(() => {
 });
 
 describe("the table", () => {
+  it("creates once then continues payroll setup on the persisted identity", async () => {
+    const user = userEvent.setup();
+    createMutate.mockResolvedValue(staffRow());
+    render(<Staff />);
+    await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
+    const submit = within(await screen.findByRole("dialog")).getByRole("button", {
+      name: "Add staff member",
+    });
+    await user.type(screen.getByLabelText("Name"), "Amara Okafor");
+    await user.type(screen.getByLabelText("Email"), "amara@salon.test");
+    await user.type(screen.getByLabelText("Password"), "correct-horse");
+    await user.click(screen.getByLabelText("Configure payroll after creation"));
+    await user.click(submit);
+    const payroll = await screen.findByRole("region", { name: "Staff payroll" });
+    expect(payroll).toHaveAttribute("data-staff-id", "u1");
+    expect(payroll).toHaveAttribute("data-can-edit", "true");
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(updateMutate).toHaveBeenCalled());
+    expect(updateMutate.mock.calls[0]?.[0].input).not.toHaveProperty("startDate");
+    expect(createMutate).toHaveBeenCalledTimes(1);
+  });
   it("renders a row per person, with their role, their branches and their state", () => {
     useStaffList.mockReturnValue(
       listOf([
