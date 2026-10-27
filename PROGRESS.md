@@ -7,9 +7,11 @@
   [tasks](docs/commission_payroll/TASKS.md),
   [decisions](docs/commission_payroll/DECISIONS.md), and
   [current handoff](docs/commission_payroll/PROGRESS.md). CP-001 establishes the
-  new management; next is CP-002, calculation engine and acceptance fixtures.
+  new management; CP-002 pure engine and fixtures are now DONE (36 new engine
+  tests; shared 237/237, typecheck/lint/build pass). Next is CP-003, versioned
+  plans, assignments and settings; it is not started.
   The old SC tracker is archived with original contents preserved and is no longer
-  authoritative. No application implementation, migration, or deployment is claimed.
+  authoritative. No API/POS integration, migration, activation or deployment claimed.
 
 - **Production seed correction complete — October 25, 2026:** production `ADMIN_*`
   initializes a `PlatformAdmin` and shared modules, without creating a salon or

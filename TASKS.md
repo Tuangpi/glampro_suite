@@ -4,7 +4,7 @@
 
 Approved October 27, 2026. Use [the CP task queue](docs/commission_payroll/TASKS.md)
 and [handoff](docs/commission_payroll/PROGRESS.md) before unrelated existing
-backlog work. CP-001 establishes management only; CP-002 is the next ready task.
+backlog work. CP-001 and CP-002 are DONE; CP-003 is the next ready task.
 The former SC queue is [archived and superseded](docs/archive/staff-commission/README.md).
 Do not resume SC tasks, duplicate CP tasks here, or count historical commission
 acceptance as acceptance of the new feature. Historical task IDs below are preserved.

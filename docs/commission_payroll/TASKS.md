@@ -26,7 +26,7 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-002 — Calculation engine and acceptance fixtures
 
-- Status: **TODO**.
+- Status: **DONE** (October 27, 2026).
 - Dependencies: CP-001.
 - Expected result: pure engine in existing shared architecture for flat, whole,
   slice, mixed and fixed-unit calculations; stages, validation, caps, incentives,
@@ -39,6 +39,11 @@ Existing implementation and reference tests need verification, not automatic cre
   tests, typecheck/lint/build pass. This does not claim POS/API acceptance.
 - Coverage: FR-CAL-02–FR-CAL-10 calculation core; FR-PLN-03–FR-PLN-07;
   FR-STG, FR-INC, settings simulator/validation core.
+- Evidence: 36 engine tests cover the mapped calculation cases and additional
+  precision, split/residual, missing-date, invalid-contract, scoped-metric,
+  fallback/fixed and carry-mapping cases. All 237 shared tests pass; shared
+  typecheck, lint, build, formatting and whitespace checks pass. Pure examples
+  and public shared exports added without dependencies or runtime activation.
 
 ## CP-003 — Versioned plans, assignments and settings
 

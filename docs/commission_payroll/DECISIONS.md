@@ -49,6 +49,26 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## Known source discrepancies resolved
 
+### CP-002 arithmetic and fallback contract (October 27, 2026)
+
+- Use dependency-free bigint rational arithmetic in the existing shared package;
+  no floating-point monetary calculations. Pool/apply base percentage at four
+  decimals and round component results half-up to two decimals.
+- Fractional fixed-component units are already staff-split. Four-decimal allocation
+  residuals use stable staff-ID order; negative splits exactly reverse positives.
+  Value-package spend bases use differences of cumulative rounded ratio values.
+- Exclusive tier gaps advance by 0.0001, not the reference engine's cent increment.
+  Missing join dates fail closed for staged plans rather than inventing tenure.
+- No-plan fallback consumes existing source-time resolved hierarchy rates. Its
+  negative balance retains exact commission debt at ten decimals, not an unpriced
+  base that could be repriced after a rate change. A switch to a plan with such debt
+  fails until separately settled explicitly; CP-005 must preserve/audit settlement.
+- Package fixed/excluded activity remains eligible for configured incentive metrics,
+  while bypassing plan earnings. Fixed negative award lines are explicit clawbacks;
+  fixed-unit component negative units carry to the next period by default.
+- Group collection metrics are explicit same-period, metric-kind/scope inputs from
+  the authoritative service, never inferred by summing commission bases.
+
 - SRS historical Stella sample uses sales value: commission 1,971.62 + incentive 50.
   Under new collected-package base 8,688, commission is 1,931.84 and incentive 0.
   Keep both fixture scenarios separately labeled; do not force new policy to match

@@ -12,6 +12,11 @@ This matrix maps every FR ID by inclusive range. All implementation rows are
 **Needs verification / not accepted**. A reference function or existing app table
 is not completion evidence. [DECISIONS.md](DECISIONS.md) resolves source conflicts.
 
+CP-002 update (October 27, 2026): calculation-only portions of TC-01–TC-08,
+TC-13–TC-15, TC-17 and TC-21–TC-25 now have passing shared-engine tests.
+See PROGRESS.md for actual checks and boundaries. Matrix entries still require
+their API/POS/UI integration and end-to-end acceptance in CP-003–CP-007.
+
 ## Functional coverage
 
 | Requirement IDs (inclusive) | Expected capability                                                                                                                              | Owning tasks           | Reference / current integration seam                                                                |
