@@ -119,7 +119,7 @@ SC-006 is a launch dependency, not an optional advanced feature.
 
 ## SC-006 — Collection-based commission and eligibility
 
-- Status: IN PROGRESS — later-payment API checkpoint, October 27, 2026.
+- Status: IN PROGRESS — later-payment UI checkpoint, October 27, 2026.
 - Dependencies: SC-002, SC-003, SC-004.
 - Expected result: explicit payment-to-line/package allocation, deposits and later
   collections, stored-tax exclusion, source-linked refunds/clawbacks, immutable seller
@@ -141,7 +141,10 @@ SC-006 is a launch dependency, not an optional advanced feature.
   831/831, workspace build/lint pass; migration 57 applied only on disposable DB.
   Later-payment state/record API now implemented with atomic debt reduction and
   retry protection: focused API/database/HTTP/POS 145/145, shared 201/201,
-  workspace typecheck/lint pass. Later-payment UI remains open.
+  workspace typecheck/lint pass. Later-payment receipt UI now implemented with
+  explicit allocations/current debt and durable identical retries: web 852/852,
+  shared 201/201, workspace typecheck/lint and web build pass. Authenticated browser
+  acceptance is still open; API/database tests not rerun for this UI-only slice.
   No earnings activation; refunds/credit/eligibility remain open;
   required continuation and boundaries are recorded in COLLECTIONS.md.
 

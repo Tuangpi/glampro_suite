@@ -228,6 +228,48 @@ beforeEach(() => {
 });
 
 describe("sale workspace", () => {
+  it("records a later payment from the receipt using current debt rather than checkout totals", async () => {
+    const state = {
+      saleId: "sale-1",
+      currency: "SGD",
+      canCollect: true,
+      outstandingCents: "5900",
+      lines: [
+        {
+          saleLineId: "line-1",
+          itemName: "Root colour",
+          contractedGrossCents: "8000",
+          allocatedGrossCents: "2100",
+        },
+      ],
+      payments: [],
+    };
+    get.mockImplementation(async (path: string) =>
+      path === "/sales/sale-1/collections" ? state : { items: [] },
+    );
+    post.mockImplementation(async (path: string) =>
+      path === "/sales/sale-1/collections" ? { ...state, outstandingCents: "4900" } : receipt(),
+    );
+    const user = userEvent.setup();
+    renderSale();
+    await ringUpAReceipt(user);
+    expect(await screen.findByText("Current outstanding: S$59.00")).toBeVisible();
+    await user.type(screen.getByLabelText("Later payment amount (SGD)"), "10.00");
+    await user.type(screen.getByLabelText("Allocation to line 1: Root colour (SGD)"), "10.00");
+    await user.type(screen.getByLabelText("Later payment reason"), "Paid at counter");
+    await user.click(screen.getByLabelText(/I confirm this money/));
+    await user.click(screen.getByRole("button", { name: "Record later payment" }));
+    expect(await screen.findByText("Current outstanding: S$49.00")).toBeVisible();
+    expect(post).toHaveBeenCalledWith("/sales/sale-1/collections", {
+      idempotencyKey: expect.any(String),
+      currency: "SGD",
+      collected: true,
+      grossCents: "1000",
+      reason: "Paid at counter",
+      allocations: [{ saleLineId: "line-1", grossCents: "1000" }],
+    });
+  });
+
   it("keeps the empty cart tall and its content scrollable", () => {
     renderSale();
     expect(cartPanel()).toHaveClass(

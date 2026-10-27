@@ -1,0 +1,226 @@
+// Glampro commission module – PostgreSQL schema (SRS v1.2 §6).
+// All tables are prefixed "comm_" so they sit beside Glampro's existing tables without clashing.
+// Ids are strings so you can store Glampro's existing ids (staff, holding, customer) directly.
+// Money: Decimal(14,4) for ledger amounts, Decimal(12,2) for statement amounts. Never Float.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CommPlan {
+  id          String           @id
+  salonId     String
+  name        String
+  description String?
+  positions   String[]
+  status      String           @default("ACTIVE") // ACTIVE | ARCHIVED
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  versions    CommPlanVersion[]
+
+  @@index([salonId])
+  @@map("comm_plan")
+}
+
+model CommPlanVersion {
+  id            String    @id
+  planId        String
+  plan          CommPlan  @relation(fields: [planId], references: [id])
+  versionNo     Int
+  effectiveFrom String // YYYY-MM-DD
+  reason        String
+  status        String // DRAFT | PUBLISHED
+  /// PlanDefinition JSON: { stages, components (with bands), incentives } – see shared/src/types.ts
+  definition    Json
+  publishedBy   String?
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@unique([planId, versionNo])
+  @@index([planId, status, effectiveFrom])
+  @@map("comm_plan_version")
+}
+
+/// Commission view of a staff member. Keep in sync with Glampro's Staff table (or replace with a view).
+model CommStaff {
+  id               String  @id // = Glampro staff id
+  salonId          String
+  name             String
+  position         String?
+  joinDate         String? // YYYY-MM-DD
+  active           Boolean @default(true)
+  stageEndOverride Int?
+
+  @@index([salonId])
+  @@map("comm_staff")
+}
+
+model CommStaffPlanAssignment {
+  id        String   @id
+  staffId   String
+  planId    String
+  fromDate  String
+  toDate    String?
+  reason    String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([staffId, fromDate])
+  @@map("comm_staff_plan_assignment")
+}
+
+model CommPayrollProfile {
+  staffId              String
+  effectiveFrom        String
+  basicSalary          Decimal @db.Decimal(12, 2)
+  fixedOt              Decimal @db.Decimal(12, 2)
+  fwlLevy              Decimal @db.Decimal(12, 2)
+  payrollSalesAlertPct Decimal @db.Decimal(6, 2)
+
+  @@id([staffId, effectiveFrom])
+  @@map("comm_payroll_profile")
+}
+
+/// Side table keyed by Glampro's package holding id.
+model CommHolding {
+  id              String   @id // = Glampro holding id
+  salonId         String
+  customerId      String
+  packageId       String
+  packageName     String
+  netPrice        Decimal  @db.Decimal(12, 2)
+  sessionsTotal   Int
+  sessionsUsed    Int      @default(0)
+  sessionValue    Decimal  @db.Decimal(14, 4)
+  cashCollected   Decimal  @db.Decimal(12, 2)
+  /// StaffSplit[] JSON: [{ staffId, splitPct }]
+  sellers         Json
+  saleCommMode    String   @default("FOLLOW_PLAN")
+  saleFixedAmount Decimal? @db.Decimal(12, 2)
+  redCommMode     String   @default("FOLLOW_PLAN")
+  redFixedAmount  Decimal? @db.Decimal(12, 2)
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+
+  @@index([salonId, customerId])
+  @@map("comm_holding")
+}
+
+model CommSessionUsage {
+  id             String    @id
+  holdingId      String
+  usedAt         DateTime
+  businessDate   String
+  serviceId      String?
+  appointmentId  String?
+  sessionValue   Decimal   @db.Decimal(14, 4)
+  performers     Json
+  overrideBy     String?
+  overrideReason String?
+  voidedAt       DateTime?
+  voidReason     String?
+
+  @@index([holdingId])
+  @@map("comm_session_usage")
+}
+
+/// Append-only commission base ledger. Only status / reversedById are ever updated.
+model CommBaseLine {
+  id              String   @id
+  salonId         String
+  staffId         String
+  commissionType  String
+  productCategory String?
+  baseAmount      Decimal  @db.Decimal(14, 4)
+  splitPct        Decimal  @db.Decimal(7, 4)
+  units           Int      @default(1)
+  fixedCommission Decimal? @db.Decimal(14, 4)
+  businessDate    String
+  sourceType      String
+  sourceId        String
+  holdingId       String?
+  status          String   @default("EARNED") // EARNED | REVERSED | PAID
+  reversedById    String?
+  reason          String?
+  createdBy       String
+  createdAt       DateTime @default(now())
+
+  @@index([salonId, businessDate])
+  @@index([salonId, staffId, businessDate])
+  @@index([sourceId])
+  @@index([holdingId])
+  @@map("comm_base_line")
+}
+
+model CommPeriod {
+  id           String    @id
+  salonId      String
+  periodKey    String // YYYY-MM
+  status       String // OPEN | CALCULATED | APPROVED
+  calculatedAt DateTime?
+  approvedBy   String?
+  approvedAt   DateTime?
+
+  @@unique([salonId, periodKey])
+  @@map("comm_period")
+}
+
+/// Snapshot of a staff member's calculated month (StaffPeriodResult JSON).
+model CommPeriodResult {
+  salonId   String
+  periodKey String
+  staffId   String
+  result    Json
+  createdAt DateTime @default(now())
+
+  @@id([salonId, periodKey, staffId])
+  @@map("comm_period_result")
+}
+
+model CommAdjustment {
+  id        String   @id
+  salonId   String
+  periodKey String
+  staffId   String
+  kind      String
+  amount    Decimal  @db.Decimal(12, 2)
+  reason    String
+  createdBy String
+  createdAt DateTime @default(now())
+
+  @@index([salonId, periodKey])
+  @@map("comm_adjustment")
+}
+
+model CommSettings {
+  salonId                     String  @id
+  requireStaffOnLines         Boolean @default(true)
+  refundAdminFee              Decimal @default(100) @db.Decimal(12, 2)
+  defaultMinDepositPct        Decimal @default(30) @db.Decimal(6, 2)
+  joinAfterDayCountsNextMonth Int?
+  negativeBase                String  @default("CARRY_FORWARD")
+  fallbackRates               Json    @default("{}")
+
+  @@map("comm_settings")
+}
+
+model CommAuditLog {
+  id       BigInt   @id @default(autoincrement())
+  salonId  String
+  userId   String
+  action   String
+  entity   String
+  entityId String
+  before   Json?
+  after    Json?
+  reason   String?
+  at       DateTime @default(now())
+
+  @@index([salonId, at])
+  @@map("comm_audit_log")
+}

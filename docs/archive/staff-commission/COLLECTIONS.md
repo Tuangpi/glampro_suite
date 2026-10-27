@@ -147,9 +147,9 @@ workspace typecheck/lint. Acceptance uses only disposable PostgreSQL port 55476.
 2. Extend shared POS request/response contracts and payment UI to submit confirmed
    allocations. Reconcile actual settled cash separately from overpayment/change,
    redemption tenders and credit granted. Hold/unsettled payments earn nothing.
-3. Finish the later-receivable collection UI (state/record API now implemented) and preserve
-   outstanding balances separately from contracted package value. Original sellers
-   survive later receipts while rates resolve at collection time.
+3. Complete authenticated browser acceptance for the later-receivable API/UI now
+   implemented. Outstanding balances remain separate from contracted package value.
+   Original sellers survive later receipts while rates resolve at collection time.
 4. Integrate source-linked full-refund/void allocations and exact earning reversals
    in the existing cash contract. Unrefunded eligibility net comes from surviving
    lot components; do not independently reround remaining sale-wide gross. Persist
@@ -175,3 +175,31 @@ Normal POS now supports opt-in explicit collection evidence only. Legacy commiss
 reporting and earnings activation remain unchanged. Refund/void allocation evidence
 is not integrated yet; do not use captured gross/net as current paid-session coverage
 without implementing source-linked reversal and eligibility checks first.
+
+### Later-payment UI — October 27, 2026
+
+SaleCollectionsPanel is rendered beside both new and reopened historical receipts.
+It reads current outstandingCents from GET collections and never rewrites the original
+checkout paidAmount/paymentStatus/outstandingAmount/tenders. It shows contracted line
+values, explicit allocated values and later-payment history. Historical unknown SGD
+currency remains unknown; collection availability follows server canCollect.
+
+Recording requires an explicit amount and matching named line allocations, collected
+SGD confirmation and reason. Decimal input is parsed with integer arithmetic without
+rounding. Confirmation resets after input edits or a changed server balance snapshot.
+No default/pro-rata allocations, payment inference, gateway calls or earnings posting.
+Read-only tenants and reversed receipts cannot record; API permissions remain authoritative.
+
+The complete UUID request is saved in session storage before submission, scoped to
+tenant, actor, outlet and sale. Uncertain failures freeze the submitted request; retry
+reuses it exactly after reopening/reloading, even if the server now reports zero debt.
+This is reconciliation of the existing attempt, not permission for new capture when
+canCollect is false. Definite validation/permission/conflict refusals refresh state and
+retain editable fields with confirmation cleared. Storage unavailability refuses a
+new submission. No automatic POST retries. Successful writes refresh current collection
+state and invalidate customer/report/dashboard views without changing receipt snapshots.
+
+Verified web 852/852, including 20 panel tests and receipt-page integration; shared
+201/201, workspace typecheck/lint and web production build. Authenticated browser
+acceptance and API/database regressions were not rerun for this web-only checkpoint.
+No migrations, deployment or earnings activation. SC-006 remains IN PROGRESS.

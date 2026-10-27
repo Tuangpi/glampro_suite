@@ -1,0 +1,19 @@
+{
+  "name": "glampro-commission",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Glampro staff commission module: plans, tiers, stages, package sale & redemption commission, payroll statements",
+  "workspaces": [
+    "shared",
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "test": "npm run test -w shared && npm run test -w backend",
+    "typecheck": "npm run typecheck -w shared && npm run typecheck -w backend && npm run typecheck -w frontend",
+    "dev:api": "npm run dev -w backend",
+    "dev:web": "npm run dev -w frontend",
+    "build": "npm run build -w frontend",
+    "bundle": "node scripts/bundle-code.mjs"
+  }
+}

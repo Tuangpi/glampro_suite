@@ -2,10 +2,14 @@
 
 ## Current State
 
-- **Staff commission planning — October 26, 2026:** the approved extension has its
-  own scope, tasks, and handoff in `docs/staff-commission/PROJECT.md`,
-  `docs/staff-commission/TASKS.md`, and `docs/staff-commission/PROGRESS.md`.
-  Use that folder for current SC task status; no feature implementation is claimed.
+- **Commission & Payroll management — October 27, 2026:** first-priority workstream
+  is now [CP](docs/commission_payroll/PROJECT.md), with
+  [tasks](docs/commission_payroll/TASKS.md),
+  [decisions](docs/commission_payroll/DECISIONS.md), and
+  [current handoff](docs/commission_payroll/PROGRESS.md). CP-001 establishes the
+  new management; next is CP-002, calculation engine and acceptance fixtures.
+  The old SC tracker is archived with original contents preserved and is no longer
+  authoritative. No application implementation, migration, or deployment is claimed.
 
 - **Production seed correction complete — October 25, 2026:** production `ADMIN_*`
   initializes a `PlatformAdmin` and shared modules, without creating a salon or

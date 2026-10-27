@@ -2,8 +2,8 @@
 
 ## Current State
 
-- Current task: SC-006 — IN PROGRESS (checkout capture and later-payment API implemented;
-  later-payment UI and source reversals remain open).
+- Current task: SC-006 — IN PROGRESS (checkout capture and later-payment API/UI implemented;
+  authenticated browser acceptance, source reversals and eligibility remain open).
 - Most recently completed: SC-004 — DONE (local commission administration verification,
   October 27, 2026).
 - Approval: October 26, 2026; recommended policies accepted. Collection-based sale
@@ -23,6 +23,31 @@
   stop after its completion; do not automatically implement the whole project.
 
 ## Recent notes
+
+### SC-006 — October 27, 2026 — IN PROGRESS, later-payment UI
+
+- Added SaleCollectionsPanel to new and historical receipts. Current debt comes only
+  from the collection endpoint, not receipt snapshots. Shows named line contracted
+  values, explicit allocations and later-payment history; no historical inference.
+- Requires exact-cent amount, matching explicit line allocations, reason and collected
+  SGD confirmation. Checks debt/line caps, resets confirmation on edits or balance
+  changes, and disables new capture when canCollect is false or receipt is reversed.
+- Scoped query/retry identity to tenant/user/outlet/sale. Saves complete UUID request
+  before sending; transport/5xx uncertainty freezes edits and survives remount for an
+  identical retry (even if current debt is zero). No automatic mutation retry. Storage
+  failure refuses submission. Definite 400/401/403/404/409/422 refusals refresh balance,
+  retain editable draft and require reconfirmation. Read-only mode has no capture.
+- Verified: full web 852/852 (20 focused panel tests plus receipt-page integration),
+  shared 201/201, workspace typecheck/lint, web production build. Initial stale-balance
+  test failed because it asserted before asynchronous query notification; corrected
+  to await the rendered update. Formatting/whitespace checks also performed.
+- Not verified: authenticated browser walkthrough and API/database regressions not
+  rerun for this web-only slice. No Playwright dependency or running development API/web
+  was found; disposable PostgreSQL remains stopped. Browser acceptance remains open.
+- Next: authenticate against an isolated local fixture and verify partial/final payment,
+  retries, stale balances, permissions/suspension and unknown historical currency in
+  browser. Then source-linked refund/void reversals, credit lots and paid-session
+  enforcement/manager overrides. No earnings activation, migration, deployment or commit.
 
 ### SC-006 — October 27, 2026 — IN PROGRESS, later-payment API
 

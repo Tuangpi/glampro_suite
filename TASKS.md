@@ -1,11 +1,13 @@
 # Glampro Suite — tasks
 
-## Staff commission — separate tracker
+## Commission & Payroll — first-priority tracker
 
-The October 26, 2026 approved extension is tracked exclusively in
-`docs/staff-commission/TASKS.md` (SC-001–SC-007), with scope and current state in
-that folder's PROJECT.md and PROGRESS.md. Do not duplicate these tasks here or
-treat historical commission acceptance as acceptance of the new implementation.
+Approved October 27, 2026. Use [the CP task queue](docs/commission_payroll/TASKS.md)
+and [handoff](docs/commission_payroll/PROGRESS.md) before unrelated existing
+backlog work. CP-001 establishes management only; CP-002 is the next ready task.
+The former SC queue is [archived and superseded](docs/archive/staff-commission/README.md).
+Do not resume SC tasks, duplicate CP tasks here, or count historical commission
+acceptance as acceptance of the new feature. Historical task IDs below are preserved.
 
 ## How to use
 

@@ -1,11 +1,18 @@
 # Glampro Suite
 
-## Staff commission — separate project
+## Commission & Payroll — first-priority project
 
-Approved October 26, 2026. The authoritative scope, policies, tasks, and handoff
-are in `docs/staff-commission/PROJECT.md`, `docs/staff-commission/TASKS.md`, and
-`docs/staff-commission/PROGRESS.md`. Use those files for this feature; existing
-commission/valuation history below remains reference, not new completion evidence.
+Approved October 27, 2026. The authoritative feature scope, decisions, tasks, and
+handoff are in [PROJECT](docs/commission_payroll/PROJECT.md),
+[DECISIONS](docs/commission_payroll/DECISIONS.md),
+[TASKS](docs/commission_payroll/TASKS.md), and
+[PROGRESS](docs/commission_payroll/PROGRESS.md). New supplied requirements take
+priority over incompatible current commission behavior. This workstream takes
+priority over unrelated existing backlog work; security and data integrity remain
+mandatory. Existing commission/valuation history is reference, not new acceptance.
+
+The former SC tracker is [archived](docs/archive/staff-commission/README.md),
+superseded and non-authoritative. Preserve its history; do not resume its task queue.
 
 ## Goal and scope
 

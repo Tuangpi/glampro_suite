@@ -40,6 +40,8 @@ export const queryKeys = {
    * invalidates every search and every kind after a sale rings up.
    */
   sale: {
+    collections: (tenantId: string, userId: string, outletId: string, saleId: string) =>
+      ["sale", "collections", tenantId, userId, outletId, saleId] as const,
     items: () => ["sale", "items"] as const,
     openCart: (identity: string) => ["sale", "openCart", identity] as const,
     customers: () => ["sale", "customers"] as const,

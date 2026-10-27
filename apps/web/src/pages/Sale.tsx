@@ -50,6 +50,7 @@ import CustomerPicker from "@/components/sale/CustomerPicker";
 import HeldCartsPanel from "@/components/sale/HeldCartsPanel";
 import PaymentDialog from "@/components/sale/PaymentDialog";
 import ReceiptView from "@/components/sale/ReceiptView";
+import SaleCollectionsPanel from "@/components/sale/SaleCollectionsPanel";
 import RefundSaleDialog from "@/components/sale/RefundSaleDialog";
 import SaleItemGrid from "@/components/sale/SaleItemGrid";
 import SaleListPagination from "@/components/sale/SaleListPagination";
@@ -648,6 +649,7 @@ export default function Sale() {
             }}
           />
 
+          <SaleCollectionsPanel sale={receipt} />
           <DirectTipsPanel
             key={`${tenant?.id}:${receipt.id}`}
             sale={receipt}
