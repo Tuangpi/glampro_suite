@@ -1,4 +1,9 @@
 import { Router } from "express";
+import { recordSaleCollectionSchema, type RecordSaleCollectionInput } from "@glampro_suite/shared";
+import {
+  getSaleCollectionState,
+  recordSaleCollection,
+} from "../services/sale-collection.service.js";
 import { z } from "zod";
 import {
   correctRedemptionAttributionSchema,
@@ -77,6 +82,40 @@ import {
  * list and the single receipt do not — reading stays open (TENANCY.md §6).
  */
 export const salesRouter = Router();
+
+salesRouter.get(
+  "/:id/collections",
+  auth,
+  requireModule("sales"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({ data: await getSaleCollectionState(id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+salesRouter.post(
+  "/:id/collections",
+  auth,
+  requireModule("sales"),
+  requireWritableTenant(),
+  validate(idParamSchema, "params"),
+  validate(recordSaleCollectionSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({
+        data: await recordSaleCollection(id, validated<RecordSaleCollectionInput>(req, "body")),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 salesRouter.post(
   "/:id/redemptions/:redemptionId/attribution-corrections",

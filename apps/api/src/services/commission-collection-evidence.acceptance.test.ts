@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
 import { createSale, completeSale } from "./sale.service.js";
+import { getSaleCollectionState, recordSaleCollection } from "./sale-collection.service.js";
 import {
   captureCollectionEvidence,
   type CaptureCollection,
@@ -438,6 +439,194 @@ test(
           const completed = await completeSale(held.id, checkoutBody);
           assert.equal(completed.id, held.id);
           assert.equal(await prisma.commissionCollection.count({ where: { saleId: held.id } }), 1);
+          const state = await getSaleCollectionState(checkout.id);
+          assert.equal(state.currency, "SGD");
+          assert.equal(state.outstandingCents, "5900");
+          assert.equal(state.canCollect, true);
+          assert.equal(state.lines[0]!.allocatedGrossCents, "5000");
+          const instalmentInput = {
+            idempotencyKey: "52a01230-b9ea-4dc6-8304-c0987fd8fd01",
+            currency: "SGD" as const,
+            collected: true as const,
+            grossCents: "2900",
+            reason: "Customer paid next instalment",
+            allocations: [{ saleLineId: state.lines[0]!.saleLineId, grossCents: "2900" }],
+          };
+          const [instalment, laterRetry] = await Promise.all([
+            recordSaleCollection(checkout.id, instalmentInput),
+            recordSaleCollection(checkout.id, instalmentInput),
+          ]);
+          assert.equal(instalment.payments[0]!.paymentId, laterRetry.payments[0]!.paymentId);
+          assert.equal(instalment.outstandingCents, "3000");
+          assert.equal(instalment.lines[0]!.allocatedGrossCents, "7900");
+          const originalSale = await prisma.sale.findFirstOrThrow({ where: { id: checkout.id } });
+          assert.equal(originalSale.paidAmount.toFixed(2), "50.00");
+          assert.equal(originalSale.paymentStatus, checkout.paymentStatus);
+          assert.equal(await prisma.salePayment.count({ where: { saleId: checkout.id } }), 1);
+          for (const change of [
+            { reason: "Changed retry reason" },
+            {
+              grossCents: "2800",
+              allocations: [{ saleLineId: state.lines[0]!.saleLineId, grossCents: "2800" }],
+            },
+          ])
+            await assert.rejects(
+              recordSaleCollection(checkout.id, { ...instalmentInput, ...change }),
+            );
+          await assert.rejects(recordSaleCollection(held.id, instalmentInput));
+          const invalidInput = {
+            ...instalmentInput,
+            idempotencyKey: "52a01230-b9ea-4dc6-8304-c0987fd8fd02",
+            allocations: [{ saleLineId: "foreign-or-missing-line", grossCents: "2900" }],
+          };
+          await assert.rejects(
+            recordSaleCollection(checkout.id, invalidInput),
+            (error: unknown) =>
+              (error as { statusCode: number; code: string }).statusCode === 400 &&
+              (error as { code: string }).code === "COLLECTION_ALLOCATION_INVALID",
+          );
+          const unchanged = await getSaleCollectionState(checkout.id);
+          assert.equal(unchanged.outstandingCents, "3000");
+          assert.equal(unchanged.payments.length, 1);
+          assert.equal(
+            await prisma.customerOutstandingPayment.count({ where: { saleId: checkout.id } }),
+            1,
+          );
+          const finalInput = {
+            ...instalmentInput,
+            idempotencyKey: invalidInput.idempotencyKey,
+            grossCents: "3000",
+            allocations: [{ saleLineId: state.lines[0]!.saleLineId, grossCents: "3000" }],
+          };
+          const competing = await Promise.allSettled([
+            recordSaleCollection(checkout.id, finalInput),
+            recordSaleCollection(checkout.id, {
+              ...finalInput,
+              idempotencyKey: "52a01230-b9ea-4dc6-8304-c0987fd8fd03",
+            }),
+          ]);
+          assert.equal(competing.filter((row) => row.status === "fulfilled").length, 1);
+          const fullyCollected = await getSaleCollectionState(checkout.id);
+          assert.equal(fullyCollected.outstandingCents, "0");
+          assert.equal(fullyCollected.canCollect, false);
+          assert.equal(fullyCollected.lines[0]!.allocatedGrossCents, "10900");
+          const laterAllocations = await prisma.commissionCollectionAllocation.findMany({
+            where: { saleLineId: state.lines[0]!.saleLineId },
+          });
+          assert.equal(
+            laterAllocations.reduce((sum, row) => sum + row.taxCents, 0n),
+            BigInt(
+              new (await import("../../generated/prisma/client.js")).Prisma.Decimal(
+                checkout.taxAmount,
+              )
+                .times(100)
+                .toFixed(0),
+            ),
+          );
+          assert.equal(
+            await prisma.employeeCommission.count({ where: { saleId: checkout.id } }),
+            0,
+          );
+          // No currency reconstruction for the synthetic historical sale above.
+          assert.equal((await getSaleCollectionState(sale.id)).canCollect, false);
+          await assert.rejects(
+            recordSaleCollection(sale.id, {
+              ...instalmentInput,
+              idempotencyKey: "52a01230-b9ea-4dc6-8304-c0987fd8fd04",
+            }),
+            (error: unknown) => (error as { code: string }).code === "COLLECTION_CURRENCY_UNKNOWN",
+          );
+          await runAsTenant(
+            otherId,
+            async () => {
+              await assert.rejects(
+                getSaleCollectionState(checkout.id),
+                (error: unknown) => (error as { statusCode: number }).statusCode === 404,
+              );
+              await assert.rejects(recordSaleCollection(checkout.id, instalmentInput));
+            },
+            actorId,
+          );
+          // Exercise real auth, validation, tenant writability and transport errors.
+          const { createApp } = await import("../app.js");
+          const { signAccessToken } = await import("../lib/tokens.js");
+          await runAsPlatform(() =>
+            prisma.module.upsert({
+              where: { code: "sales" },
+              update: {},
+              create: {
+                code: "sales",
+                name: "Sales",
+                category: "Core",
+                isCore: true,
+                sortOrder: 0,
+              },
+            }),
+          );
+          const email = `${tenantId}@collections.test`;
+          await prisma.user.update({ where: { id: actorId }, data: { email } });
+          const token = signAccessToken({
+            id: actorId,
+            tenantId,
+            email,
+            globalRole: "MANAGER",
+            realm: "web",
+            tokenVersion: 0,
+          }).token;
+          const server = createApp().listen(0, "127.0.0.1");
+          try {
+            await new Promise<void>((resolve) => server.once("listening", resolve));
+            const address = server.address() as { port: number };
+            const url = `http://127.0.0.1:${address.port}/api/sales/${held.id}/collections`;
+            const request = (body?: unknown, authenticated = true) =>
+              fetch(url, {
+                method: body === undefined ? "GET" : "POST",
+                headers: {
+                  "content-type": "application/json",
+                  ...(authenticated ? { authorization: `Bearer ${token}` } : {}),
+                },
+                body: body === undefined ? undefined : JSON.stringify(body),
+              });
+            assert.equal((await request(undefined, false)).status, 401);
+            const read = await request();
+            assert.equal(read.status, 200);
+            const heldState = ((await read.json()) as { data: { lines: { saleLineId: string }[] } })
+              .data;
+            const httpInput = {
+              ...instalmentInput,
+              idempotencyKey: "52a01230-b9ea-4dc6-8304-c0987fd8fd05",
+              allocations: [{ saleLineId: heldState.lines[0]!.saleLineId, grossCents: "2900" }],
+            };
+            assert.equal((await request({ ...httpInput, collected: false })).status, 422);
+            assert.equal((await request({ ...httpInput, actorId: sellerId })).status, 422);
+            assert.equal(
+              (
+                await request({
+                  ...httpInput,
+                  allocations: [{ saleLineId: "missing", grossCents: "2900" }],
+                })
+              ).status,
+              400,
+            );
+            const paid = await request(httpInput);
+            assert.equal(paid.status, 200);
+            const httpResult = ((await paid.json()) as { data: { outstandingCents: string } }).data;
+            assert.equal(httpResult.outstandingCents, "3000");
+            assert.equal((await request(httpInput)).status, 200);
+            assert.equal((await request({ ...httpInput, reason: "Different retry" })).status, 409);
+            await runAsPlatform(() =>
+              prisma.tenant.update({ where: { id: tenantId }, data: { status: "SUSPENDED" } }),
+            );
+            assert.equal((await request()).status, 200);
+            assert.equal((await request(httpInput)).status, 403);
+            await runAsPlatform(() =>
+              prisma.tenant.update({ where: { id: tenantId }, data: { status: "ACTIVE" } }),
+            );
+          } finally {
+            await new Promise<void>((resolve, reject) =>
+              server.close((error) => (error ? reject(error) : resolve())),
+            );
+          }
           const split = await createSale({
             ...checkoutBody,
             payments: [

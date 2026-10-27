@@ -30,7 +30,7 @@ export const captureCollectionSchema = z.strictObject({
 export type CaptureCollection = z.infer<typeof captureCollectionSchema>;
 
 /**
- * Internal seam only, no POS or public caller. The caller must authorize the source,
+ * Internal transactional seam used by POS and later collections. Callers authorize the source,
  * verify currency and settlement and use the same transaction as the money write.
  * Enter before configuration/holding locks, or after already taking the POS lock.
  * This captures candidate evidence only; it never posts EmployeeCommission.

@@ -100,16 +100,54 @@ total, not a new full replay claim. No authenticated browser or HTTP walkthrough
 
 Remaining work below is still required; checkout captures candidates, not earnings.
 
+### Later-payment API — October 27, 2026
+
+`GET /api/sales/:id/collections` exposes current outstanding cents, nullable confirmed
+currency, contracted and explicitly allocated gross cents by line, and captured
+later-payment history. Unknown earlier payments are never redistributed. Historical
+or unsupported sales remain readable with canCollect=false.
+
+`POST /api/sales/:id/collections` records one cashier-confirmed money receipt. The
+strict body requires idempotencyKey (UUID), currency=SGD, collected=true, grossCents
+(positive integer string), reason, and allocations[{saleLineId,grossCents}]. Each
+line appears once and allocations sum exactly to the receipt. No gateway operation,
+credit redemption, client timestamp or client actor is accepted. This is recorded
+money evidence, not independent settlement verification or payment acquisition.
+
+Both routes require sales-module authentication and honor selected outlet/tenant
+scope. Writes require a writable tenant; actor authorization comes from the request
+scope and capture verifies an enabled salon member. A sale must be completed,
+unrefunded, owned by a customer and already have matching confirmed currency. No
+historical currency backfill is allowed. The receipt cannot exceed current debt.
+
+The tenant prepaid lock precedes sale/configuration locks. Outstanding-payment
+source, original seller/event-time rate evidence and debt decrement commit atomically.
+Canonical retry comparison includes actor, sale, reason and allocations. Retries do
+not reduce debt twice; concurrent competing receipts cannot overcollect. Invalid
+line allocation returns HTTP 400 and rolls back all writes; conflicting retries or
+insufficient balance return 409; malformed contracts return 422.
+
+Original Sale.paidAmount/paymentStatus, checkout tenders, receipt outstandingAmount,
+points and contracted package value remain historical snapshots. Current debt and
+later-payment history must be read from the new endpoint, not those receipt fields.
+No earnings are posted. Later-payment UI, collection reconciliation/reporting and
+source reversal workflows remain unfinished. No migration was needed.
+
+Verified 145/145 focused API/database/HTTP/POS tests (no skips), shared 201/201,
+workspace typecheck/lint. Acceptance uses only disposable PostgreSQL port 55476.
+
+### Remaining integration work (updated)
+
 1. Persist immutable original collection sources and per-line allocations, with
    tenant/sale/currency validation, source identity, event-time own-rate snapshots,
    original sellers/splits, database immutability and retry/hash protection. Known
    collections must not be inferred for pre-existing sales lacking this evidence.
-   Internal persistence is implemented above; settlement/currency proof and POS callers
-   remain outstanding, including preserving attribution against later source changes.
+   Internal persistence and recorded-money POS/later-payment API callers are implemented
+   above; independent settlement proof remains outside this recorded-money checkpoint.
 2. Extend shared POS request/response contracts and payment UI to submit confirmed
    allocations. Reconcile actual settled cash separately from overpayment/change,
    redemption tenders and credit granted. Hold/unsettled payments earn nothing.
-3. Add the currently missing later-receivable collection workflow and preserve
+3. Finish the later-receivable collection UI (state/record API now implemented) and preserve
    outstanding balances separately from contracted package value. Original sellers
    survive later receipts while rates resolve at collection time.
 4. Integrate source-linked full-refund/void allocations and exact earning reversals
@@ -130,7 +168,8 @@ Remaining work below is still required; checkout captures candidates, not earnin
    split staff/rate changes, tax/discounts, refunds, transfers, mixed tender, bonus
    credit and valuation regressions. Run applicable shared/web and workspace checks.
 
-The helper API is an internal calculation seam, not a public collection endpoint.
+The calculation/capture helper stays internal; the later-payment service now provides
+the authenticated public collection endpoint described above.
 SC-005 remains responsible for the reconciled report/writer activation boundary.
 Normal POS now supports opt-in explicit collection evidence only. Legacy commission
 reporting and earnings activation remain unchanged. Refund/void allocation evidence

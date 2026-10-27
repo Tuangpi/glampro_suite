@@ -2,7 +2,8 @@
 
 ## Current State
 
-- Current task: SC-006 — IN PROGRESS (opt-in checkout allocation capture implemented).
+- Current task: SC-006 — IN PROGRESS (checkout capture and later-payment API implemented;
+  later-payment UI and source reversals remain open).
 - Most recently completed: SC-004 — DONE (local commission administration verification,
   October 27, 2026).
 - Approval: October 26, 2026; recommended policies accepted. Collection-based sale
@@ -22,6 +23,30 @@
   stop after its completion; do not automatically implement the whole project.
 
 ## Recent notes
+
+### SC-006 — October 27, 2026 — IN PROGRESS, later-payment API
+
+- Added GET/POST /api/sales/:id/collections and strict shared contracts. Reads expose
+  current debt, confirmed currency, line contracted/explicitly allocated cents and
+  later-payment history. Writes require explicit collected=true, SGD, positive exact
+  cents, unique line allocations, UUID retry key and reason. No client actor/date,
+  redemption tender or gateway submission is accepted.
+- Tenant prepaid lock serializes payment, debt decrement and source allocation in
+  one transaction. Capture preserves original sellers and event-time rate candidates;
+  identical retries reuse evidence, mismatches conflict. Invalid allocations roll back
+  source and balance together. Unknown historical currency is not reconstructed.
+- Original checkout paidAmount/paymentStatus/tenders/receipt outstandingAmount remain
+  snapshots; current debt is exposed only by the collection endpoint. No reporting,
+  points, contracted valuation or earnings changes. UI must use this endpoint's
+  outstandingCents rather than the historical receipt amount for later payments.
+- Verified: 145/145 focused API/database/HTTP/POS tests, no skips; shared 201/201;
+  workspace typecheck and lint pass. HTTP acceptance covers authentication, strict
+  validation, rollback, retries and suspended-tenant write refusal. Fixed malformed
+  cents refinement throwing instead of returning validation errors. No schema change,
+  migration, application database write, deployment or earnings activation.
+- Next: later-payment UI using the new state/record endpoints, then source-linked
+  refund/void evidence, credit lots and paid-session enforcement/manager overrides.
+  Full web tests/browser walkthrough not rerun for this API-only checkpoint.
 
 ### SC-006 — October 27, 2026 — IN PROGRESS, opt-in checkout capture
 

@@ -18,6 +18,7 @@ export * from "./schemas/session-transfer.js";
 export * from "./schemas/package-valuation.js";
 export * from "./schemas/catalogue.js";
 export * from "./schemas/sales.js";
+export * from "./schemas/sale-collections.js";
 export * from "./schemas/staff.js";
 export * from "./schemas/commission.js";
 export * from "./schemas/commission-attribution.js";
