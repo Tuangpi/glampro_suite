@@ -24,7 +24,8 @@ import { createStaff, getStaff, listStaff, updateStaff } from "../services/staff
  * **The first router in the app to mount `requireRole`**, which is what Q26 said was
  * implemented and unit-tested but exercised by nothing: reads are open to every
  * signed-in member of the salon (the rail entry is unrestricted — a stylist needs to
- * see the team), while **writes are `SUPER_ADMIN` or `MANAGER`**. A staff member
+ * see the team). Profile edits allow `SUPER_ADMIN` or `MANAGER`; creation requires
+ * `SUPER_ADMIN` because it includes audited payroll classification. A staff member
  * cannot create a colleague, rename a job title or disable an account with this API,
  * and the rule now has an integration test rather than an assertion in a doc.
  *
@@ -101,7 +102,8 @@ staffRouter.post(
   auth,
   requireModule("staff"),
   requireWritableTenant(),
-  requireRole("SUPER_ADMIN", "MANAGER"),
+  // Creation includes owner-audited payroll classification in the same transaction.
+  requireRole("SUPER_ADMIN"),
   validate(createStaffSchema),
   async (req, res, next) => {
     try {

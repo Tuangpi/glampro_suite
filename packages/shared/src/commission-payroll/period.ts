@@ -66,7 +66,12 @@ export interface PayrollStaffPeriodInput {
   staffId: string;
   periodKey: string;
   joinDate: string | null;
-  plan: { planId: string; versionId: string; definition: PayrollPlanDefinition } | null;
+  plan: {
+    planId: string;
+    versionId: string;
+    definition: PayrollPlanDefinition;
+    outletIds?: string[];
+  } | null;
   lines: PayrollBaseLine[];
   groupMetrics?: PayrollGroupMetric[];
   carryForward?: PayrollCarryBalance[];
@@ -125,6 +130,23 @@ export function evaluatePayrollIncentive(
   };
 }
 
+/** Authorized same-staff/month inputs only. Scope partitions never discard or duplicate activity. */
+export function partitionPayrollOutletLines(lines: PayrollBaseLine[], outletIds: string[]) {
+  const outlets = z.array(z.string().min(1)).max(100).parse(outletIds);
+  if (new Set(outlets).size !== outlets.length) throw new Error("Duplicate plan outlets.");
+  const parsed = lines.map((line) => payrollBaseLineSchema.parse(line));
+  if (new Set(parsed.map((line) => line.id)).size !== parsed.length)
+    throw new Error("Duplicate base line IDs.");
+  if (outlets.length && parsed.some((line) => line.status !== "REVERSED" && line.outletId === null))
+    throw new Error("Outlet-scoped plans require evidenced outlet attribution.");
+  const inScope = (line: PayrollBaseLine) =>
+    !outlets.length || (line.outletId !== null && outlets.includes(line.outletId));
+  return {
+    planLines: parsed.filter(inScope),
+    fallbackLines: parsed.filter((line) => !inScope(line)),
+  };
+}
+
 function matches(component: PayrollComponent, line: PayrollBaseLine): boolean {
   const category = line.productCategory ?? "";
   return (
@@ -158,6 +180,13 @@ export function calculatePayrollStaffPeriod(
   )
     throw new Error("Base lines must belong to the requested staff and posting month.");
   const active = lines.filter((line) => line.status !== "REVERSED");
+  if (input.plan) {
+    const partition = partitionPayrollOutletLines(active, input.plan.outletIds ?? []);
+    if (partition.fallbackLines.length)
+      throw new Error(
+        "Partition out-of-scope activity to flat fallback before calculating the plan pool.",
+      );
+  }
   const plan = input.plan ? payrollPlanDefinitionSchema.parse(input.plan.definition) : null;
   const tenure =
     input.joinDate === null

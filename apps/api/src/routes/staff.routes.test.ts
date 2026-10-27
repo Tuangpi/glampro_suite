@@ -16,7 +16,8 @@ import { CORE_MODULE_CODES, MODULE_CODES, type StaffSummary } from "@glampro_sui
  * Q26 recorded that the middleware was implemented and unit-tested but mounted on
  * nothing, so "admin-only writes are gated in the API, not only in the UI" was a
  * claim no test could fail. Below, a `STAFF` token that POSTs must be refused and a
- * `MANAGER` token that POSTs must succeed — and the row must land in the caller's own
+ * `MANAGER` token that POSTs must now be refused, while an owner can atomically
+ * create the classified staff identity — and the row must land in the caller's own
  * salon, which is the tenant-isolation half of the same story.
  *
  * Gated on `DATABASE_URL`, like `auth.routes.test.ts`: the suite creates two tenants,
@@ -31,7 +32,7 @@ const { createApp } = await import("../app.js");
 const { prisma } = await import("../lib/prisma.js");
 const { runAsPlatform, runAsTenant } = await import("../lib/tenant-context.js");
 const { verifyPosPin, posStaffFromToken } = await import("../services/pos-pin.service.js");
-const { verifyAccessToken } = await import("../lib/tokens.js");
+const { verifyAccessToken, signAccessToken } = await import("../lib/tokens.js");
 const { hashPassword } = await import("../lib/password.js");
 
 const PASSWORD = "correct-horse-1";
@@ -43,6 +44,13 @@ const TENANTS = {
   b: `staffrt-tenant-b-${fixtureRun}`,
 } as const;
 const TENANT_IDS = Object.values(TENANTS);
+const payrollSetup = {
+  startDate: "2026-01-01",
+  payrollClassification: {
+    commissionRole: "NON_COMMISSION",
+    reason: "Synthetic employment agreement",
+  },
+};
 
 const HAIR = "staffrt-dept-hair";
 const NAILS = "staffrt-dept-nails";
@@ -221,6 +229,7 @@ async function tokenFor(email: string, password = PASSWORD): Promise<string> {
 }
 
 describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not set" }, () => {
+  let ownerToken = "";
   let managerToken = "";
   let stylistToken = "";
   let otherTenantToken = "";
@@ -234,6 +243,17 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
     });
     baseUrl = `http://127.0.0.1:${(server?.address() as AddressInfo).port}`;
 
+    await runAsPlatform(() =>
+      prisma.user.update({ where: { id: "staffrt-owner" }, data: { twoFactorEnabled: true } }),
+    );
+    ownerToken = signAccessToken({
+      id: "staffrt-owner",
+      email: `owner@${DOMAIN}`,
+      globalRole: "SUPER_ADMIN",
+      realm: "web",
+      tenantId: TENANTS.a,
+      tokenVersion: 0,
+    }).token;
     managerToken = await tokenFor(`manager@${DOMAIN}`);
     stylistToken = await tokenFor(`stylist@${DOMAIN}`);
     otherTenantToken = await tokenFor(`other@${DOMAIN}`);
@@ -253,7 +273,8 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
 
   describe("POS PIN identities", () => {
     it("creates email-free staff with hashed PIN, scoped verification and immediate reset revocation", async () => {
-      const response = await request("POST", "/api/staff", managerToken, {
+      const response = await request("POST", "/api/staff", ownerToken, {
+        ...payrollSetup,
         name: "PIN-only colleague",
         posPin: "246810",
         commissionRate: 12.5,
@@ -288,33 +309,6 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
           ),
         );
         assert.throws(() => verifyAccessToken(identity.token));
-        // Creation remains unclassified; an active edit must fail until owner setup is recorded.
-        assert.equal(
-          (await request("PATCH", `/api/staff/${staff.id}`, managerToken, { posPin: "135790" }))
-            .status,
-          400,
-        );
-        await runAsPlatform(async () => {
-          await prisma.user.update({
-            where: { id: staff.id },
-            data: { startDate: new Date("2026-01-01T00:00:00Z") },
-          });
-          await prisma.payrollConfigurationEvent.create({
-            data: {
-              tenantId: TENANTS.a,
-              kind: "STAFF",
-              targetId: staff.id,
-              revision: 1,
-              actorId: "staffrt-owner",
-              reason: "Synthetic PIN-edit fixture classification",
-              payload: {
-                commissionRole: "NON_COMMISSION",
-                joinDate: "2026-01-01",
-                stageEndOverride: null,
-              },
-            },
-          });
-        });
         await assert.rejects(
           runAsTenant(TENANTS.a, () =>
             posStaffFromToken(identity.token, "staffrt-manager", "session-b"),
@@ -368,7 +362,8 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
       );
       assert.equal(
         (
-          await request("POST", "/api/staff", managerToken, {
+          await request("POST", "/api/staff", ownerToken, {
+            ...payrollSetup,
             name: "Not permitted",
             posPin: "123456",
             globalRole: "SUPER_ADMIN",
@@ -488,7 +483,27 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
   });
 
   describe("POST /api/staff", () => {
+    it("refuses manager creation without expanding classification privileges", async () => {
+      const response = await request("POST", "/api/staff", managerToken, {
+        ...payrollSetup,
+        name: "Manager create attempt",
+        posPin: "123456",
+      });
+      assert.equal(response.status, 403);
+    });
+    it("rejects owner identity-only creation without writing a user", async () => {
+      const before = await runAsTenant(TENANTS.a, () => prisma.user.count());
+      const response = await request("POST", "/api/staff", ownerToken, {
+        name: "Unclassified attempt",
+        posPin: "123456",
+        startDate: "2026-01-01",
+      });
+      assert.equal(response.status, 422);
+      assert.ok(fieldPaths(await envelope(response)).includes("body.payrollClassification"));
+      assert.equal(await runAsTenant(TENANTS.a, () => prisma.user.count()), before);
+    });
     const newHire = {
+      ...payrollSetup,
       name: "Nina Newhire",
       email: `nina@${DOMAIN}`,
       password: "brand-new-pass-9",
@@ -511,7 +526,7 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
     });
 
     it("creates the person in the caller's salon, and never echoes a hash", async () => {
-      const response = await request("POST", "/api/staff", managerToken, newHire);
+      const response = await request("POST", "/api/staff", ownerToken, newHire);
 
       assert.equal(response.status, 201);
       const created = await dataOf<StaffSummary>(response);
@@ -540,7 +555,8 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
     });
 
     it("409s on an email this salon already uses, naming the field", async () => {
-      const response = await request("POST", "/api/staff", managerToken, {
+      const response = await request("POST", "/api/staff", ownerToken, {
+        ...payrollSetup,
         ...newHire,
         email: `stylist@${DOMAIN}`,
       });
@@ -552,7 +568,8 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
     });
 
     it("409s on an email another salon uses, which the scoped read cannot see", async () => {
-      const response = await request("POST", "/api/staff", managerToken, {
+      const response = await request("POST", "/api/staff", ownerToken, {
+        ...payrollSetup,
         ...newHire,
         email: `other@${DOMAIN}`,
       });
@@ -566,7 +583,8 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
     });
 
     it("422s on a branch that belongs to another salon", async () => {
-      const response = await request("POST", "/api/staff", managerToken, {
+      const response = await request("POST", "/api/staff", ownerToken, {
+        ...payrollSetup,
         ...newHire,
         email: `newbranch@${DOMAIN}`,
         departmentIds: [NAILS],
@@ -578,7 +596,8 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
     });
 
     it("422s when neither an email login nor a POS PIN is provided", async () => {
-      const response = await request("POST", "/api/staff", managerToken, {
+      const response = await request("POST", "/api/staff", ownerToken, {
+        ...payrollSetup,
         name: "No Login",
         position: "Colourist",
       });

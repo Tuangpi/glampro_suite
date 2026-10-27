@@ -180,6 +180,12 @@ export default function StaffFormDrawer({
     event.preventDefault();
     setFieldErrors({});
     setFormError(null);
+    if (!isEditing && user?.globalRole !== "SUPER_ADMIN") {
+      setFormError(
+        "Ask the owner to create staff with audited payroll classification and a join date.",
+      );
+      return;
+    }
 
     const name = form.name.trim();
     const email = form.email.trim();
@@ -310,7 +316,7 @@ export default function StaffFormDrawer({
       description={
         isEditing
           ? "Update this person’s role, profile and branches. Their login email is not changed here."
-          : "This creates the person and their login — a name, an email and a password are what the contract asks for."
+          : "Create the login and audited payroll setup together. A join date, explicit classification and reason are required."
       }
       widthClassName="max-w-xl"
       footer={
@@ -318,7 +324,12 @@ export default function StaffFormDrawer({
           <Button variant="secondary" onClick={onClose} disabled={isSaving}>
             Cancel
           </Button>
-          <Button type="submit" form="staff-form" loading={isSaving}>
+          <Button
+            type="submit"
+            form="staff-form"
+            loading={isSaving}
+            disabled={!isEditing && user?.globalRole !== "SUPER_ADMIN"}
+          >
             {isEditing ? "Save changes" : "Add staff member"}
           </Button>
         </>
@@ -513,11 +524,13 @@ export default function StaffFormDrawer({
               label="Initial commission classification"
               value={commissionRole}
               options={[
-                { value: "", label: "Not classified — review required" },
+                { value: "", label: "Choose a classification — required" },
                 { value: "COMMISSION_EARNING", label: "Commission earning — plan required" },
                 { value: "NON_COMMISSION", label: "Non-commission" },
               ]}
               onChange={(event) => setCommissionRole(event.target.value as typeof commissionRole)}
+              required
+              error={fieldError("payrollClassification")}
             />
             {commissionRole && (
               <Input
@@ -549,7 +562,7 @@ export default function StaffFormDrawer({
             label="Configure payroll after creation"
             checked={configurePayroll}
             onChange={(event) => setConfigurePayroll(event.target.checked)}
-            hint="Create the staff identity first, then assign a plan and save payroll settings separately. A join date is required before assigning a plan."
+            hint="After saving the required classification, join date and any initial plan together, continue to additional payroll settings."
           />
         )}
       </form>

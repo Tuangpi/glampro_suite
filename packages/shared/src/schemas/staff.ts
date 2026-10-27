@@ -108,7 +108,13 @@ export const createStaffSchema = z
     departmentIds: z.array(z.string().min(1)).max(50).optional(),
   })
   .superRefine((staff, context) => {
-    if (staff.payrollClassification && !staff.startDate)
+    if (!staff.payrollClassification)
+      context.addIssue({
+        code: "custom",
+        path: ["payrollClassification"],
+        message: "An explicit reasoned payroll classification is required for staff creation.",
+      });
+    if (!staff.startDate)
       context.addIssue({
         code: "custom",
         path: ["startDate"],

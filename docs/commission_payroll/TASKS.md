@@ -94,6 +94,19 @@ Existing implementation and reference tests need verification, not automatic cre
   classification before identity/link writes. Suspension and disabled maintenance
   remain possible; owner reasoned setup is required for recovery. Mandatory
   creation, outlet pooling, historical inputs and browser acceptance remain open.
+- Follow-up: staff creation now requires explicit reasoned classification and join
+  date, with an initial plan for commission earners. Owner-only POST/UI preserves
+  classification permissions; direct service calls cannot create identity-only
+  records. Transactional rollback and owner/manager HTTP checks pass. Outlet pooling,
+  authoritative historical preview and browser acceptance remain open.
+- Follow-up: company-context assignments and initial creation now support scoped
+  published plans with server-snapshotted outlet IDs and inactive-outlet rejection.
+  Shared pooling partitions eligible/fallback lines and rejects mixed-scope plan
+  calculation. Scope history/immutability/stale rollback and UI selection checks
+  pass. Full plan/fallback statement and scoped carry/incentive integration belong
+  to CP-005; CP-003 historical preview and browser acceptance remain open.
+  Verified shared 252/252, web 901/901, disposable focused API/HTTP 25/25,
+  serial API 625 passed/34 gated skips/zero failures; build/lint/typechecks pass.
 - Expected result: tenant/outlet-safe persistence and authenticated APIs/UI for
   plans, immutable published versions, assignment history, payroll profiles,
   settings, stages, calculator, chart comparison, impact preview and sample plans.

@@ -82,6 +82,12 @@ export const payrollAssignmentSchema = z
     id: z.string().min(1),
     staffId: z.string().min(1),
     planId: z.string().min(1),
+    /** Absent on legacy company-wide assignments; new writes snapshot plan scope. */
+    outletIds: z
+      .array(z.string().min(1))
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length)
+      .optional(),
     fromDate: payrollBusinessDateSchema,
     toDate: payrollBusinessDateSchema.nullable(),
   })

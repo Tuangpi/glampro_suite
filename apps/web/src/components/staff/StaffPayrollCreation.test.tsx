@@ -32,10 +32,12 @@ beforeEach(() => {
     refetch,
   });
 });
-it("offers only published company plans and captures the assignment revision", async () => {
+it("offers published company/scoped plans and captures the assignment revision", async () => {
   const user = userEvent.setup();
   render(<StaffPayrollCreation value={null} onChange={onChange} />);
-  expect(screen.queryByRole("option", { name: "Outlet plan" })).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("option", { name: "Outlet plan — selected outlets" }),
+  ).toBeInTheDocument();
   expect(screen.queryByRole("option", { name: "Archived plan" })).not.toBeInTheDocument();
   expect(screen.queryByRole("option", { name: "Draft plan" })).not.toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText("Initial payroll plan"), "company");
@@ -45,6 +47,10 @@ it("offers only published company plans and captures the assignment revision", a
     fromDate: "2026-10-27",
     reason: "",
   });
+  await user.selectOptions(screen.getByLabelText("Initial payroll plan"), "outlet");
+  expect(onChange).toHaveBeenLastCalledWith(
+    expect.objectContaining({ planId: "outlet", expectedRevision: 7 }),
+  );
   await user.click(screen.getByRole("button", { name: "Reload payroll plans" }));
   expect(onChange).toHaveBeenLastCalledWith(null);
   expect(refetch).toHaveBeenCalledOnce();

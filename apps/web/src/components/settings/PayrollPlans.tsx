@@ -940,6 +940,11 @@ function PayrollAssignments({
   return (
     <section className="space-y-3" aria-label="Staff plans and payroll profiles">
       <h3>Staff assignments and payroll profiles</h3>
+      <p className="text-xs text-ink-muted">
+        One plan timeline per staff member. Eligible outlets pool together; other outlet activity
+        requires separate flat-rule fallback. Assignments snapshot plan outlet scope. Earnings
+        remain inactive.
+      </p>
       <fieldset disabled={!canEdit}>
         <legend>Assign plan (select one or more staff)</legend>
         {data.staff
@@ -965,8 +970,11 @@ function PayrollAssignments({
           options={[
             { value: "", label: "No plan — flat fallback" },
             ...data.plans
-              .filter((p) => !p.archived && !p.outletIds.length)
-              .map((p) => ({ value: p.id, label: p.name })),
+              .filter((p) => !p.archived)
+              .map((p) => ({
+                value: p.id,
+                label: `${p.name}${p.outletIds.length ? " — selected outlets" : " — all outlets"}`,
+              })),
           ]}
         />
         <Input
@@ -1020,7 +1028,8 @@ function PayrollAssignments({
             .map((r) => (
               <p key={r.id}>
                 {data.plans.find((p) => p.id === r.planId)?.name ?? r.planId}: {r.fromDate} to{" "}
-                {r.toDate ?? "ongoing"}
+                {r.toDate ?? "ongoing"} ·{" "}
+                {r.outletIds?.length ? `Outlets: ${r.outletIds.join(", ")}` : "All outlets"}
               </p>
             ))}
         </div>

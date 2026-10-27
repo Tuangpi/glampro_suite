@@ -29,6 +29,8 @@ describe("authentication security contracts", () => {
       email: "owner@studio.sg",
       password: "secret123",
       globalRole: "SUPER_ADMIN",
+      startDate: "2026-09-01",
+      payrollClassification: { commissionRole: "NON_COMMISSION", reason: "Employment agreement" },
     };
     assert.equal(createStaffSchema.safeParse(input).success, false);
     assert.equal(

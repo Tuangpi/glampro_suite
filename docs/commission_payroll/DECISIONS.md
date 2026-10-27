@@ -49,6 +49,50 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## Known source discrepancies resolved
 
+### CP-003 outlet assignment and pooling contract (October 27, 2026)
+
+- Retain one effective-dated plan timeline per staff member, selected on the last
+  day of the payroll month. Plan outlet scope is eligibility, not a second independent
+  staff assignment timeline. An empty outlet list means all outlets in the tenant;
+  selected outlets pool together once for component tiers and monthly caps.
+- New assignment events snapshot the plan's outlet IDs server-side. Legacy
+  assignments without outlet IDs are company-wide: only company-wide plans were
+  assignable before this change. Clients cannot submit assignment scope. Plan scope
+  remains immutable metadata; duplicate a plan to change it. Existing closed rows
+  and their scope are retained when replacing an assignment.
+- Company-context owners may assign published scoped plans, including during atomic
+  classified creation. All selected outlets must currently be active in the tenant.
+  Outlet sessions still cannot mutate/read company-wide staff timelines or salary
+  profiles. No assumption is made that department links identify outlets.
+- Out-of-scope activity uses the existing source-time flat-rule fallback, not the
+  scoped plan's tiers. Shared partitioning returns disjoint plan/fallback inputs
+  without dropping activity; scoped calculation rejects unpartitioned out-of-scope
+  lines. Missing active-line outlet evidence fails closed for a scoped plan.
+- This continuation delivers assignment snapshots, selection UI and the pure
+  pooling boundary contract. Combining plan/fallback results, keeping incentive
+  metrics and carry balances correctly scoped, and frozen statement reconciliation
+  remain CP-005 integration work. No new earnings path is enabled or paid twice.
+  Authoritative historical preview and authenticated browser acceptance remain open.
+
+### CP-003 mandatory classified creation (October 27, 2026)
+
+- Every staff create request requires an explicit reasoned payroll classification
+  and authoritative join date. Commission earners also require an initial published
+  plan with current-month and ongoing coverage. The shared runtime schema and direct
+  service entry point reject identity-only creation; the transactional helper also
+  rejects absent classification. Identity, branch links and payroll audit save together.
+- Classification remains owner-only. Staff POST is therefore salon SUPER_ADMIN-only,
+  with existing owner verification and writable-tenant checks in the transaction.
+  Managers retain profile-edit/suspension permissions but cannot create an
+  unclassified identity or assign themselves classification-write privileges.
+  The UI hides manager creation and explains that owner setup is required.
+- This deliberately supersedes the earlier identity-only creation compatibility
+  exception and manager POST behavior. No role, title or legacy rate implies a
+  classification. Existing unclassified records are not automatically rewritten.
+- Company-only initial plan restrictions remain until outlet pooling is implemented.
+  This closes the staff endpoint's mandatory creation gap, not full FR-ASN or CP-003
+  acceptance. Platform provisioning and unrelated authentication flows are unchanged.
+
 ### CP-003 unclassified active-edit enforcement (October 27, 2026)
 
 - Active staff PATCH now fails closed when the latest audited commission

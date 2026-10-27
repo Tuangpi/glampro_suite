@@ -73,6 +73,7 @@ export default function Staff() {
   const rows = staff.data?.data ?? [];
   /** Only the two roles the API's `requireRole` accepts may write at all. */
   const canManage = user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER";
+  const canCreate = user?.globalRole === "SUPER_ADMIN";
   /** …and a suspended salon may only look, whatever the role (TENANCY.md §6). */
   const canWrite = canManage && !isReadOnly;
   /** The word for the filter that is on, for the count line and the empty state. */
@@ -149,6 +150,11 @@ export default function Staff() {
           <p className="text-sm text-ink-muted">
             Everyone who works in this salon. Search by name or email address.
           </p>
+          {user?.globalRole === "MANAGER" && (
+            <p className="text-sm text-ink-muted">
+              Ask the owner to add staff with audited payroll classification and a join date.
+            </p>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -172,7 +178,7 @@ export default function Staff() {
 
           {/* A stylist gets no write control at all: `requireRole` would refuse it. A
               suspended salon keeps the button but not the ability (TENANCY.md §6). */}
-          {canManage ? (
+          {canCreate ? (
             <Button onClick={openCreate} disabled={isReadOnly}>
               Add staff member
             </Button>
@@ -292,7 +298,7 @@ export default function Staff() {
                     description="Add the first person so they can sign in, be booked and be paid."
                     icon={<Users />}
                     action={
-                      canManage ? (
+                      canCreate ? (
                         <Button onClick={openCreate} disabled={isReadOnly}>
                           Add staff member
                         </Button>

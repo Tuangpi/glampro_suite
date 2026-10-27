@@ -40,6 +40,25 @@ describe("staffListQuerySchema", () => {
 });
 
 describe("createStaffSchema", () => {
+  const payrollSetup = {
+    startDate: "2026-09-01",
+    payrollClassification: { commissionRole: "NON_COMMISSION", reason: "Employment agreement" },
+  };
+  it("rejects identity-only creation regardless of login role, title or legacy rate", () => {
+    for (const globalRole of ["STAFF", "MANAGER", "SUPER_ADMIN"])
+      assert.equal(
+        createStaffSchema.safeParse({
+          name: "Amy",
+          email: "amy@example.test",
+          password: "correct-horse-123",
+          globalRole,
+          position: "Non-commission",
+          commissionRate: 0,
+          startDate: "2026-09-01",
+        }).success,
+        false,
+      );
+  });
   it("requires a dated reasoned classification and initial plan for commission earners", () => {
     const identity = { name: "Amy", posPin: "123456" };
     const payrollClassification = {
@@ -92,7 +111,7 @@ describe("createStaffSchema", () => {
       reason: "Initial assignment",
     };
     assert.equal(createStaffSchema.safeParse({ ...identity, payrollAssignment }).success, false);
-    const input = { ...identity, startDate: "2026-09-01", payrollAssignment };
+    const input = { ...identity, ...payrollSetup, payrollAssignment };
     assert.equal(createStaffSchema.safeParse(input).success, true);
     for (const patch of [
       { planId: null },
@@ -109,7 +128,10 @@ describe("createStaffSchema", () => {
       );
   });
   it("accepts PIN-only staff without email and prevents management roles", () => {
-    assert.equal(createStaffSchema.safeParse({ name: "Ava", posPin: "123456" }).success, true);
+    assert.equal(
+      createStaffSchema.safeParse({ ...payrollSetup, name: "Ava", posPin: "123456" }).success,
+      true,
+    );
     assert.equal(createStaffSchema.safeParse({ name: "Ava", posPin: "12345" }).success, false);
     assert.equal(
       createStaffSchema.safeParse({ name: "Ava", posPin: "123456", globalRole: "MANAGER" }).success,
@@ -124,8 +146,12 @@ describe("createStaffSchema", () => {
   it("requires a login, because a staff member is a User row", () => {
     assert.equal(createStaffSchema.safeParse({ name: "Ava", email: "a@b.test" }).success, false);
     assert.equal(
-      createStaffSchema.safeParse({ name: "Ava", email: "a@b.test", password: "longenough" })
-        .success,
+      createStaffSchema.safeParse({
+        ...payrollSetup,
+        name: "Ava",
+        email: "a@b.test",
+        password: "longenough",
+      }).success,
       true,
     );
   });
@@ -143,6 +169,7 @@ describe("createStaffSchema", () => {
 
   it("defaults to the least privileged role, so a client cannot mint an owner", () => {
     const parsed = createStaffSchema.parse({
+      ...payrollSetup,
       name: "A",
       email: "a@b.test",
       password: "longenough",

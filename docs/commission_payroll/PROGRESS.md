@@ -11,14 +11,72 @@
   POS/earnings, activation and deployment remain unchanged. No dependencies added.
 - No policy question currently blocks local work; decisions adopted under delegation
   are in DECISIONS.md, including explicit deviations from SRS proposed defaults.
-- Latest continuation: active edits/reactivation reject missing or unknown audited
-  classification under the tenant configuration lock. Classified staff still
-  require join date and applicable plan coverage. Suspension/disabled maintenance
-  remain possible; owner-audited setup is required before reactivation.
-  Identity-only creation remains an open lifecycle gap; earnings stay inactive.
-- Next: outlet assignment semantics, authoritative impact-preview input integration,
-  staff requirement/concurrency enforcement and remaining API/UI/browser acceptance.
+- Latest continuation: company owners can assign scoped published plans, including
+  atomic staff creation. Assignment events snapshot outlet scope; inactive outlets
+  and stale revisions are rejected. Shared partitioning separates combined eligible
+  outlet pools and fallback activity without enabling earnings.
+- Next: authoritative impact-preview input integration, remaining API/UI/browser
+  acceptance and lifecycle concurrency coverage. CP-005 must integrate scoped
+  statements, carry and incentive metrics before earnings activation.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 27, 2026 — CP-003 outlet assignment checkpoint
+
+- One staff timeline retained. New assignment rows snapshot validated plan outlets;
+  legacy rows remain company-wide. Company owners can assign scoped plans during
+  creation or bulk changes. Outlet sessions cannot manage staff timelines/profiles.
+  Immutable plan scope, stale revision checks and audit rollback remain enforced.
+- Plan selection/history explain selected/all outlets. Pure partitioning pools
+  eligible outlets together once, separates fallback activity, rejects duplicate
+  pools and missing outlet evidence, and guards against unpartitioned calculation.
+- Added scoped initial creation/edit, multi-outlet replacement/history, inactive
+  outlet rollback, cross-tenant assignment refusal and immutable-scope assertions.
+  Shared tests cover pooled tiers, fallback source rates, fixed awards, refund
+  carry, unknown outlets and client scope spoofing; UI checks cover selection.
+- This is not complete payroll orchestration. Historical preview, browser acceptance
+  and lifecycle concurrency remain open; scoped statement/carry/incentive integration
+  belongs to CP-005. CP-003 stays IN PROGRESS; CP-004 untouched.
+- Verified: shared **252/252**; focused plan/initial-picker UI **23/23**; full web
+  **901/901** across 105 files, one worker. Serial disposable API **625 passed,
+  34 gated skips, zero failures**, exit 0. Latest focused lifecycle/staff HTTP
+  **25/25** includes cross-tenant scoped-plan/staff refusal added after full-run
+  startup. API/web typechecks, root build/lint, formatting and whitespace pass.
+  Browser acceptance and parallel API regression not run; prior timeout limitation
+  remains. Full web logs contain non-fatal missing xclip/xsel clipboard warnings.
+- Reused only disposable PostgreSQL cluster `/tmp/cp003-edit-guard-pg-gzy72041`,
+  database `payroll_configuration_test`, port 55474; stopped and port confirmed
+  inactive. Logs: `/tmp/cp003-outlet-*.log`. No application DB writes, dependencies,
+  migrations, historical rewrite, activation, deployment, commit or push.
+
+## October 27, 2026 — CP-003 mandatory classified staff creation
+
+- Shared create schema requires explicit reasoned classification and join date.
+  Direct service calls validate the same schema and reject missing classification;
+  the payroll transaction helper rejects it too. All creation uses the existing
+  owner-verified writable-tenant transaction. Commission earners require initial
+  current-month/ongoing plan coverage; failed creation rolls back identity/links/audit.
+- Staff POST is now owner-only, preserving classification privileges. Managers
+  retain valid profile edits and suspension, but no unclassified creation path.
+  UI hides manager creation, explains owner setup and requires explicit selection;
+  post-create continuation is only for additional settings, not deferred classification.
+- Updated shared password-policy fixtures without weakening credential assertions.
+  Added identity-only refusal across login roles, owner HTTP refusal/no-write and
+  manager HTTP refusal; existing creation, stale-revision, rollback, PIN-reset,
+  permissions and tenant-isolation assertions pass with explicit classified fixtures.
+- Verified: shared **248/248**; focused staff/plan UI **24/24**; full web **900/900**,
+  105 files, one worker. Focused disposable lifecycle/staff HTTP **25/25**; complete
+  serial API with CP-003 enabled **625 passed, 34 gated skips, zero failures**, exit 0,
+  about 305 seconds. API/web typechecks, root build, root lint, changed-file formatting
+  and whitespace checks pass. Authenticated browser acceptance and parallel API
+  regression not run; earlier parallel timeout limitation remains.
+- Reused disposable PostgreSQL 18 cluster `/tmp/cp003-edit-guard-pg-gzy72041`,
+  localhost:55474, database `payroll_configuration_test` only. Logs:
+  `/tmp/cp003-create-*.log`. No application database writes, schema changes,
+  dependencies, historical rewrite, earnings activation, deployment, commit or push.
+  Disposable cluster stopped after verification; localhost:55474 confirmed inactive.
+- CP-003 remains IN PROGRESS. Next: outlet assignment/pooling, authoritative
+  historical preview inputs, remaining lifecycle concurrency and authenticated
+  browser acceptance. CP-004 was not started.
 
 ## October 27, 2026 — CP-003 unclassified active-edit enforcement
 

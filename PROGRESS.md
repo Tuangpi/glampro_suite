@@ -2,6 +2,27 @@
 
 ## Current State
 
+- **CP-003 outlet assignment checkpoint — October 27, 2026:** company owners can
+  assign scoped published plans, including atomic staff creation. Assignments
+  snapshot validated outlet scope. Shared pooling separates eligible/fallback
+  activity and rejects mixed-scope plan calculation; no earnings activation.
+  CP-003 stays IN PROGRESS; CP-004 untouched. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md) for checks and limitations.
+  Next: historical preview, lifecycle concurrency and authenticated browser acceptance.
+  Verified shared 252/252, web 901/901, focused disposable API/HTTP 25/25;
+  serial API 625 passed, 34 gated skips, zero failures. Build/lint/typechecks pass.
+  Disposable cluster stopped; port 55474 inactive. No application DB writes.
+
+- **CP-003 mandatory creation — October 27, 2026:** staff creation now requires
+  owner-audited classification, join date and initial plan for commission earners.
+  Owner-only POST/UI saves identity, branch links and payroll audit atomically;
+  managers retain valid profile edits/suspension. Shared 248/248, web 900/900,
+  focused disposable acceptance 25/25; serial API 625 passed, 34 gated skips,
+  zero failures. Root build/lint and API/web typechecks pass. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md). CP-003 stays IN PROGRESS:
+  outlet pooling, authoritative historical inputs and browser acceptance remain.
+  CP-004 was not started; no application database writes or earnings activation.
+
 - **CP-003 unclassified active-edit follow-up — October 27, 2026:** active staff
   edits/reactivation now require supported owner-audited classification under the
   tenant configuration lock. Suspension and disabled maintenance remain available.

@@ -56,6 +56,7 @@ test("assignment requests reject duplicate staff, invalid dates and unknown fiel
     { staffIds: [] },
     { fromDate: "2026-02-30" },
     { tenantId: "foreign" },
+    { outletIds: ["forged-scope"] },
   ])
     assert.equal(payrollAssignmentWriteSchema.safeParse({ ...input, ...patch }).success, false);
 });

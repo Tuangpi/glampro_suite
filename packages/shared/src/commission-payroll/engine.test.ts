@@ -17,6 +17,8 @@ import {
   previewPayrollImpact,
   resolvePayrollPlan,
   resolvePayrollStage,
+  partitionPayrollOutletLines,
+  payrollAssignmentSchema,
   tpPayrollExample,
   validatePayrollPlan,
   type PayrollBaseLine,
@@ -72,6 +74,85 @@ function input(
 }
 
 describe("CP-002 SRS tier/component acceptance", () => {
+  it("snapshots unique assignment outlets while retaining legacy company-wide history", () => {
+    const assignment = {
+      id: "a",
+      staffId: "staff",
+      planId: "hair",
+      fromDate: "2026-09-01",
+      toDate: null,
+    };
+    assert.deepEqual(payrollAssignmentSchema.parse(assignment), assignment);
+    assert.equal(
+      payrollAssignmentSchema.safeParse({ ...assignment, outletIds: ["a", "a"] }).success,
+      false,
+    );
+    assert.deepEqual(
+      payrollAssignmentSchema.parse({ ...assignment, outletIds: ["a", "b"] }).outletIds,
+      ["a", "b"],
+    );
+  });
+  it("pools eligible outlets once and separates out-of-scope activity for source-rate fallback", () => {
+    const lines = [
+      line("a", "SVC", "4000", { outletId: "a", fallbackRatePct: "5" }),
+      line("b", "SVC", "7000", { outletId: "b", fallbackRatePct: "5" }),
+      line("c", "SVC", "1000", { outletId: "c", fallbackRatePct: "3" }),
+    ];
+    const original = structuredClone(lines);
+    const split = partitionPayrollOutletLines(lines, ["a", "b"]);
+    assert.deepEqual(
+      split.planLines.map((l) => l.id),
+      ["a", "b"],
+    );
+    assert.deepEqual(
+      split.fallbackLines.map((l) => l.id),
+      ["c"],
+    );
+    assert.deepEqual(lines, original);
+    const definition = { ...hairPayrollExample(), incentives: [] };
+    const planned = input(split.planLines, definition);
+    planned.plan!.outletIds = ["a", "b"];
+    const result = calculatePayrollStaffPeriod(planned);
+    assert.equal(
+      result.components.find((c) => c.componentKey === "cash_pkg")!.rawBase,
+      "11000.0000",
+    );
+    assert.equal(result.commissionTotal, "1100.00");
+    const fallback = calculatePayrollStaffPeriod({ ...input(split.fallbackLines), plan: null });
+    assert.equal(fallback.commissionTotal, "30.00");
+    assert.throws(
+      () => calculatePayrollStaffPeriod({ ...planned, lines }),
+      /Partition out-of-scope/,
+    );
+    assert.equal(partitionPayrollOutletLines(lines, []).planLines.length, 3);
+  });
+  it("refuses unknown outlet attribution, duplicate pools and forged scope inputs", () => {
+    const unknown = line("unknown", "SVC", "10", { outletId: null });
+    assert.throws(() => partitionPayrollOutletLines([unknown], ["a"]), /evidenced outlet/);
+    assert.throws(() => partitionPayrollOutletLines([], ["a", "a"]), /Duplicate plan outlets/);
+    assert.throws(() => partitionPayrollOutletLines([unknown, unknown], []), /Duplicate base line/);
+    assert.equal(partitionPayrollOutletLines([unknown], []).planLines.length, 1);
+    assert.equal(
+      partitionPayrollOutletLines([{ ...unknown, status: "REVERSED" }], ["a"]).fallbackLines.length,
+      1,
+    );
+  });
+  it("partitions fixed awards and refund reversals without duplicate payout or lost debt", () => {
+    const lines = [
+      line("fixed-in", "PKG_SALE", "100", { outletId: "a", mode: "FIXED", fixedCommission: "10" }),
+      line("fixed-out", "PKG_SALE", "100", { outletId: "b", mode: "FIXED", fixedCommission: "15" }),
+      line("refund-out", "SVC", "-200", { outletId: "b", fallbackRatePct: "5" }),
+    ];
+    const partition = partitionPayrollOutletLines(lines, ["a"]);
+    const planned = input(partition.planLines, { ...hairPayrollExample(), incentives: [] });
+    planned.plan!.outletIds = ["a"];
+    const result = calculatePayrollStaffPeriod(planned);
+    const fallback = calculatePayrollStaffPeriod({ ...input(partition.fallbackLines), plan: null });
+    assert.equal(result.commissionTotal, "10.00");
+    assert.equal(fallback.commissionTotal, "15.00");
+    assert.equal(fallback.fallbackCarryCommission, "-10.0000000000");
+    assert.equal(partition.planLines.length + partition.fallbackLines.length, lines.length);
+  });
   it("TC-01 Hair cash + package whole-tier 6830 → 546.40", () => {
     const result = calculatePayrollComponent(component(), "6830");
     assert.equal(result.amount, "546.40");

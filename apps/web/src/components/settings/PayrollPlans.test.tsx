@@ -79,6 +79,29 @@ function mount(canEdit = true, staffId?: string) {
   );
   return client;
 }
+it("offers scoped assignments without changing the single staff timeline or trusting client scope", async () => {
+  const data = configuration();
+  data.plans[0]!.outletIds = ["branch-a", "branch-b"];
+  data.plans[0]!.versions[0]!.status = "PUBLISHED";
+  mocks.get.mockResolvedValue(data);
+  mount(true, "amy");
+  const user = userEvent.setup();
+  await screen.findByLabelText("Assignment plan");
+  expect(screen.getByText(/One plan timeline per staff member/)).toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText("Assignment plan"), "hair");
+  expect(screen.getByRole("option", { name: "Hair — selected outlets" })).toBeInTheDocument();
+  await user.type(screen.getByLabelText("Payroll change reason"), "Branch coverage");
+  await user.click(screen.getByRole("button", { name: "Assign selected staff" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/assignments", {
+      expectedRevision: 0,
+      staffIds: ["amy"],
+      planId: "hair",
+      fromDate: data.today,
+      reason: "Branch coverage",
+    }),
+  );
+});
 it("limits the staff panel to the selected identity and saves profiles independently", async () => {
   const data = configuration();
   data.staff.push({ ...data.staff[0]!, id: "ben", name: "Ben" });

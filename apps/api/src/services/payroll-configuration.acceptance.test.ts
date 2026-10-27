@@ -604,6 +604,91 @@ test(
             reason,
           }),
         );
+        await runAtOutlet(outlet.id, () =>
+          publishPayrollDraft(scopedPlan.id, { expectedRevision: 1, reason }),
+        );
+        const outletStaff = await createStaff({
+          name: "Scoped initial assignment",
+          posPin: "123456",
+          startDate: date,
+          payrollClassification: { commissionRole: "COMMISSION_EARNING", reason },
+          payrollAssignment: {
+            planId: scopedPlan.id,
+            fromDate: date,
+            reason,
+            expectedRevision: (await readPayrollConfiguration()).assignments.revision,
+          },
+        });
+        let outletConfig = await readPayrollConfiguration();
+        const outletAssignment = outletConfig.assignments.rows.find(
+          (row) => row.staffId === outletStaff.id,
+        )!;
+        assert.deepEqual(outletAssignment.outletIds, [outlet.id]);
+        assert.equal(
+          outletConfig.staff.find((s) => s.id === outletStaff.id)!.settings.commissionRole,
+          "COMMISSION_EARNING",
+        );
+        await updateStaff(outletStaff.id, { name: "Valid scoped staff edit" });
+        const multiPlan = await createPayrollPlan({
+          ...metadata,
+          name: "Multi-outlet pooling",
+          outletIds: [outlet.id, otherOutlet.id],
+          definition: hairPayrollExample(),
+          reason,
+        });
+        await publishPayrollDraft(multiPlan.id, { expectedRevision: 1, reason });
+        const scopedRevision = outletConfig.assignments.revision;
+        await assignPayrollPlan({
+          expectedRevision: scopedRevision,
+          staffIds: [outletStaff.id],
+          planId: multiPlan.id,
+          fromDate: future,
+          reason,
+        });
+        outletConfig = await readPayrollConfiguration();
+        const scopedHistory = outletConfig.assignments.rows.filter(
+          (row) => row.staffId === outletStaff.id,
+        );
+        assert.equal(scopedHistory.length, 2);
+        assert.deepEqual(scopedHistory[0]!.outletIds, [outlet.id]);
+        assert.deepEqual(scopedHistory[1]!.outletIds, [outlet.id, otherOutlet.id]);
+        assert.notEqual(scopedHistory[0]!.toDate, null);
+        await assert.rejects(
+          assignPayrollPlan({
+            expectedRevision: scopedRevision,
+            staffIds: [outletStaff.id],
+            planId: multiPlan.id,
+            fromDate: removalDate,
+            reason,
+          }),
+          /changed/,
+        );
+        const beforeArchivedOutlet = outletConfig.assignments;
+        await prisma.outlet.update({
+          where: { id: otherOutlet.id },
+          data: { status: "SUSPENDED" },
+        });
+        await assert.rejects(
+          assignPayrollPlan({
+            expectedRevision: beforeArchivedOutlet.revision,
+            staffIds: [outletStaff.id],
+            planId: multiPlan.id,
+            fromDate: removalDate,
+            reason,
+          }),
+          /archived outlet/,
+        );
+        assert.deepEqual((await readPayrollConfiguration()).assignments, beforeArchivedOutlet);
+        await prisma.outlet.update({ where: { id: otherOutlet.id }, data: { status: "ACTIVE" } });
+        await assert.rejects(
+          updatePayrollPlan(scopedPlan.id, {
+            ...metadata,
+            outletIds: [],
+            expectedRevision: 2,
+            reason,
+          }),
+          /Duplicate/,
+        );
         await runAtOutlet(otherOutlet.id, async () => {
           assert.ok(!(await readPayrollConfiguration()).plans.some((p) => p.id === scopedPlan.id));
           await assert.rejects(
@@ -643,6 +728,33 @@ test(
             `${tenantId}-other`,
             async () => {
               assert.equal((await readPayrollConfiguration()).plans.length, 0);
+              await assert.rejects(
+                assignPayrollPlan({
+                  expectedRevision: 0,
+                  staffIds: [foreignActor.id],
+                  planId: scopedPlan.id,
+                  fromDate: date,
+                  reason,
+                }),
+                /not found/,
+              );
+              const foreignPlan = await createPayrollPlan({
+                ...metadata,
+                definition: hairPayrollExample(),
+                reason,
+              });
+              await publishPayrollDraft(foreignPlan.id, { expectedRevision: 1, reason });
+              await assert.rejects(
+                assignPayrollPlan({
+                  expectedRevision: 0,
+                  staffIds: [outletStaff.id],
+                  planId: foreignPlan.id,
+                  fromDate: date,
+                  reason,
+                }),
+                /not found/,
+              );
+              assert.equal((await readPayrollConfiguration()).assignments.revision, 0);
               await assert.rejects(
                 publishPayrollDraft(first.id, { expectedRevision: 2, reason }),
                 /not found/,
@@ -751,6 +863,7 @@ test(
           posPin: "123456",
           startDate: "2026-09-01",
           departmentIds: [initialDepartment.id],
+          payrollClassification: { commissionRole: "NON_COMMISSION" as const, reason },
         };
         const revisionBeforeCreate = (await readPayrollConfiguration()).assignments.revision;
         const initialAssignment = {
@@ -762,6 +875,10 @@ test(
         const beforeUsers = await prisma.user.count();
         const beforeEvents = await prisma.payrollConfigurationEvent.count();
         const beforeLinks = await prisma.staffDepartment.count();
+        await assert.rejects(
+          createStaff({ ...initial, payrollClassification: undefined }),
+          /explicit reasoned payroll classification/,
+        );
         await assert.rejects(
           createStaff({
             ...initial,

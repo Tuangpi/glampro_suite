@@ -27,18 +27,15 @@ export default function StaffPayrollCreation({
   if (data.outletId)
     return <p role="alert">Switch to company context before creating staff with a payroll plan.</p>;
   const plans = data.plans.filter(
-    (plan) =>
-      !plan.archived &&
-      !plan.outletIds.length &&
-      plan.versions.some((v) => v.status === "PUBLISHED"),
+    (plan) => !plan.archived && plan.versions.some((v) => v.status === "PUBLISHED"),
   );
   return (
     <fieldset className="flex flex-col gap-3">
       <legend className="text-sm font-medium">Initial payroll assignment</legend>
       <p className="text-xs text-ink-muted">
         Staff, branch links and the reasoned assignment save together. This does not activate plan
-        earnings. Only company-wide plans are supported. The plan must be published and effective in
-        the assignment month.
+        earnings. Selected plan outlets pool together; other outlets require flat fallback. The plan
+        must be published and effective in the assignment month.
       </p>
       <Select
         label="Initial payroll plan"
@@ -57,7 +54,10 @@ export default function StaffPayrollCreation({
         }
         options={[
           { value: "", label: "Choose a plan" },
-          ...plans.map((plan) => ({ value: plan.id, label: plan.name })),
+          ...plans.map((plan) => ({
+            value: plan.id,
+            label: `${plan.name}${plan.outletIds.length ? " — selected outlets" : " — all outlets"}`,
+          })),
         ]}
       />
       {value && (
@@ -77,9 +77,7 @@ export default function StaffPayrollCreation({
           />
         </>
       )}
-      {!plans.length && (
-        <p role="status">Publish a company-wide plan before using this workflow.</p>
-      )}
+      {!plans.length && <p role="status">Publish a plan before using this workflow.</p>}
       <Button
         type="button"
         variant="secondary"

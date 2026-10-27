@@ -199,6 +199,11 @@ describe("the table", () => {
     await user.click(dialog.getByRole("button", { name: "Add staff member" }));
     expect(createMutate).not.toHaveBeenCalled();
     expect(screen.getByText("A join date is required with a payroll plan.")).toBeInTheDocument();
+    await user.selectOptions(
+      screen.getByLabelText("Initial commission classification"),
+      "NON_COMMISSION",
+    );
+    await user.type(screen.getByLabelText("Classification reason"), "Employment agreement");
     await user.type(screen.getByLabelText("Start date"), "2026-09-01");
     await user.click(dialog.getByRole("button", { name: "Add staff member" }));
     await waitFor(() => expect(createMutate).toHaveBeenCalledTimes(1));
@@ -219,6 +224,7 @@ describe("the table", () => {
     await user.type(screen.getByLabelText("Email"), "amara@salon.test");
     await user.type(screen.getByLabelText("Password"), "correct-horse");
     await user.click(screen.getByLabelText("Configure payroll after creation"));
+    await completePayrollSetup(user);
     await user.click(submit);
     const payroll = await screen.findByRole("region", { name: "Staff payroll" });
     expect(payroll).toHaveAttribute("data-staff-id", "u1");
@@ -361,6 +367,13 @@ describe("search", () => {
 });
 
 describe("who may write", () => {
+  it("allows managers to edit but reserves creation for owner-audited setup", () => {
+    auth.value = { user: { globalRole: "MANAGER" }, isReadOnly: false };
+    useStaffList.mockReturnValue(listOf([staffRow()]));
+    render(<Staff />);
+    expect(screen.queryByRole("button", { name: "Add staff member" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+  });
   it("offers a stylist no write action at all, because the API would refuse it", () => {
     auth.value = { user: { globalRole: "STAFF" }, isReadOnly: false };
     useStaffList.mockReturnValue(listOf([staffRow()]));
@@ -384,7 +397,34 @@ describe("who may write", () => {
   });
 });
 
+async function completePayrollSetup(user: ReturnType<typeof userEvent.setup>) {
+  await user.selectOptions(
+    screen.getByLabelText("Initial commission classification"),
+    "NON_COMMISSION",
+  );
+  await user.type(screen.getByLabelText("Classification reason"), "Employment agreement");
+  await user.type(screen.getByLabelText("Start date"), "2026-09-01");
+}
+
 describe("the add-staff form", () => {
+  it("does not submit an identity without explicit payroll classification", async () => {
+    const user = userEvent.setup();
+    render(<Staff />);
+    await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
+    const dialog = within(await screen.findByRole("dialog"));
+    await user.type(screen.getByLabelText("Name"), "Amy");
+    await user.type(screen.getByLabelText("Email"), "amy@example.test");
+    await user.type(screen.getByLabelText("Password"), "correct-horse");
+    await user.type(screen.getByLabelText("Start date"), "2026-09-01");
+    await user.click(dialog.getByRole("button", { name: "Add staff member" }));
+    expect(createMutate).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByText(
+        "An explicit reasoned payroll classification is required for staff creation.",
+      ).length,
+    ).toBeGreaterThan(0);
+    expect(screen.getByLabelText("Name")).toHaveValue("Amy");
+  });
   /**
    * Opens the drawer and returns its own submit button, ready to fill in.
    *
@@ -395,6 +435,7 @@ describe("the add-staff form", () => {
   async function openCreateForm(user: ReturnType<typeof userEvent.setup>) {
     await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
     const dialog = await screen.findByRole("dialog");
+    await completePayrollSetup(user);
     return within(dialog).getByRole("button", { name: "Add staff member" });
   }
 

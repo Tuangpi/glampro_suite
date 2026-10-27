@@ -316,10 +316,12 @@ async function assignInTransaction(tx: Transaction, input: PayrollAssignmentWrit
   await prospective(tx, input.fromDate);
   const revision = (await latest(tx, "ASSIGNMENT", "company"))?.revision ?? 0;
   if (input.expectedRevision !== revision) throw conflict("Assignments changed. Reload first.");
+  let outletIds: string[] = [];
   if (input.planId) {
     const plan = await planRecord(tx, input.planId);
-    if (plan.archived || plan.outletIds.length)
-      throw badRequest("Company-wide staff require a non-archived company-wide plan.");
+    if (plan.archived) throw badRequest("Staff require a non-archived plan.");
+    await validOutlets(tx, plan.outletIds);
+    outletIds = plan.outletIds;
     if (
       !plan.versions.some(
         (v) =>
@@ -360,6 +362,7 @@ async function assignInTransaction(tx: Transaction, input: PayrollAssignmentWrit
         id: randomUUID(),
         staffId,
         planId: input.planId,
+        outletIds,
         fromDate: input.fromDate,
         toDate: null,
       });
@@ -376,6 +379,8 @@ export async function createStaffWithPayroll<T extends { id: string }>(
   create: (tx: Transaction) => Promise<T>,
   classification?: Pick<PayrollStaffSettingsWrite, "commissionRole" | "reason">,
 ): Promise<T> {
+  if (!classification?.commissionRole)
+    throw badRequest("An explicit reasoned payroll classification is required for staff creation.");
   return write(async (tx) => {
     const staff = await create(tx);
     if (assignment)

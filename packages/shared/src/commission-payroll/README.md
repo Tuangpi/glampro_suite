@@ -34,6 +34,21 @@ No database, clock, network, tenant lookup, activation or writes occur here.
    avoiding future repricing. Switching such debt to a plan fails closed until
    separately settled. Write-off authorization and audit are service responsibilities.
 
+### Outlet-scoped assignment boundary
+
+Use the resolved assignment's snapshotted `outletIds` (absent on legacy rows means
+all outlets). Pass the same scope on `PayrollStaffPeriodInput.plan.outletIds`.
+`partitionPayrollOutletLines` separates eligible plan activity from fallback
+activity without mutating inputs. Selected outlets form one combined component
+pool, not independent tiers/caps per outlet. Scoped plan calculation refuses
+unpartitioned out-of-scope activity and missing active-line outlet evidence.
+
+This helper is not payroll orchestration: the service must authorize every input,
+resolve source-time fallback evidence, maintain separate carry debt, supply
+authoritative incentive metrics and persist a reconciled statement exactly once.
+Never silently filter activity or treat a partial pool as a complete statement.
+There is no tenant authorization or earnings activation in this pure helper.
+
 ## Precision and diagnostics
 
 Bigint rational arithmetic avoids floating point without a new dependency.

@@ -25,7 +25,11 @@ import type {
   StaffSummary,
   UpdateStaffInput,
 } from "@glampro_suite/shared";
-import { staffSummarySchema, payrollAssignmentSchema } from "@glampro_suite/shared";
+import {
+  staffSummarySchema,
+  payrollAssignmentSchema,
+  createStaffSchema,
+} from "@glampro_suite/shared";
 
 import { badRequest, conflict, notFound } from "../lib/http-error.js";
 import { randomBytes } from "node:crypto";
@@ -225,12 +229,16 @@ function toDateValue(value: string | null | undefined): Date | null | undefined 
 /**
  * Creates the person **and their login** in one call.
  *
- * A staff member is this User row. Department links and optional payroll assignment
- * are created in the same transaction. The
+ * A staff member is this User row. Department links, required payroll classification
+ * and any initial payroll assignment are created in the same transaction. The
  * password is hashed on the way in and never stored or logged in the clear, and
  * `tokenVersion` keeps its default, so the new account's first sign-in is ordinary.
  */
 export async function createStaff(input: CreateStaffInput): Promise<StaffDetail> {
+  // Validate direct service callers too; no identity-only bypass around the HTTP contract.
+  if (!input.payrollClassification)
+    throw badRequest("An explicit reasoned payroll classification is required for staff creation.");
+  input = createStaffSchema.parse(input);
   const {
     password,
     posPin,
@@ -274,10 +282,10 @@ export async function createStaff(input: CreateStaffInput): Promise<StaffDetail>
     await linkDepartments(row.id, departmentIds, tx);
     return row;
   };
-  const created = await (
-    payrollAssignment || payrollClassification
-      ? createStaffWithPayroll(payrollAssignment, create, payrollClassification)
-      : prisma.$transaction(create)
+  const created = await createStaffWithPayroll(
+    payrollAssignment,
+    create,
+    payrollClassification,
   ).catch(rethrowUnique);
 
   return getStaff(created.id);
