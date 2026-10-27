@@ -1547,6 +1547,57 @@ model EmployeeCommission {
 }
 
 /// Explicit half-open boundaries. Calendar/timezone policy is supplied by the company.
+/// Configuration only. Does not activate plan-based earnings.
+model PayrollPlan {
+  id String @id @default(cuid())
+  tenantId String
+  name String
+  description String
+  positions String[]
+  outletIds String[]
+  archived Boolean @default(false)
+  revision Int @default(0)
+  createdAt DateTime @default(now())
+  versions PayrollPlanVersion[]
+  @@unique([tenantId, id])
+  @@index([tenantId])
+  @@map("payroll_plans")
+}
+
+model PayrollPlanVersion {
+  id String @id @default(cuid())
+  tenantId String
+  planId String
+  versionNo Int
+  effectiveFrom String
+  status String @default("DRAFT")
+  definition Json
+  actorId String
+  reason String
+  createdAt DateTime @default(now())
+  publishedAt DateTime?
+  plan PayrollPlan @relation(fields: [tenantId, planId], references: [tenantId, id], onDelete: Restrict)
+  @@unique([tenantId, planId, versionNo])
+  @@index([tenantId, planId, effectiveFrom])
+  @@map("payroll_plan_versions")
+}
+
+/// Immutable replacement events. Latest revision contains the complete assignment timeline.
+model PayrollConfigurationEvent {
+  id String @id @default(cuid())
+  tenantId String
+  kind String
+  targetId String
+  revision Int
+  payload Json
+  actorId String
+  reason String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, kind, targetId, revision])
+  @@index([tenantId, kind, targetId])
+  @@map("payroll_configuration_events")
+}
+
 model CommissionPeriod {
   id String @id @default(cuid())
   tenantId String

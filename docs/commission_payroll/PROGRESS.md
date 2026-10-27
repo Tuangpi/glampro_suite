@@ -2,16 +2,88 @@
 
 ## Current State
 
-- Current task: None.
+- Current task: CP-003 — IN PROGRESS, October 27, 2026.
 - Most recently completed: CP-002 — DONE, October 27, 2026.
 - Priority: this project before unrelated backlog. New requirements govern policy;
   existing authentication, tenant safety and exact-money integrity remain mandatory.
-- Pure shared engine/contracts/tests implemented; no DB, API/POS integration,
-  dependency, activation or deployment changes made.
+- Shared engine plus partial CP-003 configuration persistence/APIs/settings UI
+  implemented. Migration replayed only on disposable PostgreSQL; application DB,
+  POS/earnings, activation and deployment remain unchanged. No dependencies added.
 - No policy question currently blocks local work; decisions adopted under delegation
   are in DECISIONS.md, including explicit deviations from SRS proposed defaults.
-- Next ready: CP-003 — Versioned plans, assignments and settings (not started).
+- Latest continuation: structured stage/incentive editors, category filters and
+  component ordering implemented; chart now honors selected stage in shared/API/UI.
+- Next: continue CP-003 metadata/profile/settings UX and staff integration, resolve
+  outlet assignments, authoritative impact preview and remaining completion checks.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 27, 2026 — CP-003 structured definition editor continuation
+
+- Added PayrollDefinitionEditor using existing UI controls. Stage names/ranges can
+  be edited, added or removed with stable keys. Removing a stage clears its band
+  overrides; remaining ranges are not silently rewritten and must pass validation.
+- Structured incentive rules include type, individual metric types, scope, group
+  metric and exact-string target/award rows. Add/remove rules and rows are supported;
+  invalid definitions disable draft save. Category filters accept normalized unique
+  comma-separated keys on blur; component ordering saves explicit sort positions.
+- All changes use the existing revision-bound draft and reason-required save path;
+  stale/manager/archived controls remain disabled. Advanced JSON remains optional.
+- Fixed chart/calculator mismatch: payrollCommissionCurve accepts calculator options,
+  and API/UI pass the selected stage. Chart labels disclose stage and method colors.
+- Verification: full web **870/870**, 102 files, including **18/18** definition/settings
+  tests; shared **243/243**; disposable service/HTTP acceptance **1/1**, including
+  selected-stage chart parity. Root production build, all workspace typechecks/lint,
+  source formatting and whitespace checks pass. Final logs: `/tmp/cp003-next-*`.
+- Reused the existing disposable PostgreSQL 18 cluster on port 55474 for acceptance,
+  then stopped it. No application DB changes, earnings activation, dependencies,
+  deployment, commit or push. Full API regression and browser walkthrough not run.
+- CP-003 remains IN PROGRESS. Still needed: metadata editor, structured salary/salon
+  settings, staff create/edit integration/enforcement, richer version comparisons,
+  paginated audit, outlet assignment semantics and authoritative historical preview.
+  Do not infer historical base inputs from legacy payable totals. Resume CP-003,
+  not CP-004. Prior checkpoint below describes the earlier implementation state.
+
+## October 27, 2026 — CP-003 partial configuration checkpoint
+
+- Added PayrollPlan, PayrollPlanVersion and immutable configuration-event storage;
+  registered all three in tenant query scoping. Published versions and events are
+  DB-protected against updates/deletes; unique publication dates and one draft per
+  plan. Migration inserts no plans, configuration, activation or legacy backfill.
+- Added authenticated `/api/payroll-configuration` routes. Owner-only configuration
+  writes recheck current role/disabled/2FA and effective tenant write state under
+  the shared commission configuration lock. Manager reads omit salary profiles and
+  salary audit payloads. Reasons and expected revisions are required; publication
+  validates complete definitions and rejects historical/locked-period changes.
+- Plan create, metadata service, duplicate, archive, draft and publish; append-only
+  company-wide assignment timelines, bulk assignment, staff join-date/override
+  events, salary profiles and salon defaults. Employment date writes update User;
+  reads use User.startDate, not an independently mutable staff mirror.
+- Settings › Team & commissions includes sample draft creation, component/type/
+  method/base/cap/band editing, stage rate overrides, JSON advanced definition,
+  saved-version history, shared calculator/working lines, method comparison/chart,
+  assignment history, profile/settings JSON editing and latest-100 audit disclosure.
+- Verification: all migrations replayed from empty on isolated PostgreSQL 18,
+  fresh clusters on ports 55473/55474, payroll_configuration_test. Final corrected
+  migration replay and opt-in service/HTTP acceptance **1/1** pass on port 55474
+  covers lifecycle, invalid definitions/reasons, stale revisions, publication race,
+  DB immutability, tenant/outlet/role/salary isolation, last-day assignment selection,
+  locked periods and calculator parity. Focused UI **49/49**; full web **859/859**
+  across 101 files. Shared **242/242** including five new contract tests. Tenant
+  model registry **4/4**. Root production build, API/web typechecks and API/web lint
+  pass. Workspace lint, source Prettier and git diff whitespace checks pass;
+  post-format UI **7/7** and final corrected-migration acceptance **1/1** pass.
+  A repeat run exposed trigger access to version-only columns on event rows;
+  nested table/operation branches fixed it without weakening immutability assertions.
+- Remaining: true historical impact preview requires authoritative base inputs and
+  closed-result inputs; do not fabricate it from legacy payable commission totals.
+  Outlet plans can be configured but cannot yet be assigned: staff are tenant-wide,
+  so membership/assignment semantics need implementation. Structured stages,
+  incentives, categories/order/metadata editors, staff create/edit integration,
+  stage-aware chart, richer version comparison, paginated history and further
+  acceptance remain. JSON controls are interim, not final SRS UI acceptance.
+- No application DB migration, earnings/POS activation, browser walkthrough,
+  deployment, dependencies, commit or push. Full API regression not run.
+  CP-003 stays IN PROGRESS; resume it next. CP-004 is not started.
 
 ## October 27, 2026 — CP-002 calculation engine
 

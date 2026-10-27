@@ -47,8 +47,21 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-003 — Versioned plans, assignments and settings
 
-- Status: **TODO**.
+- Status: **IN PROGRESS** (October 27, 2026).
 - Dependencies: CP-002.
+- Checkpoint: configuration storage, immutable published versions/audit, owner-only
+  writes, manager salary-redacted reads, company-wide assignment timelines,
+  payroll profiles/settings, sample drafts and settings component/band calculator
+  UI implemented. Disposable migration and service/HTTP acceptance pass. This is
+  partial delivery, not acceptance of the full expected result.
+- Follow-up: structured stage/incentive controls, category filters and component
+  ordering are implemented in the revision-bound draft. Shared/API/UI charts now
+  use the selected calculator stage. JSON import remains an optional advanced tool.
+- Remaining: authoritative last-closed-month impact preview; outlet-scoped plan
+  assignment semantics; metadata editor; structured salary/salon-setting controls;
+  staff create/edit integration and requirement enforcement; richer version
+  comparison, complete paginated history and remaining API/UI acceptance. Resume CP-003;
+  do not start CP-004 merely because this checkpoint passes focused tests.
 - Expected result: tenant/outlet-safe persistence and authenticated APIs/UI for
   plans, immutable published versions, assignment history, payroll profiles,
   settings, stages, calculator, chart comparison, impact preview and sample plans.

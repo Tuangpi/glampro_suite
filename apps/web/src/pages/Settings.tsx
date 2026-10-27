@@ -19,6 +19,7 @@ import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
 import MessagingCard from "@/components/settings/MessagingCard";
 import ResourcesCard from "@/components/settings/ResourcesCard";
 import CommissionRules from "@/components/settings/CommissionRules";
+import PayrollPlans from "@/components/settings/PayrollPlans";
 import CommissionMatrix from "@/components/settings/CommissionMatrix";
 import CommissionAttributionPolicy from "@/components/settings/CommissionAttributionPolicy";
 
@@ -226,6 +227,7 @@ function TeamSettings({ canEdit }: { canEdit: boolean }) {
       {(user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER") && (
         <>
           <CommissionAttributionPolicy canEdit={canEdit} />
+          <PayrollPlans canEdit={canEdit && user?.globalRole === "SUPER_ADMIN"} />
           <CommissionMatrix canEdit={canEdit} />
           <CommissionRules canEdit={canEdit} />
         </>

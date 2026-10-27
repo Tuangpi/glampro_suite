@@ -201,13 +201,18 @@ export function comparePayrollMethods(
 }
 
 /** Exact-string chart data; callers may convert to pixels, never back into payroll. */
-export function payrollCommissionCurve(component: PayrollComponent, maximum: string, steps = 100) {
+export function payrollCommissionCurve(
+  component: PayrollComponent,
+  maximum: string,
+  steps = 100,
+  options: PayrollComponentOptions = {},
+) {
   if (!Number.isInteger(steps) || steps < 1 || steps > 1000)
     throw new Error("Invalid chart step count.");
   const max = exact(maximum);
   if (cmp(max, ZERO) < 0) throw new Error("Chart maximum must be nonnegative.");
   return Array.from({ length: steps + 1 }, (_, index) => {
     const base = fixed(div(mul(max, exact(String(index))), exact(String(steps))), 4);
-    return { base, methods: comparePayrollMethods(component, base) };
+    return { base, methods: comparePayrollMethods(component, base, options) };
   });
 }

@@ -56,6 +56,11 @@ vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
 vi.mock("@/components/settings/CommissionRules", () => ({
   default: () => <section aria-label="Company commission defaults" />,
 }));
+vi.mock("@/components/settings/PayrollPlans", () => ({
+  default: ({ canEdit }: { canEdit: boolean }) => (
+    <section aria-label="Versioned commission plans" data-editable={canEdit} />
+  ),
+}));
 vi.mock("@/components/settings/CommissionMatrix", () => ({
   default: ({ canEdit }: { canEdit: boolean }) => (
     <section aria-label="Commission matrix" data-editable={canEdit} />

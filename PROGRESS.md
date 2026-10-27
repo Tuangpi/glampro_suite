@@ -9,9 +9,14 @@
   [current handoff](docs/commission_payroll/PROGRESS.md). CP-001 establishes the
   new management; CP-002 pure engine and fixtures are now DONE (36 new engine
   tests; shared 237/237, typecheck/lint/build pass). Next is CP-003, versioned
-  plans, assignments and settings; it is not started.
+  plans, assignments and settings; it is IN PROGRESS with a partial configuration
+  checkpoint. Structured stages/incentives/category filters/component ordering and
+  selected-stage chart parity now added; full web 870/870, shared 243/243,
+  disposable acceptance 1/1, build/typecheck/lint pass. See the CP handoff for
+  evidence and remaining acceptance work. Resume CP-003, not CP-004.
   The old SC tracker is archived with original contents preserved and is no longer
-  authoritative. No API/POS integration, migration, activation or deployment claimed.
+  authoritative. Configuration API/UI and disposable migration only; no POS/earnings
+  activation, application migration or deployment claimed.
 
 - **Production seed correction complete — October 25, 2026:** production `ADMIN_*`
   initializes a `PlatformAdmin` and shared modules, without creating a salon or

@@ -5,3 +5,4 @@ export * from "./period.js";
 export * from "./allocation.js";
 export * from "./validation.js";
 export * from "./examples.js";
+export * from "./settings.js";

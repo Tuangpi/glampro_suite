@@ -32,6 +32,7 @@ import { settingsRouter } from "./routes/settings.routes.js";
 import { shiftsRouter } from "./routes/shifts.routes.js";
 import { staffRouter } from "./routes/staff.routes.js";
 import { commissionsRouter } from "./routes/commissions.routes.js";
+import { payrollConfigurationRouter } from "./routes/payroll-configuration.routes.js";
 import { vouchersRouter } from "./routes/vouchers.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { apiLimiter } from "./middleware/rateLimit.js";
@@ -108,6 +109,7 @@ export function createApp(): Express {
   // app to mount `requireRole` (Q26).
   app.use(`${API_PREFIX}/staff`, staffRouter);
   app.use(`${API_PREFIX}/commissions`, commissionsRouter);
+  app.use(`${API_PREFIX}/payroll-configuration`, payrollConfigurationRouter);
   // Screen 08's last two tabs. Both are **add-ons**, so these two mounts are the
   // first routes whose `requireModule` can actually refuse: every other module they
   // sit beside is core and passes as soon as the tenant exists.
