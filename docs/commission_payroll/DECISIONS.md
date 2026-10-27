@@ -8,6 +8,20 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-003 historical-preview evidence boundary (October 27, 2026)
+
+- Last closed month means the last completed calendar month in the persisted salon
+  timezone, not an assertion that a payroll statement is approved/frozen.
+- Read-only readiness may resolve effective assignment/version configuration, with
+  pre-close staff/salon audit evidence. Missing historical settings stay unavailable;
+  never substitute current join dates, current catalogue values or assumed defaults.
+- Existing collection candidates and rate-bearing legacy earnings do not establish
+  complete rate-free bases, outlet/category/fixed-award evidence, frozen carry or
+  authoritative group metrics. Return explicit UNAVAILABLE/null impact until those
+  inputs can be proven. Counts are inventory only; no partial payout estimate.
+- This boundary does not accept TC-25, enable earnings or start CP-004. Complete
+  monetary input integration and full-run equality remain CP-003 acceptance work.
+
 | ID         | Adopted decision                                                                                                                                                                                                                                    |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D-1        | Package-sale base is actual collected net consideration, excluding GST, on each collection date; refunds are negative bases.                                                                                                                        |

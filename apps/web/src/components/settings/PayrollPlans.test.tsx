@@ -172,9 +172,38 @@ it("uses the shared exact calculator and discloses historical preview is unavail
   mount();
   expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
   expect(screen.getByText(/Historical impact preview is not available/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Check historical inputs" })).toBeInTheDocument();
   expect(
     screen.getByRole("img", { name: "Commission method comparison chart" }),
   ).toBeInTheDocument();
+});
+it("does not expose historical staff inputs to managers", async () => {
+  mount(false);
+  await screen.findByText("Calculated commission: S$546.40");
+  expect(screen.queryByRole("button", { name: "Check historical inputs" })).not.toBeInTheDocument();
+});
+it("does not expose historical staff inputs to company owners using outlet sessions", async () => {
+  const config = configuration();
+  config.outletId = "branch";
+  mocks.get.mockResolvedValue(config);
+  mount(true);
+  await screen.findByText("Calculated commission: S$546.40");
+  expect(screen.queryByRole("button", { name: "Check historical inputs" })).not.toBeInTheDocument();
+});
+it("removes historical inputs immediately when owner permissions are revoked", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (canEdit: boolean) => (
+    <QueryClientProvider client={client}>
+      <PayrollPlans canEdit={canEdit} />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view(true));
+  await screen.findByRole("button", { name: "Check historical inputs" });
+  rerender(view(false));
+  expect(
+    screen.queryByRole("region", { name: "Historical payroll input readiness" }),
+  ).not.toBeInTheDocument();
+  expect(mocks.get).toHaveBeenCalledTimes(1);
 });
 it("requires a reason and publishes only the saved revision", async () => {
   mount();

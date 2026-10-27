@@ -23,6 +23,7 @@ import {
   savePayrollProfile,
   savePayrollSettings,
   updatePayrollPlan,
+  readPayrollHistoricalPreview,
 } from "./payroll-configuration.service.js";
 
 test(
@@ -261,6 +262,23 @@ test(
           reason,
         });
         assert.equal(first.revision, 1);
+        const previewAuditCount = await prisma.payrollConfigurationEvent.count();
+        const preview = await readPayrollHistoricalPreview(first.id, first.revision);
+        assert.equal(preview.status, "UNAVAILABLE");
+        assert.equal(preview.impact, null);
+        assert.equal(preview.earningsActive, false);
+        assert.ok(preview.blockers.includes("AUTHORITATIVE_RATE_FREE_BASES_UNAVAILABLE"));
+        assert.equal(await prisma.payrollConfigurationEvent.count(), previewAuditCount);
+        await assert.rejects(readPayrollHistoricalPreview(first.id, 99), /changed/);
+        await assert.rejects(
+          scope(() => readPayrollHistoricalPreview(first.id, first.revision), managerId),
+          /not permitted/,
+        );
+        await assert.rejects(
+          runAtOutlet(outlet.id, () => readPayrollHistoricalPreview(first.id, first.revision)),
+          /company context/,
+        );
+        await assert.rejects(readPayrollHistoricalPreview("foreign-plan", 1), /not found/);
         assert.equal(first.versions[0]!.status, "DRAFT");
         await assert.rejects(
           publishPayrollDraft(first.id, { expectedRevision: 0, reason }),
@@ -1104,6 +1122,43 @@ test(
             tenantId,
           }).token;
         const ownerToken = token(ownerId, "SUPER_ADMIN");
+        const previewPlan = await scope(async () => (await readPayrollConfiguration()).plans[0]);
+        assert.ok(previewPlan);
+        const previewUrl = `${root}/plans/${previewPlan.id}/historical-preview?expectedRevision=${previewPlan.revision}`;
+        assert.equal((await fetch(previewUrl)).status, 401);
+        assert.equal(
+          (
+            await fetch(previewUrl, {
+              headers: { Authorization: `Bearer ${token(managerId, "MANAGER")}` },
+            })
+          ).status,
+          403,
+        );
+        const previewResponse = await fetch(previewUrl, {
+          headers: { Authorization: `Bearer ${ownerToken}` },
+        });
+        assert.equal(previewResponse.status, 200);
+        const previewBody = (await previewResponse.json()).data;
+        assert.equal(previewBody.status, "UNAVAILABLE");
+        assert.equal(previewBody.impact, null);
+        assert.equal(previewBody.planRevision, previewPlan.revision);
+        assert.equal(JSON.stringify(previewBody).includes("basicSalary"), false);
+        assert.equal(
+          (
+            await fetch(`${previewUrl}&lines=spoofed`, {
+              headers: { Authorization: `Bearer ${ownerToken}` },
+            })
+          ).status,
+          422,
+        );
+        assert.equal(
+          (
+            await fetch(`${root}/plans/${previewPlan.id}/historical-preview?expectedRevision=0`, {
+              headers: { Authorization: `Bearer ${ownerToken}` },
+            })
+          ).status,
+          422,
+        );
         const staffHeaders = {
           Authorization: `Bearer ${ownerToken}`,
           "Content-Type": "application/json",

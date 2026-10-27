@@ -24,6 +24,7 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import PayrollDefinitionEditor from "./PayrollDefinitionEditor";
 import PayrollVersionComparison from "./PayrollVersionComparison";
+import PayrollHistoricalPreview from "./PayrollHistoricalPreview";
 import {
   PayrollProfileForm,
   PayrollSalonSettingsForm,
@@ -882,6 +883,14 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
           Historical impact preview is not available until authoritative monthly inputs and closed
           payroll periods are integrated. Calculator values are simulations, not historical payroll.
         </p>
+        {canEdit && !data.outletId && plan && (
+          <PayrollHistoricalPreview
+            key={`${plan.id}-${plan.revision}`}
+            planId={plan.id}
+            revision={plan.revision}
+            disabled={mutation.isPending || query.isFetching}
+          />
+        )}
       </div>
     </Card>
   );

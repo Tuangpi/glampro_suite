@@ -33,6 +33,7 @@ import {
   savePayrollStaffSettings,
   savePayrollProfile,
   savePayrollSettings,
+  readPayrollHistoricalPreview,
 } from "../services/payroll-configuration.service.js";
 
 export const payrollConfigurationRouter = Router();
@@ -92,6 +93,17 @@ payrollConfigurationRouter.post(
 );
 const owner = requireRole("SUPER_ADMIN");
 const writable = requireWritableTenant();
+payrollConfigurationRouter.get(
+  "/plans/:id/historical-preview",
+  owner,
+  validate(z.strictObject({ expectedRevision: z.coerce.number().int().min(1) }), "query"),
+  handle((req) =>
+    readPayrollHistoricalPreview(
+      String(req.params.id),
+      validated<{ expectedRevision: number }>(req, "query").expectedRevision,
+    ),
+  ),
+);
 payrollConfigurationRouter.post(
   "/plans",
   owner,

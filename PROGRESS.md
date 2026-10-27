@@ -2,6 +2,31 @@
 
 ## Current State
 
+- **CP-003 lifecycle concurrency — October 27, 2026:** disposable tests verify
+  competing atomic creation, join-date/assignment ordering, classification/removal,
+  repair/reactivation and same-revision settings. Concurrency suite 6/6 passed on
+  three repeated runs; serial API 636 passed/34 gated skips/zero failures;
+  API typecheck/lint/build pass. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md) for final regression and limits.
+  CP-003 remains IN PROGRESS; CP-004 untouched. Test-only increment, no activation
+  or application DB writes. Next: historical monetary inputs and browser acceptance.
+
+- **CP-003 historical readiness UI — October 27, 2026:** company owners can request
+  server-backed historical input readiness in plan settings. The panel explains
+  month/audit evidence, disabled staff and missing inputs without inventing payout
+  totals. Plan/revision changes, permissions, retries and refreshes hide stale results.
+  Full web 910/910 (106 files), focused input/timezone 20/20 and web typecheck/lint/build pass; details in
+  [CP handoff](docs/commission_payroll/PROGRESS.md). CP-003 IN PROGRESS; CP-004 untouched.
+  No application DB writes or earnings activation.
+
+- **CP-003 historical preview readiness — October 27, 2026:** owner/company read-only
+  API resolves the last completed salon month, month-end assignments/published
+  versions and pre-close audited settings. It explicitly returns UNAVAILABLE/null
+  impact while complete monetary bases, frozen carry and group metrics are missing.
+  Focused preview/timezone tests 20/20, API typecheck/lint and disposable lifecycle
+  acceptance pass; see [CP handoff](docs/commission_payroll/PROGRESS.md).
+  CP-003 remains IN PROGRESS; CP-004 untouched. No earnings or application DB writes.
+
 - **CP-003 outlet assignment checkpoint — October 27, 2026:** company owners can
   assign scoped published plans, including atomic staff creation. Assignments
   snapshot validated outlet scope. Shared pooling separates eligible/fallback

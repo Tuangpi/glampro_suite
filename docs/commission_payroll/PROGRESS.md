@@ -11,14 +11,97 @@
   POS/earnings, activation and deployment remain unchanged. No dependencies added.
 - No policy question currently blocks local work; decisions adopted under delegation
   are in DECISIONS.md, including explicit deviations from SRS proposed defaults.
-- Latest continuation: company owners can assign scoped published plans, including
-  atomic staff creation. Assignment events snapshot outlet scope; inactive outlets
-  and stale revisions are rejected. Shared partitioning separates combined eligible
-  outlet pools and fallback activity without enabling earnings.
-- Next: authoritative impact-preview input integration, remaining API/UI/browser
-  acceptance and lifecycle concurrency coverage. CP-005 must integrate scoped
+- Latest continuation: disposable lifecycle concurrency tests cover competing
+  atomic staff creation, join-date/assignment edits, classification/plan removal,
+  repair/reactivation and same-revision settings edits. Three repeated runs pass;
+  no production-code change required. Historical readiness API/UI remain read-only.
+- Next: complete authoritative impact-preview input integration, remaining API/UI/browser
+  acceptance and any additional lifecycle race coverage. CP-005 must integrate scoped
   statements, carry and incentive metrics before earnings activation.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 27, 2026 — CP-003 lifecycle concurrency acceptance
+
+- Added isolated opt-in disposable-database tests using existing tenant configuration
+  locks and service entry points. Five competing-write cases verify persisted state,
+  domain-level refusals (not DB failures), exact audit increments and rollback:
+  competing classified creation with the same assignment revision; join-date edit
+  versus earlier assignment; commission classification versus scheduled plan removal;
+  audited join-date repair versus reactivation; same-revision stage-setting edits.
+- Losing creation leaves no identity or department links. Incompatible assignment/
+  join-date changes cannot both commit; commission earners retain an ongoing plan.
+  Reactivation either follows committed repair or refuses without partial identity/
+  department writes, then succeeds on retry. Competing settings keep one audited
+  winner. Tests do not require a particular transaction scheduling order.
+- Initial combined lifecycle/HTTP suite passed 6/6 before the reactivation case was
+  added. Final concurrency suite passed **6/6 on each of three repeated runs**
+  (five subtests plus parent). API typecheck, lint and production build pass.
+  Final serial disposable API regression: **636 passed, 34 gated skips, zero
+  failures** (670 tests), exit 0; includes existing lifecycle/HTTP and new races.
+- Test-only increment: no production behavior, schema, POS/base capture or earnings
+  changes. This is concurrent-submission coverage, not deterministic proof of every
+  database interleaving, browser acceptance or complete lifecycle acceptance.
+- Remaining: authoritative historical monetary inputs/full-run equality and
+  authenticated browser acceptance. CP-003 remains IN PROGRESS; CP-004 untouched.
+  Full web/shared regressions not rerun; previous UI evidence remains historical.
+  Disposable cluster reused only; no application DB writes, reset, audit deletion,
+  dependency, migration, activation, deployment, commit or push.
+- Disposable PostgreSQL `/tmp/cp003-edit-guard-pg-gzy72041`, port 55474, stopped
+  after verification; logs `/tmp/cp003-lifecycle-races-*.log`.
+
+## October 27, 2026 — CP-003 historical readiness UI
+
+- Connected the existing readiness endpoint to company-owner plan settings through
+  an on-demand panel. Managers, outlet sessions and staff-specific payroll panels
+  do not expose it. Server authorization remains mandatory.
+- The panel displays server-owned month/timezone and half-open UTC boundaries,
+  assignment/settings audit revisions, published staff versions and missing staff
+  settings. Currently disabled staff remain visible. Record counts are explicitly
+  salon-wide inventory, not complete bases, payable amounts or plan-specific totals.
+- Runtime response validation accepts only UNAVAILABLE/null-impact/inactive-earnings
+  responses matching the selected plan/revision. Keyed request state prevents late
+  responses from leaking across plan/revision changes; refresh/save, request failures
+  and permission/context changes hide results. Retry remains available after refusal.
+- Missing monetary inputs remain unresolved; no fake zero, partial payout estimate,
+  current catalogue substitution or unsaved-rule impact claim. Complete historical
+  monetary integration/full-run equality, lifecycle concurrency and authenticated
+  browser acceptance remain open. CP-003 stays IN PROGRESS; CP-004 untouched.
+- Full web **910/910 across 106 files**, one worker, exit 0, including new readiness
+  and permission-revocation checks; focused historical-input/timezone **20/20**.
+  Web typecheck/lint/production build, changed-file formatting and whitespace pass.
+  Browser acceptance and full API/shared regressions not run; API/database code
+  unchanged in this continuation. No application DB writes, new dependencies,
+  migrations, activation, deployment, commit or push.
+
+## October 27, 2026 — CP-003 historical input readiness
+
+- Added owner-only company-context GET `/api/payroll-configuration/plans/:id/historical-preview`
+  with required expectedRevision. Strict query validation excludes client bases,
+  staff lists and group metrics. Repeatable-read transaction keeps configuration
+  and evidence counts coherent without writing application records.
+- Server-owned timezone determines the last completed calendar month and half-open
+  boundaries. Full assignment replacement history resolves month-end membership;
+  published effective versions exclude drafts/future versions. Disabled staff remain
+  eligible. Historical staff/salon settings require pre-close audit, never current
+  identity values or invented default settings. IDs/revisions identify selected evidence.
+- This is readiness inventory, NOT a working impact calculation: response always
+  reports UNAVAILABLE with null impact and explicit missing rate-free base, frozen
+  carry and group-metric blockers. Collection/legacy-earnings counts are inventory
+  only, not complete base coverage or payable amounts. No new evidence capture,
+  database migration, POS integration, earnings activation or historical rewrite.
+- Verification: focused preview/wall-clock tests 20/20; API typecheck, lint and
+  production build pass. Final disposable lifecycle acceptance 1/1 passes, including
+  authenticated preview success, owner-only access, strict query refusal, stale
+  revisions, service outlet refusal and no audit writes. Initial fixture lacked required assignment ID
+  and was corrected; initial acceptance lacked synthetic JWT environment and reran.
+- Remaining: complete historical monetary inputs/full-run equality, UI integration,
+  lifecycle concurrency and authenticated browser acceptance. CP-003 IN PROGRESS;
+  CP-004 untouched. Existing evidence schema cannot substantiate complete historical
+  bases/categories/outlets/fixed awards or frozen carry; do not infer them from
+  present catalogue prices or legacy rate-bearing earnings.
+- Disposable cluster `/tmp/cp003-edit-guard-pg-gzy72041`, port 55474, stopped after
+  verification. Logs `/tmp/cp003-preview-*.log`. Full API/shared/web regressions and
+  browser acceptance not rerun. No application database writes, deployment or commit.
 
 ## October 27, 2026 — CP-003 outlet assignment checkpoint
 

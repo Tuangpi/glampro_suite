@@ -29,6 +29,10 @@ import { currentScope, currentOutletId } from "../lib/tenant-context.js";
 import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
+import {
+  payrollPreviewWindow,
+  resolvePayrollPreviewConfiguration,
+} from "./payroll-preview-inputs.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 type Json = Parameters<Transaction["payrollConfigurationEvent"]["create"]>[0]["data"]["payload"];
@@ -504,6 +508,85 @@ export async function savePayrollSettings(raw: PayrollSettingsWrite) {
     return event(tx, "SETTINGS", "company", expectedRevision, reason, payload);
   }, true);
 }
+/** Read-only readiness inventory. Incomplete legacy evidence must not become a zero total. */
+export async function readPayrollHistoricalPreview(id: string, expectedRevision: number) {
+  if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
+    throw badRequest("Invalid plan revision.");
+  if (currentOutletId()) throw forbidden("Historical payroll preview requires company context.");
+  return prisma.$transaction(
+    async (tx) => {
+      await actor(tx, true);
+      const plan = await planRecord(tx, id);
+      if (plan.revision !== expectedRevision)
+        throw conflict("Plan changed. Reload before previewing.");
+      const tenant = await tx.tenant.findUniqueOrThrow({
+        where: { id: scope().tenantId },
+        select: { timeZone: true },
+      });
+      const window = payrollPreviewWindow(tenant.timeZone, new Date());
+      const events = await tx.payrollConfigurationEvent.findMany({
+        where: { kind: { in: ["ASSIGNMENT", "STAFF", "SETTINGS"] } },
+        select: {
+          id: true,
+          kind: true,
+          targetId: true,
+          revision: true,
+          createdAt: true,
+          payload: true,
+        },
+      });
+      const configuration = resolvePayrollPreviewConfiguration({
+        planId: id,
+        periodKey: window.periodKey,
+        endsAt: window.to,
+        events,
+        // All versions are needed to resolve staff who switched to another plan.
+        versions: (await tx.payrollPlanVersion.findMany()).map((version) => ({
+          id: version.id,
+          planId: version.planId,
+          versionNo: version.versionNo,
+          effectiveFrom: version.effectiveFrom,
+          status: version.status,
+          definition: version.definition,
+        })),
+        // Include departed staff; account status is not historical eligibility.
+        staff: await tx.user.findMany({
+          select: { id: true, name: true, disabled: true },
+          orderBy: { id: "asc" },
+        }),
+      });
+      const occurredAt = { gte: window.from, lt: window.to };
+      const collectionCount = await tx.commissionCollection.count({ where: { occurredAt } });
+      const legacyEarningsCount = await tx.employeeCommission.count({
+        where: {
+          OR: [{ occurredAt }, { occurredAt: null, createdAt: occurredAt }],
+        },
+      });
+      return {
+        status: "UNAVAILABLE" as const,
+        earningsActive: false,
+        planId: id,
+        planRevision: plan.revision,
+        periodKey: window.periodKey,
+        timeZone: window.timeZone,
+        startsAt: window.from.toISOString(),
+        endsAt: window.to.toISOString(),
+        configuration,
+        evidenceInventory: { collectionCount, legacyEarningsCount },
+        // Collections lack category/outlet/fixed-award evidence. Legacy earnings are
+        // rate-bearing and may already be paid. Neither is a complete rate-free base.
+        blockers: [
+          "AUTHORITATIVE_RATE_FREE_BASES_UNAVAILABLE",
+          "FROZEN_CARRY_INPUTS_UNAVAILABLE",
+          "AUTHORITATIVE_GROUP_METRICS_UNAVAILABLE",
+        ],
+        impact: null,
+      };
+    },
+    { isolationLevel: "RepeatableRead" },
+  );
+}
+
 export async function readPayrollConfiguration(historyPage = 1) {
   if (!Number.isSafeInteger(historyPage) || historyPage < 1 || historyPage > 1000000)
     throw badRequest("Invalid audit page.");

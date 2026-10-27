@@ -107,6 +107,23 @@ Existing implementation and reference tests need verification, not automatic cre
   to CP-005; CP-003 historical preview and browser acceptance remain open.
   Verified shared 252/252, web 901/901, disposable focused API/HTTP 25/25,
   serial API 625 passed/34 gated skips/zero failures; build/lint/typechecks pass.
+- Follow-up: owner/company historical-preview readiness endpoint resolves the last
+  completed salon month, effective assignment/version and pre-close audited staff/
+  salon settings in a repeatable-read snapshot. Missing monetary evidence returns
+  UNAVAILABLE/null impact, never a fabricated zero or repriced legacy earnings.
+  Full impact calculation/equality and UI integration remain open. CP-004 untouched.
+- Follow-up: company-owner settings now offers on-demand historical-input readiness,
+  with server-owned month/audit evidence, explicit missing inputs and inventory-only
+  counts. Runtime revision checks and keyed UI prevent stale results; manager/outlet
+  contexts do not expose the panel. Full monetary impact/equality remains open;
+  CP-003 stays IN PROGRESS and CP-004 untouched.
+  Verified full web 910/910 (106 files), input/timezone 20/20 and web typecheck/lint/build.
+- Follow-up: five disposable lifecycle race cases verify atomic competing creation,
+  join-date/assignment ordering, classification/removal coverage, repair/reactivation
+  and stale settings refusal. Concurrency suite 6/6 passes on three repeated runs;
+  API typecheck/lint/build pass. No production code changes required. Final serial
+  disposable API regression 636 passed/34 gated skips/zero failures, exit 0.
+  Additional interleavings and browser acceptance remain unclaimed; CP-003 stays IN PROGRESS.
 - Expected result: tenant/outlet-safe persistence and authenticated APIs/UI for
   plans, immutable published versions, assignment history, payroll profiles,
   settings, stages, calculator, chart comparison, impact preview and sample plans.
