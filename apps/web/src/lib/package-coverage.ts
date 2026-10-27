@@ -11,6 +11,7 @@ import { allocatePackage, type CustomerHolding, type SaleItemKind } from "@glamp
 
 /** One cart line as the payment sheet prices a redemption against it. */
 export interface PaymentLine {
+  itemName?: string;
   itemType: SaleItemKind;
   itemId: string;
   quantity: number;

@@ -23,6 +23,36 @@ import {
 /** The fields every kind carries, so each case below only states what differs. */
 const base = { id: "item-1", name: "Aloha", price: "10.00", memberPrice: null };
 
+describe("explicit checkout collection contract", () => {
+  const body = {
+    lines: [{ itemType: "SERVICE", itemId: "service", quantity: 1 }],
+    payments: [{ method: "CASH", amount: 10 }],
+  };
+  const collection = {
+    currency: "SGD",
+    allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "1000" }],
+  };
+  it("accepts explicit SGD evidence on create/complete and preserves old callers", () => {
+    assert.ok(createSaleSchema.safeParse(body).success);
+    assert.deepEqual(createSaleSchema.parse({ ...body, collection }).collection, collection);
+    assert.deepEqual(completeSaleSchema.parse({ ...body, collection }).collection, collection);
+  });
+  it("refuses held evidence, forged currency, invalid cents and extra evidence fields", () => {
+    assert.equal(
+      createSaleSchema.safeParse({ ...body, hold: true, payments: [], collection }).success,
+      false,
+    );
+    for (const change of [
+      { ...collection, currency: "USD" },
+      { ...collection, actorId: "forged" },
+      { ...collection, allocations: [] },
+      { ...collection, allocations: [{ paymentIndex: -1, linePosition: 0, grossCents: "1000" }] },
+      { ...collection, allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "1.00" }] },
+    ])
+      assert.equal(createSaleSchema.safeParse({ ...body, collection: change }).success, false);
+  });
+});
+
 describe("voucher and refund contracts", () => {
   const body = {
     voucherCode: " save10 ",

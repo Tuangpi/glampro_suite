@@ -2,7 +2,7 @@
 
 ## Current State
 
-- Current task: None.
+- Current task: SC-006 — IN PROGRESS (opt-in checkout allocation capture implemented).
 - Most recently completed: SC-004 — DONE (local commission administration verification,
   October 27, 2026).
 - Approval: October 26, 2026; recommended policies accepted. Collection-based sale
@@ -17,11 +17,84 @@
 - Remaining release gates: SC-006 collection/eligibility and SC-005 reporting/cutover.
   No earnings activation. Full API suite and human visual review not performed.
 - No application database migration, production change or deployment authorized/performed.
-- Recommended next task: SC-006 — Collection-based commission and eligibility (not started).
+- Recommended next task: Continue SC-006; do not start SC-005 or activate earnings.
 - Continue using this folder, not the large root task history. Select one task and
   stop after its completion; do not automatically implement the whole project.
 
 ## Recent notes
+
+### SC-006 — October 27, 2026 — IN PROGRESS, opt-in checkout capture
+
+- Added optional strict shared collection contract: explicit SGD confirmation and
+  tender-index/cart-position positive-cent allocations. Holds refuse collection
+  evidence. Sale stores nullable confirmed collectionCurrency; no currency backfill.
+  Migration 20261027130000_sale_collection_currency protects confirmed currency and
+  refuses retrospective completed-sale currency assignment. Receipt API exposes it.
+- PaymentDialog offers optional allocation entry with named cart lines, per-tender
+  reconciliation and explicit SGD/collected-payment confirmation. Edits to tenders,
+  allocations or voucher reset confirmation. Existing checkout requests remain valid.
+  Cashier confirmation is recorded-money evidence, not independent PSP settlement.
+- New sale/held completion persists explicit source allocations in the same locked
+  transaction. Server pricing, line caps and per-tender totals are authoritative;
+  invalid allocations roll back receipt/debt/evidence together. Capture currently
+  refuses redemption tenders, gateway sessions and overpayment/change. Earnings
+  remain PENDING_RELEASE; legacy commission/report behavior is unchanged.
+- Verified: 91/91 focused API/database/POS regressions (no skips), shared 199/199,
+  full web 831/831; workspace production build (API/web typechecks), lint, formatting
+  and whitespace pass. New migration applied only on disposable PostgreSQL port
+  55476, commission_collection_replay (57 migrations total). Initial fixture omitted
+  member price and catalogue entitlement; fixed fixtures and reran acceptance.
+- SC-006 still needs later-payment UI/API, source refund/void evidence, credit-lot
+  integration, paid-session eligibility/manager overrides and broader HTTP/browser
+  acceptance. No application database migration, activation, deployment or commit.
+  Opt-in capture is intentionally not the final mandatory release prerequisite.
+
+### SC-006 — October 27, 2026 — IN PROGRESS, internal persistence checkpoint
+
+- Added tenant-scoped CommissionCollection and CommissionCollectionAllocation models
+  and migration 20261027120000_commission_collections. Database guards enforce source
+  payment/sale/customer/actor consistency, append-only rows, unique retry/source
+  identity, exact cumulative stored-tax allocation, line bounds, currency consistency
+  and deferred source/line-total reconciliation. No backfill or activation.
+- Added captureCollectionEvidence internal transactional seam. Takes prepaid/POS then
+  configuration locks, validates explicit source amounts and authoritative line state,
+  snapshots original sellers/splits (including departed staff), contracted components
+  and collection-time own-rate candidates. UNKNOWN attribution remains explicit.
+  Does not post earnings, change outstanding balances or provide a public endpoint.
+- Guarded disposable PostgreSQL acceptance verifies concurrent identical retries,
+  competing allocations with one winner, source reuse conflicts, later receivable
+  source with changed rates and original sellers, mixed packages, stored tax, tenant
+  reads/actor refusal, disabled actor, unsupported gateway/credit tenders, rollback,
+  direct incomplete/tax-invalid writes and immutable evidence. Initial fixture used
+  the wrong actor field; initial deferred trigger referenced a field absent on one
+  table. Both corrected and rerun successfully against a fresh migration replay.
+- Verified: 34/34 focused API/database tests, no skips; API lint/typecheck/build and
+  shared build pass. All 56 migrations replayed from empty on disposable PostgreSQL
+  port 55476, database commission_collection_replay. Application database untouched.
+- Remaining: normal POS confirmed allocations/currency/settlement evidence, later
+  payment workflow, source refund/void integration, original credit lots, eligibility
+  and audited overrides, broader HTTP/web and regression verification. COLLECTIONS.md
+  records caller responsibilities and why this is not a completed SC-006 release.
+
+### SC-006 — October 27, 2026 — IN PROGRESS, calculation checkpoint
+
+- Added pure bigint helpers in apps/api/src/lib/commission-collection.ts for
+  explicit receipt allocations, cumulative stored-tax/net collection deltas,
+  source-lot refunds, ten-decimal source-earning clawbacks, exact session-prefix
+  coverage, original credit ratios and disjoint service funding bases. Reuses
+  existing package valuation ranges; no contracted value or historical data changes.
+- Ten new tests cover mixed lines/packages, deposits, exhaustive small-value tax
+  conservation, exact refunds/residuals, partial and refunded coverage, restored
+  ordinals, known-zero/free ordinals versus UNKNOWN legacy, bonus credit, funding
+  partition and invalid/large evidence. Focused tests 23/23, zero skips, including
+  existing valuation 9/9 and commission precision 4/4. API typecheck and lint pass.
+- COLLECTIONS.md records the implemented boundary and remaining persistence,
+  POS/later-payment/refund/void, source snapshots, credit lots, manager override,
+  lock/atomicity and disposable database acceptance work. These helpers have no
+  production callers. SC-006 completion checks are NOT met; resume this task.
+- No schema/application database changes, normal POS behavior changes, earnings
+  activation, deployment, commit or push. Shared/web/full API suites and browser
+  checks not run for this internal calculation-only checkpoint.
 
 ### SC-004 — October 27, 2026 — DONE, local administration
 

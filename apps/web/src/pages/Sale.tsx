@@ -368,12 +368,14 @@ export default function Sale() {
     payments: SalePaymentInput[],
     idempotencyKey: string,
     voucherCode: string | null,
+    collection?: import("@glampro_suite/shared").SaleCollectionInput,
   ) {
     setCheckoutError(null);
     const cartBody = {
       ...(customer ? { customerId: customer.id } : {}),
       lines: toSaleLineInputs(cart.lines),
       payments,
+      ...(collection ? { collection } : {}),
       ...(voucherCode === null ? {} : { voucherCode }),
     };
     try {
@@ -929,6 +931,7 @@ export default function Sale() {
           key={JSON.stringify([cart.lines, customer?.id, isMember])}
           totalCents={totalCents}
           lines={cart.lines.map((line) => ({
+            itemName: line.name,
             itemType: line.itemType,
             itemId: line.itemId,
             quantity: line.quantity,
@@ -941,7 +944,9 @@ export default function Sale() {
           isPending={createSale.isPending || completeSale.isPending}
           errorMessage={checkoutError}
           onClose={() => setCheckoutOpen(false)}
-          onConfirm={(payments, key, voucherCode) => void takePayment(payments, key, voucherCode)}
+          onConfirm={(payments, key, voucherCode, collection) =>
+            void takePayment(payments, key, voucherCode, collection)
+          }
         />
       ) : null}
     </div>

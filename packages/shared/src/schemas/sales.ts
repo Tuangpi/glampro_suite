@@ -354,6 +354,30 @@ export const salePaymentInputSchema = z
 
 export type SalePaymentInput = z.infer<typeof salePaymentInputSchema>;
 
+/** Explicit confirmation of this receipt's currency and tender-to-cart-line amounts. */
+export const saleCollectionSchema = z.strictObject({
+  currency: z.literal("SGD"),
+  allocations: z
+    .array(
+      z.strictObject({
+        paymentIndex: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_SALE_PAYMENTS - 1),
+        linePosition: z
+          .number()
+          .int()
+          .min(0)
+          .max(MAX_SALE_LINES - 1),
+        grossCents: z.string().regex(/^[1-9]\d{0,11}$/),
+      }),
+    )
+    .min(1)
+    .max(MAX_SALE_PAYMENTS * MAX_SALE_LINES),
+});
+export type SaleCollectionInput = z.infer<typeof saleCollectionSchema>;
+
 /**
  * The cart a till posts — what was sold, to whom, and what was handed over.
  *
@@ -375,6 +399,7 @@ const saleBodySchema = z.object({
   note: z.string().trim().max(1000).optional(),
   lines: z.array(saleLineInputSchema).min(1).max(MAX_SALE_LINES),
   payments: z.array(salePaymentInputSchema).max(MAX_SALE_PAYMENTS).default([]),
+  collection: saleCollectionSchema.optional(),
   /**
    * A management voucher to apply (V1/D1). Optional, one per sale, and only on a
    * completed sale: a parked cart has no customer price yet, so the code is not
@@ -419,6 +444,12 @@ export const createSaleSchema = saleBodySchema
     idempotencyKey: z.string().trim().min(8).max(128).optional(),
   })
   .superRefine((input, ctx) => {
+    if (input.hold && input.collection)
+      ctx.addIssue({
+        code: "custom",
+        path: ["collection"],
+        message: "Held carts cannot confirm collections.",
+      });
     if (input.hold === true && input.payments.length > 0) {
       ctx.addIssue({
         code: "custom",
@@ -586,6 +617,7 @@ export type SalePayment = z.infer<typeof salePaymentSchema>;
  * totalAmount`), and a client that subtracts two strings gets a float.
  */
 export const saleDetailSchema = z.object({
+  collectionCurrency: z.literal("SGD").nullable().optional(),
   outletId: z.string().nullable().optional(),
   id: z.string(),
   /**

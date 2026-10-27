@@ -119,7 +119,7 @@ SC-006 is a launch dependency, not an optional advanced feature.
 
 ## SC-006 — Collection-based commission and eligibility
 
-- Status: TODO.
+- Status: IN PROGRESS — opt-in checkout collection capture, October 27, 2026.
 - Dependencies: SC-002, SC-003, SC-004.
 - Expected result: explicit payment-to-line/package allocation, deposits and later
   collections, stored-tax exclusion, source-linked refunds/clawbacks, immutable seller
@@ -132,6 +132,15 @@ SC-006 is a launch dependency, not an optional advanced feature.
   refund/void paths, zero-value and unknown historical cases, mixed tender/bonus credit,
   concurrent retries and rollback. Assert no duplicate service/stored-credit earnings
   and no package-valuation regression. Applicable lint/typecheck/tests pass.
+- Checkpoint: pure integer allocation/tax/refund/clawback, exact ordinal coverage,
+  credit-ratio and funding-partition helpers implemented. Focused 23/23 tests,
+  API typecheck/lint pass. Internal append-only collection persistence and rate/seller
+  candidate capture now verified: focused API/database 34/34, API build/typecheck/lint,
+  fresh replay of all 56 migrations on disposable PostgreSQL. Subsequent opt-in POS
+  capture and confirmed sale currency: focused API/POS 91/91, shared 199/199, web
+  831/831, workspace build/lint pass; migration 57 applied only on disposable DB.
+  No earnings activation; later collections/refunds/credit/eligibility remain open;
+  required continuation and boundaries are recorded in COLLECTIONS.md.
 
 ## SC-005 — Commission reports and period close
 

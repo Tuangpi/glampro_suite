@@ -44,6 +44,7 @@ import {
   MAX_SALE_PAYMENTS,
   isRedemptionPaymentMethod,
   type SalePaymentInput,
+  type SaleCollectionInput,
   type SalePaymentMethod,
   type VoucherPreview,
 } from "@glampro_suite/shared";
@@ -101,6 +102,7 @@ export interface PaymentDialogProps {
     payments: SalePaymentInput[],
     idempotencyKey: string,
     voucherCode: string | null,
+    collection?: SaleCollectionInput,
   ) => void;
 }
 
@@ -135,6 +137,9 @@ export default function PaymentDialog({
   const [voucherCode, setVoucherCode] = useState("");
   const [voucher, setVoucher] = useState<VoucherPreview | null>(null);
   const [voucherError, setVoucherError] = useState<string | null>(null);
+  const [recordCollection, setRecordCollection] = useState(false);
+  const [collectionConfirmed, setCollectionConfirmed] = useState(false);
+  const [allocationDraft, setAllocationDraft] = useState<Record<string, string>>({});
   // What the customer actually owes: the cart, less whatever the applied code took
   // off. Tenders, change and the blocker all read this figure.
   const dueCents = voucher === null ? totalCents : priceToCents(voucher.totalAmount);
@@ -188,6 +193,35 @@ export default function PaymentDialog({
     paidCents += cents;
   }
   const remainingCents = dueCents - paidCents;
+  const collectionAllocations = tenders.flatMap((tender, paymentIndex) =>
+    lines.flatMap((_, linePosition) => {
+      const value = allocationDraft[`${tender.id}:${linePosition}`] ?? "";
+      return priceToCents(value) > 0
+        ? [{ paymentIndex, linePosition, grossCents: String(priceToCents(value)) }]
+        : [];
+    }),
+  );
+  const collectionError = !recordCollection
+    ? null
+    : tenders.some((tender) => isRedemptionPaymentMethod(tender.method))
+      ? "Collection capture does not yet support package or credit tenders."
+      : paidCents <= 0 || remainingCents < 0
+        ? "Collection capture requires a positive payment with no change to give."
+        : tenders.some((tender, index) => {
+              const amounts = lines.map(
+                (_, position) => allocationDraft[`${tender.id}:${position}`] ?? "",
+              );
+              return (
+                amounts.some((value) => value !== "" && !/^\d+(?:\.\d{1,2})?$/.test(value)) ||
+                collectionAllocations
+                  .filter((row) => row.paymentIndex === index)
+                  .reduce((sum, row) => sum + Number(row.grossCents), 0) !== tenderCents[index]
+              );
+            })
+          ? "Allocate each money tender to cart lines exactly, using amounts with at most two decimals."
+          : !collectionConfirmed
+            ? "Confirm the SGD currency and explicit line allocations."
+            : null;
 
   const hasBadAmount = tenders.some(
     (tender) =>
@@ -214,25 +248,28 @@ export default function PaymentDialog({
    * sentence beside the buttons *and* used to disable them, so the reason for a
    * refusal is never a mystery.
    */
-  const blocker = voucherPreview.isPending
-    ? "Wait for the voucher preview before taking payment."
-    : blockedByCustomer
-      ? "Pick a customer first — this cart grants credit, which has to belong to somebody."
-      : redemptionWithoutCustomer
-        ? "Attach a customer first — package and credit tenders spend somebody's credit."
-        : missingHolding
-          ? "Choose which package or credit is paying."
-          : emptyRedemption
-            ? "That package or credit covers nothing in this cart. Pick another tender."
-            : overRedeemed
-              ? "A package or credit cannot pay more than the sale totals. Remove a tender that covers a line twice."
-              : hasBadAmount
-                ? "Enter an amount for every tender."
-                : remainingCents > 0 && !hasCustomer
-                  ? `The tenders are ${formatPrice(centsToPrice(remainingCents))} short and there is no customer to carry the balance.`
-                  : null;
+  const blocker =
+    collectionError ??
+    (voucherPreview.isPending
+      ? "Wait for the voucher preview before taking payment."
+      : blockedByCustomer
+        ? "Pick a customer first — this cart grants credit, which has to belong to somebody."
+        : redemptionWithoutCustomer
+          ? "Attach a customer first — package and credit tenders spend somebody's credit."
+          : missingHolding
+            ? "Choose which package or credit is paying."
+            : emptyRedemption
+              ? "That package or credit covers nothing in this cart. Pick another tender."
+              : overRedeemed
+                ? "A package or credit cannot pay more than the sale totals. Remove a tender that covers a line twice."
+                : hasBadAmount
+                  ? "Enter an amount for every tender."
+                  : remainingCents > 0 && !hasCustomer
+                    ? `The tenders are ${formatPrice(centsToPrice(remainingCents))} short and there is no customer to carry the balance.`
+                    : null);
 
   function setTender(id: number, patch: Partial<TenderDraft>) {
+    setCollectionConfirmed(false);
     setTenders((current) =>
       current.map((tender) => (tender.id === id ? { ...tender, ...patch } : tender)),
     );
@@ -250,10 +287,12 @@ export default function PaymentDialog({
   }
 
   function addTender() {
+    setCollectionConfirmed(false);
     setTenders((current) => [...current, { id: nextTenderId++, method: "CARD", amount: "" }]);
   }
 
   function removeTender(id: number) {
+    setCollectionConfirmed(false);
     setTenders((current) => current.filter((tender) => tender.id !== id));
   }
 
@@ -280,6 +319,7 @@ export default function PaymentDialog({
    * code (not the figure), so this preview and the receipt cannot disagree.
    */
   async function applyVoucher() {
+    setCollectionConfirmed(false);
     if (isPending || voucherPreview.isPending || hasManualDiscount || voucher !== null) return;
     const code = voucherCode.trim();
     if (code.length < 3) {
@@ -304,6 +344,7 @@ export default function PaymentDialog({
 
   /** Takes the code off the sheet; the sale is posted at the cart's own total. */
   function removeVoucher() {
+    setCollectionConfirmed(false);
     setVoucher(null);
     setVoucherCode("");
     setVoucherError(null);
@@ -322,20 +363,22 @@ export default function PaymentDialog({
 
   function submit() {
     if (isPending || blocker !== null) return;
-    onConfirm(
-      tenders.map((tender, index) => ({
-        method: tender.method,
-        // Rounded through cents, so a typed "12.5" posts as 12.50. A redemption posts
-        // the amount this sheet derived, which is exactly what the server recomputes.
-        amount: Number(centsToPrice(tenderCents[index] ?? 0)),
-        ...(isRedemptionPaymentMethod(tender.method) ? { holdingId: tender.holdingId } : {}),
-        ...(tender.method === "PACKAGE" && tender.performers
-          ? { performers: tender.performers }
-          : {}),
-      })),
-      idempotencyKey,
-      voucher === null ? null : voucher.code,
-    );
+    const payments = tenders.map((tender, index) => ({
+      method: tender.method,
+      // Rounded through cents, so a typed "12.5" posts as 12.50. A redemption posts
+      // the amount this sheet derived, which is exactly what the server recomputes.
+      amount: Number(centsToPrice(tenderCents[index] ?? 0)),
+      ...(isRedemptionPaymentMethod(tender.method) ? { holdingId: tender.holdingId } : {}),
+      ...(tender.method === "PACKAGE" && tender.performers
+        ? { performers: tender.performers }
+        : {}),
+    }));
+    if (recordCollection) {
+      onConfirm(payments, idempotencyKey, voucher === null ? null : voucher.code, {
+        currency: "SGD",
+        allocations: collectionAllocations,
+      });
+    } else onConfirm(payments, idempotencyKey, voucher === null ? null : voucher.code);
   }
 
   return (
@@ -575,6 +618,73 @@ export default function PaymentDialog({
             );
           })}
         </ul>
+
+        <section className="flex flex-col gap-3 rounded-md border border-line-soft p-3">
+          <label className="flex items-center gap-2 text-sm font-bold">
+            <input
+              type="checkbox"
+              checked={recordCollection}
+              disabled={isPending}
+              onChange={(event) => {
+                setRecordCollection(event.target.checked);
+                setCollectionConfirmed(false);
+              }}
+            />
+            Record collection allocations
+          </label>
+          {recordCollection ? (
+            <>
+              <p className="text-xs text-ink-muted">
+                Amounts are SGD. Enter how each recorded money tender pays each cart line. This
+                saves evidence only, not commission earnings. Package/credit tenders and change are
+                not supported yet. Server-priced line limits are checked on submission.
+              </p>
+              {tenders.map((tender, index) => (
+                <fieldset key={tender.id} disabled={isPending} className="flex flex-col gap-2">
+                  <legend className="text-sm font-bold">
+                    Tender {index + 1}: {formatPrice(centsToPrice(tenderCents[index] ?? 0))}
+                  </legend>
+                  {lines.map((line, position) => (
+                    <label
+                      key={position}
+                      className="flex items-center justify-between gap-2 text-sm"
+                    >
+                      Line {position + 1}: {line.itemName ?? line.itemType}
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        aria-label={`Tender ${index + 1} allocation to line ${position + 1}`}
+                        className={cn(CONTROL_CLASS, "w-28 px-2")}
+                        value={allocationDraft[`${tender.id}:${position}`] ?? ""}
+                        onChange={(event) => {
+                          setAllocationDraft((current) => ({
+                            ...current,
+                            [`${tender.id}:${position}`]: event.target.value,
+                          }));
+                          setCollectionConfirmed(false);
+                        }}
+                      />
+                    </label>
+                  ))}
+                </fieldset>
+              ))}
+              <label className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={collectionConfirmed}
+                  disabled={isPending}
+                  onChange={(event) => setCollectionConfirmed(event.target.checked)}
+                />
+                I confirm these payments were collected in SGD and allocated as entered.
+              </label>
+            </>
+          ) : (
+            <p className="text-xs text-ink-muted">
+              Optional while collection integration is in progress. Without confirmation,
+              payment-to-line evidence remains unknown.
+            </p>
+          )}
+        </section>
 
         {tenders.length < MAX_SALE_PAYMENTS ? (
           <Button variant="secondary" size="sm" onClick={addTender} disabled={isPending}>

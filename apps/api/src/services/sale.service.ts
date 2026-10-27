@@ -25,6 +25,7 @@
  * throws instead of reaching the browser outside its contract (AGENTS.md rule 6).
  */
 import { resolveCommission } from "./commission-rules.js";
+import { captureCollectionEvidence } from "./commission-collection-evidence.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import {
   captureRedemptionCommission,
@@ -60,6 +61,7 @@ import {
   type SaleList,
   type SaleListQuery,
   type SalePaymentInput,
+  type SaleCollectionInput,
   type VoidSaleInput,
   type VoucherPreview,
   type VoucherPreviewInput,
@@ -1306,6 +1308,7 @@ async function writeSale(
         staffId: input.staffId ?? null,
         // The till rings a sale up; `HELD` is for a quote the cashier has not confirmed.
         status: "COMPLETED",
+        collectionCurrency: input.collection?.currency ?? null,
         totalQuantity: totals.totalQuantity,
         totalAmount: totals.totalAmount,
         taxAmount: totals.taxAmount,
@@ -1330,7 +1333,7 @@ async function writeSale(
     if (voucher !== null) {
       await redeemVoucher(tx, tenantId, sale.id, voucher);
     }
-    await writePayments(tx, tenantId, sale.id, input.payments);
+    await writePayments(tx, tenantId, sale.id, input.payments, input.collection);
     // After the tenders are written and before the ledgers are filled: the draw is
     // part of the sale, and a failure anywhere here rolls the whole receipt back.
     await redeemPayments(
@@ -1472,8 +1475,76 @@ async function writePayments(
   tenantId: string,
   saleId: string,
   payments: SalePaymentInput[],
+  collection?: SaleCollectionInput,
 ): Promise<void> {
-  if (payments.length === 0) return;
+  if (payments.length === 0) {
+    if (collection) throw badRequest("Collection capture requires a positive money tender.");
+    return;
+  }
+
+  if (collection) {
+    const lines = await tx.saleLine.findMany({ where: { saleId }, orderBy: { position: "asc" } });
+    const seen = new Set<string>();
+    for (const allocation of collection.allocations) {
+      const key = `${allocation.paymentIndex}:${allocation.linePosition}`;
+      if (
+        seen.has(key) ||
+        !payments[allocation.paymentIndex] ||
+        !lines.some((line) => line.position === allocation.linePosition)
+      )
+        throw badRequest(
+          "Collection allocations require distinct valid tender and line positions.",
+        );
+      seen.add(key);
+    }
+    if (
+      payments.some(
+        (payment) => isRedemptionPaymentMethod(payment.method) || payment.sessionId !== undefined,
+      )
+    )
+      throw badRequest(
+        "Collection capture currently supports recorded money tenders without gateway sessions only.",
+      );
+    for (const [index, tender] of payments.entries()) {
+      const allocated = collection.allocations
+        .filter((row) => row.paymentIndex === index)
+        .reduce((sum, row) => sum + BigInt(row.grossCents), 0n);
+      if (allocated !== BigInt(new Prisma.Decimal(tender.amount).times(100).toFixed(0)))
+        throw badRequest(
+          "Each tender's explicit allocations must equal its recorded amount.",
+          "COLLECTION_ALLOCATION_INVALID",
+        );
+      const payment = await tx.salePayment.create({
+        data: { tenantId, saleId, method: tender.method, amount: tender.amount },
+      });
+      if (payment.amount.isZero()) {
+        if (collection.allocations.some((row) => row.paymentIndex === index))
+          throw badRequest("Zero tenders cannot have positive collection allocations.");
+        continue;
+      }
+      try {
+        await captureCollectionEvidence(tx, {
+          eventKey: `checkout:${payment.id}`,
+          sourceType: "SALE_PAYMENT",
+          sourceId: payment.id,
+          saleId,
+          currency: collection.currency,
+          reason: "Cashier confirmed checkout collection allocations",
+          allocations: collection.allocations
+            .filter((row) => row.paymentIndex === index)
+            .map((row) => ({
+              saleLineId: lines.find((line) => line.position === row.linePosition)!.id,
+              grossCents: row.grossCents,
+            })),
+        });
+      } catch (error) {
+        if (error instanceof RangeError)
+          throw badRequest(error.message, "COLLECTION_ALLOCATION_INVALID");
+        throw error;
+      }
+    }
+    return;
+  }
 
   await tx.salePayment.createMany({
     data: payments.map((tender) => ({
@@ -2139,6 +2210,7 @@ type SaleTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /** The receipt's own columns, plus the names a printed receipt shows. */
 const SALE_SELECT = {
+  collectionCurrency: true,
   id: true,
   outletId: true,
   receiptNumber: true,
@@ -2249,6 +2321,7 @@ function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>
     refundPayouts: row.refund?.payouts ?? [],
     // Never negative, for the same reason the write clamps it: overpayment is change.
     outstandingAmount: amount(Prisma.Decimal.max(row.totalAmount.minus(row.paidAmount), 0)),
+    collectionCurrency: row.collectionCurrency,
     pointsEarned: row.points.reduce((sum, entry) => sum + entry.point, 0),
     lines: row.lines.map((line) => ({
       id: line.id,
@@ -2567,6 +2640,7 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
         customerId,
         staffId,
         status: "COMPLETED",
+        collectionCurrency: input.collection?.currency ?? null,
         totalQuantity: totals.totalQuantity,
         totalAmount: totals.totalAmount,
         taxAmount: totals.taxAmount,
@@ -2607,7 +2681,7 @@ export async function completeSale(saleId: string, input: CompleteSaleInput): Pr
     if (voucher !== null) {
       await redeemVoucher(tx, tenantId, held.id, voucher);
     }
-    await writePayments(tx, tenantId, held.id, input.payments);
+    await writePayments(tx, tenantId, held.id, input.payments, input.collection);
     await redeemPayments(
       tx,
       tenantId,

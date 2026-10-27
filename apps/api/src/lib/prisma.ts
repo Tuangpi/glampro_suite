@@ -71,6 +71,8 @@ export const TENANT_SCOPED_MODELS = [
   "CommissionPeriod",
   "CommissionRedemptionSnapshot",
   "CommissionAttributionPolicy",
+  "CommissionCollection",
+  "CommissionCollectionAllocation",
   "EmployeePerformance",
   "EmployeeLeave",
   "StaffShift",

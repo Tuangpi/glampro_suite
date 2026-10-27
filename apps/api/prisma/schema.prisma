@@ -329,6 +329,8 @@ model Tenant {
   commissionPeriods CommissionPeriod[]
   commissionRedemptionSnapshots CommissionRedemptionSnapshot[]
   commissionAttributionPolicies CommissionAttributionPolicy[]
+  commissionCollections CommissionCollection[]
+  commissionCollectionAllocations CommissionCollectionAllocation[]
   prepaidTransferEvents PrepaidTransferEvent[]
   prepaidFamilies PrepaidFamily[]
   prepaidFamilyMembers PrepaidFamilyMember[]
@@ -1634,6 +1636,8 @@ model CommissionRule {
 ///    tender per sale, so `splitPay()` stored the string `"cash_50_card_25"` in the
 ///    text column — a sale no report can sum. The tenders are rows now (ADR 0012).
 model Sale {
+  /// Explicit checkout collection-currency confirmation; null is unknown legacy evidence.
+  collectionCurrency String?
   id       String @id @default(cuid())
   tenantId String
   /// Links sale to a specific outlet (TK2610-0028).
@@ -1745,6 +1749,48 @@ model Sale {
   @@index([tenantId, status])
   @@index([customerId, soldAt])
   @@map("sales")
+}
+
+/// Immutable explicit collection evidence. Not a second earnings ledger.
+model CommissionCollection {
+  id String @id @default(cuid())
+  tenantId String
+  eventKey String
+  eventHash String
+  sourceType String
+  sourceId String
+  saleId String
+  currency String
+  grossCents BigInt
+  occurredAt DateTime
+  actorId String
+  reason String
+  createdAt DateTime @default(now())
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  allocations CommissionCollectionAllocation[]
+
+  @@unique([tenantId, eventKey])
+  @@unique([tenantId, sourceType, sourceId])
+  @@index([tenantId, saleId])
+  @@map("commission_collections")
+}
+
+model CommissionCollectionAllocation {
+  id String @id @default(cuid())
+  tenantId String
+  collectionId String
+  saleLineId String
+  grossCents BigInt
+  netCents BigInt
+  taxCents BigInt
+  /// Original line value, attribution and event-time rate candidates; not earnings.
+  evidence Json
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  collection CommissionCollection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, collectionId, saleLineId])
+  @@index([tenantId, saleLineId])
+  @@map("commission_collection_allocations")
 }
 
 /// One tender a sale was paid with.

@@ -23,6 +23,39 @@ beforeEach(() => {
     },
   });
 });
+it("requires explicit allocations and confirmation before posting collection evidence", async () => {
+  const user = userEvent.setup();
+  const onConfirm = vi.fn();
+  render(
+    <PaymentDialog
+      totalCents={1000}
+      lines={[{ itemType: "SERVICE", itemId: "service", quantity: 1, unitPriceCents: 1000 }]}
+      customerId="c1"
+      hasCustomer
+      needsCustomer={false}
+      hasManualDiscount={false}
+      isPending={false}
+      errorMessage={null}
+      onClose={vi.fn()}
+      onConfirm={onConfirm}
+    />,
+  );
+  await user.click(screen.getByLabelText("Record collection allocations"));
+  expect(screen.getByRole("button", { name: "Take payment" })).toBeDisabled();
+  await user.type(screen.getByLabelText("Tender 1 allocation to line 1"), "10.00");
+  expect(screen.getByRole("button", { name: "Take payment" })).toBeDisabled();
+  await user.click(screen.getByLabelText(/I confirm these payments/));
+  await user.click(screen.getByRole("button", { name: "Take payment" }));
+  expect(onConfirm).toHaveBeenCalledWith(
+    [{ method: "CASH", amount: 10 }],
+    expect.any(String),
+    null,
+    { currency: "SGD", allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "1000" }] },
+  );
+  await user.clear(screen.getByLabelText("Tender 1 allocation to line 1"));
+  expect(screen.getByLabelText(/I confirm these payments/)).not.toBeChecked();
+  expect(screen.getByRole("button", { name: "Take payment" })).toBeDisabled();
+});
 it("offers one family pool and posts its identifier with the derived cent-exact amount", async () => {
   const onConfirm = vi.fn();
   render(
