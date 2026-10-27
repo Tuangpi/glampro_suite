@@ -56,6 +56,11 @@ vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
 vi.mock("@/components/settings/CommissionRules", () => ({
   default: () => <section aria-label="Company commission defaults" />,
 }));
+vi.mock("@/components/settings/CommissionMatrix", () => ({
+  default: ({ canEdit }: { canEdit: boolean }) => (
+    <section aria-label="Commission matrix" data-editable={canEdit} />
+  ),
+}));
 vi.mock("@/components/settings/CommissionAttributionPolicy", () => ({
   default: ({ canEdit }: { canEdit: boolean }) => (
     <section aria-label="Commission attribution policy" data-editable={canEdit} />
@@ -188,6 +193,10 @@ describe("Settings", () => {
       "data-editable",
       "true",
     );
+    expect(screen.getByRole("region", { name: "Commission matrix" })).toHaveAttribute(
+      "data-editable",
+      "true",
+    );
   });
   it("hides attribution policy from staff", () => {
     auth.role = "STAFF";
@@ -195,11 +204,16 @@ describe("Settings", () => {
     expect(
       screen.queryByRole("region", { name: "Commission attribution policy" }),
     ).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Commission matrix" })).not.toBeInTheDocument();
   });
   it("passes suspended read-only state to attribution policy", () => {
     auth.readOnly = true;
     renderSettings("team");
     expect(screen.getByRole("region", { name: "Commission attribution policy" })).toHaveAttribute(
+      "data-editable",
+      "false",
+    );
+    expect(screen.getByRole("region", { name: "Commission matrix" })).toHaveAttribute(
       "data-editable",
       "false",
     );

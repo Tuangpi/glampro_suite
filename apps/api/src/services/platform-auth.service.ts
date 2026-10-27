@@ -10,7 +10,7 @@ import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
 import { HttpError, unauthorized } from "../lib/http-error.js";
 import { verifyPassword } from "../lib/password.js";
-import { isSmtpConfigured, sendTwoFactorCode } from "../lib/email.js";
+import { isSmtpConfigured } from "../lib/email.js";
 import { createRefreshToken, hashRefreshToken, refreshTokenExpiry } from "../lib/tokens.js";
 import type { PlatformAdmin } from "../../generated/prisma/client.js";
 

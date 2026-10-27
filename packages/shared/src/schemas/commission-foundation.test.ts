@@ -6,7 +6,7 @@ import {
   publishCommissionRuleSchema,
 } from "./commission.js";
 
-test("foundation kinds do not accidentally enable unsupported catalogue settings", () => {
+test("administration allows foundation kinds but never accepts earnings activation", () => {
   for (const kind of [
     "SERVICE",
     "PRODUCT",
@@ -24,6 +24,7 @@ test("foundation kinds do not accidentally enable unsupported catalogue settings
       rate: 5,
       reason: "test",
       expectedRevision: null,
+      activateEarnings: true,
     }).success,
     false,
   );

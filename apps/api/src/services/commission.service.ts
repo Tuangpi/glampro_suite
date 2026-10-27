@@ -1,8 +1,14 @@
 import type {
+  BulkPublishCommissionRules,
   CommissionKind,
   CommissionRuleView,
   CommissionScope,
   PublishCommissionRule,
+} from "@glampro_suite/shared";
+import {
+  commissionKindSchema,
+  publishCommissionRuleSchema,
+  bulkPublishCommissionRulesSchema,
 } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
@@ -28,12 +34,31 @@ async function revision(tx: Transaction) {
 async function staffRecord(tx: Transaction, id: string) {
   const staff = await tx.user.findFirst({
     where: { id },
-    select: { id: true, commissionRate: true },
+    select: { id: true, commissionRate: true, disabled: true },
   });
   if (!staff) throw notFound("Staff member not found.");
   return staff;
 }
+async function catalogueItem(tx: Transaction, kind: CommissionKind, itemId: string) {
+  const args = { where: { id: itemId, status: "ACTIVE" as const } };
+  if (kind === "SERVICE" || kind === "FOC") return tx.service.findFirst(args);
+  if (kind === "PRODUCT") return tx.product.findFirst(args);
+  if (kind === "PACKAGE_SALE" || kind === "PACKAGE_REDEMPTION") return tx.package.findFirst(args);
+  return tx.valuePackage.findFirst(args);
+}
+
 export async function publishCommissionRule(input: PublishCommissionRule, actorId: string) {
+  const parsed = publishCommissionRuleSchema.parse(input);
+  const { expectedRevision, reason, effectiveAt, ...rule } = parsed;
+  const result = await publishCommissionRules(
+    { expectedRevision, reason, effectiveAt, rules: [rule] },
+    actorId,
+  );
+  return { id: result.ids[0]! };
+}
+
+export async function publishCommissionRules(raw: BulkPublishCommissionRules, actorId: string) {
+  const input = bulkPublishCommissionRulesSchema.parse(raw);
   const id = tenantId();
   return prisma.$transaction(async (tx) => {
     await lockCommissionConfiguration(tx, id);
@@ -41,26 +66,26 @@ export async function publishCommissionRule(input: PublishCommissionRule, actorI
       throw conflict("Commission settings changed. Reload before publishing.");
     const actor = await tx.user.findFirst({
       where: { id: actorId },
-      select: { id: true, disabled: true, globalRole: true },
+      select: { disabled: true, globalRole: true },
     });
     if (!actor || actor.disabled || !["SUPER_ADMIN", "MANAGER"].includes(actor.globalRole))
       throw badRequest("Only a current salon administrator or manager can publish rules.");
-    if (input.staffId) await staffRecord(tx, input.staffId);
-    if (
-      input.scope === "DEPARTMENT" &&
-      !(await tx.department.findFirst({ where: { id: input.targetId! } }))
-    )
-      throw notFound("Department not found.");
-    if (input.scope === "ITEM") {
-      const args = {
-        where: { id: input.targetId!, status: "ACTIVE" as const },
-        select: { id: true },
-      };
-      const item =
-        input.itemKind === "SERVICE"
-          ? await tx.service.findFirst(args)
-          : await tx.product.findFirst(args);
-      if (!item) throw notFound("Active catalogue item not found.");
+    const tenant = await tx.tenant.findFirst({ where: { id }, select: { status: true } });
+    if (!tenant || tenant.status !== "ACTIVE")
+      throw badRequest("Commission settings require an active salon.");
+    for (const rule of input.rules) {
+      if (rule.staffId && (await staffRecord(tx, rule.staffId)).disabled)
+        throw badRequest("Cannot publish rules for disabled staff.");
+      if (
+        rule.scope === "DEPARTMENT" &&
+        !(await tx.department.findFirst({ where: { id: rule.targetId! } }))
+      )
+        throw notFound("Department not found.");
+      if (
+        ["ITEM", "PACKAGE"].includes(rule.scope) &&
+        !(await catalogueItem(tx, rule.itemKind, rule.targetId!))
+      )
+        throw notFound("Active catalogue item not found.");
     }
     const now = new Date();
     const effectiveAt = input.effectiveAt ? new Date(input.effectiveAt) : now;
@@ -71,32 +96,39 @@ export async function publishCommissionRule(input: PublishCommissionRule, actorI
     const latest = await tx.commissionRule.findFirst({
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });
-    const createdAt = new Date(Math.max(now.getTime(), (latest?.createdAt.getTime() ?? 0) + 1));
-    const rule = await tx.commissionRule.create({
-      data: {
-        tenantId: id,
-        staffId: input.staffId,
-        itemKind: input.itemKind,
-        scope: input.scope,
-        targetId: input.targetId,
-        scopeKey: commissionScopeKey(input.staffId, input.itemKind, input.scope, input.targetId),
-        rate: input.rate,
-        effectiveAt,
-        createdAt,
-        actorId,
-        reason: input.reason,
-      },
-    });
-    await tx.auditLog.create({
-      data: {
-        tenantId: id,
-        action: "commission.rule.publish",
-        targetType: "CommissionRule",
-        targetId: rule.id,
-        metadata: { ...input, actorId, effectiveAt: effectiveAt.toISOString() },
-      },
-    });
-    return { id: rule.id };
+    const firstTime = Math.max(now.getTime(), (latest?.createdAt.getTime() ?? 0) + 1);
+    const ids: string[] = [];
+    for (const [index, rule] of input.rules.entries()) {
+      const created = await tx.commissionRule.create({
+        data: {
+          ...rule,
+          tenantId: id,
+          scopeKey: commissionScopeKey(rule.staffId, rule.itemKind, rule.scope, rule.targetId),
+          effectiveAt,
+          createdAt: new Date(firstTime + index),
+          actorId,
+          reason: input.reason,
+        },
+      });
+      ids.push(created.id);
+      await tx.auditLog.create({
+        data: {
+          tenantId: id,
+          action: "commission.rule.publish",
+          targetType: "CommissionRule",
+          targetId: created.id,
+          metadata: {
+            ...rule,
+            actorId,
+            reason: input.reason,
+            expectedRevision: input.expectedRevision,
+            effectiveAt: effectiveAt.toISOString(),
+            bulkSize: input.rules.length,
+          },
+        },
+      });
+    }
+    return { ids, revision: ids[ids.length - 1]! };
   });
 }
 
@@ -126,7 +158,7 @@ export async function commissionConfiguration(staffId: string | undefined, page:
       }),
     ]);
     const rows = [...effective, ...history, ...scheduled];
-    const [actors, departments, services, products] = await Promise.all([
+    const [actors, departments, services, products, packages, credits] = await Promise.all([
       tx.user.findMany({
         where: { id: { in: rows.map((row) => row.actorId) } },
         select: { id: true, name: true },
@@ -136,7 +168,7 @@ export async function commissionConfiguration(staffId: string | undefined, page:
         where: {
           id: {
             in: rows
-              .filter((r) => r.scope === "ITEM" && r.itemKind === "SERVICE")
+              .filter((r) => r.scope === "ITEM" && ["SERVICE", "FOC"].includes(r.itemKind))
               .map((r) => r.targetId!),
           },
         },
@@ -152,9 +184,34 @@ export async function commissionConfiguration(staffId: string | undefined, page:
         },
         select: { id: true, name: true },
       }),
+      tx.package.findMany({
+        where: {
+          id: {
+            in: rows
+              .filter((r) => ["PACKAGE_SALE", "PACKAGE_REDEMPTION"].includes(r.itemKind))
+              .map((r) => r.targetId!)
+              .filter(Boolean),
+          },
+        },
+        select: { id: true, name: true },
+      }),
+      tx.valuePackage.findMany({
+        where: {
+          id: {
+            in: rows
+              .filter((r) => ["STORED_CREDIT_SALE", "STORED_CREDIT_SPEND"].includes(r.itemKind))
+              .map((r) => r.targetId!)
+              .filter(Boolean),
+          },
+        },
+        select: { id: true, name: true },
+      }),
     ]);
     const names = new Map(
-      [...departments, ...services, ...products].map((row) => [row.id, row.name]),
+      [...departments, ...services, ...products, ...packages, ...credits].map((row) => [
+        row.id,
+        row.name,
+      ]),
     );
     const actorNames = new Map(actors.map((row) => [row.id, row.name]));
     function view(row: (typeof rows)[number]): CommissionRuleView {
@@ -186,26 +243,26 @@ export async function commissionConfiguration(staffId: string | undefined, page:
 }
 
 export async function commissionOptions(itemKind: CommissionKind, search: string) {
-  const where = {
-    status: "ACTIVE" as const,
-    name: { contains: search, mode: "insensitive" as const },
+  const args = {
+    where: { status: "ACTIVE" as const, name: { contains: search, mode: "insensitive" as const } },
+    select: { id: true, name: true },
+    orderBy: [{ name: "asc" as const }, { id: "asc" as const }],
+    take: 50,
   };
-  const [items, total] = await Promise.all([
-    itemKind === "SERVICE"
-      ? prisma.service.findMany({
-          where,
-          select: { id: true, name: true },
-          orderBy: [{ name: "asc" }, { id: "asc" }],
-          take: 50,
-        })
-      : prisma.product.findMany({
-          where,
-          select: { id: true, name: true },
-          orderBy: [{ name: "asc" }, { id: "asc" }],
-          take: 50,
-        }),
-    itemKind === "SERVICE" ? prisma.service.count({ where }) : prisma.product.count({ where }),
-  ]);
+  const items = await (itemKind === "SERVICE" || itemKind === "FOC"
+    ? prisma.service.findMany(args)
+    : itemKind === "PRODUCT"
+      ? prisma.product.findMany(args)
+      : itemKind === "PACKAGE_SALE" || itemKind === "PACKAGE_REDEMPTION"
+        ? prisma.package.findMany(args)
+        : prisma.valuePackage.findMany(args));
+  const total = await (itemKind === "SERVICE" || itemKind === "FOC"
+    ? prisma.service.count({ where: args.where })
+    : itemKind === "PRODUCT"
+      ? prisma.product.count({ where: args.where })
+      : itemKind === "PACKAGE_SALE" || itemKind === "PACKAGE_REDEMPTION"
+        ? prisma.package.count({ where: args.where })
+        : prisma.valuePackage.count({ where: args.where }));
   return { items, total };
 }
 export async function previewCommission(input: {
@@ -216,14 +273,8 @@ export async function previewCommission(input: {
   return prisma.$transaction(async (tx) => {
     await lockCommissionConfiguration(tx, tenantId());
     const staff = await staffRecord(tx, input.staffId);
-    const args = {
-      where: { id: input.itemId, status: "ACTIVE" as const },
-      select: { departmentId: true },
-    };
-    const item =
-      input.itemKind === "SERVICE"
-        ? await tx.service.findFirst(args)
-        : await tx.product.findFirst(args);
+    if (staff.disabled) throw badRequest("Cannot preview disabled staff.");
+    const item = await catalogueItem(tx, input.itemKind, input.itemId);
     if (!item) throw notFound("Active catalogue item not found.");
     const at = new Date();
     const rules = await tx.commissionRule.findMany({
@@ -233,10 +284,67 @@ export async function previewCommission(input: {
       rules,
       {
         ...input,
-        departmentId: item.departmentId,
+        departmentId: "departmentId" in item ? item.departmentId : null,
         legacyServiceRate: staff.commissionRate.toString(),
       },
       at,
     );
+  });
+}
+
+export async function commissionMatrix(page: number, search: string) {
+  return prisma.$transaction(async (tx) => {
+    await lockCommissionConfiguration(tx, tenantId());
+    const where = { disabled: false, name: { contains: search, mode: "insensitive" as const } };
+    const [staff, total] = await Promise.all([
+      tx.user.findMany({
+        where,
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        skip: (page - 1) * 20,
+        take: 20,
+        select: { id: true, name: true, commissionRate: true },
+      }),
+      tx.user.count({ where }),
+    ]);
+    const at = new Date();
+    const rules = await tx.commissionRule.findMany({
+      where: {
+        OR: [{ staffId: null }, { staffId: { in: staff.map((s) => s.id) } }],
+        effectiveAt: { lte: at },
+      },
+      orderBy: [{ effectiveAt: "desc" }, { createdAt: "desc" }, { id: "desc" }],
+    });
+    return {
+      revision: await revision(tx),
+      page,
+      total,
+      rows: staff.map((s) => ({
+        staffId: s.id,
+        name: s.name,
+        cells: commissionKindSchema.options.map((itemKind) => {
+          const configured = rules.find(
+            (r) => r.staffId === s.id && r.itemKind === itemKind && r.scope === "STAFF",
+          );
+          const applied = resolveCommission(
+            rules,
+            {
+              staffId: s.id,
+              itemKind,
+              itemId: "",
+              departmentId: null,
+              legacyServiceRate: s.commissionRate.toString(),
+            },
+            at,
+          );
+          return {
+            itemKind,
+            configured: !!configured,
+            configuredRate: configured?.rate?.toFixed(2) ?? null,
+            rate: applied.rate,
+            source: applied.source,
+          };
+        }),
+      })),
+    };
   });
 }

@@ -19,6 +19,7 @@ import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
 import MessagingCard from "@/components/settings/MessagingCard";
 import ResourcesCard from "@/components/settings/ResourcesCard";
 import CommissionRules from "@/components/settings/CommissionRules";
+import CommissionMatrix from "@/components/settings/CommissionMatrix";
 import CommissionAttributionPolicy from "@/components/settings/CommissionAttributionPolicy";
 
 import { Link, useSearchParams } from "react-router";
@@ -225,6 +226,7 @@ function TeamSettings({ canEdit }: { canEdit: boolean }) {
       {(user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER") && (
         <>
           <CommissionAttributionPolicy canEdit={canEdit} />
+          <CommissionMatrix canEdit={canEdit} />
           <CommissionRules canEdit={canEdit} />
         </>
       )}

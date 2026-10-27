@@ -2,25 +2,150 @@
 
 ## Current State
 
-- Current task: SC-003 — IN PROGRESS (seller and therapist attribution).
-- Most recently completed: SC-002 — DONE (local foundation and collection design).
+- Current task: None.
+- Most recently completed: SC-004 — DONE (local commission administration verification,
+  October 27, 2026).
 - Approval: October 26, 2026; recommended policies accepted. Collection-based sale
   commission, existing exact-cent redemption value, separate tracking, payroll later.
-- Implementation: sale attribution plus configurable required-attribution API policy,
-  immutable redemption coverage/original-value/own-rate evidence, explicit whole-set
-  performer UI, internal exact financial posting seam and linked current-open-period
-  financial correction/void integration. Normal POS still posts no version-1 earnings.
-- Remaining: eligibility/cutover integration, broader family/correction-route/release
-  acceptance and browser walkthrough. Required-attribution policy admin UI is implemented.
-  No earnings activation.
-- Verification limitation: API lint/typecheck blocked by existing unused platform-auth
-  sendTwoFactorCode import. Scoped lint, focused tests, shared and web checks pass.
+- Implementation: attribution/evidence foundation plus all-kind rate administration,
+  package overrides/previews, atomic bulk publication and staff matrix. Normal POS
+  still posts no version-1 earnings; existing snapshots are unchanged.
+- Verified for SC-004: focused API/database 69/69, legacy commission HTTP 1/1,
+  SC-003 acceptance regression 5/5, shared 197/197, full web 830/830;
+  workspace lint/typecheck/build. Local Chrome bulk publication and package override
+  pass. ADMINISTRATION.md and VERIFICATION.md record scope and limitations.
+- Remaining release gates: SC-006 collection/eligibility and SC-005 reporting/cutover.
+  No earnings activation. Full API suite and human visual review not performed.
 - No application database migration, production change or deployment authorized/performed.
-- Recommended next task: Resume SC-003; do not start SC-004.
+- Recommended next task: SC-006 — Collection-based commission and eligibility (not started).
 - Continue using this folder, not the large root task history. Select one task and
   stop after its completion; do not automatically implement the whole project.
 
 ## Recent notes
+
+### SC-004 — October 27, 2026 — DONE, local administration
+
+- Extended existing schemas, routes and publisher rather than adding a competing
+  ledger. All seven kinds support company/staff rules; active service/product/FOC
+  item and department rules and active package/value-package item/package overrides
+  validate against the correct tenant catalogue. Package kinds have no department
+  catalogue field, so administration rejects department scope for those kinds.
+- Added searchable, paginated staff/type matrix and bounded bulk publish (1–100
+  unique scopes), one effective instant/reason, tenant configuration lock, stale
+  revision conflict and transactional rule/audit writes. Matrix shows configured
+  zero, inheritance and legacy/unconfigured fallback separately. Existing attribution
+  policy UI remains the company-policy control; no eligibility policy was invented.
+- Single-rule and matrix drafts pin their observed revision; background refetch cannot
+  silently rebase an edit. Explicit successful reload discards the draft. Failed
+  publication/reload preserves inputs. Read-only/role/pending controls are tested.
+- Added guarded disposable PostgreSQL HTTP acceptance: second-insert failure rolls
+  back earlier rule/audit, concurrent publication permits one winner, tenant and
+  role boundaries, revoked sessions, inactive targets, scheduling, pagination,
+  preview precedence, audit actor and unchanged historical sale/earnings evidence.
+- Approved FOC fallback is 5%; explicit zero wins. This does not classify zero-price
+  services as FOC or activate a posting caller. No normal POS earnings cutover.
+- Replayed 55 migrations on fresh disposable databases at ports 55465 and 55443.
+  Focused API/database 69/69, legacy HTTP 1/1, prior SC-003 acceptance 5/5, no skips;
+  shared 197/197 and full web 830/830. Workspace lint/typecheck/build pass.
+- Local headless Chrome with real API/Vite verified matrix publication/readback,
+  inheritance, FOC fallback and package override/catalogue-name history. Initial
+  local CORS configuration blocked publication; corrected temporary API origin and
+  reran successfully. No application CORS changes or human visual review claimed.
+- Initial checks caught stale foundation gating assertions, missing Settings mock,
+  fixture email/context mistakes and an unscoped test audit count. Corrected fixtures
+  and assertions without weakening authorization or transactional guarantees.
+- See ADMINISTRATION.md for commands and limits. No application migration, deployment,
+  commit or push. SC-006 remains unstarted; stop after this task.
+- Final scoped Prettier and git diff --check pass; Settings role/read-only assertions
+  rerun 27/27 after the full web run. Temporary API/Vite/Chrome stopped. All three
+  disposable PostgreSQL clusters stopped cleanly; ports 55465/55443/55464 report no
+  response. Synthetic logs/harnesses remain under /tmp/sc004, outside the repository.
+
+### SC-003 — October 27, 2026 — DONE, local verification closeout
+
+- Preserved existing mixed-tender and HTTP acceptance tests and documentation changes.
+  Removed only the unused sendTwoFactorCode import from platform-auth.service.ts;
+  existing platform login behavior was not changed or endorsed by this task.
+- Replayed all 55 migrations on a fresh disposable PostgreSQL 18 cluster at
+  /tmp/sc003-close/pg, 127.0.0.1:55464/commission_redemption_test. Enabled all five
+  SC-003 acceptance flags; focused API/acceptance passes 72/72, no skips, before and
+  after the import cleanup. Shared passes 196/196; full web passes 820/820.
+- Initial workspace lint/typecheck/build reproduced the existing unused-import
+  blocker. After the one-import cleanup, all three workspace commands pass.
+  No checks or assertions were disabled. Existing pg concurrency warning remains.
+- Local headless Chrome with the real Vite/API/disposable database verified policy
+  reason gating, publication/readback, invalid split refusal, valid 25/75 sellers,
+  independent therapist, reload restoration, cash sale receipt and reasoned void.
+  Database assertions verify retained attribution, separate cashier and zero earnings.
+  Temporary browser harness selector/field mistakes were corrected and rerun.
+- Concurrent shared builds/Prisma generation triggered Vite HMR useAuth errors;
+  full reload restored the app. This is not claimed as a fixed application defect.
+  No package-tender/correction UI walkthrough or human visual review is claimed;
+  whole-set, transfer, family and financial correction paths use automated acceptance.
+- VERIFICATION.md maps checks to task requirements and downstream gates. Collection
+  allocation/eligibility stays SC-006; reporting/cutover stays SC-005. Normal POS
+  remains evidence-only. No application database migration, deployment, activation,
+  commit or push. SC-004 remains TODO; no next-task implementation started.
+- Final scoped Prettier and git diff --check pass. Temporary API, Vite and Chrome
+  processes stopped; PostgreSQL stopped cleanly and port 55464 reports no response.
+  Logs and temporary harnesses are under /tmp/sc003-close, not durable release evidence.
+
+### SC-003 — October 26, 2026 — IN PROGRESS, mixed-tender evidence checkpoint
+
+- Added services/redemption-commission-mixed.acceptance.test.ts. No application code,
+  schema, writer or activation changes. Preserved prior uncommitted HTTP test and notes.
+- Synthetic sale: two one-session packages originally bought for 100 and 50 cover
+  two distinct units of one three-unit service line currently priced at 70 per unit.
+  Shared family credit pays 50 and cash pays 20. Two prepaid purchases each paid 20
+  and granted 30; no collection-ratio claim is made from this bonus-credit fixture.
+- Verified explicit tender performers versus inferred line splits, independent sellers,
+  cashier actor, original ordinal bases 10000/5000 cents, own-rate candidate amounts,
+  no duplicate coverage, and credit spending without fabricated session snapshots.
+  Membership without explicit holding sharing rejects and rolls back earlier package
+  draws, sales, ledger, snapshots and valuation movements. No earnings are created.
+- After the credit owner leaves the family, void and retry restore both session
+  holdings and both credit holdings once to their original owners without re-sharing.
+- Focused API/PostgreSQL regressions: 72/72, no skips. Both new acceptance files pass
+  ESLint. API typecheck reports only existing platform-auth sendTwoFactorCode TS6133;
+  initial fixture typing and incorrect VOIDED expectation were fixed and rerun.
+  Existing pg concurrent-query deprecation warning appeared in sale regressions.
+  Shared/web tests were not rerun for this API-test-only change (prior 196/196 and
+  46/46 remain prior-checkpoint evidence). No build or browser walkthrough claimed.
+- Reused disposable /tmp/glampro-sc003r-pg on 55464; shutdown verification recorded in
+  /tmp/sc003mixed-stop.log. Test fixture cleans its tenant. Logs:
+  /tmp/sc003mixed-{regressions,types2,lint2,final-format,whitespace}.log.
+- Next: continue SC-003 browser/release acceptance and document downstream eligibility/
+  reporting integration gates. SC-004 is not started. No application migration,
+  activation, deployment, commit or push.
+
+### SC-003 — October 26, 2026 — IN PROGRESS, correction HTTP acceptance checkpoint
+
+- Preserved all earlier uncommitted changes. Added routes/redemption-commission.acceptance.test.ts
+  using a real HTTP server and the explicitly disposable PostgreSQL database. No production
+  behavior, schema, activation or writer changes were needed.
+- Purchased a paid three-session package, refused consumption by a customer sharing only
+  a legacy family label (HOLDING_NOT_FOUND), explicitly transferred ownership, changed
+  current service price from 10 to 70, then proved immutable first-ordinal value is 33.34.
+  Internal synthetic posting remains the only initial version-1 writer in this test.
+- Public correction/void requests verify anonymous/staff/platform/foreign-tenant/owner-2FA
+  refusal, strict input and foreign credited-staff rejection, wrong-sale linkage, expired
+  package entitlement, suspended tenant, disabled actor/performer, role change and revoked
+  token. Denied requests preserve source state, session balance, evidence and money.
+- Missing current open period rolls back correction and void even with a locked original
+  earning. Concurrent identical correction requests produce one revision and one exact
+  reversal/repost (3.3340000000 to 6.6680000000); stale/mismatched/different-actor retries
+  fail. Concurrent owner-authorized voids net earnings to zero, restore sessions exactly
+  once to the transferred owner and append one void revision. Correction response exposes
+  metadata only; no internal rate or financial evidence fields.
+- Verified shared 196/196, focused web 46/46, focused API/PostgreSQL 71/71 with no skips.
+  Changed API lint passes. API typecheck still reports only the existing unused
+  platform-auth sendTwoFactorCode import, left unchanged. No browser walkthrough, full
+  API/web suite or production build in this test-only checkpoint.
+- Reused/stopped /tmp/glampro-sc003r-pg, port 55464. Immutable financial fixtures remain
+  only there. Logs: /tmp/sc003http-{final-api,shared,web,types,final-lint}.log.
+  No application migration, activation, deployment, commit or push. SC-003 remains
+  IN PROGRESS; next: mixed-funding/family-credit release acceptance, browser walkthrough,
+  and eligibility/reporting cutover integration. SC-004 remains unstarted.
 
 ### SC-003 — October 26, 2026 — IN PROGRESS, policy administration checkpoint
 

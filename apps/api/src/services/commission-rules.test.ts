@@ -105,3 +105,19 @@ test("package override sits below staff item and above department; null inherits
   assert.equal(resolveCommission(rules, packageInput, at).rate, "10");
   assert.equal(resolveCommission([], packageInput, at).rate, "0");
 });
+test("FOC defaults to approved five percent without classifying ordinary zero-price services", () => {
+  assert.deepEqual(resolveCommission([], { ...input, itemKind: "FOC" }, at), {
+    rate: "5",
+    source: "FOC_DEFAULT",
+    ruleId: null,
+  });
+  assert.equal(
+    resolveCommission(
+      [rule("COMPANY", "0", { itemKind: "FOC" })],
+      { ...input, itemKind: "FOC" },
+      at,
+    ).rate,
+    "0",
+  );
+  assert.equal(resolveCommission([], { ...input, legacyServiceRate: "0" }, at).rate, "0");
+});

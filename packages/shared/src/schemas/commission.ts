@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-// Existing catalogue settings remain gated until package administration is integrated.
-export const catalogueCommissionKindSchema = z.enum(["SERVICE", "PRODUCT"]);
 export const commissionKindSchema = z.enum([
   "SERVICE",
   "PRODUCT",
@@ -11,7 +9,17 @@ export const commissionKindSchema = z.enum([
   "STORED_CREDIT_SALE",
   "STORED_CREDIT_SPEND",
 ]);
-export const commissionScopeSchema = z.enum(["COMPANY", "STAFF", "DEPARTMENT", "ITEM"]);
+export const catalogueCommissionKindSchema = commissionKindSchema;
+export const commissionScopeSchema = z.enum(["COMPANY", "STAFF", "DEPARTMENT", "ITEM", "PACKAGE"]);
+export const COMMISSION_KIND_LABELS = {
+  SERVICE: "Services",
+  PRODUCT: "Products",
+  PACKAGE_SALE: "Package sales",
+  PACKAGE_REDEMPTION: "Package redemptions",
+  FOC: "Complimentary services (FOC)",
+  STORED_CREDIT_SALE: "Stored-credit sales",
+  STORED_CREDIT_SPEND: "Stored-credit spending",
+} as const;
 const id = z.string().trim().min(1).max(128);
 export const commissionQuerySchema = z.object({
   staffId: id.optional(),
@@ -31,11 +39,20 @@ export const publishCommissionRuleSchema = z
   .strict()
   .superRefine((value, ctx) => {
     const company = value.scope === "COMPANY";
-    const targeted = value.scope === "ITEM" || value.scope === "DEPARTMENT";
+    const packageOverride = value.scope === "PACKAGE";
+    const targeted = ["ITEM", "DEPARTMENT", "PACKAGE"].includes(value.scope);
     if (
-      company !== (value.staffId === null) ||
+      (company || packageOverride) !== (value.staffId === null) ||
       targeted !== (value.targetId !== null) ||
-      (company && value.rate === null)
+      (company && value.rate === null) ||
+      (packageOverride &&
+        ![
+          "PACKAGE_SALE",
+          "PACKAGE_REDEMPTION",
+          "STORED_CREDIT_SALE",
+          "STORED_CREDIT_SPEND",
+        ].includes(value.itemKind)) ||
+      (value.scope === "DEPARTMENT" && !["SERVICE", "PRODUCT", "FOC"].includes(value.itemKind))
     ) {
       ctx.addIssue({ code: "custom", message: "Invalid commission scope, target or inheritance." });
     }
@@ -51,6 +68,75 @@ export const commissionOptionsQuerySchema = z.object({
   itemKind: catalogueCommissionKindSchema,
   search: z.string().trim().max(160).default(""),
 });
+export const bulkPublishCommissionRulesSchema = z
+  .object({
+    expectedRevision: id.nullable(),
+    reason: z.string().trim().min(3).max(500),
+    effectiveAt: z.string().datetime({ offset: true }).optional(),
+    rules: z
+      .array(
+        z
+          .object({
+            staffId: id.nullable().default(null),
+            itemKind: commissionKindSchema,
+            scope: commissionScopeSchema,
+            targetId: id.nullable().default(null),
+            rate: z.number().min(0).max(100).multipleOf(0.01).nullable(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(100),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    value.rules.forEach((rule, index) => {
+      const result = publishCommissionRuleSchema.safeParse({
+        ...rule,
+        expectedRevision: value.expectedRevision,
+        reason: value.reason,
+        effectiveAt: value.effectiveAt,
+      });
+      if (!result.success)
+        for (const issue of result.error.issues)
+          ctx.addIssue({
+            code: "custom",
+            path: ["rules", index, ...issue.path],
+            message: issue.message,
+          });
+    });
+    const keys = value.rules.map((rule) =>
+      JSON.stringify([rule.staffId, rule.itemKind, rule.scope, rule.targetId]),
+    );
+    if (new Set(keys).size !== keys.length)
+      ctx.addIssue({
+        code: "custom",
+        message: "A bulk publication cannot repeat the same rule scope.",
+      });
+  });
+export const commissionMatrixQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    search: z.string().trim().max(160).default(""),
+  })
+  .strict();
+export type BulkPublishCommissionRules = z.infer<typeof bulkPublishCommissionRulesSchema>;
+export interface CommissionMatrix {
+  revision: string | null;
+  page: number;
+  total: number;
+  rows: {
+    staffId: string;
+    name: string;
+    cells: {
+      itemKind: CommissionKind;
+      configuredRate: string | null;
+      configured: boolean;
+      rate: string;
+      source: string;
+    }[];
+  }[];
+}
 export type PublishCommissionRule = z.infer<typeof publishCommissionRuleSchema>;
 export type CommissionKind = z.infer<typeof commissionKindSchema>;
 export type CommissionScope = z.infer<typeof commissionScopeSchema>;

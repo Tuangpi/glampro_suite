@@ -8,7 +8,7 @@ import type {
   CommissionRuleView,
   CommissionScope,
 } from "@glampro_suite/shared";
-import { publishCommissionRuleSchema } from "@glampro_suite/shared";
+import { publishCommissionRuleSchema, COMMISSION_KIND_LABELS } from "@glampro_suite/shared";
 import { get, post, getErrorMessage } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
@@ -38,6 +38,7 @@ export default function CommissionRules({
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [previewItem, setPreviewItem] = useState("");
+  const [draftRevision, setDraftRevision] = useState<{ revision: string | null } | null>(null);
   const departments = useDepartments();
   const config = useQuery({
     queryKey: ["commissions", staffId ?? "company", page],
@@ -47,9 +48,11 @@ export default function CommissionRules({
   const options = useQuery({
     queryKey: ["commission-options", kind, search],
     queryFn: () => get<CommissionOptions>("/commissions/options", { itemKind: kind, search }),
-    enabled: !!staffId,
+    enabled: !!staffId || scope === "PACKAGE",
     staleTime: 30_000,
   });
+  const staleDraft =
+    !!draftRevision && !!config.data && draftRevision.revision !== config.data.revision;
   const publish = useMutation({
     mutationFn: (input: unknown) => post("/commissions", input),
     onSuccess: () => client.invalidateQueries({ queryKey: ["commissions"] }),
@@ -67,6 +70,15 @@ export default function CommissionRules({
   });
 
   async function save() {
+    if (
+      !canEdit ||
+      !config.data ||
+      config.isFetching ||
+      config.isError ||
+      publish.isPending ||
+      staleDraft
+    )
+      return;
     setError("");
     setNotice("");
     try {
@@ -75,15 +87,16 @@ export default function CommissionRules({
         staffId: staffId ?? null,
         itemKind: kind,
         scope,
-        targetId: ["ITEM", "DEPARTMENT"].includes(scope) ? target : null,
+        targetId: ["ITEM", "DEPARTMENT", "PACKAGE"].includes(scope) ? target : null,
         rate: inherit ? null : Number(rate),
         reason,
-        expectedRevision: config.data!.revision,
+        expectedRevision: draftRevision ? draftRevision.revision : config.data.revision,
         ...(effectiveAt ? { effectiveAt: new Date(effectiveAt).toISOString() } : {}),
       });
       await publish.mutateAsync(input);
       setNotice("Commission rule published. Previously earned commissions are unchanged.");
       setReason("");
+      setDraftRevision(null);
     } catch (cause) {
       setError(
         cause instanceof Error && cause.name === "ZodError"
@@ -112,7 +125,7 @@ export default function CommissionRules({
   return (
     <Card
       title={staffId ? "Advanced commissions" : "Company commission defaults"}
-      description="After discounts, excluding tax. Item → department → staff → company. Rates never stack."
+      description="Item → package → department → staff → company. Rates never stack. New kinds remain disabled for earnings pending collection and reporting cutover."
     >
       <div className="flex flex-col gap-3">
         {config.isPending && <p role="status">Loading commission rules…</p>}
@@ -128,15 +141,31 @@ export default function CommissionRules({
           type="button"
           variant="secondary"
           disabled={config.isFetching || publish.isPending}
-          onClick={() => {
-            void config.refetch();
+          onClick={async () => {
+            const result = await config.refetch();
+            if (result.isError) {
+              setError(getErrorMessage(result.error));
+              return;
+            }
+            setDraftRevision(null);
+            setReason("");
+            setTarget("");
+            setRate("0");
+            setInherit(false);
+            setEffectiveAt("");
+            setError("");
             void client.invalidateQueries({ queryKey: ["commissions", "preview"] });
           }}
         >
-          Refresh commission rules
+          {draftRevision ? "Reload commission rules and discard draft" : "Refresh commission rules"}
         </Button>
         {error && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
+        {staleDraft && (
+          <p role="alert">
+            Commission settings changed. Reload and discard your draft before publishing.
+          </p>
+        )}
         {config.data && (
           <>
             {staffId && (
@@ -149,7 +178,9 @@ export default function CommissionRules({
             {!staffId && (
               <p className="text-sm">
                 Existing staff service rates remain unchanged until the staff member is explicitly
-                set to inherit. Unconfigured company rates are 0%.
+                set to inherit. Unconfigured kinds default to 0%, except explicitly complimentary
+                services (FOC), which default to 5%. Publishing rates does not classify a service as
+                FOC.
               </p>
             )}
             <h4>Current rules</h4>
@@ -166,7 +197,11 @@ export default function CommissionRules({
             )}
             {canEdit && (
               <fieldset
-                disabled={publish.isPending || config.isFetching || config.isError}
+                disabled={publish.isPending || config.isFetching || config.isError || staleDraft}
+                onChangeCapture={() => {
+                  if (!draftRevision && config.data)
+                    setDraftRevision({ revision: config.data.revision });
+                }}
                 className="flex flex-col gap-3"
               >
                 <legend>Publish a replacement rule</legend>
@@ -175,13 +210,15 @@ export default function CommissionRules({
                   value={kind}
                   onChange={(event) => {
                     setKind(event.target.value as CommissionKind);
+                    setScope(staffId ? "STAFF" : "COMPANY");
+                    setInherit(false);
                     setTarget("");
                     setPreviewItem("");
                   }}
-                  options={[
-                    { value: "SERVICE", label: "Services" },
-                    { value: "PRODUCT", label: "Products" },
-                  ]}
+                  options={Object.entries(COMMISSION_KIND_LABELS).map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
                 />
                 {staffId && (
                   <Select
@@ -193,12 +230,35 @@ export default function CommissionRules({
                     }}
                     options={[
                       { value: "STAFF", label: "Staff default" },
-                      { value: "DEPARTMENT", label: "Department override" },
+                      ...(["SERVICE", "PRODUCT", "FOC"].includes(kind)
+                        ? [{ value: "DEPARTMENT", label: "Department override" }]
+                        : []),
                       { value: "ITEM", label: "Specific item override" },
                     ]}
                   />
                 )}
-                {staffId && (
+                {!staffId &&
+                  [
+                    "PACKAGE_SALE",
+                    "PACKAGE_REDEMPTION",
+                    "STORED_CREDIT_SALE",
+                    "STORED_CREDIT_SPEND",
+                  ].includes(kind) && (
+                    <Select
+                      label="Rule scope"
+                      value={scope}
+                      onChange={(event) => {
+                        setScope(event.target.value as CommissionScope);
+                        setTarget("");
+                        setInherit(false);
+                      }}
+                      options={[
+                        { value: "COMPANY", label: "Company default" },
+                        { value: "PACKAGE", label: "Package override" },
+                      ]}
+                    />
+                  )}
+                {(staffId || scope === "PACKAGE") && (
                   <Input
                     label="Search catalogue for rule or preview"
                     value={search}
@@ -226,7 +286,7 @@ export default function CommissionRules({
                     ]}
                   />
                 )}
-                {scope === "ITEM" && (
+                {(scope === "ITEM" || scope === "PACKAGE") && (
                   <Select
                     label="Commission item"
                     value={target}
@@ -240,7 +300,7 @@ export default function CommissionRules({
                     ]}
                   />
                 )}
-                {staffId && (
+                {(staffId || scope === "PACKAGE") && (
                   <Select
                     label="Rate behavior"
                     value={inherit ? "inherit" : "custom"}

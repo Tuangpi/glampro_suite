@@ -181,10 +181,20 @@ Unknown/incompatible/unlinked financial evidence fails closed. Snapshot candidat
 remain evidence, not earnings, paid-session eligibility, collection evidence or report
 totals; `PENDING_RELEASE` remains unchanged even in synthetic internal posting tests.
 
-SC-003: attribution and mutually exclusive event integration; SC-004: package
+SC-003 local attribution, mutually exclusive event validation and correction/void
+integration are complete as of October 27, 2026; see VERIFICATION.md. SC-004: package
 catalogue validation/configuration and activation policy; SC-006: persisted explicit
 allocation/ratios, refund deltas, eligibility and audited overrides; SC-005: report
 cutover, correction links, approval/lock/payment APIs and exact export reconciliation.
 These are downstream dependencies, not claims of implemented behavior. No unresolved
 foundation policy blocker; all algorithms above require scenario/acceptance tests
 when their persistence and public workflows are implemented.
+
+SC-003 mixed-tender acceptance checkpoint (October 26, 2026): two session packages
+cover distinct units of one three-unit service line, with explicitly shared family
+bonus credit and cash paying the remainder. Each redemption preserves its own original
+purchase value and explicit/inferred performer split; credit draws do not fabricate
+session evidence. Membership without holding-level sharing fails atomically. A void
+restores sessions and credit once to their original owners even after sharing is
+withdrawn. This verifies evidence isolation and the disabled writer, not collection
+allocation, bonus-credit ratios, paid-session eligibility or reporting cutover.

@@ -67,5 +67,6 @@ export function resolveCommission(
     if (scope === "STAFF" && !rule && input.itemKind === "SERVICE")
       return { rate: input.legacyServiceRate, source: "LEGACY_STAFF", ruleId: null };
   }
+  if (input.itemKind === "FOC") return { rate: "5", source: "FOC_DEFAULT", ruleId: null };
   return { rate: "0", source: "NONE", ruleId: null };
 }

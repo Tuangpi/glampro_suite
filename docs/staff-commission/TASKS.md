@@ -48,7 +48,7 @@ SC-006 is a launch dependency, not an optional advanced feature.
 
 ## SC-003 — Seller and therapist attribution
 
-- Status: IN PROGRESS.
+- Status: DONE — local implementation and verification, October 27, 2026.
 - Dependencies: SC-002.
 - Expected result: POS seller/performer attribution, up to four staff with validated
   splits, purchase/redemption commission integration, original-value preservation,
@@ -59,6 +59,14 @@ SC-006 is a launch dependency, not an optional advanced feature.
   voids, concurrent retries, failure rollback, and permission/tenant isolation.
   Existing sale/redemption flows and typechecks remain passing. No collection-based
   sale commission release before SC-006 and SC-005.
+- Completion evidence: fresh disposable PostgreSQL replay of all 55 migrations;
+  focused API/acceptance 72/72 with no skips, shared 196/196, full web 820/820.
+  Workspace lint, typecheck and production build pass. Local Chrome verified policy
+  publication, invalid/valid seller splits, independent performers, reload persistence,
+  cash completion and reasoned void; database readback verifies attribution, separate
+  cashier and zero earnings. See VERIFICATION.md for coverage and limitations.
+  Eligibility, collection allocation and reporting activation belong to SC-006/SC-005;
+  they do not block attribution-only local completion or authorize earnings activation.
 - Earlier checkpoint: explicit split capture/persistence/UI implemented and verified (shared
   193/193, focused web 74/74, disposable sale database tests 57/57; 53 migrations replay).
   At that checkpoint, policy/redemption/correction integration remained outstanding.
@@ -78,10 +86,20 @@ SC-006 is a launch dependency, not an optional advanced feature.
   read-only support. UI and real HTTP permission/concurrency acceptance pass; see
   PROGRESS.md. Policy UI is implemented, but browser walkthrough, broader release
   acceptance and eligibility/reporting cutover remain unfinished. No earnings activation.
+- Correction-route acceptance checkpoint: real HTTP correction/void permissions, expired
+  package entitlement, transfer/original-value preservation, current-period rollback,
+  concurrent retries, exact reversal/repost and one-time restored sessions verified.
+  Shared 196/196, focused web 46/46, focused API 71/71, no skips. Broader mixed-funding
+  release acceptance, browser walkthrough and eligibility/reporting cutover remain open.
+- Mixed-tender checkpoint: two packages cover distinct units on one service line;
+  shared bonus credit and cash fund the remainder. Original values/own-rate splits,
+  private-credit rollback, restored owners after sharing withdrawal, void retries and
+  no earnings verified. Focused API/PostgreSQL 72/72, no skips; changed-file lint passes.
+  This is not collection-allocation or bonus-credit-ratio implementation (SC-006).
 
 ## SC-004 — Commission administration
 
-- Status: TODO.
+- Status: DONE (local implementation and verification, October 27, 2026).
 - Dependencies: SC-002, SC-003.
 - Expected result: staff/type matrix, bulk publish, company policy, package override
   and previews using existing UI/rule conventions. Effective dates, reasons, explicit
@@ -89,6 +107,15 @@ SC-006 is a launch dependency, not an optional advanced feature.
 - Completion check: API/web tests for bulk atomicity, stale edits, effective dates,
   rule precedence, inactive staff/items, policy validation, snapshot stability,
   tenant isolation, and unauthorized actions; applicable lint/typecheck/build pass.
+- Result: all seven kinds, active package/value-package overrides and previews;
+  paginated/searchable staff matrix, bounded atomic bulk publication and per-rule
+  audit, pinned draft revisions and explicit reload/discard. Existing attribution
+  policy remains the company-policy editor. FOC defaults to approved 5% only for
+  explicitly classified FOC events. Earnings activation remains disabled.
+- Verified: focused API/database 69/69, legacy commission HTTP 1/1, SC-003 database
+  regression 5/5, shared 197/197, full web 830/830; workspace lint/typecheck/build.
+  Local Chrome exercised real bulk publication and package override/history.
+  See ADMINISTRATION.md for reproduction, boundaries and unperformed checks.
 
 ## SC-006 — Collection-based commission and eligibility
 
