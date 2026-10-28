@@ -47,7 +47,18 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-003 — Versioned plans, assignments and settings
 
-- Status: **IN PROGRESS** (October 27, 2026).
+- Status: **DONE** (October 28, 2026; approved configuration-only scope).
+- Approved Option 2: historical monetary integration/full-run equality is deferred
+  to CP-003A. Missing monetary evidence no longer blocks configuration acceptance,
+  but readiness must remain UNAVAILABLE/null and earnings inactive. Scope approval
+  alone is not completion; review configuration acceptance evidence before DONE.
+- Acceptance: fresh disposable PostgreSQL migration replay (58 migrations), root
+  build, workspace typechecks/lint, shared 252/252, full serial API 638 passed/35
+  gated skips/zero failures, Chrome 18/18 twice and web 910/910 (106 files) pass.
+  Configuration/readiness remain non-activating; missing historical money returns
+  UNAVAILABLE/null. See [CONFIGURATION_ACCEPTANCE.md](CONFIGURATION_ACCEPTANCE.md).
+  Historical follow-ups below are chronological checkpoints, not current scope/status.
+  CP-004 is next ready; not started in this task.
 - Dependencies: CP-002.
 - Checkpoint: configuration storage, immutable published versions/audit, owner-only
   writes, manager salary-redacted reads, company-wide assignment timelines,
@@ -124,17 +135,72 @@ Existing implementation and reference tests need verification, not automatic cre
   API typecheck/lint/build pass. No production code changes required. Final serial
   disposable API regression 636 passed/34 gated skips/zero failures, exit 0.
   Additional interleavings and browser acceptance remain unclaimed; CP-003 stays IN PROGRESS.
+- Follow-up: historical evidence gate documented in HISTORICAL_INPUTS.md after
+  source/engine inspection; no complete monetary source established. Invalid latest
+  pre-close salon settings now retain audit identity and block rather than throw
+  or fall back. Salon/staff regression cases pass; focused input/timezone 22/22,
+  API typecheck/lint/build pass. Full calculation/equality remain blocked;
+  authenticated browser acceptance remains open. CP-003 IN PROGRESS, CP-004 untouched.
+- Follow-up: opt-in real Chrome/API readiness acceptance verifies owner/company,
+  manager/outlet denial, stale revision/reload, permission loss on retry and failed
+  request/recovery. Final suite 7/7 on two runs; default gate skips safely. Focused
+  web 29/29, input/timezone 22/22, API typecheck/lint/build pass. This covers readiness,
+  not all configuration browser flows or login/2FA/refresh. Complete historical
+  calculation/equality remain blocked; CP-003 IN PROGRESS and CP-004 untouched.
+- Follow-up: expanded Chrome suite covers reason-required sample creation,
+  draft save/publication, published snapshot immutability, duplicate/archive and
+  manager write denial with persisted revision/audit checks. Browser 11/11 on two
+  runs; focused web 29/29, input/timezone 22/22, API typecheck/lint/build pass.
+  Staff classification/assignment and salary/settings browser flows remain open;
+  monetary input integration/equality remain blocked. CP-003 stays IN PROGRESS.
+- Follow-up: Chrome classification/assignment and salon settings cases verify
+  coverage refusal rollback, audited join-date/plan/classification setup, exact
+  settings failure/recovery and manager controls/API denial. Browser 15/15 on two
+  runs; focused web 29/29, input/timezone 22/22, API typecheck/lint/build pass.
+  At that checkpoint, staff creation, salary, scoped assignment and stale-settings browser gaps remained;
+  authoritative monetary integration/equality still blocked. CP-003 IN PROGRESS.
+- Follow-up: Chrome salary reason/audit/redaction, stale salary/settings reload and
+  atomic staff creation with published outlet-scoped assignment now pass. Expanded
+  browser suite 18/18 on two runs (17 children plus parent). This closes those named
+  browser gaps, not exhaustive lifecycle acceptance. Authoritative historical
+  inputs and calculator/full-run impact equality still block CP-003 completion;
+  CP-004 remains TODO and earnings remain inactive.
 - Expected result: tenant/outlet-safe persistence and authenticated APIs/UI for
   plans, immutable published versions, assignment history, payroll profiles,
-  settings, stages, calculator, chart comparison, impact preview and sample plans.
+  settings, stages, sample-input calculator, chart comparison, read-only historical
+  readiness and sample plans. Historical monetary impact belongs to CP-003A.
   Reuse existing users and authorization; no mirrored staff source of truth.
 - Completion check: schema/migration checks on disposable DB only; API/UI tests
   for create/duplicate/archive, assignment overlap, last-day version selection,
   invalid tiers/stages, reason/audit requirements, salary permissions, outlet scope,
-  concurrent publication and stale revision handling; calculator/impact equality.
+  concurrent publication and stale revision handling; sample calculator equality
+  with the shared engine. Missing historical evidence must produce no monetary
+  result; stale/error/permission changes hide prior readiness. Configuration writes
+  and readiness reads must not create earnings, mutate paid history or activate payroll.
   Published seed definitions reproduce CP-002 fixtures without altering live tenants.
 - Coverage: FR-PLN, FR-SET, FR-STG, FR-ASN, FR-INC configuration;
   FR-PAY-02; C1–C7, C17–C20; TC-14/15/23/24/25 integrated configuration paths.
+  Monetary FR-SET-10–FR-SET-12 and historical TC-25 acceptance remain in CP-003A;
+  configuration evidence does not accept those historical paths.
+
+## CP-003A — Authoritative historical monetary preview
+
+- Status: **TODO** (deferred by user approval October 28, 2026).
+- Dependencies: CP-003, CP-004, CP-005.
+- Scheduling: after CP-005, before CP-007 release acceptance.
+- Expected result: authorized server-owned historical rate-free inputs, explicit
+  complete coverage, frozen opening carry, scoped group metrics and configuration
+  revisions, integrated into historical monetary impact preview. Follow
+  HISTORICAL_INPUTS.md; existing legacy records do not yet establish this evidence.
+- Completion check: preview and full staff-period engine agree on working lines,
+  incentives, totals, carry and write-offs using identical complete inputs. Cover
+  missing/contradictory evidence versus authoritative zero, disabled/departed staff,
+  outlet scope, refunds, fractional units, plan changes and exact-money boundaries.
+  Authorization, revision/context changes and failures must not expose stale money.
+  Run relevant shared/API/UI tests and authenticated browser acceptance. Keep
+  UNAVAILABLE/null until all evidence gates pass; never fabricate prior history.
+- Coverage: historical monetary portions of FR-SET-10–FR-SET-12, impact/full-run
+  equality and historical TC-25 integration. Remains a must-have release gate.
 
 ## CP-004 — Transactional capture and package workflows
 
@@ -191,7 +257,7 @@ Existing implementation and reference tests need verification, not automatic cre
 ## CP-007 — Cutover, reconciliation and release verification
 
 - Status: **TODO**.
-- Dependencies: CP-006.
+- Dependencies: CP-006, CP-003A.
 - Expected result: prospective guarded activation, evidence-quality inventory,
   no duplicate legacy/new payouts, safe migration/backfill tooling and rollout/
   rollback documentation. All must-haves accepted; should/could deferrals explicit.

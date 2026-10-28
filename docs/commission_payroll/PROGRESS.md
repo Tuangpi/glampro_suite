@@ -2,23 +2,220 @@
 
 ## Current State
 
-- Current task: CP-003 — IN PROGRESS, October 27, 2026.
-- Most recently completed: CP-002 — DONE, October 27, 2026.
+- Current task: None. CP-003 accepted under approved configuration-only scope.
+- Most recently completed: CP-003 — DONE, October 28, 2026.
 - Priority: this project before unrelated backlog. New requirements govern policy;
   existing authentication, tenant safety and exact-money integrity remain mandatory.
-- Shared engine plus partial CP-003 configuration persistence/APIs/settings UI
-  implemented. Migration replayed only on disposable PostgreSQL; application DB,
+- Shared engine and CP-003 configuration persistence/APIs/settings UI accepted.
+  Migration replayed only on disposable PostgreSQL; application DB,
   POS/earnings, activation and deployment remain unchanged. No dependencies added.
-- No policy question currently blocks local work; decisions adopted under delegation
-  are in DECISIONS.md, including explicit deviations from SRS proposed defaults.
-- Latest continuation: disposable lifecycle concurrency tests cover competing
-  atomic staff creation, join-date/assignment edits, classification/plan removal,
-  repair/reactivation and same-revision settings edits. Three repeated runs pass;
-  no production-code change required. Historical readiness API/UI remain read-only.
-- Next: complete authoritative impact-preview input integration, remaining API/UI/browser
-  acceptance and any additional lifecycle race coverage. CP-005 must integrate scoped
-  statements, carry and incentive metrics before earnings activation.
+- Deferred to CP-003A: authoritative historical monetary inputs, frozen opening
+  carry, scoped group metrics and preview/full-run equality. Depends on CP-004
+  capture and CP-005 statements; remains a CP-007 must-have release gate.
+- Latest verification: 58 migrations replayed; root build, workspace typechecks/lint,
+  shared 252/252, serial API 638 passed/35 gated skips, Chrome 18/18 twice and web
+  910/910 pass. Disposable PostgreSQL stopped; configuration remains non-activating.
+- Next: CP-004 — transactional capture and package workflows, TODO and ready.
+  Not started in this task. Historical money remains unavailable; activation prohibited.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 28, 2026 — CP-003 configuration-only acceptance complete
+
+- Reviewed the approved scope against implementation and mapped completion checks
+  in CONFIGURATION_ACCEPTANCE.md. No remaining configuration-only blocker found;
+  CP-003 marked DONE. CP-003A retains historical monetary integration/equality and
+  CP-007 release gating. Corrected FR-SET/TC-25 ownership in REQUIREMENTS.md.
+- Fresh PostgreSQL 18 on loopback 55474, `payroll_configuration_test`: **58 migrations
+  replayed**. Root production build, workspace typechecks and lint pass. Shared
+  **252/252**; full serial API with CP-003 opt-in **638 passed, 35 unrelated gated
+  skips, zero failures**; real Chrome/API **18/18 twice**; web **910/910 across 106
+  files** with one worker. Runner exited 0; disposable cluster stopped cleanly.
+- Service/HTTP/browser checks cover immutable publication/audit, tenant/outlet scope,
+  reasoned owner writes, salary redaction, atomic staff creation/lifecycle rollback,
+  concurrency and stale reload. Readiness remains UNAVAILABLE/null; earnings remain
+  inactive and browser checks preserve earnings/collection counts. Sample calculator
+  checks use the shared engine, not fabricated historical financial evidence.
+- Logs: `/tmp/cp003-config-review-LobY2h/` (results, build, migrate, typecheck, lint,
+  shared, api, browser, browser-repeat, web, stop and exit-code). Missing clipboard
+  helpers and pg queued-query deprecations were non-failing warnings.
+- No application source edits, application DB access/migration, historical backfill,
+  earnings activation, dependency installation, deployment, commit or push. Existing
+  changed application files hash-verified unchanged. Browser login/2FA/refresh,
+  exhaustive interleavings and production readiness remain outside this acceptance.
+- Next ready task: CP-004. Stop after this acceptance; do not start it automatically.
+
+## October 28, 2026 — Approved configuration/historical-preview scope split
+
+- User approved Option 2, conditional on configuration safety without historical
+  monetary preview. Updated PROJECT, DECISIONS, TASKS, REQUIREMENTS, evidence/browser
+  boundaries and root handoff. CP-003 is IN PROGRESS rather than BLOCKED or DONE.
+- Added CP-003A for authoritative historical monetary integration and full-run
+  equality after CP-004/CP-005; CP-007 explicitly depends on it. No must-have was
+  removed. Chronological checkpoints below retain their original status claims.
+- Inspected service boundary: readiness returns explicit missing-evidence blockers
+  and `impact: null`; configuration reports `earningsActive: false`. Focused
+  input/timezone tests **22/22 passed**; five web configuration/readiness files
+  **45/45 passed**, including unavailable preview, permission loss, stale revisions,
+  reasoned edits, salary redaction, scoped assignment and shared sample calculator.
+- These focused checks support the safe separation, not fresh full DB/browser
+  acceptance. Prior disposable API/browser results remain historical evidence.
+  Prettier reports all eight edited documents formatted; local Markdown links
+  resolve and all eight task dependency nodes are acyclic, with CP-003A retained
+  as a release gate. `git diff --check` emitted no errors. The terminal wrapper
+  did not confirm command completion despite displaying the final PASS output.
+- No application code edits, database operations, earnings activation, CP-004
+  implementation, dependency installation, deployment, commit or push. Existing
+  uncommitted application changes preserved. Next: consolidate CP-003 configuration
+  acceptance and rerun remaining needed disposable integration checks before DONE.
+
+## October 28, 2026 — CP-003 blocker confirmed on resumption
+
+- Re-read the historical evidence contract, readiness resolver/service and collection/
+  earnings schema. Collections do not establish complete rate-free payroll inputs;
+  rate-bearing earnings cannot substitute for them. The service deliberately returns
+  the three missing monetary evidence blockers and `impact: null`.
+- Focused historical-input tests: **7/7 passed**. This is current validation of the
+  resolver only; prior full regression/browser results below were not rerun.
+- Marked CP-003 BLOCKED rather than leave an unexecutable monetary integration step
+  IN PROGRESS. Needed decision: identify a concrete authorized evidence source, or
+  approve a scope/dependency revision. No speculative storage/adapter, CP-004 work,
+  application DB access, migration, activation, deployment or commit performed.
+
+## October 27, 2026 — CP-003 remaining named browser gaps and completion review
+
+- Continued CP-003 only. Added Chrome salary reason/exact-decimal audit checks,
+  manager salary profile/history redaction and direct write denial. Concurrent
+  profile/settings updates retain local edits and require explicit reload; the
+  stale forms cannot save. Staff creation refuses missing plan without identity,
+  then atomically persists classified staff, join date, department link and a
+  published outlet-scoped assignment. Final audit counts and unchanged earnings/
+  collections verified. No production changes required for this increment.
+- Browser **18/18 on two runs** (17 children plus parent). Full serial API:
+  **638 passed, 35 gated skips, zero failures**, including configuration and
+  lifecycle concurrency acceptance. Shared **252/252**. Full web initially had
+  10 failures in PayrollPlans under concurrent CPU load (nine timeouts followed by
+  an extra-alert failure); unchanged rerun with `--maxWorkers=1` passed **910/910,
+  106 files**, exit 0. No test assertions weakened or timeout settings changed.
+  Clipboard helper warnings (`xclip`/`xsel` absent) were non-failing.
+- API typecheck/lint/build and browser formatting/whitespace checks pass. Default
+  browser opt-out skips one, exit 0, with required environment supplied; a bare
+  invocation without DATABASE_URL fails module initialization as expected.
+- Logs: `/tmp/cp003-browser-final-gaps{,-repeat}.log`,
+  `/tmp/cp003-completion-{api,web,web-serial,shared}.log`. Only synthetic disposable
+  data written; immutable evidence retained. PostgreSQL at
+  `/tmp/cp003-edit-guard-pg-gzy72041`, port 55474, stopped after API checks.
+- Completion review: named browser gaps above are covered, not every invalid
+  definition/lifecycle/interleaving. CP-003 remains **IN PROGRESS** because its
+  historical impact/calculator/full-run equality completion check is blocked by
+  missing authoritative complete rate-free monetary inputs, frozen opening carry
+  and scoped group metrics. See HISTORICAL_INPUTS.md. Fail-closed `UNAVAILABLE`,
+  `impact: null` remains correct. No invented zeros, legacy-earnings inference,
+  current-price substitution, application DB writes, migration, activation,
+  deployment or commit. CP-004 remains TODO. Next: establish authoritative evidence
+  and its integration before implementing or accepting monetary preview equality.
+
+## October 27, 2026 — CP-003 browser assignment and salon settings acceptance
+
+- Added four real Chrome/API/DB cases to the existing suite. Commission-role save
+  without coverage refuses without identity/audit changes and retains local edits.
+  Owner then saves non-commission/join date, assigns the published company plan,
+  and saves commission classification. Checks ongoing snapshotted assignment scope,
+  join date and audit revisions/counts/actor/reason. Explicit reload adopts saves.
+- Salon settings network failure retains exact decimal local values without audit;
+  retry persists the expected reasoned payload. Manager assignment/classification/
+  salon controls are disabled; direct writes return 403 without evidence changes.
+  Final earnings/collection counts remain unchanged. No production changes needed.
+- Expanded browser **15/15 on two runs**, latest exit 0; default gate one skipped,
+  exit 0. Focused web **29/29**, input/timezone **22/22**, API typecheck/lint/build
+  pass. Formatting/whitespace checks pass. Full API/web/shared regressions not rerun.
+- Initial assignment fixture lacked an audited join date because the deliberately
+  refused classification correctly did not save it. Fixed setup through the real
+  UI's valid non-commission classification path before assignment, not DB bypass.
+- Prior changes preserved. Only synthetic disposable writes on port 55474;
+  `/tmp/cp003-edit-guard-pg-gzy72041` stopped after checks. Immutable audit retained;
+  no trigger changes/deletion, application DB writes, activation, migrations,
+  dependencies, deployment, commit or push. Logs `/tmp/cp003-browser-settings{,-repeat}.log`.
+- CP-003 IN PROGRESS. Next unblocked browser gaps: staff creation, salary profiles,
+  outlet-scoped assignment and stale settings conflict handling. Historical monetary
+  integration/full-run equality remain blocked on authoritative inputs. CP-004 untouched.
+
+## October 27, 2026 — CP-003 browser plan lifecycle acceptance
+
+- Extended the existing opt-in Chrome suite with four real UI/API/DB cases:
+  missing-reason creation leaves no plan/audit; reasoned Hair sample creation
+  persists the exact shared definition; unsaved edits block publication, saved
+  draft publishes and a future version leaves the published snapshot unchanged;
+  duplicate/archive preserves source history; manager controls/direct publish
+  refuse writes. Persisted revision, version, actor/reason and audit counts checked.
+- No production changes required. Existing readiness checks remain, including
+  no preview writes. Final lifecycle phase also checks unchanged earnings and
+  collection counts. This does not cover all staff/settings/assignment browser flows.
+- Expanded suite **11/11 on two runs**, latest exit 0; default gate one skipped
+  test, exit 0. Focused web **29/29**, input/timezone **22/22**, API
+  typecheck/lint/build and formatting/whitespace checks pass. Full regression
+  suites not rerun; earlier full-suite totals remain historical evidence.
+- Initial runs exposed harness-only CORS-origin, DOM-result serialization and
+  native date-input issues. Explicit test-origin prerequisite, boolean waits and
+  native DOM date/select events fix those without bypassing API authorization.
+  Updated BROWSER_ACCEPTANCE.md with setup and coverage limits.
+- Prior working-tree changes preserved. Synthetic writes only in disposable
+  `/tmp/cp003-edit-guard-pg-gzy72041`, port 55474; cluster stopped after validation.
+  Synthetic immutable evidence retained, no audit deletion/trigger bypass.
+  Logs `/tmp/cp003-browser-lifecycle{,-repeat}.log`. No application DB writes,
+  activation, dependencies, migration, deployment, commit or push.
+- CP-003 remains IN PROGRESS. Next unblocked work: staff classification/assignment
+  and salary/settings browser acceptance. Complete historical monetary integration
+  and full-run equality still blocked on authoritative evidence. CP-004 untouched.
+
+## October 27, 2026 — CP-003 authenticated readiness browser acceptance
+
+- Added opt-in `payroll-preview-browser.acceptance.test.ts`, using installed
+  headless Chrome debugging pipe, real Vite app/API and the existing disposable
+  PostgreSQL on port 55474. No dependencies, response mocks or demo auth headers.
+  Synthetic signed access-token bootstrap calls real `/auth/me`; login/2FA/refresh
+  flows are deliberately not claimed. Instructions/limits: BROWSER_ACCEPTANCE.md.
+- Six subtests cover owner/company unavailable evidence; failed retry clearing
+  prior results and recovery; real stale metadata revision and reload/new check;
+  server role demotion clearing evidence on retry; manager UI/direct API denial;
+  outlet-owner UI/direct API denial. Parent checks no preview earnings/collection/
+  audit writes, apart from the intentional metadata edit's one audit event.
+- Final suite **7/7 on two runs**, final exit 0. Default opt-out verified: one
+  skipped test, exit 0. Focused web **29/29**, input/timezone **22/22**, API
+  typecheck/lint/build pass. Full API/web/shared regressions not rerun.
+- Initial harness attempts failed (incorrect root resolution/native Node abort,
+  then cleanup foreign-key refusal). Fixed path, awaited process shutdown and
+  retained immutable synthetic evidence consistent with existing acceptance tests.
+  No triggers disabled or audit rows deleted. Chrome sandbox remains enabled.
+- Prior working-tree changes preserved. Only disposable DB synthetic fixtures/
+  metadata/role changes were written; no application DB writes, migrations,
+  activation, deployment, dependency additions, commit or push. Disposable cluster
+  `/tmp/cp003-edit-guard-pg-gzy72041` stopped after checks. Logs:
+  `/tmp/cp003-browser-{acceptance,repeat,final}.log`.
+- CP-003 remains IN PROGRESS. Complete calculation/equality blocked on authoritative
+  evidence; broader configuration-browser acceptance and other interleavings remain
+  unclaimed. Permission loss is observed on the next request, not pushed to idle
+  pages. CP-004 untouched.
+
+## October 27, 2026 — CP-003 historical evidence contract
+
+- Inspected persisted collection/legacy earnings fields and shared period-engine
+  inputs. No complete authoritative historical monetary source was established.
+  `HISTORICAL_INPUTS.md` records the integration gate: complete reconciled source
+  coverage, source-time rate-free lines, frozen opening balances, scoped group
+  metrics and configuration/source revision identity. This is a contract for
+  future integration, not an implemented monetary adapter or permission for CP-004.
+- Invalid latest pre-close salon settings now preserve their audit ID/revision
+  and return HISTORICAL_SALON_SETTINGS_UNAVAILABLE instead of throwing. Added
+  salon/staff invalid-latest regression cases proving no fallback to older valid
+  or post-close/current settings. Status/impact remain UNAVAILABLE/null.
+- Verified focused input/timezone **22/22**, API typecheck, lint and build
+  (including shared build). Initial test-fixture type inference error was fixed
+  before successful validation. Full API/web/shared regressions and authenticated
+  browser acceptance were not rerun. Previous regression totals are historical.
+- Initial working tree was clean; earlier accumulated work was already present
+  in repository files. No database startup/writes, migrations, activation,
+  dependencies, deployment, commit or push. CP-003 remains IN PROGRESS; complete
+  calculation/equality remain blocked on authoritative evidence; CP-004 untouched.
 
 ## October 27, 2026 — CP-003 lifecycle concurrency acceptance
 

@@ -167,3 +167,56 @@ test("future assignments do not select staff and ambiguous timelines are rejecte
   });
   assert.throws(() => resolvePayrollPreviewConfiguration(input), /Overlapping/);
 });
+
+test("invalid latest salon audit blocks readiness without falling back to older or current settings", () => {
+  const input = fixture();
+  const events = [
+    ...input.events,
+    {
+      id: "settings-valid",
+      kind: "SETTINGS",
+      targetId: "company",
+      revision: 1,
+      createdAt: new Date("2026-09-01T00:00:00Z"),
+      payload: PAYROLL_DEFAULT_SETTINGS,
+    },
+    {
+      id: "settings-invalid",
+      kind: "SETTINGS",
+      targetId: "company",
+      revision: 2,
+      createdAt: new Date("2026-09-15T00:00:00Z"),
+      payload: { ...PAYROLL_DEFAULT_SETTINGS, minimumDepositPct: "invalid" },
+    },
+    {
+      id: "settings-current",
+      kind: "SETTINGS",
+      targetId: "company",
+      revision: 3,
+      createdAt: input.endsAt,
+      payload: PAYROLL_DEFAULT_SETTINGS,
+    },
+  ];
+  const result = resolvePayrollPreviewConfiguration({ ...input, events });
+  assert.equal(result.settingsEventId, "settings-invalid");
+  assert.equal(result.settingsRevision, 2);
+  assert.equal(result.settings, null);
+  assert.deepEqual(result.blockers, ["HISTORICAL_SALON_SETTINGS_UNAVAILABLE"]);
+});
+
+test("invalid latest staff audit blocks readiness without falling back to older employment evidence", () => {
+  const input = fixture();
+  input.events.push({
+    id: "staff-invalid",
+    kind: "STAFF",
+    targetId: "departed",
+    revision: 3,
+    createdAt: new Date("2026-09-15T00:00:00Z"),
+    payload: { joinDate: "not-a-date", stageEndOverride: null },
+  });
+  const row = resolvePayrollPreviewConfiguration(input).staff[0];
+  assert.equal(row.staffEventId, "staff-invalid");
+  assert.equal(row.staffRevision, 3);
+  assert.equal(row.joinDate, null);
+  assert.deepEqual(row.blockers, ["HISTORICAL_STAFF_SETTINGS_UNAVAILABLE"]);
+});

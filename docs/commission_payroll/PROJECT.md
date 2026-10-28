@@ -81,6 +81,14 @@ backfill, deployment, commit, or push is authorized by management initialization
 
 ## Delivery and completion
 
+Approved scope split (October 28, 2026): CP-003 configuration may be accepted
+independently of historical monetary preview only after its configuration and
+safety checks pass. Historical readiness remains unavailable/null without complete
+evidence; sample-input calculators are not historical payout estimates. CP-003A
+retains authoritative monetary integration and full-run equality after CP-004
+capture and CP-005 frozen statements/carry. It remains required before CP-007
+release acceptance. This does not authorize earnings activation or production writes.
+
 Use [TASKS.md](TASKS.md) and [PROGRESS.md](PROGRESS.md). One selected task per
 session; stop after its implementation, verification, and handoff. No feature is
 DONE solely because a demo, document, or prior tracker says it exists.

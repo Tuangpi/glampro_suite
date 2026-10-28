@@ -2,6 +2,76 @@
 
 ## Current State
 
+- **CP-003 DONE — October 28, 2026 (configuration-only):** fresh disposable replay
+  of all 58 migrations, root build, workspace typechecks/lint, shared 252/252, serial
+  API 638 passed/35 gated skips/zero failures, Chrome 18/18 twice and web 910/910
+  pass. Added acceptance evidence map. Historical monetary preview remains CP-003A;
+  readiness stays unavailable/null and earnings inactive. Disposable DB stopped;
+  existing changed application files preserved. No application DB operations,
+  activation or deployment. Next ready: CP-004, not started. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md). Entries below are historical.
+
+- **CP-003 scope split approved — October 28, 2026:** user chose configuration-only
+  acceptance, conditional on safety without historical monetary preview. CP-003 is
+  IN PROGRESS pending acceptance review, not DONE. Historical monetary integration/
+  full-run equality is tracked in CP-003A after CP-004/CP-005 and remains a CP-007
+  release gate. Focused input/timezone 22/22 and configuration/readiness web 45/45
+  pass. Full DB/browser suites not rerun; configuration remains non-activating and
+  historical impact null. No code edits or database operations in this revision.
+  Next: finish CP-003 configuration acceptance; CP-004 not started. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md). Older entries below are history.
+
+- **CP-003 BLOCKED — October 28, 2026:** resumption review confirms no established
+  authoritative historical rate-free inputs, frozen opening carry or scoped group
+  metrics. Focused historical-input tests 7/7 pass; full suites not rerun. Next:
+  identify an authorized source satisfying the evidence contract or explicitly
+  approve a scope/dependency revision. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md). No production code changes,
+  database access or CP-004 work; previews remain unavailable and earnings inactive.
+
+- **CP-003 remaining named browser gaps — October 27, 2026:** salary permissions/
+  audit, stale salary/settings reload and atomic staff creation with scoped initial
+  assignment pass in real Chrome/API/DB acceptance: 18/18 on two runs. Full serial
+  API 638 passed/35 gated skips/zero failures; full web 910/910 with one worker;
+  shared 252/252; API typecheck/lint/build and formatting/whitespace pass. Initial
+  concurrent web run timed out; unchanged serial rerun passed. Disposable DB stopped.
+  See [CP handoff](docs/commission_payroll/PROGRESS.md). CP-003 cannot be marked DONE:
+  authoritative historical inputs and calculator/full-run impact equality remain
+  blocked. CP-004 untouched; no earnings activation or application DB writes.
+
+- **CP-003 browser assignment/settings — October 27, 2026:** Chrome/API tests
+  cover coverage-required classification, audited join-date/assignment setup,
+  salon settings failure/recovery and manager denial. Browser 15/15 on two runs;
+  focused web 29/29, input/timezone 22/22, API typecheck/lint/build pass. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md). CP-003 IN PROGRESS;
+  remaining browser gaps and authoritative monetary integration/equality open.
+  CP-004 untouched; synthetic disposable writes only, no activation.
+
+- **CP-003 browser plan lifecycle — October 27, 2026:** real Chrome acceptance
+  now covers reason-required sample creation, saved-draft publication, immutable
+  published history, duplicate/archive and manager write denial. Browser 11/11
+  on two runs; focused web 29/29, input/timezone 22/22, API typecheck/lint/build
+  pass. See [CP handoff](docs/commission_payroll/PROGRESS.md). CP-003 IN PROGRESS;
+  staff/settings browser flows and authoritative monetary inputs/equality remain.
+  CP-004 untouched; synthetic disposable writes only, no earnings activation.
+
+- **CP-003 authenticated readiness browser acceptance — October 27, 2026:** real
+  Chrome/web/API tests cover owner/company, manager/outlet denial, stale revisions,
+  permission loss on retry and failure/recovery. Final browser 7/7 on two runs,
+  focused web 29/29, input/timezone 22/22 and API typecheck/lint/build pass. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md) for scope and harness limits.
+  CP-003 remains IN PROGRESS; monetary inputs/equality remain blocked. CP-004
+  untouched. Disposable synthetic writes only; no application DB writes/activation.
+
+- **CP-003 historical evidence contract — October 27, 2026:** documented the
+  authoritative-input integration gate; existing records still do not establish
+  complete historical monetary inputs. Invalid latest salon audit now returns an
+  explicit blocker without older/current fallback, with salon/staff regression
+  coverage. Focused input/timezone 22/22 and API typecheck/lint/build pass. See
+  [CP handoff](docs/commission_payroll/PROGRESS.md). CP-003 remains IN PROGRESS;
+  calculation/equality and browser acceptance remain open. CP-004 untouched;
+  no database startup/writes or earnings activation.
+
 - **CP-003 lifecycle concurrency — October 27, 2026:** disposable tests verify
   competing atomic creation, join-date/assignment ordering, classification/removal,
   repair/reactivation and same-revision settings. Concurrency suite 6/6 passed on

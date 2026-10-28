@@ -61,6 +61,7 @@ export function resolvePayrollPreviewConfiguration(input: {
   const assignments = payrollAssignmentSchema.array().parse(assignment?.payload ?? []);
   const versions = input.versions.map((v) => payrollPlanVersionSchema.parse(v));
   const settings = latest("SETTINGS", "company", true);
+  const settingsEvidence = payrollSettingsSchema.safeParse(settings?.payload);
   const rows = input.staff.flatMap((staff) => {
     const selected = resolvePayrollPlan(staff.id, input.periodKey, assignments, versions);
     if (selected?.version.planId !== input.planId) return [];
@@ -86,8 +87,8 @@ export function resolvePayrollPreviewConfiguration(input: {
     assignmentEventId: assignment?.id ?? null,
     settingsRevision: settings?.revision ?? 0,
     settingsEventId: settings?.id ?? null,
-    settings: settings ? payrollSettingsSchema.parse(settings.payload) : null,
-    blockers: settings ? [] : ["HISTORICAL_SALON_SETTINGS_UNAVAILABLE"],
+    settings: settingsEvidence.success ? settingsEvidence.data : null,
+    blockers: settingsEvidence.success ? [] : ["HISTORICAL_SALON_SETTINGS_UNAVAILABLE"],
     staff: rows,
   };
 }

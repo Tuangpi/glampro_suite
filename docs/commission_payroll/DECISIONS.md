@@ -8,6 +8,27 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-003 configuration-only acceptance — approved October 28, 2026
+
+- The user approved Option 2: accept configuration separately, provided it works
+  safely without a historical monetary preview. This supersedes the earlier
+  requirement to complete monetary preview integration within CP-003.
+- CP-003 retains configuration persistence, published version immutability,
+  assignments, profiles/settings, audit/authorization, sample-input calculator,
+  comparison and read-only historical readiness. Missing evidence must return
+  `UNAVAILABLE` with `impact: null`, never an estimated zero or legacy repricing.
+- Move authoritative historical monetary integration and preview/full-run equality
+  to CP-003A, dependent on CP-004 source capture and CP-005 frozen statements/carry.
+  Historical monetary preview remains a must-have and a CP-007 release gate.
+  Configuration readiness/inventory and sample calculations do not satisfy it.
+- CP-003 is IN PROGRESS pending configuration-only acceptance review, not DONE by
+  scope approval alone. CP-004 still depends on accepted CP-003 configuration;
+  CP-005 depends on CP-004, and CP-003A follows CP-005 without a dependency cycle.
+- Configuration must remain non-activating: no payroll earnings, payout changes,
+  historical backfill or changes to approved statements. Production migration,
+  activation and deployment require separate authorization. Do not start CP-004
+  as part of this scope-revision task.
+
 ### CP-003 historical-preview evidence boundary (October 27, 2026)
 
 - Last closed month means the last completed calendar month in the persisted salon
@@ -19,8 +40,9 @@ implemented behavior or production activation. Future conflicts must be recorded
   complete rate-free bases, outlet/category/fixed-award evidence, frozen carry or
   authoritative group metrics. Return explicit UNAVAILABLE/null impact until those
   inputs can be proven. Counts are inventory only; no partial payout estimate.
-- This boundary does not accept TC-25, enable earnings or start CP-004. Complete
-  monetary input integration and full-run equality remain CP-003 acceptance work.
+- This boundary does not accept TC-25, enable earnings or start CP-004. Under the
+  October 28 scope revision, monetary integration/full-run equality belong to
+  CP-003A rather than CP-003 configuration acceptance.
 
 | ID         | Adopted decision                                                                                                                                                                                                                                    |
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
