@@ -35,6 +35,7 @@ import { readCommissionAttributionPolicy } from "./commission-attribution-policy
 import {
   allocatePackage,
   capturePayrollPackagePurchase,
+  payrollPackageSettingsSchema,
   GST_INCLUSIVE_DIVISOR_STRING,
   GST_RATE_DECIMAL_STRING,
   GST_RATE_PERCENT,
@@ -2179,6 +2180,10 @@ async function grantHoldings(
               netCents: economics.netCents.toString(),
               taxCents: economics.taxCents.toString(),
               sellers: line.input.attribution?.sellers ?? null,
+              commissionSettings:
+                catalogue.commissionSettings === null
+                  ? null
+                  : payrollPackageSettingsSchema.parse(catalogue.commissionSettings),
             }),
             expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },

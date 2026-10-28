@@ -2,6 +2,15 @@
 
 ## Current State
 
+- **CP-004 IN PROGRESS — explicit package settings, October 28, 2026:** owner-only
+  reasoned/stale-protected sale/redemption modes and minimum deposit settings,
+  atomic audit, editor controls and immutable purchase-time copy implemented.
+  No inferred defaults or legacy backfill. Disposable 60 migrations, shared 265/265,
+  focused API 68/68, POS integration 1/1, web 30/30, typechecks/lint pass; DB stopped.
+  Next: redemption economics/ordinals and deposit/paid-session/PIN gates, then
+  remaining capture/refund/correction. Earnings inactive; CP-005 not started.
+  See `docs/commission_payroll/PROGRESS.md` for handoff and verification logs.
+
 - **CP-004 IN PROGRESS — purchase economics increment, October 28, 2026:** new
   package holdings atomically snapshot original purchase value, sessions, sellers
   and source IDs with database immutability. Four-decimal ordinal/session splits

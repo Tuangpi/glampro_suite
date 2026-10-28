@@ -41,6 +41,46 @@ beforeEach(() => {
 });
 
 describe("package validity editor", () => {
+  it("does not infer commission defaults or expose configuration to other roles", () => {
+    render(<PackageFormDrawer open bundle={bundle} onClose={vi.fn()} />);
+    expect(screen.queryByLabelText("Package sale commission")).not.toBeInTheDocument();
+  });
+  it("saves explicit commission settings with a reason and stale-write token", async () => {
+    const user = userEvent.setup();
+    render(<PackageFormDrawer open bundle={bundle} canConfigureCommission onClose={vi.fn()} />);
+    expect(screen.getByLabelText("Package sale commission")).toHaveValue("");
+    await user.selectOptions(screen.getByLabelText("Package sale commission"), "EXCLUDE");
+    await user.selectOptions(screen.getByLabelText("Package redemption commission"), "FIXED");
+    await user.type(screen.getByLabelText("Fixed amount per session"), "5.25");
+    await user.type(screen.getByLabelText("Minimum deposit %"), "30");
+    await user.type(
+      screen.getByLabelText("Commission settings reason"),
+      "Explicit new purchase policy",
+    );
+    await user.click(screen.getByRole("button", { name: /save/i }));
+    await waitFor(() =>
+      expect(update).toHaveBeenCalledWith({
+        id: bundle.id,
+        input: expect.objectContaining({
+          commissionSettings: {
+            sale: { mode: "EXCLUDE" },
+            redemption: { mode: "FIXED", amount: "5.25" },
+            minimumDepositPct: "30",
+          },
+          expectedUpdatedAt: bundle.updatedAt,
+          commissionReason: "Explicit new purchase policy",
+        }),
+      }),
+    );
+  });
+  it("rejects an incomplete commission policy without submitting", async () => {
+    const user = userEvent.setup();
+    render(<PackageFormDrawer open bundle={bundle} canConfigureCommission onClose={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText("Package sale commission"), "FIXED");
+    await user.click(screen.getByRole("button", { name: /save/i }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Choose both modes");
+    expect(update).not.toHaveBeenCalled();
+  });
   it("configures the quantity required per complete service set", async () => {
     const user = userEvent.setup();
     render(<PackageFormDrawer open bundle={bundle} onClose={vi.fn()} />);

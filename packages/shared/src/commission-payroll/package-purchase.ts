@@ -4,6 +4,7 @@ import {
   type CommissionShares,
 } from "../schemas/commission-attribution.js";
 import { allocatePayrollSplit } from "./allocation.js";
+import { payrollPackageSettingsSchema } from "./package-settings.js";
 
 const key = z.string().min(1).max(128);
 const cents = z.string().regex(/^(0|[1-9]\d{0,13})$/);
@@ -24,6 +25,7 @@ const inputSchema = z.strictObject({
   netCents: cents,
   taxCents: cents,
   sellers: commissionSharesSchema.nullable(),
+  commissionSettings: payrollPackageSettingsSchema.nullable().optional(),
 });
 
 function decimalTicks(ticks: bigint) {
@@ -37,9 +39,8 @@ export function capturePayrollPackagePurchase(value: z.input<typeof inputSchema>
     throw new Error("Package purchase net and GST must equal gross consideration.");
   const ticks = BigInt(input.netCents) * 100n;
   const sessions = BigInt(input.grantedSessions);
-  const missingEvidence: ("SALE_CURRENCY" | "SELLERS" | "PACKAGE_COMMISSION_SETTINGS")[] = [
-    "PACKAGE_COMMISSION_SETTINGS",
-  ];
+  const missingEvidence: ("SALE_CURRENCY" | "SELLERS" | "PACKAGE_COMMISSION_SETTINGS")[] = [];
+  if (!input.commissionSettings) missingEvidence.push("PACKAGE_COMMISSION_SETTINGS");
   if (!input.currency) missingEvidence.push("SALE_CURRENCY");
   if (!input.sellers) missingEvidence.push("SELLERS");
   return {

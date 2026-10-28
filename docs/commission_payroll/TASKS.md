@@ -206,11 +206,19 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-003.
+- Settings checkpoint (October 28): explicit sale/redemption FOLLOW_PLAN/EXCLUDE/
+  FIXED and minimum deposit contracts, nullable prospective catalogue persistence,
+  owner-only reasoned/stale-protected writes and atomic audit, editor controls and
+  purchase-time settings copy implemented. No inferred defaults or legacy backfill.
+  Verification recorded in PROGRESS.md; deposit enforcement and fixed posting remain.
+- Settings checks: disposable 60-migration replay, shared 265/265, focused API
+  68/68, collection/POS 1/1 (including settings concurrency and rollback), web
+  30/30, workspace typechecks/lint and diff pass. No activation.
 - Latest checkpoint: new holdings capture immutable original purchase economics,
   sellers and source lineage independent of operational valuation activation.
   Four-decimal ordinal session helper reconciles original net/splits. Legacy null
   evidence cannot be backfilled through updates; transfer/catalogue changes preserve
-  snapshots. Economics-only; commission settings and redemption integration remain.
+  snapshots. Economics-only; redemption integration remains.
 - Latest verification: disposable 59-migration replay, shared 262/262, focused API
   68/68, collection HTTP/POS integration 1/1 repeated with held-sale/transfer/
   immutability assertions, web 23/23, workspace typechecks/lint pass. No activation.
@@ -222,7 +230,7 @@ Existing implementation and reference tests need verification, not automatic cre
   68/68; collection integration 1/1, repeated after adding real package checkout/
   balance assertions; focused web 23/23; workspace typechecks/lint pass.
 - Remaining: complete source coverage and engine-ready units/modes/fallback;
-  service/product/FOC/category capture, package fixed/excluded configuration,
+  service/product/FOC/category capture, package fixed/excluded posting integration,
   deposit/paid-session enforcement and verified PIN override, value-package ratio,
   refund/fixed clawback/void/correction integration and transfer/refund/redemption
   concurrency/POS acceptance. Existing legacy behavior is not CP acceptance.

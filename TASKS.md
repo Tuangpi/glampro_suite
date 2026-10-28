@@ -5,6 +5,8 @@
 Approved October 27, 2026. Use [the CP task queue](docs/commission_payroll/TASKS.md)
 and [handoff](docs/commission_payroll/PROGRESS.md) before unrelated existing
 backlog work. CP-001–CP-003 are DONE; CP-004 is IN PROGRESS and must resume.
+Package settings and immutable purchase-time settings capture are implemented;
+redemption/deposit/paid-session/PIN and remaining lifecycle checks stay open.
 The former SC queue is [archived and superseded](docs/archive/staff-commission/README.md).
 Do not resume SC tasks, duplicate CP tasks here, or count historical commission
 acceptance as acceptance of the new feature. Historical task IDs below are preserved.

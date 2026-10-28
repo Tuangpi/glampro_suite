@@ -5,6 +5,7 @@ import {
   type PayrollPackagePurchase,
 } from "@glampro_suite/shared";
 import { transferSessionPackage } from "./session-transfer.service.js";
+import { updatePackage, getPackage } from "./package.service.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
@@ -512,6 +513,74 @@ test(
               nonmemberPrice: "109",
             },
           });
+          const policy = {
+            sale: { mode: "EXCLUDE" as const },
+            redemption: { mode: "FIXED" as const, amount: "5.25" },
+            minimumDepositPct: "30",
+          };
+          const policyInput = {
+            commissionSettings: policy,
+            commissionReason: "CP004 explicit purchase policy",
+            expectedUpdatedAt: packageItem.updatedAt.toISOString(),
+          };
+          await assert.rejects(updatePackage(packageItem.id, policyInput), /verified salon owner/);
+          await prisma.user.update({
+            where: { id: actorId },
+            data: { globalRole: "SUPER_ADMIN", twoFactorEnabled: true },
+          });
+          const configured = await updatePackage(packageItem.id, policyInput);
+          assert.deepEqual(configured.commissionSettings, policy);
+          assert.equal(
+            await prisma.auditLog.count({
+              where: { targetId: packageItem.id, action: "package.commission.configure" },
+            }),
+            1,
+          );
+          await assert.rejects(updatePackage(packageItem.id, policyInput), /Package changed/);
+          const competingPolicies = await Promise.allSettled([
+            updatePackage(packageItem.id, {
+              ...policyInput,
+              expectedUpdatedAt: configured.updatedAt,
+            }),
+            updatePackage(packageItem.id, {
+              ...policyInput,
+              expectedUpdatedAt: configured.updatedAt,
+            }),
+          ]);
+          assert.equal(competingPolicies.filter((row) => row.status === "fulfilled").length, 1);
+          assert.equal(competingPolicies.filter((row) => row.status === "rejected").length, 1);
+          const auditCount = await prisma.auditLog.count({
+            where: { targetId: packageItem.id, action: "package.commission.configure" },
+          });
+          const beforeRejected = await getPackage(packageItem.id);
+          await assert.rejects(
+            updatePackage(packageItem.id, {
+              ...policyInput,
+              expectedUpdatedAt: beforeRejected.updatedAt,
+              redemptionMode: "SERVICE_SET",
+              serviceSet: [],
+              serviceIds: [],
+            }),
+          );
+          assert.deepEqual(await getPackage(packageItem.id), beforeRejected);
+          assert.equal(
+            await prisma.auditLog.count({
+              where: { targetId: packageItem.id, action: "package.commission.configure" },
+            }),
+            auditCount,
+          );
+          await assert.rejects(
+            runAsTenant(
+              otherId,
+              () =>
+                updatePackage(packageItem.id, {
+                  ...policyInput,
+                  expectedUpdatedAt: configured.updatedAt,
+                }),
+              actorId,
+            ),
+            /verified salon owner/,
+          );
           const packageCheckout = await createSale({
             customerId: customer.id,
             lines: [
@@ -545,7 +614,22 @@ test(
           assert.equal(purchaseSnapshot.currency, "SGD");
           assert.equal(purchaseSnapshot.grossCents, "10900");
           assert.deepEqual(purchaseSnapshot.sellers, [{ staffId: actorId, share: 10000 }]);
-          assert.deepEqual(purchaseSnapshot.missingEvidence, ["PACKAGE_COMMISSION_SETTINGS"]);
+          assert.deepEqual(purchaseSnapshot.missingEvidence, []);
+          assert.deepEqual(purchaseSnapshot.commissionSettings, policy);
+          const currentPackage = await getPackage(packageItem.id);
+          await updatePackage(packageItem.id, {
+            commissionSettings: { ...policy, sale: { mode: "FOLLOW_PLAN" } },
+            commissionReason: "Future purchases only",
+            expectedUpdatedAt: currentPackage.updatedAt,
+          });
+          assert.deepEqual(
+            (
+              await prisma.customerPackageHolding.findFirstOrThrow({
+                where: { id: purchaseHolding.id },
+              })
+            ).payrollPurchaseSnapshot,
+            purchaseSnapshot,
+          );
           await assert.rejects(
             prisma.customerPackageHolding.update({
               where: { id: purchaseHolding.id },
@@ -653,11 +737,11 @@ test(
           assert.equal(completedSnapshot.grossCents, "99900");
           assert.equal(completedSnapshot.currency, null);
           assert.equal(completedSnapshot.sellers, null);
-          assert.deepEqual(completedSnapshot.missingEvidence, [
-            "PACKAGE_COMMISSION_SETTINGS",
-            "SALE_CURRENCY",
-            "SELLERS",
-          ]);
+          assert.deepEqual(completedSnapshot.commissionSettings, {
+            ...policy,
+            sale: { mode: "FOLLOW_PLAN" },
+          });
+          assert.deepEqual(completedSnapshot.missingEvidence, ["SALE_CURRENCY", "SELLERS"]);
           assert.deepEqual(
             (
               await prisma.customerPackageHolding.findFirstOrThrow({

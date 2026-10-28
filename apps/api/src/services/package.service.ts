@@ -16,6 +16,9 @@
 import {
   packageDetailSchema,
   packageSummarySchema,
+  createPackageSchema,
+  updatePackageSchema,
+  payrollPackageSettingsSchema,
   type CatalogueListQuery,
   type CreatePackageInput,
   type PackageDetail,
@@ -24,7 +27,9 @@ import {
   type UpdatePackageInput,
 } from "@glampro_suite/shared";
 
-import { badRequest, notFound } from "../lib/http-error.js";
+import { badRequest, conflict, forbidden, notFound } from "../lib/http-error.js";
+import { currentScope } from "../lib/tenant-context.js";
+import { lockPrepaid } from "../lib/prepaid-lock.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
 import { assertServicesExist } from "./catalogue.service.js";
@@ -37,6 +42,7 @@ import { assertServicesExist } from "./catalogue.service.js";
  * can never disagree about what a bundle covers.
  */
 const PACKAGE_SELECT = {
+  commissionSettings: true,
   redemptionMode: true,
   serviceSet: true,
   id: true,
@@ -58,6 +64,42 @@ function findPackageRow(id: string) {
 }
 
 type PackageRow = NonNullable<Awaited<ReturnType<typeof findPackageRow>>>;
+type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+async function commissionActor(tx: Transaction) {
+  const scope = currentScope();
+  if (scope?.kind !== "tenant" || !scope.actorId)
+    throw forbidden("An authenticated salon owner is required.");
+  await lockPrepaid(tx, scope.tenantId);
+  const actor = await tx.user.findFirst({ where: { id: scope.actorId, disabled: false } });
+  if (actor?.globalRole !== "SUPER_ADMIN" || !actor.twoFactorEnabled)
+    throw forbidden("Only a verified salon owner can configure package commissions.");
+}
+
+async function auditCommission(
+  tx: Transaction,
+  id: string,
+  reason: string,
+  before: PackageRow["commissionSettings"],
+  settings: unknown,
+) {
+  const scope = currentScope();
+  if (scope?.kind !== "tenant" || !scope.actorId) throw forbidden();
+  await tx.auditLog.create({
+    data: {
+      tenantId: scope.tenantId,
+      action: "package.commission.configure",
+      targetType: "Package",
+      targetId: id,
+      metadata: {
+        actorId: scope.actorId,
+        reason,
+        before,
+        after: payrollPackageSettingsSchema.parse(settings),
+      },
+    },
+  });
+}
 
 /**
  * A `Decimal(12,2)` on the wire is a string, so no cent is lost to a float. The
@@ -76,6 +118,7 @@ function coveredServices(row: PackageRow): Array<{ id: string; name: string }> {
 
 function toPackage(row: PackageRow): PackageSummary {
   return packageSummarySchema.parse({
+    commissionSettings: row.commissionSettings,
     redemptionMode: row.redemptionMode,
     serviceSet: row.serviceSet,
     id: row.id,
@@ -164,7 +207,8 @@ export async function updatePrepaidValidity(id: string, validityDays: number | n
 }
 
 export async function createPackage(input: CreatePackageInput): Promise<PackageDetail> {
-  const { serviceIds, familyId, ...fields } = input;
+  const { serviceIds, familyId, commissionSettings, commissionReason, ...fields } =
+    createPackageSchema.parse(input);
   await assertServicesExist(serviceIds);
   await validateServiceSet(
     input.redemptionMode ?? "PER_UNIT",
@@ -173,12 +217,14 @@ export async function createPackage(input: CreatePackageInput): Promise<PackageD
   );
 
   const created = await prisma.$transaction(async (tx) => {
+    if (commissionSettings) await commissionActor(tx);
     const created = await tx.package.create({
       data: {
         // Placeholder: `scopeCreateData` overwrites it with the scope's tenant, so a
         // handler cannot place a row in another salon even if it tried.
         tenantId: "",
         ...fields,
+        ...(commissionSettings ? { commissionSettings } : {}),
         // `null`, not `undefined`: a new bundle with no description has none, which
         // is a real state the editor renders as an empty box.
         description: fields.description ?? null,
@@ -188,6 +234,8 @@ export async function createPackage(input: CreatePackageInput): Promise<PackageD
     });
 
     await replaceServices(created.id, serviceIds, tx);
+    if (commissionSettings)
+      await auditCommission(tx, created.id, commissionReason!, null, commissionSettings);
     return created;
   });
 
@@ -202,11 +250,27 @@ export async function createPackage(input: CreatePackageInput): Promise<PackageD
  * Prisma skips `undefined` and writes `null`.
  */
 export async function updatePackage(id: string, input: UpdatePackageInput): Promise<PackageDetail> {
-  const { serviceIds, familyId, ...fields } = input;
+  const {
+    serviceIds,
+    familyId,
+    commissionSettings,
+    commissionReason,
+    expectedUpdatedAt,
+    ...fields
+  } = updatePackageSchema.parse(input);
   await assertServicesExist(serviceIds);
 
   await prisma.$transaction(async (tx) => {
-    await tx.package.updateMany({ where: { id }, data: { sessionCount: { increment: 0 } } });
+    if (commissionSettings) await commissionActor(tx);
+    const locked = await tx.package.updateMany({
+      where: { id, ...(commissionSettings ? { updatedAt: new Date(expectedUpdatedAt!) } : {}) },
+      data: { sessionCount: { increment: 0 } },
+    });
+    if (commissionSettings && locked.count === 0) {
+      if (!(await tx.package.findFirst({ where: { id }, select: { id: true } })))
+        throw notFound("That package does not exist.", "PACKAGE_NOT_FOUND");
+      throw conflict("Package changed. Reload before configuring commissions.");
+    }
     const existing = await tx.package.findFirst({ where: { id }, select: PACKAGE_SELECT });
     if (!existing) throw notFound("That package does not exist.", "PACKAGE_NOT_FOUND");
     const prior = packageSummarySchema.parse({ ...toPackage(existing) });
@@ -218,14 +282,26 @@ export async function updatePackage(id: string, input: UpdatePackageInput): Prom
 
     // Guarded because `serviceIds` alone is a legitimate patch body, and an empty
     // `data` object is a write that changes nothing.
-    if (Object.keys(fields).length > 0 || familyId !== undefined) {
+    if (Object.keys(fields).length > 0 || familyId !== undefined || commissionSettings) {
       await tx.package.update({
         where: { id },
-        data: { ...fields, ...(familyId !== undefined ? { familyId } : {}) },
+        data: {
+          ...fields,
+          ...(commissionSettings ? { commissionSettings } : {}),
+          ...(familyId !== undefined ? { familyId } : {}),
+        },
       });
     }
 
     await replaceServices(id, serviceIds, tx);
+    if (commissionSettings)
+      await auditCommission(
+        tx,
+        id,
+        commissionReason!,
+        existing.commissionSettings,
+        commissionSettings,
+      );
   });
 
   return getPackage(id);

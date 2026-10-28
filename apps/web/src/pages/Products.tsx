@@ -116,7 +116,7 @@ const NOUNS: Record<
 
 export default function Products() {
   const { formatDate, formatPrice } = useSalonFormatting();
-  const { isReadOnly } = useAuth();
+  const { isReadOnly, user } = useAuth();
   const modules = useModules();
 
   const [tab, setTab] = useState<CatalogueTab>("products");
@@ -599,6 +599,7 @@ export default function Products() {
           key={`package:${editingPackage?.id ?? "new"}:${drawerOpen}`}
           open={drawerOpen}
           bundle={editingPackage}
+          canConfigureCommission={user?.globalRole === "SUPER_ADMIN" && !isReadOnly}
           onClose={() => setDrawerOpen(false)}
         />
       ) : (

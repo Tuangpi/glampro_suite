@@ -8,6 +8,20 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-004 prospective package configuration (October 28, 2026)
+
+- Package sale and redemption each require explicit FOLLOW_PLAN, EXCLUDE or FIXED
+  selection. Fixed amounts are exact decimal strings; minimum deposit is an explicit
+  0–100% exact string. No mode, award or deposit is inferred for existing packages.
+- Configuration is restricted to authenticated, enabled salon owners with existing
+  two-factor verification, consistent with the payroll owner boundary. Updates
+  require the package updatedAt token and a reason; before/after audit is atomic.
+- Completed purchases copy settings under the existing package row lock. Later
+  changes affect future purchases only. Legacy null holding snapshots remain null.
+  Old economics snapshots without settings remain valid but explicitly incomplete.
+- Settings capture is not earnings activation, fixed-award posting, deposit
+  enforcement or paid-session acceptance. Those integrations remain CP-004 work.
+
 ### CP-003 configuration-only acceptance — approved October 28, 2026
 
 - The user approved Option 2: accept configuration separately, provided it works

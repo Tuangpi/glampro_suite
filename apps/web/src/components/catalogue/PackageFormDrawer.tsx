@@ -17,6 +17,7 @@
  * covering the service someone bought it for.
  */
 import { useState } from "react";
+import { payrollPackageSettingsSchema, type PayrollPackageSettings } from "@glampro_suite/shared";
 
 import type {
   CatalogStatusValue,
@@ -101,9 +102,30 @@ export interface PackageFormDrawerProps {
   /** `null` creates; a bundle edits. */
   bundle: PackageDetail | null;
   onClose: () => void;
+  canConfigureCommission?: boolean;
 }
 
-export default function PackageFormDrawer({ open, bundle, onClose }: PackageFormDrawerProps) {
+export default function PackageFormDrawer({
+  open,
+  bundle,
+  onClose,
+  canConfigureCommission = false,
+}: PackageFormDrawerProps) {
+  const [saleMode, setSaleMode] = useState(bundle?.commissionSettings?.sale.mode ?? "");
+  const [redemptionCommissionMode, setRedemptionCommissionMode] = useState(
+    bundle?.commissionSettings?.redemption.mode ?? "",
+  );
+  const [saleFixed, setSaleFixed] = useState(
+    bundle?.commissionSettings?.sale.mode === "FIXED" ? bundle.commissionSettings.sale.amount : "",
+  );
+  const [redemptionFixed, setRedemptionFixed] = useState(
+    bundle?.commissionSettings?.redemption.mode === "FIXED"
+      ? bundle.commissionSettings.redemption.amount
+      : "",
+  );
+  const [depositPct, setDepositPct] = useState(bundle?.commissionSettings?.minimumDepositPct ?? "");
+  const [commissionReason, setCommissionReason] = useState("");
+  const [commissionDirty, setCommissionDirty] = useState(false);
   // Seeded once, at mount: the page gives this component a `key` that changes with
   // the record and the open state, so a cancelled edit cannot leak into the next one.
   const [form, setForm] = useState<FormState>(() => (bundle ? toForm(bundle) : EMPTY_FORM));
@@ -151,6 +173,25 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
 
     // The contract's own rules, caught here so nobody waits for a round trip.
     const localErrors: Record<string, string> = {};
+    let commissionSettings: PayrollPackageSettings | undefined;
+    if (canConfigureCommission && commissionDirty) {
+      const parsed = payrollPackageSettingsSchema.safeParse({
+        sale: { mode: saleMode, ...(saleMode === "FIXED" ? { amount: saleFixed } : {}) },
+        redemption: {
+          mode: redemptionCommissionMode,
+          ...(redemptionCommissionMode === "FIXED" ? { amount: redemptionFixed } : {}),
+        },
+        minimumDepositPct: depositPct,
+      });
+      if (
+        !parsed.success ||
+        commissionReason.trim().length < 3 ||
+        commissionReason.trim().length > 500
+      )
+        localErrors.commissionSettings =
+          "Choose both modes, enter valid exact amounts and a 0–100% deposit, and provide a reason (3–500 characters).";
+      else commissionSettings = parsed.data;
+    }
     if (
       redemptionMode === "SERVICE_SET" &&
       (serviceIds.length === 0 ||
@@ -189,6 +230,13 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
     }
 
     const shared = {
+      ...(commissionSettings
+        ? {
+            commissionSettings,
+            commissionReason: commissionReason.trim(),
+            ...(bundle ? { expectedUpdatedAt: bundle.updatedAt } : {}),
+          }
+        : {}),
       ...(redemptionMode === "SERVICE_SET" || bundle?.redemptionMode === "SERVICE_SET"
         ? {
             redemptionMode,
@@ -227,7 +275,13 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
     } catch (error) {
       const details = getValidationDetails(error);
       if (Object.keys(details).length > 0) {
-        setFieldErrors(details);
+        const commissionErrors = Object.entries(details)
+          .filter(([path]) => /commissionSettings|commissionReason|expectedUpdatedAt/.test(path))
+          .map(([, message]) => message);
+        setFieldErrors({
+          ...details,
+          ...(commissionErrors.length ? { commissionSettings: commissionErrors.join(" ") } : {}),
+        });
         return;
       }
       setFormError(getErrorMessage(error));
@@ -339,6 +393,72 @@ export default function PackageFormDrawer({ open, bundle, onClose }: PackageForm
           maxLength={2000}
         />
 
+        {canConfigureCommission ? (
+          <fieldset
+            onChange={() => setCommissionDirty(true)}
+            className="flex flex-col gap-3 rounded-card border border-line p-4"
+          >
+            <legend>Package commission settings</legend>
+            <p>
+              Explicit settings apply to new purchases only. Saving does not activate earnings or
+              enforce deposits yet. Only paid-for sessions may be redeemed; no per-package bypass is
+              available.
+            </p>
+            <Select
+              label="Package sale commission"
+              value={saleMode}
+              onChange={(event) => setSaleMode(event.target.value)}
+              options={[
+                { value: "", label: "Not configured — choose explicitly" },
+                { value: "FOLLOW_PLAN", label: "Follow plan" },
+                { value: "EXCLUDE", label: "Exclude" },
+                { value: "FIXED", label: "Fixed amount per sale" },
+              ]}
+            />
+            {saleMode === "FIXED" ? (
+              <Input
+                label="Fixed amount per sale"
+                value={saleFixed}
+                onChange={(event) => setSaleFixed(event.target.value)}
+                inputMode="decimal"
+              />
+            ) : null}
+            <Select
+              label="Package redemption commission"
+              value={redemptionCommissionMode}
+              onChange={(event) => setRedemptionCommissionMode(event.target.value)}
+              options={[
+                { value: "", label: "Not configured — choose explicitly" },
+                { value: "FOLLOW_PLAN", label: "Follow plan" },
+                { value: "EXCLUDE", label: "Exclude" },
+                { value: "FIXED", label: "Fixed amount per session" },
+              ]}
+            />
+            {redemptionCommissionMode === "FIXED" ? (
+              <Input
+                label="Fixed amount per session"
+                value={redemptionFixed}
+                onChange={(event) => setRedemptionFixed(event.target.value)}
+                inputMode="decimal"
+              />
+            ) : null}
+            <Input
+              label="Minimum deposit %"
+              value={depositPct}
+              onChange={(event) => setDepositPct(event.target.value)}
+              inputMode="decimal"
+            />
+            <Input
+              label="Commission settings reason"
+              value={commissionReason}
+              onChange={(event) => setCommissionReason(event.target.value)}
+              maxLength={500}
+            />
+            {fieldErrors.commissionSettings ? (
+              <p role="alert">{fieldErrors.commissionSettings}</p>
+            ) : null}
+          </fieldset>
+        ) : null}
         <Select
           label="Session redemption"
           value={redemptionMode}

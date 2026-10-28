@@ -814,6 +814,8 @@ model Product {
 
 /// A bundle of service sessions. Legacy `packages`.
 model Package {
+  /// Explicit future-purchase commission policy; null means not configured.
+  commissionSettings Json?
   redemptionMode String @default("PER_UNIT")
   serviceSet Json @default("[]")
   id             String        @id @default(cuid())

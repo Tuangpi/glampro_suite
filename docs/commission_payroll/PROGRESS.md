@@ -7,19 +7,50 @@
 - Priority: this project before unrelated backlog. New requirements govern policy;
   existing authentication, tenant safety and exact-money integrity remain mandatory.
 - Shared engine and CP-003 configuration accepted. CP-004 now captures rate-free
-  package-sale collection facts and immutable holding purchase economics atomically;
+  package-sale collection facts and immutable holding purchase economics/settings atomically;
   not complete engine-ready inputs. Missing evidence remains explicit.
 - Deferred to CP-003A: authoritative historical monetary inputs, frozen opening
   carry, scoped group metrics and preview/full-run equality. Depends on CP-004
   capture and CP-005 statements; remains a CP-007 must-have release gate.
-- Latest CP-004 checks: disposable 59-migration replay, shared 262/262, collection
-  integration 1/1 (repeated with purchase/transfer assertions), focused API 68/68,
-  focused web 23/23, workspace typechecks/lint pass. Disposable PostgreSQL stopped.
-- Next: resume CP-004 package commission settings, integrate captured session values
+- Latest CP-004 checks: disposable 60-migration replay, shared 265/265, collection
+  integration 1/1 (including settings concurrency/rollback), focused API 68/68,
+  focused web 30/30, workspace typechecks/lint pass. Disposable PostgreSQL stopped.
+- Next: resume CP-004 redemption integration, integrate captured session values
   into redemption, deposit/paid-session gates and verified PIN override; then
   remaining capture/refund/correction paths.
   CP-005 not started. Historical money unavailable; activation prohibited.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 28, 2026 — CP-004 explicit package settings increment
+
+- Added exact shared sale/redemption settings: explicit FOLLOW_PLAN, EXCLUDE or
+  FIXED, required fixed amount when applicable, and explicit bounded minimum deposit.
+  No default mode, award or deposit. Unknown legacy settings remain null.
+- Added prospective migration `20261028100000_package_commission_settings` and
+  nullable catalogue JSON. Existing holding evidence is never updated/backfilled.
+- Package create/update validates settings server-side. Enabled, two-factor-verified
+  salon owner required; reason and update token required. Before/after audit and
+  settings share one transaction and existing prepaid/package row lock ordering.
+- Editor exposes explicit settings only to owners, validates exact strings and
+  forwards reason/update token. New completed purchases (including held completion)
+  copy settings into immutable purchase snapshots; subsequent catalogue changes,
+  transfers and collections preserve original evidence. Old snapshots remain valid.
+- Expanded shared/UI and disposable POS acceptance: denied manager/cross-tenant
+  writes, stale and concurrent writes, rejected-write rollback/audit consistency,
+  original versus future settings, held completion, unchanged legacy null evidence
+  and no added earnings.
+- Verified: disposable PostgreSQL 18 loopback 55476, 60 migrations replayed;
+  shared 265/265, focused API 68/68, collection/POS integration 1/1, focused web
+  30/30; workspace typechecks/lint, shared build/client generation and diff check
+  pass. Final runner exit 0; disposable database stopped. Logs:
+  `/tmp/cp004-settings-0CyDvM/` (pointer `/tmp/cp004-settings-path`). Early iterations
+  caught and fixed a malformed-input refinement throw, test signature/name errors
+  and a stale missing-settings assertion. Full regression/build/browser not rerun.
+- Still economics-only capture, not complete engine-ready inputs. Deposit settings
+  are captured but not enforced; fixed/exclude posting, redemption ordinal integration,
+  paid-session/PIN gates, remaining capture/refund/correction/race checks remain.
+  CP-004 IN PROGRESS; CP-005 not started. No application DB writes, activation,
+  production migration, deployment, commit or push.
 
 ## October 28, 2026 — CP-004 immutable purchase economics increment
 

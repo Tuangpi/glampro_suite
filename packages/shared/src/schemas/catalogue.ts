@@ -13,6 +13,7 @@
  * share the base fields below rather than each declaring its own object.
  */
 import { z } from "zod";
+import { payrollPackageSettingsSchema } from "../commission-payroll/package-settings.js";
 
 import {
   barcodeInputSchema,
@@ -225,6 +226,7 @@ export type UpdatePrepaidValidityInput = z.infer<typeof updatePrepaidValiditySch
 
 /** A bundle of sessions. Legacy `packages`. */
 export const packageSummarySchema = z.object({
+  commissionSettings: payrollPackageSettingsSchema.nullable().optional(),
   redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
   serviceSet: z
     .array(
@@ -262,32 +264,43 @@ export const packageDetailSchema = packageSummarySchema.extend({
 
 export type PackageDetail = z.infer<typeof packageDetailSchema>;
 
-export const createPackageSchema = z.object({
-  redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
-  serviceSet: z
-    .array(
-      z.object({
-        serviceId: z.string().min(1).max(64),
-        quantity: z.number().int().min(1).max(100),
-      }),
-    )
-    .max(200)
-    .optional(),
-  validityDays: packageValidityDaysSchema.optional(),
-  familyId: z.string().min(1).max(64).nullable().optional(),
-  name: z.string().trim().min(1, "Name is required").max(200),
-  sessionCount: sessionCountSchema.min(1, "A package has to include at least one session"),
-  memberPrice: moneySchema,
-  nonmemberPrice: moneySchema,
-  description: z.string().trim().max(2000).optional(),
-  status: catalogStatusSchema.optional(),
-  /**
-   * The services this bundle covers. `PackageService` exists because legacy
-   * `package_services` did, and an id from another salon is refused rather than
-   * linked — see `assertServicesExist`.
-   */
-  serviceIds: z.array(z.string().min(1).max(64)).max(200).optional(),
-});
+export const createPackageSchema = z
+  .object({
+    commissionSettings: payrollPackageSettingsSchema.optional(),
+    commissionReason: z.string().trim().min(3).max(500).optional(),
+    redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
+    serviceSet: z
+      .array(
+        z.object({
+          serviceId: z.string().min(1).max(64),
+          quantity: z.number().int().min(1).max(100),
+        }),
+      )
+      .max(200)
+      .optional(),
+    validityDays: packageValidityDaysSchema.optional(),
+    familyId: z.string().min(1).max(64).nullable().optional(),
+    name: z.string().trim().min(1, "Name is required").max(200),
+    sessionCount: sessionCountSchema.min(1, "A package has to include at least one session"),
+    memberPrice: moneySchema,
+    nonmemberPrice: moneySchema,
+    description: z.string().trim().max(2000).optional(),
+    status: catalogStatusSchema.optional(),
+    /**
+     * The services this bundle covers. `PackageService` exists because legacy
+     * `package_services` did, and an id from another salon is refused rather than
+     * linked — see `assertServicesExist`.
+     */
+    serviceIds: z.array(z.string().min(1).max(64)).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.commissionSettings && !value.commissionReason)
+      ctx.addIssue({
+        code: "custom",
+        path: ["commissionReason"],
+        message: "Enter a commission settings reason.",
+      });
+  });
 
 export type CreatePackageInput = z.infer<typeof createPackageSchema>;
 
@@ -296,27 +309,47 @@ export type CreatePackageInput = z.infer<typeof createPackageSchema>;
  * here — **absent means unchanged** — with an empty array as the way to say
  * "covers nothing", because `[]` is a value an absent key is not.
  */
-export const updatePackageSchema = z.object({
-  redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
-  serviceSet: z
-    .array(
-      z.object({
-        serviceId: z.string().min(1).max(64),
-        quantity: z.number().int().min(1).max(100),
-      }),
-    )
-    .max(200)
-    .optional(),
-  validityDays: packageValidityDaysSchema.optional(),
-  familyId: z.string().min(1).max(64).nullable().optional(),
-  name: z.string().trim().min(1, "Name is required").max(200).optional(),
-  sessionCount: sessionCountSchema.optional(),
-  memberPrice: moneySchema.optional(),
-  nonmemberPrice: moneySchema.optional(),
-  description: z.string().trim().max(2000).nullable().optional(),
-  status: catalogStatusSchema.optional(),
-  serviceIds: z.array(z.string().min(1).max(64)).max(200).optional(),
-});
+export const updatePackageSchema = z
+  .object({
+    commissionSettings: payrollPackageSettingsSchema.optional(),
+    commissionReason: z.string().trim().min(3).max(500).optional(),
+    expectedUpdatedAt: z.iso.datetime().optional(),
+    redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
+    serviceSet: z
+      .array(
+        z.object({
+          serviceId: z.string().min(1).max(64),
+          quantity: z.number().int().min(1).max(100),
+        }),
+      )
+      .max(200)
+      .optional(),
+    validityDays: packageValidityDaysSchema.optional(),
+    familyId: z.string().min(1).max(64).nullable().optional(),
+    name: z.string().trim().min(1, "Name is required").max(200).optional(),
+    sessionCount: sessionCountSchema.optional(),
+    memberPrice: moneySchema.optional(),
+    nonmemberPrice: moneySchema.optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    status: catalogStatusSchema.optional(),
+    serviceIds: z.array(z.string().min(1).max(64)).max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (value.commissionSettings) {
+      if (!value.commissionReason)
+        ctx.addIssue({
+          code: "custom",
+          path: ["commissionReason"],
+          message: "Enter a commission settings reason.",
+        });
+      if (!value.expectedUpdatedAt)
+        ctx.addIssue({
+          code: "custom",
+          path: ["expectedUpdatedAt"],
+          message: "Reload the package before changing commission settings.",
+        });
+    }
+  });
 
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>;
 
