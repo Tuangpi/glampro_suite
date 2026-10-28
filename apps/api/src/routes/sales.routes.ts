@@ -15,6 +15,7 @@ import {
   refundPayrollPackageSchema,
 } from "../services/payroll-package-refund.js";
 import { voidPayrollSession } from "../services/payroll-session-void.js";
+import { refundPayrollValuePackage } from "../services/payroll-value-package-refund.js";
 import { voidPayrollSessionSchema } from "@glampro_suite/shared";
 import {
   directTipParamsSchema,
@@ -122,6 +123,29 @@ salesRouter.post(
     try {
       res.json({
         data: await refundPayrollPackage(
+          validated<{ id: string }>(req, "params").id,
+          validated(req, "body"),
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+salesRouter.post(
+  "/value-package-holdings/:id/refund",
+  auth,
+  requireModule("sales"),
+  requireModule("packages"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(idParamSchema, "params"),
+  validate(refundPayrollPackageSchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await refundPayrollValuePackage(
           validated<{ id: string }>(req, "params").id,
           validated(req, "body"),
         ),

@@ -78,6 +78,7 @@ import {
   transferSessionPackage,
 } from "../services/session-transfer.service.js";
 import { getPayrollHoldingDetail } from "../services/payroll-holding-detail.js";
+import { getPayrollValueHoldingDetail } from "../services/payroll-value-holding-detail.js";
 
 /**
  * Customers — handoff screen 07.
@@ -91,6 +92,21 @@ import { getPayrollHoldingDetail } from "../services/payroll-holding-detail.js";
  * that exists passes it.
  */
 export const customersRouter = Router();
+customersRouter.get(
+  "/:id/prepaid/:holdingId/payroll",
+  auth,
+  requireModule("customers"),
+  requireModule("packages"),
+  validate(sessionHoldingParamsSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id, holdingId } = validated<{ id: string; holdingId: string }>(req, "params");
+      res.json({ data: await getPayrollValueHoldingDetail(id, holdingId) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 customersRouter.get(
   "/:id/session-packages/:holdingId/payroll",
   auth,

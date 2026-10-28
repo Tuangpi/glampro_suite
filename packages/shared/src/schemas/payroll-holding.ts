@@ -1,6 +1,33 @@
 import { z } from "zod";
 import { commissionSharesSchema } from "./commission-attribution.js";
 import { payrollPackageSettingsSchema } from "../commission-payroll/package-settings.js";
+import { payrollValuePackagePurchaseSchema } from "../commission-payroll/value-package-refund.js";
+
+const nonnegativeInteger = z.string().regex(/^(0|[1-9]\d*)$/);
+export const payrollValueHoldingDetailSchema = z.object({
+  holdingId: z.string(),
+  updatedAt: z.iso.datetime(),
+  creditRemaining: z.string().regex(/^(0|[1-9]\d*)\.\d{2}$/),
+  purchase: payrollValuePackagePurchaseSchema.nullable(),
+  originalTaxCents: nonnegativeInteger.nullable(),
+  collectedNetCents: nonnegativeInteger.nullable(),
+  collectedTaxCents: nonnegativeInteger.nullable(),
+  usedBaseTicks: nonnegativeInteger.nullable(),
+  missingEvidence: z.array(z.string()),
+  refunded: z.boolean(),
+  refund: z
+    .object({
+      occurredAt: z.iso.datetime(),
+      grossCents: nonnegativeInteger,
+      netCents: nonnegativeInteger,
+      taxCents: nonnegativeInteger,
+      reason: z.string(),
+      payoutMethod: z.string(),
+    })
+    .nullable(),
+});
+export type PayrollValueHoldingDetail = z.infer<typeof payrollValueHoldingDetailSchema>;
+
 export const payrollHoldingDetailSchema = z.object({
   holdingId: z.string(),
   updatedAt: z.iso.datetime(),

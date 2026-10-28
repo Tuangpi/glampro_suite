@@ -2,6 +2,70 @@
 
 ## Current State
 
+- **October 28, 2026 — CP-004 DONE:** owner separately authorized isolated
+  disposable-database acceptance only. Fresh PostgreSQL 18 `/tmp` cluster on
+  127.0.0.1:55476, 63 migrations; targeted lifecycle/rollback/audit/HTTP/isolation/
+  competing-operation acceptance 18/18 on three runs. Route/helper regression
+  210/210; shared 290/290; full serial web 963/963; API/web typecheck/lint/build pass.
+  Cluster stopped. Current task: None; most recently completed: CP-004. Next ready:
+  CP-005 (not started); CP-003A follows CP-005. Application/production DBs remain
+  off-limits; no activation/deployment/commit/push. Earlier blockers below are history.
+
+- **October 28, 2026 — CP-004 consistency/void checkpoint:** shared read/write
+  source validation, missing debt/source preview guards, reversed-line rejection,
+  fresh EARNED refund bases and purchase-void boundary tests implemented. Expanded
+  non-DB API 148/148; focused UI 57/57; shared 290/290; API/web typecheck/lint and
+  API build pass. CP-004 remains IN PROGRESS, completion BLOCKED by mandatory real
+  transactional/POS/rollback/race acceptance under the retained DB pause. Latest
+  request to continue until done did not explicitly lift that safety pause. No DB
+  work or full-suite/browser acceptance. CP-005 unstarted; CP-003A TODO after CP-005.
+
+- **October 28, 2026 — CP-004 collection ingestion seam:** 22 new non-DB cases
+  run real collection capture/payroll-source/detail/refund services against local
+  transaction doubles. Focused API 116/116; API typecheck/lint pass. No runtime code
+  changes. Recorded cash/card/later-payment sources, exact GST residuals, retries
+  and post-refund refusal covered. Payment recording endpoints/gateway settlement,
+  SQL isolation/rollback/races and detail eligibility consistency remain unverified.
+  CP-004 IN PROGRESS; DB pause holds; CP-005 unstarted; CP-003A TODO after CP-005.
+
+- **October 28, 2026 — CP-004 value source evidence:** 21 new multi-collection/
+  split-seller cases; focused API 94/94, API typecheck/lint/build pass. Fixed
+  query-order-dependent rate selection by rejecting positive payouts with missing/
+  differing original seller rates. Consistent rates and zero-payout cancellation
+  remain supported. In-memory sources do not prove payment ingestion/settlement,
+  SQL isolation or rollback/races. CP-004 IN PROGRESS; all DB work paused. CP-005
+  unstarted; CP-003A TODO after CP-005.
+
+- **October 28, 2026 — CP-004 value HTTP boundaries:** 41 new real HTTP/router/
+  authentication/validation cases with in-memory Prisma replacements pass; combined
+  focused API 73/73, API typecheck/lint pass. No runtime changes or DB access. Tests
+  establish route guards/scope propagation, NOT SQL isolation or transaction safety.
+  CP-004 IN PROGRESS: broader source/mixed-tender cases and mandatory real DB
+  lifecycle/rollback/race acceptance remain. All DB work paused. CP-005 unstarted;
+  CP-003A TODO after CP-005.
+
+- **October 28, 2026 — CP-004 value-refund detail/UI:** customer-bound read endpoint,
+  strict evidence contract and prepaid economics/refund dialog implemented. Exact
+  ratio/fee/GST preview, actual tender, confirmation, zero/NONE and stale/pending/
+  role/read-only guards covered. Focused web 55/55; non-DB API 32/32; shared 290/290;
+  typechecks/lint/web build pass. Full web 958/959, PayrollPlans timeout; isolated
+  23/23 rerun passes. No DB work. CP-004 IN PROGRESS; real HTTP and DB rollback/race
+  acceptance remain. CP-005 unstarted; CP-003A TODO after CP-005. Database pause holds.
+
+- **October 28, 2026 — CP-004 value-refund service:** guarded endpoint and atomic
+  service code, source/usage validation, original-seller negative bases, cancellation,
+  retry handling and collection/void-restoration guards implemented. Non-DB doubles
+  26/26, shared 287/287; API typecheck/lint/build pass. No DB operation. CP-004 stays
+  IN PROGRESS: UI, HTTP authorization acceptance and real rollback/race/lifecycle
+  tests remain. CP-005 unstarted; CP-003A TODO after CP-005. All DB work paused.
+
+- **October 28, 2026 — CP-004 value-refund foundation:** exact original paid/credit
+  arithmetic and validated purchase contract implemented; ten new tests, shared
+  287/287, workspace typechecks/lint pass. No refund endpoint/UI integration or
+  database work. CP-004 IN PROGRESS; source validation, atomic cancellation/retry
+  and database lifecycle/race acceptance remain. CP-005 unstarted; CP-003A TODO
+  after CP-005. Database pause must be separately lifted before acceptance.
+
 - **October 28, 2026 — CP-004 session-action UI increment:** strict exact refund
   input, revision-bound correction drafts/void keys and synchronous pending guard
   implemented. Detail UI 27/27; full web 940/940 across 107 files and web
@@ -68,6 +132,311 @@
   remaining capture/refund/correction paths.
   CP-005 not started. Historical money unavailable; activation prohibited.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 28, 2026 — CP-004 completion: explicitly authorized disposable acceptance
+
+- Authorization: user selected “Authorize isolated disposable-database CP-004
+  acceptance only; keep application/production databases untouched.” This narrowly
+  supersedes the all-DB pause for these tests only. Did not read application `.env`,
+  connect to localhost:5432, repair/rollback the earlier incident, activate or deploy.
+  Every DB command supplied explicit loopback 55476/database parameters or an
+  explicit DATABASE_URL with DOTENV_CONFIG_PATH=/dev/null. Synthetic credentials only.
+- Created fresh PostgreSQL 18 cluster `/tmp/cp004-authorized-pg-vxsZJf/data`, verified
+  current_database/server address/port/data_directory before replaying all 63
+  migrations into `commission_collection_test`. No seed/import of application data.
+  Cluster stopped cleanly; port 55476 confirmed no longer listening. Data retained
+  only in disposable `/tmp` location; pointer `/tmp/cp004-authorized-pg.path`.
+- New `apps/api/src/services/payroll-value-lifecycle.acceptance.test.ts` runs real SQL
+  purchase/spend/refund/detail/void/transfer/collection and HTTP routers. Tests mixed
+  cash/card purchase, paid-to-credit ratio/original GST, earned-spend preservation,
+  injected full/partial-debt rollback (holding/revision/event/debt/trigger balance
+  evidence), identical concurrent/conflicting retries, duplicate refund refusal,
+  tenant-scoped reads, append-only event update/delete refusal, zero/NONE cancellation,
+  actual payout tender, role loss and tenant-claim mismatch through real HTTP.
+- Value race cases: distinct refunds, spend/refund, transfer/refund, later payment/
+  refund. Assertions reconcile final credit/owner/debt/payment/refund counts, not
+  merely Promise rejection. Real trigger balance evidence retains actor/reason and
+  purchase sale, once only. Added prepaidSaleContext before refund holding updates
+  to fix missing purchase-sale linkage in balance-event audit evidence.
+- New `apps/api/src/services/payroll-session-races.acceptance.test.ts` covers exact
+  50/50 2,000 deposit/3,000 balance and -1,450 each on 2,900 refund (TC09/12), keeps
+  earned redemption sources, required sellers checkout rollback (TC18), and competing
+  redemption/refund, transfer/refund, session-void/refund and payment/refund. Existing
+  lifecycle verifies paid-session gate/PIN audit, catalogue immutability, correction,
+  fixed clawback/quantity behavior, transfer originals, VP_SPEND ratio and FOC snapshot.
+- Applied fresh EARNED status and REVERSED-source refusal to session refunds too;
+  newly recorded negative evidence never inherits PAID historical status. Existing
+  fixed-award lifecycle and new follow-plan split/race acceptance pass afterward.
+- Verification: four real disposable suites **18/18**, no skips, repeated three
+  times; `/tmp/cp004-authorized-final-{1,2,3}.{log,exit}` all exit 0. Additional real
+  sales/customer route + HTTP/double/helper regression **210/210**, no skips,
+  `/tmp/cp004-authorized-regression.{log,exit}`. Full web one worker **963/963** across
+  108 files, `/tmp/cp004-authorized-web.{log,exit}`; this run supersedes earlier
+  PayrollPlans timeout, without asserting the earlier run passed. Shared **290/290**.
+  API/web typecheck/lint/build pass; logs `/tmp/cp004-authorized-{types,lint,build,
+web-build}.*` and `/tmp/cp004-consistency-*`. Formatting/whitespace checked at handoff.
+- Acceptance scope: real SQL/POS service and HTTP plus component/full-web tests,
+  not exhaustive scheduler interleavings, external gateway settlement, full API
+  repository regression or browser release walkthrough. No EmployeeCommission rows
+  created. FR-POS-09/MTD belongs to CP-006; browser/release acceptance remains CP-007.
+  Differing historical value seller rates still intentionally require reconciliation
+  per DECISIONS; no arbitrary rate-lot allocation added.
+- CP-004 DONE against its practical completion checks. Next ready: CP-005 monthly
+  close/frozen statements, NOT STARTED. CP-003A remains TODO after CP-005. No commit,
+  push, activation or deployment. Application/production DB restriction still holds.
+
+## October 28, 2026 — CP-004 consistency, negative-line status and void boundary
+
+- User requested continuing until CP-004 done. Reviewed the full CP-004 completion
+  check: real disposable DB/POS TC-09–12/16–18, rollback/retries and payment/spend/
+  refund/transfer races remain mandatory. Existing pause explicitly requires separate
+  authorization, so no DB access, generation, migration, activation, deployment,
+  commit or push. Preserved existing working-tree changes and unrelated `.kilo/`.
+- Extracted `apps/api/src/services/payroll-value-collection-sources.ts` from the
+  refund writer, retaining original lineage/split/mode/outlet/base/rate checks.
+  Both refund and detail use it; REVERSED original lines are refused. Detail keeps
+  known totals but returns ORIGINAL_COLLECTION_SELLER_SOURCES for invalid sources
+  and ORIGINAL_OUTSTANDING_BALANCE for missing/insufficient cancellation debt. UI's
+  existing missingEvidence gate blocks submission, now with two specific regressions.
+- Eight detail cases cover missing/wrong seller/base/rate/unavailable/reversed
+  sources, conflicting multi-source rates and debt absent/short/exact. New negative
+  refund lines explicitly start EARNED rather than inheriting PAID from an original
+  historical source; three status regressions cover EARNED/PAID/REVERSED. Original
+  evidence stays untouched. This is pending evidence, not earnings activation.
+- Two tests call actual `voidSale` with local Prisma replacements to verify both
+  PACKAGE_REFUND and VALUE_PACKAGE_REFUND refuse before status/ledger/credit reversal.
+  Serialization touch still occurs inside the double; SQL rollback is NOT proven.
+  No transaction rollback or concurrency claim follows from these tests.
+- Expanded non-DB API (HTTP/value collection/detail/refund/void plus pure collection/
+  valuation helpers) **148/148**; focused UI **57/57**; shared **290/290**. API/web
+  typecheck/lint and API/shared build exit 0. Logs/exit markers
+  `/tmp/cp004-consistency-{tests,web,shared,types,lint,build,web-types,web-lint}.{log,exit}`.
+  Initial two new UI assertions were ambiguous because several amounts were equal;
+  fixed by asserting the original-paid-net description specifically; rerun passes.
+- Known limitation: detail evaluates source-rate eligibility with zero admin fee;
+  it conservatively blocks conflicting rates even if a future fee could reduce
+  payout to zero. Do not infer positive payout eligibility from money alone.
+- CP-004 IN PROGRESS, completion blocked. No exhaustive non-DB completion claimed;
+  mandatory real SQL lifecycle/rollback/audit/isolation/race and POS/browser acceptance
+  cannot be substituted by more doubles. Next action requires owner decision on
+  isolated disposable DB acceptance authorization; keep application DB untouched.
+  If pause remains, preserve this checkpoint. CP-005/CP-003A must not start.
+
+## October 28, 2026 — CP-004 collection ingestion service seam
+
+- Rechecked working tree and latest handoff; continued CP-004 only. Preserved
+  unrelated changes including the untracked `.kilo/` directory. Added
+  `apps/api/src/services/payroll-value-collection.test.ts` and tracking notes only.
+  No runtime code edits, DB operations, generation, commit, push or deployment.
+- New **22/22** non-DB cases use the actual `captureCollectionEvidence`,
+  `capturePayrollCollection`/`appendPayrollSource`, value detail and refund services.
+  Every persistence method is a local transaction-double method; tests do not call
+  Prisma client queries. Inputs are recorded payment-row doubles, NOT endpoint or
+  gateway payment creation. Two original split sellers keep source-time 7/9 rates.
+- Verifies cash/card/later outstanding-payment lookup lineage, exact original net/
+  GST allocations and first-collection-only sale units, detail totals and generated
+  sources accepted by refund. Refund preserves captured sources and pays using
+  independently recorded PAYNOW tender. Unequal 0.06/0.06/544.88 receipts consume
+  cumulative GST residual exactly (0/1/4499 tax cents), retaining the same payout.
+- Rejects PACKAGE/PREPAID_CREDIT, gateway session, missing/zero source, client amount
+  mismatch, outstanding parent tenant/sale/customer mismatch, other-customer source,
+  void/refunded sale, wrong sale/prior-collection currency, foreign line allocation,
+  overcollection and missing tenant scope. Identical retry preserves writes and units;
+  conflicting retry fails. After an actual in-memory capture/refund flow, collection
+  refuses before looking up the proposed new receipt and adds no write intent.
+- Combined focused collection/HTTP/detail/refund API **116/116**, no skips. API
+  typecheck/lint **exit 0**. Logs and exit markers:
+  `/tmp/cp004-value-ingestion-{tests,types,lint}.{log,exit}`. Formatting/whitespace
+  checked separately. No full API/web tests or build rerun in this test-only increment.
+- Limits: no SQL query isolation, real transaction rollback, audit persistence,
+  gateway settlement, payment-creation endpoint or concurrent lifecycle acceptance.
+  Local write arrays prove intent/order only. Detail still validates economics/usage
+  but does not guarantee complete refund seller-source/rate eligibility; write
+  independently revalidates. This remains a specific follow-up, not a completed gate.
+- CP-004 IN PROGRESS. Next within pause: detail/write eligibility consistency and
+  payment recording endpoint or post-refund void/restoration seams. Mandatory real
+  disposable-DB lifecycle/rollback/retry/payment/spend/refund/transfer races remain
+  blocked until separate authorization. CP-005 unstarted; CP-003A TODO after CP-005.
+
+## October 28, 2026 — CP-004 multi-collection source evidence
+
+- Rechecked actual working tree before edits and continued CP-004 only. No DB
+  commands, queries, migrations, generation, deployment, activation, commit or push.
+- Added 21 refund service cases in `apps/api/src/services/payroll-value-package-refund.test.ts`:
+  three already-recorded allocations representing cash/card checkout and later
+  outstanding payment, original 60/40 sellers (distinct 7/9 source rates), read/write
+  economics agreement, payout tender independent of original source, source-order/
+  seller-order invariance, each missing source, conflicting/missing/equal-format
+  rates, partial debt cancellation, aggregate overcollection, corrupt later source
+  sale/currency/status/sellers/kind/mode/outlet/base, fully used zero/NONE cancellation.
+- Reproduced two failing cases before the fix: conflicting recorded rates were
+  accepted in either source order. Refund used the first returned row per seller,
+  without an ordering or rate-consistency guarantee. Updated only
+  `apps/api/src/services/payroll-value-package-refund.ts` to reject positive payouts
+  with missing or numerically differing historical rates before any write. Uses
+  installed Prisma Decimal for rate comparison, not floating-point money. No current
+  rules/catalogue lookup. See DECISIONS for conservative limitation; no implicit
+  rate-lot allocation invented. Zero payout keeps no negative lines.
+- API focused HTTP/detail/refund **94/94**, no skips. API typecheck/lint/build
+  (including shared TypeScript build) **exit 0**. Logs and exit markers:
+  `/tmp/cp004-value-source-{tests,types,lint,build}.{log,exit}`; pre-fix failure
+  `/tmp/cp004-value-source-before.log`. No full API/web suite or real SQL test run.
+- Limits: fixtures start at recorded collection allocations. They do NOT establish
+  mixed-tender payment ingestion, gateway settlement, query isolation, atomicity,
+  rollback, audit or concurrency. Detail still previews economic/usage evidence;
+  write independently rejects missing/conflicting rate sources. Such a preview is
+  not approval of refund eligibility. Differing-rate positive refunds intentionally
+  require reconciliation until an explicit rate-lot policy is implemented/tested.
+- CP-004 remains IN PROGRESS. Next within DB pause: inspect/test payment-source
+  ingestion and detail/write evidence consistency plus post-refund lifecycle guards.
+  Mandatory disposable-DB lifecycle/rollback/retry/payment/spend/refund/transfer
+  races remain blocked pending separate authorization. CP-005 unstarted;
+  CP-003A TODO after CP-005; do not advance automatically.
+
+## October 28, 2026 — CP-004 value-package HTTP boundary verification
+
+- Resumed CP-004 only. Preserved all prior uncommitted work. Added only
+  `apps/api/src/routes/payroll-value-package.http.test.ts` and tracking updates;
+  no application behavior, migrations, generation, activation, deployment, commit
+  or push. Every database operation remains paused.
+- Test mounts the real customers/sales routers with JSON parsing and the production
+  error handler on an ephemeral loopback HTTP server. Uses real access-token signing/
+  verification, auth/session checks, outlet, entitlement, writable-tenant, current
+  role and strict request validation middleware plus real detail/refund services.
+  Prisma auth/entitlement lookups and transaction entry are replaced in memory;
+  proxy delegate methods are restored afterward. Transaction double has only the
+  expected operations; no real Prisma query executes. Run disables dotenv, supplies
+  synthetic JWT signing material and an unusable database URL. No credentials saved.
+- New HTTP **41/41**: manager zero/NONE and verified owner success; missing/invalid/
+  revoked/disabled session and platform realm refusal; tenant-claim mismatch and
+  ignored spoofed tenant header; active/foreign/suspended/invalid outlet handling;
+  current STAFF/CASHIER role overrides privileged token claims; suspended tenant
+  reads but cannot write; absent/expired packages grant refusal; owner 2FA refusal;
+  current-customer read binding and missing holding; strict money/tender/reason/date/
+  extra-tenant-field refusal; stale holding and exact payout mismatch responses.
+- Verified downstream tenant/actor/outlet AsyncLocalStorage context. This is scope
+  propagation evidence, NOT PostgreSQL query isolation or cross-tenant row security.
+  In-memory successful writes are intent checks, NOT atomicity/audit/rollback proof.
+- Combined HTTP + value detail/refund service tests **73/73**, no skipped cases.
+  API typecheck and lint **exit 0**. Logs `/tmp/cp004-value-http-{tests,types,lint}.log`
+  and adjacent exit markers. No full API/database suite, web suite/build, browser or
+  real transactional race run in this increment; previous UI verification stands.
+- CP-004 remains IN PROGRESS. Next within pause: broaden original-source evidence,
+  split sellers, multi-payment and mixed-tender fixtures and inspect other lifecycle
+  boundaries. Mandatory real disposable DB rollback/retry/payment/spend/refund/
+  transfer race/lifecycle acceptance still requires separate owner authorization.
+  CP-005 unstarted; CP-003A TODO after CP-005. Do not deploy unfinished lifecycle.
+
+## October 28, 2026 — CP-004 value-package detail and refund UI increment
+
+- Resumed CP-004 only and preserved all previous uncommitted changes. Database
+  pause retained: no database operations/tests, migrations, generation, disposable
+  cluster, activation, deployment, commit or push.
+- Added `payrollValueHoldingDetailSchema` in the shared holding contracts, with
+  three contract tests. Explicit nullable legacy economics, exact cent/tick strings,
+  purchase ratio and recorded refund distinguish unavailable evidence from zero.
+- Added `apps/api/src/services/payroll-value-holding-detail.ts` plus six in-memory
+  read tests. `GET /customers/:id/prepaid/:holdingId/payroll` uses authenticated
+  customers/packages guards and a repeatable-read transaction. Lookup includes
+  current customer and holding identity; tenant scoping remains the existing Prisma
+  boundary. Reconciles source line/sellers, GST, collections and active used credit.
+  Missing/corrupt evidence disables preview; recorded refund comes from its immutable
+  event rather than incorrectly recalculating used value from cancelled credit.
+- Added `ValuePackagePayrollDetail.tsx` and a prepaid ownership-panel entry point.
+  Shows paid versus promotional credit, collections, original sellers and four-decimal
+  used value. Manager/owner controls compute the shared exact fee-based preview,
+  require reason/explicit confirmation, select actual payout tender, and send zero
+  as NONE. Labels disclose recorded payout, no provider transfer/earnings activation,
+  provisional preview and server-side revalidation. Existing write independently
+  validates source-time payroll collection lines and outstanding debt; this preview
+  does not assert that those write-side checks have passed.
+- Revision-bound form resets approval and retry key on refreshed holding evidence.
+  Unchanged refused requests retain retry key/draft but clear confirmation; pending
+  ref prevents duplicate writes. Background refresh, role/read-only loss, malformed
+  fees, missing evidence and recorded refund block submission.
+- Checks: focused web **55/55** across value detail (20), session detail (27), and
+  prepaid panel (8). API transaction-double/read tests **32/32**, with dotenv disabled
+  and unusable DB URL; no real Prisma queries. Shared **290/290**. Workspace typechecks,
+  lint and web production build pass. Logs `/tmp/cp004-value-ui-{web,api,shared,types,lint,build}.log`
+  and adjacent exit markers; terminal-wrapper errors were checked against actual logs.
+- Full web run: **958/959**, 107/108 files pass. Unchanged PayrollPlans metadata-save
+  test exceeded its existing 5000ms timeout under parallel load. That complete suite
+  rerun alone passes **23/23** without assertions/timeouts being modified. Do not claim
+  a clean full-suite pass. Full run preceded the final two focused guard tests.
+- CP-004 remains IN PROGRESS. Next: real HTTP authorization/tenant/outlet and broader
+  multi-payment/mixed-tender/source acceptance coverage, then mandatory disposable
+  DB rollback/retry/payment/spend/refund/transfer race and full lifecycle acceptance
+  only after separate DB authorization/owner review. No transactional safety, actual
+  SQL/audit behavior or browser walkthrough accepted here. CP-005 unstarted; CP-003A
+  TODO after CP-005. Do not advance those tasks or deploy this unfinished lifecycle.
+
+## October 28, 2026 — CP-004 value-package refund service increment
+
+- Resumed CP-004 only. Preserved the previous uncommitted shared arithmetic and
+  tracking changes. No DB access, migration, generation, disposable cluster,
+  activation, deployment, commit or push. New code is not release acceptance.
+- Added `apps/api/src/services/payroll-value-package-refund.ts` and focused tests.
+  New `POST /sales/value-package-holdings/:id/refund` uses the existing strict
+  refund request contract and auth, sales/packages modules, writable-tenant and
+  manager/owner route guards. Service independently validates enabled manager/owner
+  and tenant actor, takes prepaid then configuration locks, and validates retry hash.
+- Reconciles immutable purchase IDs/currency/paid/credit/sellers with source line,
+  original GST, active redemption amounts, collection components and source-time
+  VP_SALE seller lines. Rejects stale/incomplete/conflicting evidence before writes.
+  Copies original rate evidence instead of resolving current rates. Appends a
+  PENDING_RELEASE refund event, zeros remaining credit and decrements only original
+  uncollected debt in the transaction; zero cash writes no commission lines.
+- `sale.service.ts` refuses credit restoration after value refund and original-sale
+  void after either package refund type. `commission-collection-evidence.ts` refuses
+  new allocations to refunded value holdings; `payroll-source-event.ts` excludes
+  value refund events from generic reversal. Earned spend events remain unchanged.
+- Tests use an entirely in-memory transaction double and the internal service seam,
+  with dotenv disabled and an unusable database URL. No Prisma query executes.
+  **26/26** pass: payout/seller/rate evidence, partial/zero collection cancellation,
+  stale/legacy/corrupt evidence refusal, roles/scope, identical/conflicting retries,
+  second-key refusal, debt consistency, restoration and collection guards. These
+  do NOT establish DB rollback, tenant query isolation, races or HTTP authorization.
+- Full shared suite **287/287**; API typecheck, lint and build pass (shared build
+  via API prebuild). Logs `/tmp/cp004-value-service-{tests,shared,types,lint,build}.log`
+  and adjacent `.exit` markers. Terminal integration may report wrapper closure;
+  actual summaries and saved command exits were checked.
+- Remaining: value-holding detail/refund UI and exact quote/read contracts; real
+  HTTP role/tenant/outlet checks; original source reconciliation with multi-payment
+  and mixed-tender fixtures; rollback/retry/payment/spend/refund/transfer races,
+  refund/void behavior and complete lifecycle acceptance. The service's transaction
+  correctness and SQL/audit behavior remain unverified until separately authorized
+  disposable database acceptance. No deployment or earnings activation permitted.
+- CP-004 IN PROGRESS. Next: value-refund detail/UI integration within the DB pause.
+  CP-005 unstarted; CP-003A TODO after CP-005. Do not start either automatically.
+
+## October 28, 2026 — CP-004 value-package refund arithmetic foundation
+
+- User requested continuing CP-004 to completion while keeping all DB work paused.
+  Kept that safety boundary: no DB command, migration, client generation, disposable
+  cluster, API acceptance, activation, deployment, commit or push. CP-004 cannot
+  satisfy its mandatory real transactional completion check during this pause.
+- Added `packages/shared/src/commission-payroll/value-package-refund.ts` and its
+  tests, exported through the shared barrel. Validates source-time purchase IDs,
+  cent-exact paid/credit values, currency and original seller shares. Incomplete
+  prospective evidence may be represented but is rejected for a refund quote.
+- Uses the existing cumulative VP_SPEND ratio for used value, preserves four-decimal
+  residuals, floors customer cash at zero, separates original GST and cancelled
+  debt/face credit, and rejects negative/excess collections or remaining credit.
+  Policy recorded in DECISIONS.md. Pure helper has no persistence or payout effects.
+- Checks: shared build completed and full shared suite **287/287** (ten new cases);
+  workspace typechecks and lint **exit 0**, confirmed by saved exit markers.
+  Logs `/tmp/cp004-value-refund-{shared,types,lint}.log`. Terminal integration
+  intermittently reported missing completion; actual test summary and type/lint
+  exit-marker files were inspected rather than treating tool-wrapper errors as passes.
+- This is a foundation, not the completed value-refund feature. Still required:
+  endpoint/UI wiring; authoritative sale-line/tax/collection reconciliation; atomic
+  original-seller negative base and remaining-credit/debt cancellation; stale/retry
+  handling and prevention of credit restoration through voids after refund; real
+  payment/spend/refund/transfer concurrency and rollback acceptance. Original earned
+  spend evidence must remain untouched. None of these are claimed verified here.
+- CP-004 remains IN PROGRESS. Next: continue its value-refund workflow within the
+  database pause; owner review/separate authorization is required before any DB
+  acceptance. CP-005 remains unstarted; CP-003A remains TODO after CP-005.
 
 ## October 28, 2026 — CP-004 session-action UI acceptance increment
 

@@ -84,6 +84,22 @@ export async function captureCollectionEvidence(tx: Transaction, value: CaptureC
     )
       throw conflict("Refunded package balances cannot receive new collections.");
   }
+  const refundedValues = await tx.payrollSourceEvent.findMany({
+    where: { saleId: input.saleId, sourceType: "VALUE_PACKAGE_REFUND" },
+    select: { sourceId: true },
+  });
+  if (refundedValues.length) {
+    const cancelled = await tx.customerValuePackageHolding.findMany({
+      where: { id: { in: refundedValues.map((row) => row.sourceId) } },
+      select: { saleLineId: true },
+    });
+    if (
+      input.allocations.some((row) =>
+        cancelled.some((holding) => holding.saleLineId === row.saleLineId),
+      )
+    )
+      throw conflict("Refunded value-package balances cannot receive new collections.");
+  }
   if (!sale || sale.status !== "COMPLETED" || sale.refund)
     throw badRequest("Collection evidence requires a completed unrefunded sale.");
   if (sale.collectionCurrency && sale.collectionCurrency !== input.currency)

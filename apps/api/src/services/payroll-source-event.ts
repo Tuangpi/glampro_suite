@@ -217,7 +217,7 @@ export async function reversePayrollSources(
     where: {
       saleId,
       ...(onlySourceKey ? { sourceKey: onlySourceKey } : {}),
-      sourceType: { notIn: ["REVERSAL", "PACKAGE_REFUND"] },
+      sourceType: { notIn: ["REVERSAL", "PACKAGE_REFUND", "VALUE_PACKAGE_REFUND"] },
     },
   });
   const scope = currentScope();

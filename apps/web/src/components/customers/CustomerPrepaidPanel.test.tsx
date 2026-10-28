@@ -29,6 +29,13 @@ vi.mock("@/lib/api", () => ({
   post: mocks.post,
   getErrorMessage: (error: Error) => error?.message ?? "Request failed",
 }));
+vi.mock("./ValuePackagePayrollDetail", () => ({
+  default: ({ customerId, holdingId }: { customerId: string; holdingId: string }) => (
+    <p role="dialog">
+      Value economics {customerId}/{holdingId}
+    </p>
+  ),
+}));
 function panel(client: QueryClient) {
   return (
     <QueryClientProvider client={client}>
@@ -137,4 +144,10 @@ it("does not allow choosing a recipient after a search failure", async () => {
   expect(screen.getByRole("alert")).toHaveTextContent("Customer search failed");
   expect(screen.queryByRole("button", { name: "Mina · 1234" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Confirm prepaid transfer" })).toBeDisabled();
+});
+it("opens original economics from the current owned prepaid holding", async () => {
+  setup();
+  await userEvent.click(await screen.findByRole("button", { name: "View economics for Wallet" }));
+  expect(screen.getByRole("dialog")).toHaveTextContent("Value economics c1/h1");
+  expect(mocks.post).not.toHaveBeenCalled();
 });

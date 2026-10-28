@@ -31,6 +31,7 @@ import {
   restorePayrollPackageSessions,
 } from "./payroll-package-session.js";
 import { appendPayrollSource, reversePayrollSources } from "./payroll-source-event.js";
+import { assertPayrollValuePackageRestorable } from "./payroll-value-package-refund.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import {
   captureRedemptionCommission,
@@ -3058,6 +3059,15 @@ async function assertVoidable(tx: SaleTransaction, sale: VoidableSale): Promise<
   if (refund !== null) {
     throw conflict("This sale has been refunded, so it cannot be voided.", "SALE_ALREADY_REFUNDED");
   }
+  if (
+    await tx.payrollSourceEvent.findFirst({
+      where: { saleId: sale.id, sourceType: { in: ["PACKAGE_REFUND", "VALUE_PACKAGE_REFUND"] } },
+    })
+  )
+    throw conflict(
+      "This sale has refunded package consideration and cannot be voided.",
+      "SALE_ALREADY_REFUNDED",
+    );
 
   const lineIds = sale.lines.map((line) => line.id);
   if (lineIds.length > 0) {
@@ -3219,6 +3229,7 @@ async function reverseForVoid(
             .then((row) => row?.voidedById ?? null),
         );
       } else if (redemption.itemType === "VALUE_PACKAGE" && redemption.amount !== null) {
+        await assertPayrollValuePackageRestorable(tx, redemption.holdingId);
         const restored = await tx.customerValuePackageHolding.updateMany({
           where: { id: redemption.holdingId },
           data: { amountRemaining: { increment: redemption.amount } },

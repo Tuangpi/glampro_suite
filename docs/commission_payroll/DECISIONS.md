@@ -8,6 +8,40 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-004 isolated acceptance authorization (October 28, 2026)
+
+- Owner explicitly authorized isolated disposable-database CP-004 acceptance only;
+  application/production databases remain off-limits. Used fresh loopback 55476
+  `/tmp` PostgreSQL cluster, explicit URL and disabled dotenv. No application DB
+  repair, activation, deployment, commit or push is authorized. Earlier migration
+  incident is not erased by successful disposable acceptance. Stop test cluster
+  afterward. This is not blanket permission for future database work.
+
+### CP-004 value-package refund arithmetic (October 28, 2026)
+
+- Multi-collection safety: an aggregate seller refund base cannot represent
+  conflicting historical fallback rates. Positive value-package payouts therefore
+  require a recorded, numerically consistent rate per original seller across all
+  collection sources. Missing/differing rates fail closed before writes; never use
+  database result order or current rules to choose one. Equal decimal spellings
+  are accepted. Zero-payout cancellation creates no negative bases and does not
+  require equal rates. Supporting differing-rate refunds needs a separately defined
+  rate-lot allocation policy, not arbitrary first-source selection. This limitation
+  is not completion of multi-payment or transactional acceptance.
+- Apply CP-D08 to original paid consideration, not promotional face credit. Used
+  net value is the cumulative four-decimal VP_SPEND paid-to-credit ratio for credit
+  consumed. Subtract that value and the approved net fee from collected net; floor
+  at zero and round down only at the customer cent boundary, as for session refunds.
+- Refund tax is proportional to original collected tax using half-up cent rounding.
+  Original tax/collections must be independently source-validated by the future
+  transaction service; the ratio snapshot alone does not prove collection or GST.
+- Preserve earned VP_SPEND evidence. Cancel remaining face credit and uncollected
+  original debt separately; neither is extra customer cash or a new commission base.
+- Pure arithmetic/schema tests are not refund workflow acceptance. API/UI wiring,
+  source lineage/collection reconciliation, locking, retry/conflicting retry,
+  reversal-after-refund refusal and real rollback/race tests remain outstanding.
+  All database work remains paused; no activation or deployment is authorized.
+
 ### CP-004 refund and source economics clarification (October 28, 2026)
 
 - SRS section 4 package settings explicitly says fixed dollars **per sale**, versus

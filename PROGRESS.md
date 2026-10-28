@@ -2,6 +2,64 @@
 
 ## Current State
 
+- **CP-004 DONE, October 28, 2026:** separately authorized isolated PostgreSQL
+  acceptance passed 18/18 on three runs after fresh 63-migration replay; route/helper
+  regression 210/210, shared 290/290, full serial web 963/963; API/web checks/builds
+  pass. Disposable cluster stopped. No application/production DB access during this
+  acceptance, no activation/deployment/commit/push. Current task None; next CP-005
+  (not started); CP-003A follows CP-005. See commission-payroll completion handoff.
+  Earlier incomplete checkpoints below are retained as history, not current status.
+
+- **CP-004 consistency/void checkpoint, October 28, 2026:** detail and refund share
+  source validation; preview blocks missing source/debt; new refund bases start
+  EARNED rather than inheriting PAID. Expanded non-DB API 148/148, UI 57/57, shared
+  290/290; API/web typecheck/lint and API build pass. Completion remains BLOCKED by
+  mandatory real transactional/POS/rollback/race acceptance under the retained DB
+  pause. CP-004 IN PROGRESS; no CP-005/CP-003A advance. See detailed handoff.
+
+- **CP-004 collection ingestion seam, October 28, 2026:** 22 new in-memory
+  integration tests; focused non-DB API 116/116, API typecheck/lint pass. Real
+  collection/payroll capture/detail/refund services covered; no runtime changes.
+  Payment recording endpoints/gateway settlement and SQL lifecycle/rollback/races
+  remain unverified. CP-004 IN PROGRESS; DB pause holds; CP-005/CP-003A untouched.
+  See commission-payroll handoff for remaining detail eligibility consistency work.
+
+- **CP-004 value source evidence, October 28, 2026:** 21 new multi-collection/
+  split-seller cases; focused non-DB API 94/94, API typecheck/lint/build pass. Positive
+  refunds now reject missing/conflicting original seller rates rather than selecting
+  a rate by query order. Mixed-tender ingestion and real DB lifecycle/race acceptance
+  remain unverified. CP-004 IN PROGRESS; DB pause holds; CP-005/CP-003A untouched.
+  See commission-payroll handoff for evidence and conservative refund limitation.
+
+- **CP-004 HTTP boundaries, October 28, 2026:** 41 new real HTTP/router/auth/
+  module/role/outlet/validation cases pass with in-memory persistence doubles;
+  combined non-DB API 73/73, API typecheck/lint pass. No runtime changes or DB work.
+  SQL isolation/rollback/race and broader source acceptance remain unverified.
+  CP-004 IN PROGRESS; CP-005 unstarted; CP-003A TODO after CP-005. All DB work paused.
+  See commission-payroll handoff for coverage and limits.
+
+- **CP-004 value-refund UI, October 28, 2026:** customer-bound detail endpoint,
+  exact read contract, prepaid economics/refund dialog with fee/GST preview, actual
+  tender and confirmation implemented. Focused web 55/55, non-DB API 32/32, shared
+  290/290; typechecks/lint/web build pass. Full web 958/959 (PayrollPlans timeout);
+  isolated rerun 23/23. All DB work paused. CP-004 IN PROGRESS: real HTTP/transactional
+  lifecycle/race acceptance remains. CP-005 unstarted; CP-003A TODO after CP-005.
+  See commission-payroll handoff for evidence and remaining gates.
+
+- **CP-004 value-refund service, October 28, 2026:** guarded endpoint, original
+  source/usage/seller reconciliation, cancellation/retry evidence and post-refund
+  collection/void guards implemented. Non-DB doubles 26/26; shared 287/287; API
+  typecheck/lint/build pass. All DB work stays paused. CP-004 IN PROGRESS: UI and
+  real HTTP/transactional lifecycle/race acceptance remain. CP-005 unstarted;
+  CP-003A TODO after CP-005. See commission-payroll handoff.
+
+- **CP-004 value-refund foundation, October 28, 2026:** exact original paid/credit
+  refund arithmetic and purchase validation added with ten tests; shared 287/287,
+  workspace typechecks/lint pass. Pure helper only: endpoint/UI and atomic lifecycle
+  integration remain. All DB work stays paused, so mandatory race/rollback acceptance
+  still blocks DONE. CP-004 IN PROGRESS; CP-005 unstarted; CP-003A TODO after CP-005.
+  See commission-payroll handoff for remaining work and evidence.
+
 - **CP-004 session-action UI, October 28, 2026:** strict refund amounts, stale
   correction-draft invalidation and revision-bound void retry keys; pending-write
   guard. Detail UI 27/27, full web 940/940, web typecheck/lint/build pass.

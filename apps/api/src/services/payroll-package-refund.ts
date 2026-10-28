@@ -153,6 +153,7 @@ export async function refundPayrollPackage(
           evidence.lines.some(
             (line) =>
               line.commissionType !== "PKG_SALE" ||
+              line.status === "REVERSED" ||
               line.mode !== policy.mode ||
               line.baseAmount !==
                 expectedBases.find((base) => base.staffId === line.staffId)?.amount ||
@@ -203,6 +204,7 @@ export async function refundPayrollPackage(
         id: `${key}:${base.staffId}`,
         baseAmount: base.amount,
         units: "0.0000",
+        status: "EARNED",
         businessDate: payrollBusinessDate(at, tenant.timeZone),
         ...(policy.mode === "FIXED"
           ? { fixedCommission: fixed.find((row) => row.staffId === base.staffId)!.amount }

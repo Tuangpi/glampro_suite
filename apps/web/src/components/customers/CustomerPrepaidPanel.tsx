@@ -17,6 +17,7 @@ import { useCustomerList } from "@/hooks/useCustomers";
 import { useModules } from "@/hooks/useSettings";
 import { getErrorMessage, getPaginated, post } from "@/lib/api";
 import CustomerFamilyCreditPanel from "./CustomerFamilyCreditPanel";
+import ValuePackagePayrollDetail from "./ValuePackagePayrollDetail";
 
 export default function CustomerPrepaidPanel({ customerId }: { customerId: string }) {
   const modules = useModules();
@@ -43,6 +44,7 @@ export function PrepaidPanel({ customerId }: { customerId: string }) {
   const [page, setPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
   const [selected, setSelected] = useState<PrepaidHolding | null>(null);
+  const [economicsId, setEconomicsId] = useState<string | null>(null);
   const [openedAt] = useState(() => Date.now());
   const canManage =
     !isReadOnly && (user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER");
@@ -84,6 +86,9 @@ export function PrepaidPanel({ customerId }: { customerId: string }) {
               <li key={row.id} className="my-3 rounded-md border border-line p-3">
                 <strong>{row.name}</strong> — {formatPrice(row.amountRemaining)} ·{" "}
                 {row.expiresAt ? `Expires ${formatDateTime(row.expiresAt)}` : "No expiry"}
+                <Button onClick={() => setEconomicsId(row.id)}>
+                  View economics for {row.name}
+                </Button>
                 <Button
                   disabled={
                     !canManage ||
@@ -142,6 +147,14 @@ export function PrepaidPanel({ customerId }: { customerId: string }) {
           />
         </>
       )}
+      {economicsId ? (
+        <ValuePackagePayrollDetail
+          key={`${customerId}:${economicsId}`}
+          customerId={customerId}
+          holdingId={economicsId}
+          onClose={() => setEconomicsId(null)}
+        />
+      ) : null}
       {selected && canManage ? (
         <TransferDialog
           key={selected.id}

@@ -204,7 +204,60 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-004 — Transactional capture and package workflows
 
-- Status: **IN PROGRESS** (October 28, 2026).
+- Status: **DONE** (October 28, 2026).
+- Completion: owner explicitly authorized isolated disposable DB acceptance only.
+  Fresh PostgreSQL 18 cluster at loopback 55476, verified `/tmp` data directory,
+  63 migrations replayed. Targeted collection/session/value lifecycle, HTTP,
+  rollback/immutability/audit/isolation and concurrent payment/spend/refund/transfer/
+  session-void acceptance **18/18 on three consecutive runs**, no skips. Route/helper
+  regression **210/210**, shared **290/290**, full serial web **963/963**; API/web
+  typecheck/lint/build pass. Disposable cluster stopped. Application/production DBs
+  untouched during authorized acceptance; prior migration incident remains recorded.
+  CP-005 is next but not started. CP-003A remains after CP-005. No activation,
+  deployment, commit or push; browser release acceptance/FR-POS-09 remain later gates.
+- Historical checkpoints below are retained; earlier DB-pause blockers and
+  incomplete-verification counts are superseded by the completion evidence above.
+- Detail/write consistency and void boundary: extracted one original collection/
+  seller/rate validator; preview flags missing sources/debt; reversed lines rejected;
+  new negative bases are EARNED even when original lines are PAID. Added eight detail,
+  three status, two real void-entry and two UI cases. Expanded non-DB API 148/148,
+  focused UI 57/57, shared 290/290; API/web typecheck/lint and API build pass.
+  Completion BLOCKED by retained DB pause: mandatory real transactional/POS,
+  rollback/race acceptance has not run. Do not mark DONE or advance CP-005.
+- Value collection-ingestion seam: 22 new non-DB integration cases run real
+  collection allocation/payroll capture/detail/refund against in-memory persistence.
+  Cash/card/later-payment lineage, exact GST residuals, retries, credit/unsettled
+  source refusal and post-refund collection guard pass. Focused API 116/116; API
+  typecheck/lint pass. No runtime changes or DB work. Payment recording endpoints,
+  gateway settlement, SQL isolation/rollback/races and detail eligibility remain open.
+- Value source-evidence increment: 21 new non-DB cases cover three collection
+  sources, split sellers, payout-tender independence, partial debt, source corruption
+  and ordering. Fixed arbitrary first-source fallback-rate selection: positive
+  payouts reject absent/conflicting historical rates. Focused API 94/94; API
+  typecheck/lint/build pass. Payment ingestion/mixed-tender settlement and SQL
+  isolation/rollback/race acceptance remain unverified. No DB work.
+- Value-package HTTP boundary tests: real routers/auth/tokens/module/role/writable/
+  outlet/validation middleware with in-memory persistence doubles, 41/41 new cases;
+  combined focused non-DB API 73/73, API typecheck/lint pass. No runtime behavior
+  changes or DB work. Scope propagation is tested, not SQL tenant isolation.
+  Broader source/mixed-tender and real DB lifecycle/rollback/race acceptance remain.
+- Value-refund detail/UI increment: customer-bound evidence read endpoint, strict
+  shared read contract, prepaid economics entry point and reasoned/confirmed exact
+  refund preview with actual tender and zero/NONE cancellation implemented. Focused
+  web 55/55, non-DB API 32/32, shared 290/290; workspace typechecks/lint and web
+  build pass. Full web 958/959 (unmodified PayrollPlans timeout); isolated rerun
+  23/23. No DB work. HTTP/DB lifecycle/race acceptance still prevents DONE.
+- Value-refund service increment: guarded API endpoint, original purchase/usage/
+  collection/seller reconciliation, negative original-seller VP_SALE evidence,
+  credit/debt cancellation, identical/conflicting retry handling and post-refund
+  collection/void-restoration guards implemented. Non-DB transaction-double tests
+  26/26; shared 287/287; API typecheck/lint/build pass. UI and real transactional
+  lifecycle/race acceptance remain open. No DB work; CP-005/CP-003A untouched.
+- Value-package refund foundation: exact paid-to-credit refund quote and original
+  purchase schema added, with ten new non-DB tests. Shared 287/287, workspace
+  typechecks/lint pass. Not wired to an endpoint or UI; atomic source validation,
+  cancellation, retries and lifecycle/race acceptance remain outstanding. Database
+  pause prevents CP-004 completion. Do not mark DONE or start CP-005/CP-003A.
 - Session-action UI increment: strict exact refund/fee parsing, revision-bound
   correction drafts and void retry keys, synchronous duplicate-write guard.
   Detail UI 27/27, full web 940/940 (107 files), web typecheck/lint/build pass.
