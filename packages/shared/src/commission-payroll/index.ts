@@ -13,3 +13,4 @@ export * from "./source-economics.js";
 export * from "./validation.js";
 export * from "./examples.js";
 export * from "./settings.js";
+export * from "./statement.js";

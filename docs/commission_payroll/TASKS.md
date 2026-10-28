@@ -335,8 +335,26 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-005 — Monthly close and frozen payroll statements
 
-- Status: **TODO**.
+- Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Frozen carry checkpoint: supplied preceding approved close replayed for snapshot
+  consistency; stable component carry/exact fallback debt and required staff retained.
+  Missing history never becomes zero. Focused tests 67/67; API lint/typecheck/build
+  pass. Non-DB evidence validation only; opening carry and authoritative loading remain.
+- Source checkpoint: internal candidate source/lineage resolver validates exact
+  reversals, dates/outlets/currency/types and duplicate/unavailable evidence.
+  Focused source/configuration/close/preview/statement tests 57/57; API
+  lint/typecheck/build pass. Not authoritative inventory reconciliation or release.
+- Configuration checkpoint: historical profile/staff/settings and month-end plan
+  resolver retains selected audit evidence; missing/ambiguous inputs return
+  UNAVAILABLE/null. Focused configuration/close/preview/statement tests 42/42 pass.
+  API lint/typecheck/build, formatting and whitespace checks pass.
+  Resolver only, not the complete authoritative source/collection/carry loader.
+- Checkpoint: pure statement assembly and close transitions implemented; shared
+  298/298, focused statement/close 18/18, API close/preview 17/17; shared/API
+  typecheck/lint pass. Non-activating only: persistence, authoritative loaders,
+  source/approval locking, correction allocation, API/UI and real transactional
+  acceptance remain. CP-004 DB authorization is not blanket CP-005 permission.
 - Expected result: OPEN → CALCULATED → APPROVED workflow, preserved manual
   adjustments, authoritative input revisions, immutable complete statement snapshots,
   safe cross-period corrections/carry-forward and separate payout confirmation.

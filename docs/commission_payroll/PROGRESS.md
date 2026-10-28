@@ -2,13 +2,73 @@
 
 ## Current State
 
+- **October 28, 2026 — CP-005 frozen carry evidence checkpoint:** internal non-DB
+  resolver requires the immediately previous approved close and replays frozen
+  calculation inputs/audited adjustments to check snapshot consistency. Retains
+  prior close ID/revision/approval/calculation, stable component bases/units and
+  exact fallback commission debt, plus required departed/disabled staff with debt.
+  Missing prior close is UNAVAILABLE, never assumed zero; draft, cross-salon,
+  wrong-month, invalid timing and inconsistent snapshots fail closed. Results are
+  detached copies. Focused carry/source/config/close/preview/statement tests 67/67;
+  API typecheck/lint/build exit 0. Logs `/tmp/cp005-carry-{tests,lint,build}.log`.
+  CP-005 remains IN PROGRESS; CP-004 latest completed. This checks supplied records,
+  not authenticity, DB immutability or authoritative inventory completeness. Opening
+  carry policy, DB carry loading, source/collection reconciliation, required-staff
+  integration, correction allocation, persistence/locks/API/UI and transactional
+  acceptance remain. Unknown calculation versions fail closed. No database commands,
+  migrations, routes, activation or deployment; CP-005 DB authorization still absent.
+  Next: source inventory/legacy exclusion and collection reconciliation, then complete
+  carry loading and required-staff integration. CP-003A and CP-006 remain TODO.
+
+- **October 28, 2026 — CP-005 source evidence resolver:** internal non-DB
+  validation retains complete candidate events/lineage, exact credited lines and
+  required staff IDs. Missing/released/foreign-currency evidence, date/outlet/type
+  mismatches, duplicate staff/lines and PAID/REVERSED inputs fail closed. Reversals
+  require original-event identity and exact staff/base/unit/fixed-award negation;
+  they are additive negatives, not edits to approved history. Zero/NONE cancellation
+  may contain no lines; empty positive refunds are blocked. Focused source/config/
+  close/preview/statement tests 57/57 (15 new source cases); API lint/typecheck/build
+  exit 0. Logs `/tmp/cp005-sources-{tests,lint,types,build}.log`.
+  Current task CP-005 IN PROGRESS; latest completed CP-004. Resolver does not prove
+  source inventory completeness, operational reconciliation, legacy payout exclusion,
+  authoritative collection/carry or next-open-period allocation. Those plus
+  persistence/locking/API/UI/transactional acceptance remain. No DB commands,
+  migrations, routes or activation; CP-005 database authorization still absent.
+
+- **October 28, 2026 — CP-005 configuration resolver:** internal non-DB resolver
+  selects month-end assignment/version and historical pre-close staff/profile/salon
+  audit. Retains selected audit payloads/revisions; accepts stage override zero;
+  includes disabled staff in the supplied activity/carry/owed set. Missing salary,
+  classification, identity or ambiguous plans yield UNAVAILABLE/null configuration,
+  never defaults or partial payroll. Cross-tenant/duplicate records fail closed.
+  Focused configuration/close/preview/statement tests 42/42 pass (17 new resolver
+  tests, including close/hash integration). API lint/typecheck/build, formatting
+  and git diff whitespace checks exit 0. Logs `/tmp/cp005-configuration-final-tests.log`
+  and `/tmp/cp005-config-verified.json`. No routes, DB commands or activation.
+  Current task CP-005 IN PROGRESS; latest completed CP-004. Next: authoritative
+  source/collection/carry loader and persistence/locking/correction allocation;
+  API/UI and transactional acceptance still required. CP-005 DB authorization is
+  still absent; existing CP-004 authorization remains narrowly scoped.
+
+- **October 28, 2026 — CP-005 IN PROGRESS:** non-activating statement/close-state
+  foundation implemented. Exact-money salary/manual components, collection KPI,
+  complete copied inputs/results, revision/hash stale approval checks, preserved
+  adjustments, own-statement/verified-owner reads and separate payout transitions.
+  Shared 298/298; focused statement/close 18/18; close/preview API 17/17;
+  shared/API typecheck and lint pass. No DB commands, migrations, routes or UI added.
+  Remaining: authoritative source/config/profile/collection/carry loader; persisted
+  close and immutable audit/snapshots; source/approval locking; next-open-period
+  correction allocation; API/UI; real transactional/HTTP/race acceptance. Existing
+  CP-004 disposable DB authorization does not authorize CP-005 DB work. Current task
+  CP-005; most recently completed CP-004; next resume CP-005, not CP-003A/CP-006.
+
 - **October 28, 2026 — CP-004 DONE:** owner separately authorized isolated
   disposable-database acceptance only. Fresh PostgreSQL 18 `/tmp` cluster on
   127.0.0.1:55476, 63 migrations; targeted lifecycle/rollback/audit/HTTP/isolation/
   competing-operation acceptance 18/18 on three runs. Route/helper regression
   210/210; shared 290/290; full serial web 963/963; API/web typecheck/lint/build pass.
   Cluster stopped. Current task: None; most recently completed: CP-004. Next ready:
-  CP-005 (not started); CP-003A follows CP-005. Application/production DBs remain
+  CP-005 (subsequently started above); CP-003A follows CP-005. Application/production DBs remain
   off-limits; no activation/deployment/commit/push. Earlier blockers below are history.
 
 - **October 28, 2026 — CP-004 consistency/void checkpoint:** shared read/write

@@ -2,6 +2,40 @@
 
 ## Current State
 
+- **CP-005 frozen carry checkpoint, October 28, 2026:** non-DB resolver checks
+  immediately previous approved snapshots against replayed frozen inputs, retaining
+  exact component/fallback debt and departed staff. Missing history is unavailable,
+  not zero. Focused tests 67/67; API typecheck/lint/build pass. CP-005 IN PROGRESS;
+  authoritative inventory/collection/carry loading, opening carry policy, required-staff
+  integration, corrections, persistence/locks/API/UI and transactional acceptance remain.
+  No DB commands, migrations, routes or activation. CP-004 latest completed;
+  resume CP-005; see commission-payroll handoff.
+
+- **CP-005 source evidence checkpoint, October 28, 2026:** internal captured-source
+  resolver validates month/date/outlet/currency/types, duplicate inputs and exact
+  reversal lineage while preserving original history. Focused non-DB tests 57/57;
+  API lint/typecheck/build pass. CP-005 remains IN PROGRESS: authoritative inventory,
+  collection/carry, posting allocation, persistence/locking/API/UI and transactional
+  acceptance remain. No DB commands, migrations, routes or activation. Resume CP-005;
+  see commission-payroll handoff. CP-004 remains latest completed task.
+
+- **CP-005 configuration checkpoint, October 28, 2026:** internal historical
+  profile/staff/settings and month-end plan resolver added, with complete selected
+  audit evidence and fail-closed missing/ambiguous configuration. Focused non-DB
+  configuration/close/preview/statement tests 42/42 pass; API lint/typecheck/build,
+  formatting and whitespace checks pass. CP-005 stays IN PROGRESS;
+  authoritative source/collection/carry loading, persistence/locking/corrections,
+  API/UI and transactional acceptance remain. No DB commands or activation.
+  See commission-payroll handoff; resume CP-005, not CP-003A/CP-006.
+
+- **CP-005 IN PROGRESS, October 28, 2026:** non-activating exact-money statement
+  assembly and pure monthly close transitions added. Shared tests 298/298;
+  focused statement/close tests 18/18; API close/preview tests 17/17; shared/API
+  typecheck/lint pass. Persistence, authoritative loaders, correction allocation,
+  source locking, API/UI and transactional acceptance remain. No DB commands,
+  migrations, activation or deployment. Resume CP-005; see detailed handoff in
+  `docs/commission_payroll/PROGRESS.md`. CP-004 remains the latest completed task.
+
 - **CP-004 DONE, October 28, 2026:** separately authorized isolated PostgreSQL
   acceptance passed 18/18 on three runs after fresh 63-migration replay; route/helper
   regression 210/210, shared 290/290, full serial web 963/963; API/web checks/builds
