@@ -5,6 +5,7 @@ import {
   type CommissionShares,
   type PayrollCommissionType,
   payrollPackageSettingsSchema,
+  payrollFixedSaleAward,
 } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
@@ -182,16 +183,8 @@ export async function capturePayrollCollection(tx: Transaction, collectionId: st
     const previous = await tx.commissionCollectionAllocation.findMany({
       where: { saleLineId: line.id, collectionId: { not: collectionId } },
     });
-    const before = previous.reduce((sum, row) => sum + row.netCents, 0n);
     const fixedAward =
-      policy?.mode === "FIXED"
-        ? (() => {
-            const [whole, fraction = ""] = policy.amount.split(".");
-            const ticks = BigInt(whole! + fraction.padEnd(4, "0"));
-            const delta = before === 0n ? ticks : 0n;
-            return `${delta / 10000n}.${(delta % 10000n).toString().padStart(4, "0")}`;
-          })()
-        : undefined;
+      policy?.mode === "FIXED" ? payrollFixedSaleAward(policy.amount, previous.length) : undefined;
     await appendPayrollSource(tx, {
       sourceKey: `collection:${allocation.id}`,
       sourceType: "COLLECTION",
@@ -201,7 +194,7 @@ export async function capturePayrollCollection(tx: Transaction, collectionId: st
       reason: collection.reason,
       commissionType: line.itemType === "PACKAGE" ? "PKG_SALE" : "VP_SALE",
       baseAmount: `${allocation.netCents / 100n}.${(allocation.netCents % 100n).toString().padStart(2, "0")}00`,
-      units: before === 0n ? `${line.quantity}.0000` : "0.0000",
+      units: previous.length === 0 ? `${line.quantity}.0000` : "0.0000",
       shares: evidence.sellers,
       itemId: line.itemId,
       mode: policy?.mode ?? "FOLLOW_PLAN",

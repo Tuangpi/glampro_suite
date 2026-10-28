@@ -205,6 +205,35 @@ Existing implementation and reference tests need verification, not automatic cre
 ## CP-004 — Transactional capture and package workflows
 
 - Status: **IN PROGRESS** (October 28, 2026).
+- Session-action UI increment: strict exact refund/fee parsing, revision-bound
+  correction drafts and void retry keys, synchronous duplicate-write guard.
+  Detail UI 27/27, full web 940/940 (107 files), web typecheck/lint/build pass.
+  No DB access/tests. Value-package refunds and transactional lifecycle
+  acceptance remain open; do not mark DONE/start CP-005. See latest PROGRESS.md.
+- Authorized completion increment: implemented zero-payout NONE cancellation,
+  refund ordinal/count/collection/source/seller/outstanding validation, captured-award
+  clawback, FOC full-list/mixed-credit capture and once-per-sale-line fixed awards.
+  New shared arithmetic/contracts and refund-detail UI tests pass; full web 921/921,
+  shared 277/277, non-DB PIN HTTP 6/6, typechecks/lint and API/web builds pass.
+  Expanded DB lifecycle assertions are written but NOT RUN. All DB work remains
+  paused; transactional/race coverage, value-package refunds and complete lifecycle
+  acceptance are still outstanding. Do not mark DONE or start CP-005. CP-003A stays
+  TODO after CP-005. See latest PROGRESS.md entry for evidence and limitations.
+- Refund/economics review continuation: zero-payout rejection confirmed in schema
+  and service; FOC uses selected member/nonmember price and receipt-wide credit
+  allocation can override it. Fixed-award quantity unit and refund ordinal/count
+  validation remain unresolved. Shared 267/267, focused web 25/25, workspace
+  typechecks/lint pass. See PROGRESS.md for required cases. No behavior changes;
+  all DB work and lifecycle acceptance remain paused. CP-003A stays TODO after CP-005.
+- PIN-budget fix: ordinary checkout now bypasses approval throttling, even after
+  budget exhaustion. Non-DB HTTP regression tests 6/6, API typecheck/lint pass.
+  DB work remains paused. Approval-bearing downstream failures still count;
+  distributed limiting and transactional acceptance remain unverified.
+- Non-database review checkpoint: user keeps all DB work paused. Shared 267/267,
+  focused web 25/25, shared build, workspace typechecks/lint pass. Static review
+  found unconditional checkout PIN-budget consumption and zero-payout refund
+  cancellation gap; fixed-award quantity and FOC treatment need policy verification.
+  See PROGRESS.md. No application behavior changed or lifecycle acceptance claimed.
 - STOP checkpoint: local application migration safety incident recorded in PROGRESS.md.
   Further DB work requires owner review. Lifecycle implementation is partial and
   unaccepted; do not deploy or activate. Latest expanded tests not yet executed.

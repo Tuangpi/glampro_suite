@@ -1,12 +1,20 @@
 import rateLimit from "express-rate-limit";
 import { currentScope } from "../lib/tenant-context.js";
+import { validated } from "./validate.js";
+import type { CreateSaleInput } from "@glampro_suite/shared";
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
-/** Failed manager PIN attempts share a tenant/operator budget; no PIN enters logs. */
+/** Failed checkout approvals share a tenant/operator budget; ordinary checkout bypasses it. */
 export const managerPinLimiter = rateLimit({
   windowMs: FIFTEEN_MINUTES,
   limit: 10,
   skipSuccessfulRequests: true,
+  // Both checkout routes validate the body before this middleware. A blocked
+  // approval budget must never block a checkout that does not request approval.
+  skip: (req) =>
+    !validated<CreateSaleInput>(req, "body").payments.some(
+      (payment) => payment.unpaidSessionOverride !== undefined,
+    ),
   keyGenerator: () => {
     const scope = currentScope();
     if (scope?.kind !== "tenant" || !scope.actorId)

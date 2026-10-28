@@ -8,6 +8,27 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-004 refund and source economics clarification (October 28, 2026)
+
+- SRS section 4 package settings explicitly says fixed dollars **per sale**, versus
+  redemption **per session**. Retain one sale award per source sale line, including
+  quantity >1, once on its first collection. Quantity remains separate engine units.
+  A later instalment never earns the award again, even if prior net was zero.
+- Refund clawback uses the original captured fixed award, not current settings;
+  prorate by refunded net / original purchase net at four-decimal precision. The
+  existing one-refund-per-holding restriction caps total clawback at that award.
+- CP-D08's zero floor permits reasoned cancellation of unused sessions with no
+  payout. Require explicit `payoutGrossCents: "0"` and `payoutMethod: "NONE"`;
+  positive amounts require actual tender. No cash movement/provider call is implied.
+  Reconcile ordinals, original collections/sellers and outstanding debt atomically.
+  Zero payout writes cancellation evidence, not zero-valued payable/clawback lines.
+- OP-2 full list price is the source-time service nonmember catalogue price, captured
+  independently of member pricing/discounts. FOC remains full-list-price activity
+  beside credit-funded paid lines. Apply plan base/rate once in the engine; preserve
+  explicit unavailable evidence rather than retroactively inventing list prices.
+- This is local implementation policy, not transactional acceptance or permission
+  to access any database. The existing DB pause and release gates remain in force.
+
 ### CP-004 prospective package configuration (October 28, 2026)
 
 - Package sale and redemption each require explicit FOLLOW_PLAN, EXCLUDE or FIXED

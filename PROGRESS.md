@@ -2,6 +2,34 @@
 
 ## Current State
 
+- **CP-004 session-action UI, October 28, 2026:** strict refund amounts, stale
+  correction-draft invalidation and revision-bound void retry keys; pending-write
+  guard. Detail UI 27/27, full web 940/940, web typecheck/lint/build pass.
+  All DB work remains paused. CP-004 IN PROGRESS; value-package refunds and real
+  transactional lifecycle acceptance remain. CP-005 unstarted; CP-003A TODO after
+  CP-005. See commission-payroll handoff.
+- **CP-004 implementation increment, October 28, 2026:** implemented zero-payout
+  cancellation, refund evidence validation/original fixed-award clawback, FOC list
+  price capture and fixed-sale instalment guard. Shared 277/277, full web 921/921,
+  non-DB PIN HTTP 6/6, typechecks/lint and API/web builds pass. All DB work remains
+  paused; expanded lifecycle assertions unexecuted. CP-004 stays IN PROGRESS, with
+  transactional/race acceptance and value-package refunds outstanding. CP-005 not
+  started; CP-003A TODO after CP-005. See commission-payroll handoff.
+- **CP-004 refund/economics review, October 28, 2026:** confirmed schema/service
+  zero-payout rejection, selected-price/mixed-credit FOC gaps and missing refund
+  ordinal/count reconciliation. Fixed-award quantity semantics remain unresolved.
+  Shared 267/267, focused web 25/25, workspace typechecks/lint pass. Documentation
+  only; all DB work stays paused. CP-004 remains IN PROGRESS; CP-003A TODO after
+  CP-005. See `docs/commission_payroll/PROGRESS.md` for findings and acceptance gaps.
+- **CP-004 PIN-budget fix, October 28, 2026:** authorized code increment makes
+  non-PIN checkout bypass approval throttling. Non-DB HTTP tests 6/6, API typecheck
+  and lint pass. DB work remains paused; CP-004 remains IN PROGRESS. CP-003A is
+  TODO after CP-005. See commission-payroll handoff for scope and limitations.
+- **CP-004 non-database review, October 28, 2026:** user keeps every database
+  operation paused. Shared build/tests 267/267, focused web 25/25, workspace
+  typechecks/lint pass. Static review identified PIN-budget and zero-payout refund
+  gaps; quantity/FOC policy checks remain. Only tracking documents changed.
+  CP-004 remains IN PROGRESS; see commission-payroll handoff for findings.
 - **CP-004 STOP / safety incident, October 28, 2026:** an unscoped migration
   command applied 12 pending migrations to local application DB `glampro_suite`
   at `localhost:5432`. No automatic rollback. Owner review required before further

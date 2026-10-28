@@ -2,7 +2,7 @@ import {
   payrollHoldingDetailSchema,
   readPayrollPackagePurchase,
   paidPayrollPackageSessions,
-  payrollPackageSessionBase,
+  payrollPackageUnusedValue,
 } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { Prisma } from "../../generated/prisma/client.js";
@@ -42,17 +42,11 @@ export async function getPayrollHoldingDetail(customerId: string, holdingId: str
       }));
       let usedBaseTicks: string | null = null;
       if (purchase && holding.payrollAvailableOrdinals && !refunded) {
-        let remaining = 0n;
-        for (const range of payrollOrdinalSchema.parse(holding.payrollAvailableOrdinals))
-          remaining += BigInt(
-            payrollPackageSessionBase(
-              purchase,
-              range.first,
-              range.last,
-              purchase.sellers ?? [{ staffId: "economics-only", share: 10000 }],
-            ).baseAmount.replace(".", ""),
-          );
-        usedBaseTicks = (BigInt(purchase.netCents) * 100n - remaining).toString();
+        usedBaseTicks = payrollPackageUnusedValue(
+          purchase,
+          payrollOrdinalSchema.parse(holding.payrollAvailableOrdinals),
+          holding.quantityRemaining,
+        ).usedTicks.toString();
       }
       return payrollHoldingDetailSchema.parse({
         holdingId,

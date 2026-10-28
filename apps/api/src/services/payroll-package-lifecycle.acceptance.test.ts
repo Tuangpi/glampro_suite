@@ -388,6 +388,89 @@ test(
             (spendEvent.evidence as { lines: { baseAmount: string }[] }).lines[0]!.baseAmount,
             "83.3333",
           );
+          // A quantity-two sale line earns one fixed-per-sale award, not two awards.
+          const multiPurchase = await createSale({
+            ...input,
+            lines: [{ ...input.lines[0]!, quantity: 2 }],
+            payments: [{ method: "CASH", amount: 19998 }],
+            collection: {
+              currency: "SGD",
+              allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "1999800" }],
+            },
+          });
+          const multiHolding = await prisma.customerPackageHolding.findFirstOrThrow({
+            where: { saleLine: { saleId: multiPurchase.id } },
+          });
+          assert.equal(multiHolding.quantityRemaining, 10);
+          const multiSources = await prisma.payrollSourceEvent.findMany({
+            where: { saleId: multiPurchase.id, sourceType: "COLLECTION" },
+          });
+          assert.equal(multiSources.length, 1);
+          const multiLine = (
+            multiSources[0]!.evidence as {
+              lines: { units: string; fixedCommission: string }[];
+            }
+          ).lines[0]!;
+          assert.equal(multiLine.units, "2.0000");
+          assert.equal(multiLine.fixedCommission, "100.0000");
+          const zeroInput = {
+            idempotencyKey: "cp004-zero-cancellation",
+            expectedUpdatedAt: multiHolding.updatedAt.toISOString(),
+            reason: "Approved fee consumes collected consideration",
+            adminFeeNetCents: "1999800",
+            payoutGrossCents: "0",
+            payoutMethod: "NONE" as const,
+          };
+          const cancelled = await refundPayrollPackage(multiHolding.id, zeroInput);
+          assert.equal((await refundPayrollPackage(multiHolding.id, zeroInput)).id, cancelled.id);
+          assert.deepEqual((cancelled.evidence as { lines: unknown[] }).lines, []);
+          assert.equal((cancelled.evidence as { grossCents: string }).grossCents, "0");
+          const afterCancellation = await prisma.customerPackageHolding.findFirstOrThrow({
+            where: { id: multiHolding.id },
+          });
+          assert.equal(afterCancellation.quantityRemaining, 0);
+          assert.deepEqual(afterCancellation.payrollAvailableOrdinals, []);
+          assert.deepEqual(
+            afterCancellation.payrollPurchaseSnapshot,
+            multiHolding.payrollPurchaseSnapshot,
+          );
+          await assert.rejects(
+            refundPayrollPackage(multiHolding.id, {
+              ...zeroInput,
+              reason: "Conflicting retry reason",
+            }),
+            /different evidence/,
+          );
+          // Full-list FOC does not become member-price FOC; mixed-credit behavior has pure tests.
+          const member = await prisma.customer.create({
+            data: { tenantId, name: "FOC member", memberId: "cp004-member" },
+          });
+          const complimentary = await prisma.service.create({
+            data: { tenantId, name: "Full list FOC", memberPrice: "100", nonmemberPrice: "492" },
+          });
+          const focSale = await createSale({
+            customerId: member.id,
+            lines: [
+              {
+                itemType: "SERVICE",
+                itemId: complimentary.id,
+                quantity: 2,
+                discountPercent: 100,
+                attribution: { performers: [{ staffId: performerId, share: 10000 }] },
+              },
+            ],
+            payments: [],
+          });
+          const focEvent = await prisma.payrollSourceEvent.findFirstOrThrow({
+            where: { saleId: focSale.id, sourceType: "SALE_LINE" },
+          });
+          const focEvidence = focEvent.evidence as {
+            sourceSnapshot: { listUnitPrice: string };
+            lines: { baseAmount: string; commissionType: string }[];
+          };
+          assert.equal(focEvidence.sourceSnapshot.listUnitPrice, "492.00");
+          assert.equal(focEvidence.lines[0]!.baseAmount, "984.0000");
+          assert.equal(focEvidence.lines[0]!.commissionType, "FOC");
         },
         actorId,
       );

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   payrollHoldingDetailSchema,
@@ -12,10 +12,17 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
 import SaleCollectionsPanel from "@/components/sale/SaleCollectionsPanel";
-import { priceToCents } from "@/lib/money";
 import { useStaffList } from "@/hooks/useStaff";
 import CommissionAttributionEditor from "@/components/sale/CommissionAttributionEditor";
 import type { CommissionShares } from "@glampro_suite/shared";
+
+/** Refund approvals must not silently round malformed input or coerce it to zero. */
+function refundCents(value: string) {
+  if (!/^(0|[1-9]\d{0,9})(?:\.\d{1,2})?$/.test(value))
+    throw new Error("Enter a non-negative refund amount with at most two decimal places.");
+  const [whole, fraction = ""] = value.split(".");
+  return (BigInt(whole!) * 100n + BigInt(fraction.padEnd(2, "0"))).toString();
+}
 
 export default function PackagePayrollDetail({
   customerId,
@@ -30,7 +37,9 @@ export default function PackagePayrollDetail({
   const client = useQueryClient();
   const canManage = !isReadOnly && ["MANAGER", "SUPER_ADMIN"].includes(user?.globalRole ?? "");
   const staff = useStaffList({ page: 1, pageSize: 100, status: "active" }, canManage);
-  const [corrections, setCorrections] = useState<Record<string, CommissionShares | undefined>>({});
+  const [corrections, setCorrections] = useState<
+    Record<string, { revision: number; performers: CommissionShares | undefined }>
+  >({});
   const query = useQuery({
     queryKey: ["package-payroll-detail", customerId, holdingId],
     queryFn: async () =>
@@ -43,6 +52,7 @@ export default function PackagePayrollDetail({
   const [payout, setPayout] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
   const [key] = useState(newIdempotencyKey);
   const data = query.data;
   const money = (cents: string | null) =>
@@ -50,7 +60,8 @@ export default function PackagePayrollDetail({
       ? "Unavailable"
       : `${(BigInt(cents) / 100n).toString()}.${(BigInt(cents) % 100n).toString().padStart(2, "0")}`;
   async function perform(action: () => Promise<unknown>) {
-    if (busy || !canManage) return;
+    if (pending.current || !canManage) return;
+    pending.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -59,6 +70,7 @@ export default function PackagePayrollDetail({
     } catch (cause) {
       setError(getErrorMessage(cause));
     } finally {
+      pending.current = false;
       setBusy(false);
     }
   }
@@ -145,7 +157,7 @@ export default function PackagePayrollDetail({
                     onClick={() =>
                       void perform(() =>
                         post(`/sales/${row.saleId}/redemptions/${row.id}/void`, {
-                          idempotencyKey: `${key}:${row.id}`,
+                          idempotencyKey: `${key}:void:${row.id}:${row.revision}`,
                           expectedRevision: row.revision,
                           reason,
                         }),
@@ -158,15 +170,28 @@ export default function PackagePayrollDetail({
                 {canManage && !row.revertedAt && row.revision !== null ? (
                   <div>
                     <CommissionAttributionEditor
-                      value={corrections[row.id] ? { performers: corrections[row.id] } : undefined}
+                      key={`${row.id}:${row.revision}`}
+                      value={
+                        corrections[row.id]?.revision === row.revision
+                          ? { performers: corrections[row.id]?.performers }
+                          : undefined
+                      }
                       performers={staff.data?.data ?? []}
                       disabled={busy}
                       onChange={(value) =>
-                        setCorrections((current) => ({ ...current, [row.id]: value?.performers }))
+                        setCorrections((current) => ({
+                          ...current,
+                          [row.id]: { revision: row.revision!, performers: value?.performers },
+                        }))
                       }
                     />
                     <Button
-                      disabled={busy || !corrections[row.id] || reason.trim().length < 3}
+                      disabled={
+                        busy ||
+                        corrections[row.id]?.revision !== row.revision ||
+                        !corrections[row.id]?.performers ||
+                        reason.trim().length < 3
+                      }
                       onClick={() =>
                         void perform(() =>
                           post(
@@ -174,7 +199,7 @@ export default function PackagePayrollDetail({
                             {
                               idempotencyKey: `${key}:correct:${row.id}:${row.revision}`,
                               expectedRevision: row.revision,
-                              performers: corrections[row.id],
+                              performers: corrections[row.id]?.performers,
                               reason,
                             },
                           ),
@@ -194,7 +219,8 @@ export default function PackagePayrollDetail({
               <p>
                 Refund = collected net − original used-session value − approved fee (minimum zero).
                 Original GST is separate. Already-earned redemption is retained. The server verifies
-                the exact payout; this records a refund, it does not send money.
+                the exact payout; this records a refund, it does not send money. Enter 0.00 to
+                cancel unused sessions with no payout.
               </p>
               <Input
                 label="Approved administration fee (net SGD)"
@@ -203,7 +229,7 @@ export default function PackagePayrollDetail({
                 disabled={busy}
               />
               <Input
-                label="Cash refund paid (gross SGD)"
+                label="Cash refund paid (gross SGD; 0.00 for no payout)"
                 value={payout}
                 onChange={(event) => setPayout(event.target.value)}
                 disabled={busy}
@@ -212,19 +238,20 @@ export default function PackagePayrollDetail({
                 disabled={busy || reason.trim().length < 3 || !payout}
                 onClick={() =>
                   void perform(async () => {
+                    const payoutGrossCents = refundCents(payout);
                     const input = refundPayrollPackageSchema.parse({
                       idempotencyKey: key,
                       expectedUpdatedAt: data.updatedAt,
                       reason,
-                      adminFeeNetCents: String(priceToCents(fee)),
-                      payoutGrossCents: String(priceToCents(payout)),
-                      payoutMethod: "CASH",
+                      adminFeeNetCents: refundCents(fee),
+                      payoutGrossCents,
+                      payoutMethod: payoutGrossCents === "0" ? "NONE" : "CASH",
                     });
                     return post(`/sales/package-holdings/${holdingId}/refund`, input);
                   })
                 }
               >
-                Record approved cash refund
+                Record approved refund or cancellation
               </Button>
             </section>
           ) : null}

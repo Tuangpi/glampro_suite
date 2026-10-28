@@ -43,14 +43,19 @@ export const payrollHoldingDetailSchema = z.object({
   ),
 });
 export type PayrollHoldingDetail = z.infer<typeof payrollHoldingDetailSchema>;
-export const refundPayrollPackageSchema = z.strictObject({
-  idempotencyKey: z.string().min(8).max(100),
-  expectedUpdatedAt: z.iso.datetime(),
-  reason: z.string().trim().min(3).max(500),
-  adminFeeNetCents: z.string().regex(/^(0|[1-9]\d{0,11})$/),
-  payoutGrossCents: z.string().regex(/^[1-9]\d{0,11}$/),
-  payoutMethod: z.enum(["CASH", "CARD", "PAYNOW", "NETS", "BANK_TRANSFER"]),
-});
+export const refundPayrollPackageSchema = z
+  .strictObject({
+    idempotencyKey: z.string().min(8).max(100),
+    expectedUpdatedAt: z.iso.datetime(),
+    reason: z.string().trim().min(3).max(500),
+    adminFeeNetCents: z.string().regex(/^(0|[1-9]\d{0,11})$/),
+    payoutGrossCents: z.string().regex(/^(0|[1-9]\d{0,11})$/),
+    payoutMethod: z.enum(["NONE", "CASH", "CARD", "PAYNOW", "NETS", "BANK_TRANSFER"]),
+  })
+  .refine((value) => (value.payoutGrossCents === "0") === (value.payoutMethod === "NONE"), {
+    message: "Zero payout requires NONE; a positive payout requires its actual tender.",
+    path: ["payoutMethod"],
+  });
 export type RefundPayrollPackage = z.infer<typeof refundPayrollPackageSchema>;
 export const voidPayrollSessionSchema = z.strictObject({
   idempotencyKey: z.string().min(8).max(100),

@@ -2,6 +2,39 @@
 
 ## Current State
 
+- **October 28, 2026 — CP-004 session-action UI increment:** strict exact refund
+  input, revision-bound correction drafts/void keys and synchronous pending guard
+  implemented. Detail UI 27/27; full web 940/940 across 107 files and web
+  typecheck/lint/build pass. All DB work remains paused. CP-004 stays IN PROGRESS;
+  value-package refunds and transactional lifecycle/race acceptance remain open.
+  CP-005 unstarted; CP-003A remains TODO after CP-005.
+- **October 28, 2026 — authorized CP-004 implementation, DB pause preserved:**
+  zero-payout cancellation, refund validation/original-award clawback, FOC full-list
+  capture and once-per-sale-line fixed award handling implemented. Shared 277/277,
+  full web 921/921, non-DB PIN HTTP 6/6, typechecks/lint and API/web builds pass.
+  Expanded DB lifecycle assertions NOT RUN. CP-004 remains IN PROGRESS: paused
+  transactional/race acceptance and value-package refund work still prevent DONE.
+  CP-005 unstarted; CP-003A TODO after CP-005. No database operation authorized/run.
+- **October 28, 2026 — refund/economics review continued without DB:** zero-payout
+  rejection and FOC price/mixed-credit findings confirmed by static inspection;
+  fixed-award quantity semantics remain unresolved. Shared 267/267, focused web
+  25/25, workspace typechecks/lint pass. No behavior changes or DB operations.
+  CP-004 remains IN PROGRESS; lifecycle acceptance is paused. CP-003A stays TODO
+  after CP-005. Detailed findings and remaining checks are recorded below.
+- **October 28, 2026 — PIN limiter fix authorized and verified without DB:**
+  checkout without an unpaid-session override now bypasses the approval limiter,
+  including when its tenant/operator budget is exhausted. Real HTTP middleware
+  tests 6/6, API typecheck and lint pass. Concurrent failed approvals retain the
+  ten-request budget across create/complete and manager changes. All DB work stays
+  paused. CP-004 remains IN PROGRESS; next unresolved refund/economics and lifecycle
+  acceptance work is not started by this increment. CP-003A remains TODO after CP-005.
+- **October 28, 2026 — non-database review authorized:** user permits CP-004 code
+  review and non-database checks only. All database work remains paused, including
+  disposable acceptance. Working tree was clean at review start. Shared build,
+  shared tests 267/267, focused web 25/25 (four files), workspace typechecks and
+  lint pass. No API/database tests, migrations, activation or application edits.
+  Next: resolve the findings below once implementation is authorized; database
+  acceptance still requires separate approval. CP-004 remains IN PROGRESS.
 - **STOP / safety incident, October 28, 2026:** CP-004 remains IN PROGRESS.
   An incorrectly targeted `npm run db:migrate` applied 12 pending migrations to
   the configured local application database `glampro_suite` at `localhost:5432`.
@@ -35,6 +68,175 @@
   remaining capture/refund/correction paths.
   CP-005 not started. Historical money unavailable; activation prohibited.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 28, 2026 — CP-004 session-action UI acceptance increment
+
+- Resumed CP-004, not CP-005. Database pause retained, including disposable tests.
+  Preserved all pre-existing API/shared/limiter/tracking changes. This increment
+  changes only the package detail component, its tests and tracking documents.
+- `apps/web/src/components/customers/PackagePayrollDetail.tsx` no longer uses the
+  permissive till parser for approved refund/fee input: malformed, negative,
+  exponent, whitespace and sub-cent input is rejected, not coerced/rounded to zero.
+  Exact bigint conversion preserves explicit zero/NONE versus positive/CASH input.
+- Correction drafts retain the session revision at editing time. A refreshed
+  revision disables the old draft and resets the attribution editor instead of
+  silently submitting stale staff choices against a new revision. Void keys now
+  include action/session/revision; unchanged retries retain the same request.
+- Added synchronous pending ref alongside rendered disabled controls to prevent
+  duplicate/competing writes before React rerenders. Existing role/read-only gates
+  and refund cancellation semantics are preserved. Earned session staff correction
+  stays available after refund; restoring refunded sessions stays disabled.
+- Detail component suite expanded from eight to **27 passing cases**, using the
+  real attribution editor: reason and revision posting, valid staff selection,
+  stale draft invalidation, unchanged void retry, duplicate clicks, pending action
+  exclusion, malformed refund/fee, inactive/missing-revision/read-only/role guards,
+  refunded restoration refusal and failed evidence reads. API calls are mocked;
+  this is UI evidence, not server authorization or transactional acceptance.
+- Web typecheck, lint and production build pass; shared build also passes through
+  web prebuild. Full web **940/940** across 107 files with two workers passes,
+  including all 27 detail cases. Formatting and diff whitespace checks pass. Logs:
+  `/tmp/cp004-session-ui-{tests,types,lint,build,web}.log`; exit markers stored.
+  No API/DB tests, migrations, activation, browser walkthrough, commit or push.
+- CP-004 remains IN PROGRESS: value-package refund implementation and real
+  transactional lifecycle/rollback/retry/race evidence remain. CP-005 not started;
+  CP-003A remains TODO after CP-005. Any database work requires separate approval.
+
+## October 28, 2026 — CP-004 authorized refund/source implementation
+
+- User requested completion. Implemented local economic fixes without interpreting
+  that request as lifting the explicit database pause. No DB access, migration,
+  disposable cluster, activation, deployment, commit or push. Preserved pre-existing
+  limiter/test and tracking changes. CP-004 remains IN PROGRESS, not accepted DONE.
+- Shared `package-refund.ts` validates ordinal bounds/overlap/count and original
+  collected net/tax limits, preserves exact four-decimal used value, floors net at
+  zero, rounds only at customer cents, separates stored GST and cancelled debt.
+  Refund and detail reads reuse the ordinal validator. Refund service validates
+  source sale/holding lineage, collection components, unique captured source per
+  allocation, exact original seller splits/modes/currency and outstanding debt before
+  writes. Fixed clawback is based on captured awards, not inferred current prices.
+- Request/UI now supports zero payout only with explicit NONE tender. Cancellation
+  retains earned session sources and writes no payable/clawback lines at zero.
+  Positive cash refund behavior is retained; neither path sends provider money.
+- Service loading captures full nonmember list price independently of selected
+  member price. FOC base ignores unrelated credit tenders; non-FOC external-tender
+  evidence still fails unavailable when missing. No backfill/repricing of history.
+- SRS wording checked directly from supplied DOCX: fixed dollars per sale versus
+  per redemption session. Recorded per-source-sale-line interpretation, with line
+  quantity separate from the fixed award. Prior collection count, not prior net,
+  prevents repeating awards/units across zero-net instalments.
+- Added ten shared arithmetic/contract tests and eight refund-detail UI cases for
+  zero/positive payout tender, stale token, role/read-only/missing/refunded guards
+  and server refusal. Initial UI tests used an ambiguous Sessions text selector;
+  fixed to the accessible heading; all eight pass without changing product guards.
+- Extended existing opt-in DB lifecycle assertions for quantity-two units/one fixed
+  award, zero-payout idempotent cancellation and member FOC full-list snapshot.
+  These assertions compile but **were not executed**. They do not establish race,
+  rollback, mixed-credit POS or database-trigger acceptance.
+- Verified: shared **277/277**; full web **921/921** across 107 files with two
+  workers; isolated real HTTP PIN middleware **6/6**; workspace typechecks/lint,
+  shared/API/web builds pass. Logs `/tmp/cp004-finish-*.log`; exit markers recorded
+  separately. No full API run, database acceptance or authenticated browser run.
+- Remaining completion gates: real transactional POS/API lifecycle rollback/retry/
+  concurrent payment/redemption/refund/transfer evidence; value-package refund path;
+  broader source/legacy/PIN/tenant isolation and complete session correction/void UI
+  acceptance. CP-004 cannot be DONE from non-DB tests. Owner review/separate approval
+  is required before any DB work; implementation can continue only within that pause.
+- Next task stays CP-004. Do not start CP-005; CP-003A remains TODO after CP-005.
+
+## October 28, 2026 — CP-004 refund/economics review continuation
+
+- Scope: static review and non-database checks only. Preserved pre-existing PIN
+  limiter/test and tracking edits. No economic implementation, database access,
+  migration, disposable cluster, activation, deployment, commit or push.
+- **Zero-payout cancellation:** `packages/shared/src/schemas/payroll-holding.ts`
+  requires positive `payoutGrossCents`; `apps/api/src/services/payroll-package-refund.ts`
+  also rejects zero net before cancelling sessions/reconciling outstanding debt.
+  CP-D08 explicitly floors refund at zero, but the cancellation/tender evidence
+  contract must be settled before implementation. Changing only the service guard
+  cannot fix the request/UI path. Cover zero collected cash, used value/fees at or
+  above collections, exact cent boundary, no provider payout, preserved earned
+  redemption evidence, duplicate/conflicting retries and outstanding reconciliation.
+- **FOC selected-price defect:** `priceLine` in `apps/api/src/services/sale.service.ts`
+  selects member/nonmember pricing; the FOC branch later uses that selected
+  `line.item.unitPrice` and labels it `listUnitPrice`. OP-2 requires full snapshotted
+  list price. Capture its authoritative source independently; do not infer historical
+  list prices from current catalogue values. The receipt-wide `creditPaid` branch
+  can additionally replace an FOC base with external net or null. Verify FOC beside
+  credit-funded paid services, partial package coverage, member pricing, quantity,
+  GST, catalogue edits and one-time plan base/rate application.
+- **Fixed award quantity unresolved:** `apps/api/src/services/payroll-source-event.ts`
+  captures the configured award once per sale line on the first collection, while
+  units include line quantity. Refund uses that same unmultiplied configured award
+  against original purchase net. Current lifecycle purchase fixture uses quantity 1;
+  it cannot resolve whether the award is per package unit or per sale line. Settle
+  that unit explicitly, then test quantity >1, instalments, seller splits, full and
+  partial refund, original-award ceiling and unchanged purchase-time settings.
+- **Refund evidence validation gap:** refund parses ordinal ranges but does not
+  normalize/check overlap or reconcile their count with `quantityRemaining`, unlike
+  `drawPayrollPackageSessions`. Before computing money, acceptance must reject
+  contradictory ranges/counts, negative/over-collected totals and missing source
+  lines atomically. This is a static finding, not a reproduced database failure.
+- **Lifecycle acceptance still outstanding:** execute source/payment/redemption/
+  refund/transfer races, rollback, tenant/role/PIN refusals, value-package refunds,
+  legacy unavailable evidence, corrections and complete detail/refund/PIN UI tests
+  only after their applicable authorization gates. The four focused web suites do
+  not establish full `PackagePayrollDetail` or transactional acceptance.
+- Checks rerun: shared tests **267/267**; focused web **25/25** across four files;
+  workspace typechecks and lint **exit 0**. Logs:
+  `/tmp/cp004-economic-review-{shared,web,types,lint}.log`.
+  No API/database acceptance, full web regression, production build or browser run.
+- CP-004 remains **IN PROGRESS**. Economic fixes need implementation authorization;
+  all database work remains paused pending owner review/separate approval. CP-005
+  is unstarted; CP-003A remains **TODO** after CP-005.
+
+## October 28, 2026 — CP-004 PIN-budget isolation fix
+
+- User authorized this fix and non-database tests only. Preserved the pre-existing
+  tracking-document edits; no database commands or application activation.
+- `apps/api/src/middleware/rateLimit.ts` skips the approval budget for validated
+  checkout bodies without `unpaidSessionOverride`. Both existing routes retain
+  their validation-before-limiter order. Failed approval-bearing checkout requests
+  still count; successful requests are removed as before. This does not distinguish
+  a valid PIN followed by a downstream checkout failure from an invalid PIN.
+- Added `apps/api/src/middleware/rateLimit.test.ts`: real loopback HTTP requests to
+  an isolated Express harness, with the real checkout schemas, tenant context and
+  limiter. No app/auth/Prisma/database import. Six tests cover unrelated checkout
+  failures, non-PIN checkout after exhaustion, shared create/complete budget,
+  manager rotation, tenant/operator isolation, concurrent failures and successful
+  request exclusion. These tests do not exercise actual checkout transactions.
+- Verification: focused tests 6/6, API typecheck and lint exit 0. Logs:
+  `/tmp/cp004-pin-{tests,types,lint}.log`. Per-process memory storage remains a
+  limitation; distributed retry protection is not accepted by this increment.
+- CP-004 stays IN PROGRESS; refunds, economic review and complete transactional/UI
+  acceptance remain. Database work is paused; CP-003A is TODO, not completed.
+
+## October 28, 2026 — CP-004 non-database review
+
+- Reviewed package session gates, tenant-scoped manager lookup, source collection
+  capture, refund economics and checkout PIN limiter wiring. Existing tenant scope
+  includes User; manager lookup is not an unscoped cross-company query. This is
+  static inspection, not transactional/security acceptance.
+- Confirmed PIN-budget issue: `managerPinLimiter` is unconditional on both checkout
+  routes and skips only successful responses. Non-PIN checkout failures consume
+  the same budget and can block ordinary checkout. Isolate approval attempts and
+  verify that unrelated failures do not consume the budget; add retry/race tests.
+- Confirmed refund limitation: `refundPayrollPackage` rejects zero refundable net
+  before unused-session cancellation and outstanding-balance reconciliation. Define
+  and test zero-payout cancellation when used value/fees consume collected cash;
+  do not infer a new payout policy from this finding.
+- Quantity handling needs policy verification: holdings aggregate a sale line's
+  quantity/session grant, but collection capture uses the configured fixed amount
+  once without multiplying line quantity, while source units include line quantity.
+  Determine the required fixed-award unit and cover multi-quantity purchase/refund.
+- FOC capture uses `line.item.unitPrice` and mixed-credit allocation branches.
+  Full-list-price versus member-price/net treatment and FOC on mixed receipts remain
+  unaccepted; no economic correctness claim follows from passing arithmetic tests.
+- Verification: shared build; shared tests 267/267; focused web 25/25 in
+  CustomerSessionPackagesPanel, PackageFormDrawer, package-coverage and
+  family-credit-payment; workspace typechecks and lint exit 0. Logs:
+  `/tmp/cp004-review-{shared,web,types,lint}.log`. Focused web does not cover the
+  complete new detail/refund/PIN UI. No DB access, full regression or browser run.
+- Only tracking documents changed. No commits, pushes, deployment or activation.
 
 ## October 28, 2026 — CP-004 explicit package settings increment
 

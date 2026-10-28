@@ -44,6 +44,7 @@ import {
   payrollPackageSettingsSchema,
   minimumPayrollPackageDeposit,
   payrollValuePackageSpend,
+  payrollSaleLineBase,
   GST_INCLUSIVE_DIVISOR_STRING,
   GST_RATE_DECIMAL_STRING,
   GST_RATE_PERCENT,
@@ -563,6 +564,8 @@ interface ResolvedLine {
   itemId: string;
   itemName: string;
   unitPrice: Prisma.Decimal;
+  /** Full nonmember catalogue price captured before customer pricing/discounts. */
+  listUnitPrice?: Prisma.Decimal;
   /** Sessions, credit or card value one unit grants — the three granting kinds. */
   grant: Prisma.Decimal | number | null;
   /** The expiry an issued gift card inherits. */
@@ -637,6 +640,7 @@ async function loadKind(
           itemId: row.id,
           itemName: row.name,
           unitPrice: priceLine(kind, row.memberPrice, row.nonmemberPrice, isMember),
+          listUnitPrice: row.nonmemberPrice,
           grant: null,
           expiresAt: null,
           points: row.points,
@@ -2239,9 +2243,15 @@ async function fillLedgers(
       where: { saleLineId: stored.id },
     });
     const externalNet = externalAllocations.reduce((sum, row) => sum + row.netCents, 0n);
-    const net = foc
-      ? line.item.unitPrice.mul(quantity)
-      : line.netLineTotal.minus(line.taxAmount).mul(quantity).div(line.input.quantity);
+    const net = line.netLineTotal.minus(line.taxAmount).mul(quantity).div(line.input.quantity);
+    const baseAmount = payrollSaleLineBase({
+      foc,
+      listUnitPrice: line.item.listUnitPrice?.toFixed(2) ?? null,
+      quantity,
+      netAmount: net.toFixed(4),
+      creditPaid: creditPaid > 0,
+      externalNetCents: externalAllocations.length ? externalNet : null,
+    });
     await appendPayrollSource(tx, {
       sourceKey: `sale-line:${stored.id}`,
       sourceType: "SALE_LINE",
@@ -2250,12 +2260,7 @@ async function fillLedgers(
       occurredAt: soldAt,
       reason: "Completed POS source economics",
       commissionType: foc ? "FOC" : line.item.itemType === "PRODUCT" ? "PRD" : "SVC",
-      baseAmount:
-        creditPaid && !externalAllocations.length
-          ? null
-          : creditPaid
-            ? new Prisma.Decimal(externalNet.toString()).div(100).toFixed(4)
-            : net.toFixed(4),
+      baseAmount,
       units: `${quantity}.0000`,
       shares:
         line.item.itemType === "PRODUCT"
@@ -2264,14 +2269,18 @@ async function fillLedgers(
       itemId: line.item.itemId,
       category,
       sourceSnapshot: {
-        listUnitPrice: line.item.unitPrice.toFixed(2),
+        listUnitPrice: line.item.listUnitPrice?.toFixed(2) ?? null,
         netLineAmount: line.netLineTotal.minus(line.taxAmount).toFixed(2),
         originalQuantity: line.input.quantity,
         coveredPackageQuantity: covered.get(stored.id) ?? 0,
         category,
       },
       missingEvidence:
-        creditPaid && !externalAllocations.length ? ["EXTERNAL_TENDER_LINE_ALLOCATION"] : [],
+        foc && !line.item.listUnitPrice
+          ? ["FOC_LIST_PRICE"]
+          : !foc && creditPaid && !externalAllocations.length
+            ? ["EXTERNAL_TENDER_LINE_ALLOCATION"]
+            : [],
     });
   }
 }
