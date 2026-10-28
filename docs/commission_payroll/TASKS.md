@@ -204,8 +204,28 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-004 — Transactional capture and package workflows
 
-- Status: **TODO**.
+- Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-003.
+- Latest checkpoint: new holdings capture immutable original purchase economics,
+  sellers and source lineage independent of operational valuation activation.
+  Four-decimal ordinal session helper reconciles original net/splits. Legacy null
+  evidence cannot be backfilled through updates; transfer/catalogue changes preserve
+  snapshots. Economics-only; commission settings and redemption integration remain.
+- Latest verification: disposable 59-migration replay, shared 262/262, focused API
+  68/68, collection HTTP/POS integration 1/1 repeated with held-sale/transfer/
+  immutability assertions, web 23/23, workspace typechecks/lint pass. No activation.
+- Checkpoint (October 28): package collection allocations now atomically snapshot
+  rate-free PKG_SALE net bases with original seller splits at four decimals and
+  source/time/outlet/GST lineage. Missing confirmed currency/sellers yields
+  UNAVAILABLE/null bases. No earnings activation or historical backfill.
+- Verification: disposable replay of 58 migrations; shared 257/257; focused API
+  68/68; collection integration 1/1, repeated after adding real package checkout/
+  balance assertions; focused web 23/23; workspace typechecks/lint pass.
+- Remaining: complete source coverage and engine-ready units/modes/fallback;
+  service/product/FOC/category capture, package fixed/excluded configuration,
+  deposit/paid-session enforcement and verified PIN override, value-package ratio,
+  refund/fixed clawback/void/correction integration and transfer/refund/redemption
+  concurrency/POS acceptance. Existing legacy behavior is not CP acceptance.
 - Expected result: rate-free bases linked atomically to authoritative source events;
   sellers/performers/splits, category and list-price snapshots, deposits, balance
   collection, paid-session checks and manager PIN override, package fixed/excluded

@@ -2,6 +2,25 @@
 
 ## Current State
 
+- **CP-004 IN PROGRESS — purchase economics increment, October 28, 2026:** new
+  package holdings atomically snapshot original purchase value, sessions, sellers
+  and source IDs with database immutability. Four-decimal ordinal/session splits
+  reconcile exactly; transfer/catalogue edits retain the original snapshot. Missing
+  commission settings remain explicit; redemption integration and paid-session/PIN
+  enforcement are not accepted. Disposable 59-migration replay, shared 262/262,
+  focused API 68/68, collection integration 1/1 twice, web 23/23 and workspace
+  typechecks/lint pass. Resume CP-004; no earnings activation or application DB writes.
+  See [CP handoff](docs/commission_payroll/PROGRESS.md).
+
+- **CP-004 IN PROGRESS — October 28, 2026:** atomic rate-free package collection
+  snapshots added with original seller splits, four-decimal net bases and source/
+  GST lineage. Unknown currency/sellers remains UNAVAILABLE/null. Disposable replay
+  58 migrations, shared 257/257, collection integration 1/1 (repeated), focused API
+  68/68 and web 23/23, workspace typechecks/lint pass. Remaining package settings,
+  paid-session/PIN, other source and refund/correction workflows are not accepted.
+  Resume CP-004; CP-005 not started. No application DB writes or earnings activation.
+  See [CP handoff](docs/commission_payroll/PROGRESS.md).
+
 - **CP-003 DONE — October 28, 2026 (configuration-only):** fresh disposable replay
   of all 58 migrations, root build, workspace typechecks/lint, shared 252/252, serial
   API 638 passed/35 gated skips/zero failures, Chrome 18/18 twice and web 910/910

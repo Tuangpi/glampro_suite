@@ -1,5 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import {
+  capturePayrollPackageCollection,
+  type PayrollPackagePurchase,
+} from "@glampro_suite/shared";
+import { transferSessionPackage } from "./session-transfer.service.js";
+import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
 import { createSale, completeSale } from "./sale.service.js";
@@ -128,6 +134,16 @@ test(
           assert.equal(allocatedA.netCents, 5000n);
           assert.equal(allocatedA.taxCents, 450n);
           assert.equal(allocatedB.netCents, 5450n);
+          type PayrollCollection = ReturnType<typeof capturePayrollPackageCollection>;
+          const payrollEvidence = (allocation: { evidence: unknown }) =>
+            (allocation.evidence as { payrollCollection: PayrollCollection }).payrollCollection;
+          assert.equal(payrollEvidence(allocatedA).status, "UNAVAILABLE");
+          assert.deepEqual(payrollEvidence(allocatedA).missingEvidence, ["SALE_CURRENCY"]);
+          assert.equal(payrollEvidence(allocatedA).bases, null);
+          assert.deepEqual(payrollEvidence(allocatedB).missingEvidence, [
+            "SALE_CURRENCY",
+            "SELLERS",
+          ]);
           const evidence = allocatedA.evidence as {
             rates: { staffId: string; rate: string; amount: string }[];
             postingStatus: string;
@@ -370,6 +386,102 @@ test(
           assert.equal(await prisma.employeeCommission.count(), 0);
           assert.equal(await prisma.packagePurchaseSnapshot.count(), 0);
           assert.equal(await prisma.commissionCollection.count(), 3);
+          // CP-004: authoritative currency + original seller split, captured atomically.
+          // Seller is disabled above; later collections must still credit the original seller.
+          const confirmedSale = await prisma.sale.create({
+            data: {
+              tenantId,
+              customerId: customer.id,
+              totalQuantity: 1,
+              totalAmount: "109",
+              paidAmount: "109",
+              soldAt: at,
+              status: "COMPLETED",
+              collectionCurrency: "SGD",
+            },
+          });
+          const confirmedLine = await prisma.saleLine.create({
+            data: {
+              tenantId,
+              saleId: confirmedSale.id,
+              itemType: "PACKAGE",
+              itemId: "confirmed-package",
+              itemName: "Confirmed package",
+              quantity: 1,
+              unitPrice: "109",
+              lineTotal: "109",
+              taxAmount: "9",
+              attribution: {
+                sellers: [
+                  { staffId: sellerId, share: 6000 },
+                  { staffId: actorId, share: 4000 },
+                ],
+              },
+            },
+          });
+          const confirmedPayment = await prisma.salePayment.create({
+            data: { tenantId, saleId: confirmedSale.id, method: "CARD", amount: "54.50" },
+          });
+          const confirmedInput: CaptureCollection = {
+            ...input,
+            eventKey: "cp004-confirmed-package",
+            saleId: confirmedSale.id,
+            sourceId: confirmedPayment.id,
+            allocations: [{ saleLineId: confirmedLine.id, grossCents: "5450" }],
+          };
+          const [confirmed, confirmedRetry] = await Promise.all([
+            capture(confirmedInput),
+            capture(confirmedInput),
+          ]);
+          assert.equal(confirmed.id, confirmedRetry.id);
+          const snapshot = payrollEvidence(confirmed.allocations[0]!);
+          assert.equal(snapshot.status, "CAPTURED_BASE_ONLY");
+          assert.equal(snapshot.sourceId, confirmedPayment.id);
+          assert.equal(snapshot.collectionId, confirmed.id);
+          assert.equal(snapshot.saleLineId, confirmedLine.id);
+          assert.equal(snapshot.occurredAt, confirmedPayment.createdAt.toISOString());
+          assert.equal(snapshot.netCents, "5000");
+          assert.equal(snapshot.taxCents, "450");
+          assert.deepEqual(snapshot.bases, [
+            { staffId: actorId, share: 4000, baseAmount: "20.0000" },
+            { staffId: sellerId, share: 6000, baseAmount: "30.0000" },
+          ]);
+          assert.equal(await prisma.employeeCommission.count(), 0);
+          await assert.rejects(capture({ ...confirmedInput, reason: "Conflicting CP004 retry" }));
+          const paymentsBefore = await prisma.salePayment.count();
+          await assert.rejects(
+            prisma.$transaction(async (tx) => {
+              const source = await tx.salePayment.create({
+                data: { tenantId, saleId: confirmedSale.id, method: "CASH", amount: "54.50" },
+              });
+              await captureCollectionEvidence(tx, {
+                ...confirmedInput,
+                eventKey: "cp004-atomic-rollback",
+                sourceId: source.id,
+              });
+              throw new Error("CP004 downstream failure");
+            }),
+            /CP004 downstream failure/,
+          );
+          assert.equal(await prisma.salePayment.count(), paymentsBefore);
+          assert.equal(
+            await prisma.commissionCollection.count({
+              where: { eventKey: "cp004-atomic-rollback" },
+            }),
+            0,
+          );
+          await runAsTenant(
+            otherId,
+            async () => {
+              assert.equal(
+                await prisma.commissionCollectionAllocation.findFirst({
+                  where: { id: confirmed.allocations[0]!.id },
+                }),
+                null,
+              );
+            },
+            actorId,
+          );
           const service = await prisma.service.create({
             data: { tenantId, name: "Checkout service", nonmemberPrice: "109", memberPrice: "109" },
           });
@@ -385,6 +497,234 @@ test(
             },
           });
           await prisma.tenantModule.create({ data: { tenantId, moduleId: catalogue.id } });
+          const packagesModule = await prisma.module.upsert({
+            where: { code: "packages" },
+            update: {},
+            create: { code: "packages", name: "Packages", category: "Core", isCore: true },
+          });
+          await prisma.tenantModule.create({ data: { tenantId, moduleId: packagesModule.id } });
+          const packageItem = await prisma.package.create({
+            data: {
+              tenantId,
+              name: "CP004 POS package",
+              sessionCount: 10,
+              memberPrice: "109",
+              nonmemberPrice: "109",
+            },
+          });
+          const packageCheckout = await createSale({
+            customerId: customer.id,
+            lines: [
+              {
+                itemType: "PACKAGE",
+                itemId: packageItem.id,
+                quantity: 1,
+                attribution: { sellers: [{ staffId: actorId, share: 10000 }] },
+              },
+            ],
+            payments: [{ method: "CARD", amount: 50 }],
+            collection: {
+              currency: "SGD",
+              allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "5000" }],
+            },
+          });
+          const initialPackageCollection = await prisma.commissionCollection.findFirstOrThrow({
+            where: { saleId: packageCheckout.id },
+            include: { allocations: true },
+          });
+          const purchaseHolding = await prisma.customerPackageHolding.findFirstOrThrow({
+            where: { saleLine: { saleId: packageCheckout.id } },
+          });
+          const purchaseSnapshot =
+            purchaseHolding.payrollPurchaseSnapshot as PayrollPackagePurchase;
+          assert.equal(purchaseSnapshot.status, "CAPTURED_ECONOMICS_ONLY");
+          assert.equal(purchaseSnapshot.saleId, packageCheckout.id);
+          assert.equal(purchaseSnapshot.saleLineId, purchaseHolding.saleLineId);
+          assert.equal(purchaseSnapshot.originalCustomerId, customer.id);
+          assert.equal(purchaseSnapshot.grantedSessions, 10);
+          assert.equal(purchaseSnapshot.currency, "SGD");
+          assert.equal(purchaseSnapshot.grossCents, "10900");
+          assert.deepEqual(purchaseSnapshot.sellers, [{ staffId: actorId, share: 10000 }]);
+          assert.deepEqual(purchaseSnapshot.missingEvidence, ["PACKAGE_COMMISSION_SETTINGS"]);
+          await assert.rejects(
+            prisma.customerPackageHolding.update({
+              where: { id: purchaseHolding.id },
+              data: { payrollPurchaseSnapshot: {} },
+            }),
+          );
+          await assert.rejects(
+            prisma.customerPackageHolding.update({
+              where: { id: purchaseHolding.id },
+              data: { payrollPurchaseSnapshot: Prisma.DbNull },
+            }),
+          );
+          await assert.rejects(
+            prisma.customerPackageHolding.update({
+              where: { id: purchaseHolding.id },
+              data: { quantity: 20 },
+            }),
+          );
+          const snapshotSaleCount = await prisma.sale.count();
+          const snapshotHoldingCount = await prisma.customerPackageHolding.count();
+          await assert.rejects(
+            prisma.$transaction(async (tx) => {
+              await tx.customerPackageHolding.create({
+                data: {
+                  tenantId,
+                  customerId: customer.id,
+                  packageId: packageItem.id,
+                  quantity: 10,
+                  quantityRemaining: 10,
+                  payrollPurchaseSnapshot: purchaseSnapshot,
+                },
+              });
+              throw new Error("Purchase snapshot downstream rollback");
+            }),
+            /Purchase snapshot downstream rollback/,
+          );
+          assert.equal(await prisma.customerPackageHolding.count(), snapshotHoldingCount);
+          assert.equal(await prisma.sale.count(), snapshotSaleCount);
+          const legacyHolding = await prisma.customerPackageHolding.create({
+            data: {
+              tenantId,
+              customerId: customer.id,
+              packageId: packageItem.id,
+              quantity: 10,
+              quantityRemaining: 10,
+            },
+          });
+          assert.equal(legacyHolding.payrollPurchaseSnapshot, null);
+          await assert.rejects(
+            prisma.customerPackageHolding.update({
+              where: { id: legacyHolding.id },
+              data: { payrollPurchaseSnapshot: purchaseSnapshot },
+            }),
+          );
+          await prisma.package.update({
+            where: { id: packageItem.id },
+            data: {
+              memberPrice: "999",
+              nonmemberPrice: "999",
+              sessionCount: 99,
+            },
+          });
+          const recipient = await prisma.customer.create({
+            data: { tenantId, name: "CP004 recipient" },
+          });
+          await transferSessionPackage(
+            customer.id,
+            purchaseHolding.id,
+            {
+              targetCustomerId: recipient.id,
+              expectedUpdatedAt: purchaseHolding.updatedAt.toISOString(),
+              reason: "CP004 original economics survive ownership transfer",
+              confirmed: true,
+            },
+            actorId,
+          );
+          const transferredHolding = await prisma.customerPackageHolding.findFirstOrThrow({
+            where: { id: purchaseHolding.id },
+          });
+          assert.equal(transferredHolding.customerId, recipient.id);
+          assert.deepEqual(transferredHolding.payrollPurchaseSnapshot, purchaseSnapshot);
+          const heldPackage = await createSale({
+            customerId: customer.id,
+            hold: true,
+            lines: [{ itemType: "PACKAGE", itemId: packageItem.id, quantity: 1 }],
+            payments: [],
+          });
+          assert.equal(
+            await prisma.customerPackageHolding.count({
+              where: { saleLine: { saleId: heldPackage.id } },
+            }),
+            0,
+          );
+          await completeSale(heldPackage.id, {
+            customerId: customer.id,
+            lines: [{ itemType: "PACKAGE", itemId: packageItem.id, quantity: 1 }],
+            payments: [{ method: "CASH", amount: 999 }],
+          });
+          const completedHolding = await prisma.customerPackageHolding.findFirstOrThrow({
+            where: { saleLine: { saleId: heldPackage.id } },
+          });
+          const completedSnapshot =
+            completedHolding.payrollPurchaseSnapshot as PayrollPackagePurchase;
+          assert.equal(completedSnapshot.grantedSessions, 99);
+          assert.equal(completedSnapshot.grossCents, "99900");
+          assert.equal(completedSnapshot.currency, null);
+          assert.equal(completedSnapshot.sellers, null);
+          assert.deepEqual(completedSnapshot.missingEvidence, [
+            "PACKAGE_COMMISSION_SETTINGS",
+            "SALE_CURRENCY",
+            "SELLERS",
+          ]);
+          assert.deepEqual(
+            (
+              await prisma.customerPackageHolding.findFirstOrThrow({
+                where: { id: purchaseHolding.id },
+              })
+            ).payrollPurchaseSnapshot,
+            purchaseSnapshot,
+          );
+          await runAsTenant(
+            otherId,
+            async () => {
+              assert.equal(
+                await prisma.customerPackageHolding.findFirst({
+                  where: { id: purchaseHolding.id },
+                }),
+                null,
+              );
+            },
+            actorId,
+          );
+          assert.equal(
+            payrollEvidence(initialPackageCollection.allocations[0]!).status,
+            "CAPTURED_BASE_ONLY",
+          );
+          const packageState = await getSaleCollectionState(packageCheckout.id);
+          const packageBalance = {
+            idempotencyKey: "52a01230-b9ea-4dc6-8304-c0987fd8fd10",
+            currency: "SGD" as const,
+            collected: true as const,
+            grossCents: "5900",
+            reason: "CP004 package balance paid",
+            allocations: [{ saleLineId: packageState.lines[0]!.saleLineId, grossCents: "5900" }],
+          };
+          await Promise.all([
+            recordSaleCollection(packageCheckout.id, packageBalance),
+            recordSaleCollection(packageCheckout.id, packageBalance),
+          ]);
+          const packageCollections = await prisma.commissionCollection.findMany({
+            where: { saleId: packageCheckout.id },
+            include: { allocations: true },
+          });
+          assert.equal(packageCollections.length, 2);
+          const totalNet = packageCollections
+            .flatMap((row) => row.allocations)
+            .reduce((sum, row) => sum + row.netCents, 0n);
+          assert.equal(
+            totalNet,
+            BigInt(
+              new Prisma.Decimal(packageCheckout.totalAmount)
+                .minus(packageCheckout.taxAmount)
+                .times(100)
+                .toFixed(0),
+            ),
+          );
+          for (const row of packageCollections.flatMap((collection) => collection.allocations)) {
+            const facts = payrollEvidence(row);
+            assert.equal(facts.status, "CAPTURED_BASE_ONLY");
+            assert.equal(facts.bases?.[0]?.staffId, actorId);
+            assert.equal(
+              facts.bases?.[0]?.baseAmount,
+              new Prisma.Decimal(row.netCents.toString()).dividedBy(100).toFixed(4),
+            );
+          }
+          assert.equal(
+            await prisma.employeeCommission.count({ where: { saleId: packageCheckout.id } }),
+            0,
+          );
           const checkoutBody = {
             customerId: customer.id,
             lines: [{ itemType: "SERVICE" as const, itemId: service.id, quantity: 1 }],

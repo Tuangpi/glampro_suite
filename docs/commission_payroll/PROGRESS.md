@@ -2,22 +2,95 @@
 
 ## Current State
 
-- Current task: None. CP-003 accepted under approved configuration-only scope.
+- Current task: CP-004 — IN PROGRESS. CP-003 configuration-only scope accepted.
 - Most recently completed: CP-003 — DONE, October 28, 2026.
 - Priority: this project before unrelated backlog. New requirements govern policy;
   existing authentication, tenant safety and exact-money integrity remain mandatory.
-- Shared engine and CP-003 configuration persistence/APIs/settings UI accepted.
-  Migration replayed only on disposable PostgreSQL; application DB,
-  POS/earnings, activation and deployment remain unchanged. No dependencies added.
+- Shared engine and CP-003 configuration accepted. CP-004 now captures rate-free
+  package-sale collection facts and immutable holding purchase economics atomically;
+  not complete engine-ready inputs. Missing evidence remains explicit.
 - Deferred to CP-003A: authoritative historical monetary inputs, frozen opening
   carry, scoped group metrics and preview/full-run equality. Depends on CP-004
   capture and CP-005 statements; remains a CP-007 must-have release gate.
-- Latest verification: 58 migrations replayed; root build, workspace typechecks/lint,
-  shared 252/252, serial API 638 passed/35 gated skips, Chrome 18/18 twice and web
-  910/910 pass. Disposable PostgreSQL stopped; configuration remains non-activating.
-- Next: CP-004 — transactional capture and package workflows, TODO and ready.
-  Not started in this task. Historical money remains unavailable; activation prohibited.
+- Latest CP-004 checks: disposable 59-migration replay, shared 262/262, collection
+  integration 1/1 (repeated with purchase/transfer assertions), focused API 68/68,
+  focused web 23/23, workspace typechecks/lint pass. Disposable PostgreSQL stopped.
+- Next: resume CP-004 package commission settings, integrate captured session values
+  into redemption, deposit/paid-session gates and verified PIN override; then
+  remaining capture/refund/correction paths.
+  CP-005 not started. Historical money unavailable; activation prohibited.
 - Existing unrelated sale UI work is preserved and is not accepted as CP completion.
+
+## October 28, 2026 — CP-004 immutable purchase economics increment
+
+- Resumed the active task without replacing prior collection work. Inspected SRS
+  FR-BAS-04/05 and FR-POS-04–06, grant/redemption/transfer transactions, PIN identity
+  service and operational valuation activation boundary. No external dependencies.
+- Added shared `package-purchase.ts` and five tests. Purchase snapshots retain
+  original contract net/GST/gross, session grant, sellers, purchaser, source/time/
+  outlet/currency. Session range calculations use original ordinals with exact
+  four-decimal quotient/remainder and deterministic performer splits. They do not
+  reuse the cent-rounded operational valuation ledger or current catalogue prices.
+- Added nullable `CustomerPackageHolding.payrollPurchaseSnapshot` and prospective
+  migration `20261028093000_package_payroll_purchase_snapshot`. New POS purchases
+  and held-sale completion capture within the existing holding/source transaction,
+  independently of valuation activation. No backfill. Database guards reject
+  rewriting/clearing snapshots, attaching inferred evidence to existing null rows,
+  and changing captured source identifiers or original session grant. Ownership,
+  remaining balance and permitted expiry updates remain possible.
+- Extended disposable acceptance: original source/economics/sellers, immutable JSON
+  and grant, rollback, legacy null refusal, held-sale versus completion capture,
+  missing evidence, catalogue edits, ownership transfer and subsequent balance
+  collection preserve the original snapshot; tenant isolation and no added earnings.
+- Fresh disposable PostgreSQL 18 on loopback 55476, `commission_collection_test`:
+  **59 migrations replayed**, shared **262/262**, focused API **68/68**, collection
+  HTTP/POS integration **1/1**, focused web **23/23**, workspace typechecks/lint,
+  shared build/client generation and whitespace checks pass. Final expanded
+  collection suite **1/1**, API typecheck/lint rerun, exit 0; database stopped.
+  Logs: `/tmp/cp004-purchase-Rmu5tg/`. Final formatting review recorded separately.
+- Boundary: economics-only snapshots explicitly list missing package commission
+  settings, plus currency/sellers where absent. No inferred mode, fixed award,
+  fallback or earning. Session helper is not yet integrated with redemption; no
+  accepted paid-session/PIN gate or complete FR-POS-06 settings snapshot. Existing
+  unknown legacy evidence remains unchanged. CP-004 stays IN PROGRESS.
+- Next: package commission settings, redemption integration and deposit/paid-session/
+  PIN workflow. Other source capture, value-package ratio, refunds/void/corrections
+  and broader concurrent lifecycle acceptance remain. CP-005 not started.
+  No application DB access, production migration, activation, backfill, deployment,
+  commit or push. Full regression/root production build/browser tests not rerun.
+
+## October 28, 2026 — CP-004 package collection capture increment
+
+- Marked CP-004 IN PROGRESS and corrected the stale root task pointer. Inspected
+  adopted policy, existing source transactions, collection/redemption evidence,
+  Prisma tenant scoping and shared four-decimal split utilities.
+- Added shared `commission-payroll/collection.ts` and five tests. Source-linked
+  PKG_SALE collection facts preserve original seller identity, collection occurrence,
+  sale/line/payment/outlet and net/GST consideration. Stable staff-ID residual
+  allocation reconciles four-decimal bases; no rate or earnings in the new object.
+- `commission-collection-evidence.ts` stores the object within each PACKAGE
+  allocation's immutable JSON using the existing source transaction/locks. No schema
+  migration, new table, dependency or public endpoint. Unknown sale currency or
+  sellers produces UNAVAILABLE/null bases, not inferred zeros/current staff.
+  Older evidence is unchanged. The facts are deliberately not PayrollBaseLine:
+  modes, units, fallback, full coverage and downstream lifecycle remain unaccepted.
+- Extended disposable collection acceptance with missing-evidence, disabled original
+  seller, concurrent/conflicting retries, original source lineage, tenant isolation,
+  source-payment plus evidence rollback and unchanged earnings assertions. Real POS
+  package purchase and concurrent balance collection reconcile all net bases and GST.
+- Checks: PostgreSQL 18 loopback 55476, `commission_collection_test`, fresh replay
+  of **58 migrations**; shared build/client generation; shared **257/257**; workspace
+  typechecks/lint; collection service/HTTP/POS integration **1/1**; focused API
+  collection/redemption/sale checks **68/68**; focused web **23/23**. Final expanded
+  package acceptance **1/1**, API typecheck/lint rerun, exit 0. Cluster stopped.
+  Logs: `/tmp/cp004-capture-hkCsZz/` (results, recheck-exit-code and individual logs).
+- Full CP-004 completion checks remain unmet: service/product/FOC/category capture,
+  package mode/fixed awards and commission-unit snapshots, deposit/paid-session/PIN,
+  value-package ratio, refund/clawback/void/staff-correction lifecycle and required
+  concurrent transfer/refund/redemption acceptance. Resume CP-004; do not start
+  CP-005. Full regression/root production build/browser acceptance not rerun.
+- No application DB access, production migration, backfill, earnings activation,
+  deployment, commit or push. Historical monetary readiness remains unavailable.
 
 ## October 28, 2026 — CP-003 configuration-only acceptance complete
 

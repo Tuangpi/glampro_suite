@@ -34,6 +34,7 @@ import {
 import { readCommissionAttributionPolicy } from "./commission-attribution-policy.js";
 import {
   allocatePackage,
+  capturePayrollPackagePurchase,
   GST_INCLUSIVE_DIVISOR_STRING,
   GST_RATE_DECIMAL_STRING,
   GST_RATE_PERCENT,
@@ -76,6 +77,7 @@ import { lockPrepaid, prepaidSaleContext } from "../lib/prepaid-lock.js";
 import { resolveLowStockThreshold } from "./catalogue.service.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { holdingPackageRules } from "../lib/package-rules.js";
+import { packagePurchaseValue } from "../lib/package-valuation.js";
 import {
   recordPackagePurchase,
   recordPackageRedemption,
@@ -2116,7 +2118,11 @@ async function grantHoldings(
   // `priced` rather than re-querying per line.
   const stored = await tx.saleLine.findMany({
     where: { saleId },
-    select: { id: true, position: true },
+    select: {
+      id: true,
+      position: true,
+      sale: { select: { collectionCurrency: true, outletId: true } },
+    },
     orderBy: { position: "asc" },
   });
 
@@ -2145,6 +2151,12 @@ async function grantHoldings(
         // Sessions granted scale with the quantity sold, and the remaining balance
         // starts equal to it — the whole grant is unspent at the moment of sale.
         const sessions = Number(line.item.grant) * quantity;
+        const source = stored[priced.indexOf(line)]!;
+        const economics = packagePurchaseValue(
+          line.lineTotal.toFixed(2),
+          line.voucherDiscountAmount.toFixed(2),
+          line.taxAmount.toFixed(2),
+        );
         const holding = await tx.customerPackageHolding.create({
           data: {
             tenantId,
@@ -2154,6 +2166,20 @@ async function grantHoldings(
             quantity: sessions,
             quantityRemaining: sessions,
             redemptionRules,
+            payrollPurchaseSnapshot: capturePayrollPackagePurchase({
+              saleId,
+              saleLineId: lineId,
+              packageId: line.item.itemId,
+              originalCustomerId: customerId,
+              outletId: source.sale.outletId,
+              purchasedAt: soldAt.toISOString(),
+              currency: source.sale.collectionCurrency,
+              grantedSessions: sessions,
+              grossCents: economics.grossCents.toString(),
+              netCents: economics.netCents.toString(),
+              taxCents: economics.taxCents.toString(),
+              sellers: line.input.attribution?.sellers ?? null,
+            }),
             expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },
         });

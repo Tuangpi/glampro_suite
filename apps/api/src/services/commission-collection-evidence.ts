@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { commissionAttributionSchema } from "@glampro_suite/shared";
+import {
+  capturePayrollPackageCollection,
+  commissionAttributionSchema,
+} from "@glampro_suite/shared";
 import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
@@ -208,6 +211,26 @@ export async function captureCollectionEvidence(tx: Transaction, value: CaptureC
           attributionStatus: sellers ? "KNOWN" : "UNKNOWN",
           sellers,
           rates,
+          ...(line.itemType === "PACKAGE"
+            ? {
+                payrollCollection: capturePayrollPackageCollection({
+                  collectionId: collection.id,
+                  saleId: sale.id,
+                  saleLineId: line.id,
+                  itemId: line.itemId,
+                  outletId: sale.outletId,
+                  sourceType: input.sourceType,
+                  sourceId: input.sourceId,
+                  occurredAt: occurredAt.toISOString(),
+                  currency: input.currency,
+                  confirmedCurrency: sale.collectionCurrency,
+                  grossCents: delta.grossCents.toString(),
+                  netCents: delta.netCents.toString(),
+                  taxCents: delta.taxCents.toString(),
+                  sellers,
+                }),
+              }
+            : {}),
           contracted: {
             netCents: original.purchase.netCents.toString(),
             taxCents: original.purchase.taxCents.toString(),

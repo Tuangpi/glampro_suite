@@ -85,6 +85,22 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## Known source discrepancies resolved
 
+### CP-004 purchase session precision (October 28, 2026)
+
+- New holdings capture original contracted net consideration, stored GST, original
+  session grant, sellers and source IDs at completion, independently of activation
+  of the operational exact-cent package-value ledger. Contract value is not cash
+  collected; subsequent collections never rewrite the purchase snapshot.
+- Commission session values allocate original net value in 0.0001 units. Store the
+  per-session floor plus number of initial ordinals receiving one extra tick.
+  Original ordinal ranges reconcile exactly to purchase net and split deterministically.
+  Do not substitute operational cent-rounded values or current catalogue prices.
+- These are economics-only facts, not complete payroll inputs: absent package
+  commission settings, confirmed currency or sellers remain explicitly missing.
+  No assumed FOLLOW_PLAN mode, paid-session approval, fallback, fixed award or
+  earnings activation. Legacy holding snapshots stay null; ownership changes retain
+  original purchaser/source/seller evidence.
+
 ### CP-003 outlet assignment and pooling contract (October 27, 2026)
 
 - Retain one effective-dated plan timeline per staff member, selected on the last

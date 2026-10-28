@@ -3,6 +3,8 @@ export * from "./component.js";
 export * from "./stage.js";
 export * from "./period.js";
 export * from "./allocation.js";
+export * from "./collection.js";
+export * from "./package-purchase.js";
 export * from "./validation.js";
 export * from "./examples.js";
 export * from "./settings.js";
