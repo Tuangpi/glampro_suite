@@ -11,6 +11,12 @@ import {
 } from "@glampro_suite/shared";
 import { correctRedemptionAttribution } from "../services/redemption-commission-evidence.js";
 import {
+  refundPayrollPackage,
+  refundPayrollPackageSchema,
+} from "../services/payroll-package-refund.js";
+import { voidPayrollSession } from "../services/payroll-session-void.js";
+import { voidPayrollSessionSchema } from "@glampro_suite/shared";
+import {
   directTipParamsSchema,
   recordDirectTipSchema,
   returnDirectTipSchema,
@@ -43,7 +49,7 @@ import {
 
 import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
-import { receiptEmailLimiter } from "../middleware/rateLimit.js";
+import { receiptEmailLimiter, managerPinLimiter } from "../middleware/rateLimit.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
 import { emailSaleReceipt } from "../services/receipt-email.service.js";
@@ -82,6 +88,49 @@ import {
  * list and the single receipt do not — reading stays open (TENANCY.md §6).
  */
 export const salesRouter = Router();
+salesRouter.post(
+  "/:id/redemptions/:redemptionId/void",
+  auth,
+  requireModule("sales"),
+  requireModule("packages"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(
+    z.object({ id: z.string().min(1).max(128), redemptionId: z.string().min(1).max(128) }),
+    "params",
+  ),
+  validate(voidPayrollSessionSchema),
+  async (req, res, next) => {
+    try {
+      const { id, redemptionId } = validated<{ id: string; redemptionId: string }>(req, "params");
+      res.json({ data: await voidPayrollSession(id, redemptionId, validated(req, "body")) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+salesRouter.post(
+  "/package-holdings/:id/refund",
+  auth,
+  requireModule("sales"),
+  requireModule("packages"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(idParamSchema, "params"),
+  validate(refundPayrollPackageSchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await refundPayrollPackage(
+          validated<{ id: string }>(req, "params").id,
+          validated(req, "body"),
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 salesRouter.get(
   "/:id/collections",
@@ -321,6 +370,7 @@ salesRouter.post(
   requireModule("sales"),
   requireWritableTenant(),
   validate(createSaleSchema),
+  managerPinLimiter,
   async (req, res, next) => {
     try {
       if (!req.user) throw unauthorized();
@@ -358,6 +408,7 @@ salesRouter.post(
   requireWritableTenant(),
   validate(idParamSchema, "params"),
   validate(completeSaleSchema),
+  managerPinLimiter,
   async (req, res, next) => {
     try {
       if (!req.user) throw unauthorized();

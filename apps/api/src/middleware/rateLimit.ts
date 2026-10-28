@@ -2,6 +2,25 @@ import rateLimit from "express-rate-limit";
 import { currentScope } from "../lib/tenant-context.js";
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
+/** Failed manager PIN attempts share a tenant/operator budget; no PIN enters logs. */
+export const managerPinLimiter = rateLimit({
+  windowMs: FIFTEEN_MINUTES,
+  limit: 10,
+  skipSuccessfulRequests: true,
+  keyGenerator: () => {
+    const scope = currentScope();
+    if (scope?.kind !== "tenant" || !scope.actorId)
+      throw new Error("PIN limiter requires authentication.");
+    return `${scope.tenantId}:${scope.actorId}`;
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    statusCode: 429,
+    message: "Too many failed approvals. Try again in 15 minutes.",
+    code: "MANAGER_PIN_RATE_LIMITED",
+  },
+});
 
 /** Authenticated explanation budget per company and user, per API process. No prompt storage. */
 export const assistantExplanationLimiter = rateLimit({

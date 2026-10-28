@@ -2,6 +2,14 @@
 
 ## Current State
 
+- **CP-004 STOP / safety incident, October 28, 2026:** an unscoped migration
+  command applied 12 pending migrations to local application DB `glampro_suite`
+  at `localhost:5432`. No automatic rollback. Owner review required before further
+  database operations. Lifecycle code remains unfinished/unaccepted; no activation.
+  See `/tmp/cp004-lifecycle-unsafe-migrate-notrun.log` (command DID run) and
+  `docs/commission_payroll/PROGRESS.md`. Earlier no-application-write claims below
+  are historical checkpoints, not claims about this session.
+
 - **CP-004 IN PROGRESS — explicit package settings, October 28, 2026:** owner-only
   reasoned/stale-protected sale/redemption modes and minimum deposit settings,
   atomic audit, editor controls and immutable purchase-time copy implemented.

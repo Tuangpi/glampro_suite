@@ -317,8 +317,21 @@ export const salePaymentInputSchema = z
     holdingId: z.string().min(1).max(64).optional(),
     /** One explicit split for the redeemed session/set; never a list-price allocation. */
     performers: commissionSharesSchema.optional(),
+    unpaidSessionOverride: z
+      .strictObject({
+        managerId: z.string().min(1).max(128),
+        pin: z.string().regex(/^\d{4,8}$/),
+        reason: z.string().trim().min(3).max(500),
+      })
+      .optional(),
   })
   .superRefine((tender, ctx) => {
+    if (tender.unpaidSessionOverride && tender.method !== "PACKAGE")
+      ctx.addIssue({
+        code: "custom",
+        path: ["unpaidSessionOverride"],
+        message: "Manager session approval requires a package tender.",
+      });
     if (tender.performers && tender.method !== "PACKAGE")
       ctx.addIssue({
         code: "custom",

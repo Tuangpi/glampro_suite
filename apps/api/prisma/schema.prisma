@@ -1689,6 +1689,8 @@ model CommissionRule {
 ///    tender per sale, so `splitPay()` stored the string `"cash_50_card_25"` in the
 ///    text column — a sale no report can sum. The tenders are rows now (ADR 0012).
 model Sale {
+  /// Canonical request fingerprint for prospective checkout retry conflicts. Legacy remains null.
+  requestHash String?
   /// Explicit checkout collection-currency confirmation; null is unknown legacy evidence.
   collectionCurrency String?
   id       String @id @default(cuid())
@@ -1982,6 +1984,8 @@ model SaleLine {
 /// holding counts money, and the gift-card holding is money plus a code that
 /// identifies it at the till. One table would be nullable in every column.
 model CustomerPackageHolding {
+  /// Original one-based available payroll ordinals; never seeded on legacy holdings.
+  payrollAvailableOrdinals Json?
   /// Immutable original commission economics. Null for pre-capture/legacy holdings.
   payrollPurchaseSnapshot Json?
   /// Null keeps legacy per-unit catalogue coverage. New purchases snapshot rules.
@@ -2014,6 +2018,8 @@ model CustomerPackageHolding {
 
 /// Money a customer bought against a value package. Legacy `customer_valuepackages`.
 model CustomerValuePackageHolding {
+  /// Immutable prospective paid/credit ratio evidence; null remains unavailable.
+  payrollPurchaseSnapshot Json?
   id                String            @id @default(cuid())
   tenantId          String
   customerId        String
@@ -2366,6 +2372,24 @@ model CustomerOutstandingPayment {
 /// It points at the **catalogue item**, not at the holding row. The balance lives
 /// on the holding, and reporting asks "how many of this package were spent", not
 /// "which of the four rows a customer bought it through".
+model PayrollSourceEvent {
+  id String @id @default(cuid())
+  tenantId String
+  sourceKey String
+  sourceType String
+  sourceId String
+  saleId String
+  outletId String?
+  actorId String?
+  reason String
+  occurredAt DateTime
+  evidence Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, sourceKey])
+  @@index([tenantId, saleId])
+  @@map("payroll_source_events")
+}
+
 model CustomerRedemption {
   id         String @id @default(cuid())
   tenantId   String

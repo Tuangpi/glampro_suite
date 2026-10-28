@@ -14,6 +14,7 @@ import { packageMoneyToCents, packagePurchaseValue } from "../lib/package-valuat
 import { lockCommissionConfiguration } from "./commission.service.js";
 import { resolveCommission } from "./commission-rules.js";
 import { commissionAmount } from "./commission-ledger.js";
+import { capturePayrollCollection } from "./payroll-source-event.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 const cents = z.string().regex(/^[1-9]\d{0,11}$/);
@@ -67,6 +68,22 @@ export async function captureCollectionEvidence(tx: Transaction, value: CaptureC
     return existing;
   }
   const sale = await tx.sale.findFirst({ where: { id: input.saleId }, include: { refund: true } });
+  const refundedPackages = await tx.payrollSourceEvent.findMany({
+    where: { saleId: input.saleId, sourceType: "PACKAGE_REFUND" },
+    select: { sourceId: true },
+  });
+  if (refundedPackages.length) {
+    const cancelled = await tx.customerPackageHolding.findMany({
+      where: { id: { in: refundedPackages.map((row) => row.sourceId) } },
+      select: { saleLineId: true },
+    });
+    if (
+      input.allocations.some((row) =>
+        cancelled.some((holding) => holding.saleLineId === row.saleLineId),
+      )
+    )
+      throw conflict("Refunded package balances cannot receive new collections.");
+  }
   if (!sale || sale.status !== "COMPLETED" || sale.refund)
     throw badRequest("Collection evidence requires a completed unrefunded sale.");
   if (sale.collectionCurrency && sale.collectionCurrency !== input.currency)
@@ -241,6 +258,7 @@ export async function captureCollectionEvidence(tx: Transaction, value: CaptureC
       },
     });
   }
+  await capturePayrollCollection(tx, collection.id);
   return tx.commissionCollection.findFirstOrThrow({
     where: { id: collection.id },
     include: { allocations: { orderBy: { saleLineId: "asc" } } },

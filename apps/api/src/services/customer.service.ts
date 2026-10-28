@@ -16,6 +16,8 @@ import type { PaginatedResponse } from "@glampro_suite/shared";
 import {
   customerDetailSchema,
   customerHoldingsSchema,
+  readPayrollPackagePurchase,
+  paidPayrollPackageSessions,
   customerSummarySchema,
   type CreateCustomerInput,
   type CustomerDetail,
@@ -243,6 +245,8 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
         quantityRemaining: true,
         expiresAt: true,
         redemptionRules: true,
+        quantity: true,
+        payrollPurchaseSnapshot: true,
         package: { select: { name: true, services: { select: { serviceId: true } } } },
       },
       // `NULLS LAST` is Postgres' default for `asc`, which is what we want: dated
@@ -261,6 +265,38 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
     }),
   ]);
 
+  const paymentEvidence = new Map<
+    string,
+    {
+      paidSessionsRemaining: number | null;
+      balanceDueCents: string | null;
+      purchaseSaleId: string | null;
+    }
+  >();
+  for (const holding of packages) {
+    if (!holding.payrollPurchaseSnapshot) {
+      paymentEvidence.set(holding.id, {
+        paidSessionsRemaining: null,
+        balanceDueCents: null,
+        purchaseSaleId: null,
+      });
+      continue;
+    }
+    const purchase = readPayrollPackagePurchase(holding.payrollPurchaseSnapshot);
+    const allocations = await prisma.commissionCollectionAllocation.findMany({
+      where: { saleLineId: purchase.saleLineId },
+    });
+    const net = allocations.reduce((sum, row) => sum + row.netCents, 0n);
+    const gross = allocations.reduce((sum, row) => sum + row.grossCents, 0n);
+    paymentEvidence.set(holding.id, {
+      paidSessionsRemaining: Math.max(
+        0,
+        paidPayrollPackageSessions(purchase, net) - (holding.quantity - holding.quantityRemaining),
+      ),
+      balanceDueCents: (BigInt(purchase.grossCents) - gross).toString(),
+      purchaseSaleId: purchase.saleId,
+    });
+  }
   return customerHoldingsSchema.parse({
     holdings: [
       ...(membership && sharedTotal.greaterThan(0)
@@ -277,6 +313,7 @@ export async function getCustomerHoldings(id: string): Promise<CustomerHoldings>
           ]
         : []),
       ...packages.map((holding) => ({
+        ...paymentEvidence.get(holding.id),
         redemptionMode: holdingPackageRules(holding.redemptionRules, holding.package.services).mode,
         serviceSet: holdingPackageRules(holding.redemptionRules, holding.package.services)
           .requirements,

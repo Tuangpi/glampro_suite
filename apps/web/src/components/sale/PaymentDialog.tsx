@@ -55,6 +55,7 @@ import { CONTROL_CLASS } from "@/components/ui/Field";
 import IconButton from "@/components/ui/IconButton";
 import Modal from "@/components/ui/Modal";
 import Select from "@/components/ui/Select";
+import Input from "@/components/ui/Input";
 import { PAYMENT_METHOD_OPTIONS } from "@/constants/sale";
 import { useCustomerHoldings } from "@/hooks/useCustomers";
 import { useVoucherPreview } from "@/hooks/useSale";
@@ -67,6 +68,7 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
 /** One row of the sheet, as typed. Amounts stay strings until they are posted. */
 interface TenderDraft {
+  unpaidSessionOverride?: SalePaymentInput["unpaidSessionOverride"];
   id: number;
   method: SalePaymentMethod;
   amount: string;
@@ -203,25 +205,24 @@ export default function PaymentDialog({
   );
   const collectionError = !recordCollection
     ? null
-    : tenders.some((tender) => isRedemptionPaymentMethod(tender.method))
-      ? "Collection capture does not yet support package or credit tenders."
-      : paidCents <= 0 || remainingCents < 0
-        ? "Collection capture requires a positive payment with no change to give."
-        : tenders.some((tender, index) => {
-              const amounts = lines.map(
-                (_, position) => allocationDraft[`${tender.id}:${position}`] ?? "",
-              );
-              return (
-                amounts.some((value) => value !== "" && !/^\d+(?:\.\d{1,2})?$/.test(value)) ||
-                collectionAllocations
-                  .filter((row) => row.paymentIndex === index)
-                  .reduce((sum, row) => sum + Number(row.grossCents), 0) !== tenderCents[index]
-              );
-            })
-          ? "Allocate each money tender to cart lines exactly, using amounts with at most two decimals."
-          : !collectionConfirmed
-            ? "Confirm the SGD currency and explicit line allocations."
-            : null;
+    : paidCents <= 0 || remainingCents < 0
+      ? "Collection capture requires a positive payment with no change to give."
+      : tenders.some((tender, index) => {
+            const amounts = lines.map(
+              (_, position) => allocationDraft[`${tender.id}:${position}`] ?? "",
+            );
+            return (
+              amounts.some((value) => value !== "" && !/^\d+(?:\.\d{1,2})?$/.test(value)) ||
+              collectionAllocations
+                .filter((row) => row.paymentIndex === index)
+                .reduce((sum, row) => sum + Number(row.grossCents), 0) !==
+                (isRedemptionPaymentMethod(tender.method) ? 0 : tenderCents[index])
+            );
+          })
+        ? "Allocate each money tender to cart lines exactly, using amounts with at most two decimals."
+        : !collectionConfirmed
+          ? "Confirm the SGD currency and explicit line allocations."
+          : null;
 
   const hasBadAmount = tenders.some(
     (tender) =>
@@ -283,7 +284,13 @@ export default function PaymentDialog({
   function chooseMethod(id: number, method: SalePaymentMethod) {
     const first =
       method === "PACKAGE" ? packages[0] : method === "PREPAID_CREDIT" ? credits[0] : undefined;
-    setTender(id, { method, amount: "", holdingId: first?.id, performers: undefined });
+    setTender(id, {
+      method,
+      amount: "",
+      holdingId: first?.id,
+      performers: undefined,
+      unpaidSessionOverride: undefined,
+    });
   }
 
   function addTender() {
@@ -371,6 +378,9 @@ export default function PaymentDialog({
       ...(isRedemptionPaymentMethod(tender.method) ? { holdingId: tender.holdingId } : {}),
       ...(tender.method === "PACKAGE" && tender.performers
         ? { performers: tender.performers }
+        : {}),
+      ...(tender.method === "PACKAGE" && tender.unpaidSessionOverride
+        ? { unpaidSessionOverride: tender.unpaidSessionOverride }
         : {}),
     }));
     if (recordCollection) {
@@ -497,7 +507,7 @@ export default function PaymentDialog({
               value: holding.id,
               label:
                 holding.kind === "PACKAGE"
-                  ? `${holding.name} — ${holding.quantityRemaining} left`
+                  ? `${holding.name} — ${holding.quantityRemaining} left${holding.paidSessionsRemaining !== undefined && holding.paidSessionsRemaining !== null ? ` (${holding.paidSessionsRemaining} paid)` : " (payment evidence unavailable)"}`
                   : `${holding.name} — ${formatPrice(holding.amountRemaining ?? "0.00")} left`,
             }));
 
@@ -527,7 +537,10 @@ export default function PaymentDialog({
                         placeholder={options.length === 0 ? "None available" : "Select…"}
                         options={options}
                         onChange={(event) =>
-                          setTender(tender.id, { holdingId: event.target.value })
+                          setTender(tender.id, {
+                            holdingId: event.target.value,
+                            unpaidSessionOverride: undefined,
+                          })
                         }
                         className="min-w-0 flex-1"
                       />
@@ -605,6 +618,75 @@ export default function PaymentDialog({
                       disabled={isPending}
                       onChange={(value) => setTender(tender.id, { performers: value?.performers })}
                     />
+                    <label className="flex gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={!!tender.unpaidSessionOverride}
+                        disabled={isPending}
+                        onChange={(event) =>
+                          setTender(tender.id, {
+                            unpaidSessionOverride: event.target.checked
+                              ? { managerId: "", pin: "", reason: "" }
+                              : undefined,
+                          })
+                        }
+                      />
+                      Manager approval for unpaid sessions
+                    </label>
+                    {tender.unpaidSessionOverride ? (
+                      <div className="flex flex-col gap-2">
+                        <Select
+                          label={`Approving manager (tender ${index + 1})`}
+                          value={tender.unpaidSessionOverride.managerId}
+                          options={staff.map((person) => ({
+                            value: person.id,
+                            label: person.name,
+                          }))}
+                          disabled={isPending}
+                          onChange={(event) =>
+                            setTender(tender.id, {
+                              unpaidSessionOverride: {
+                                ...tender.unpaidSessionOverride!,
+                                managerId: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                        <Input
+                          label={`Manager PIN (tender ${index + 1})`}
+                          type="password"
+                          autoComplete="off"
+                          value={tender.unpaidSessionOverride.pin}
+                          disabled={isPending}
+                          onChange={(event) =>
+                            setTender(tender.id, {
+                              unpaidSessionOverride: {
+                                ...tender.unpaidSessionOverride!,
+                                pin: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                        <Input
+                          label={`Approval reason (tender ${index + 1})`}
+                          value={tender.unpaidSessionOverride.reason}
+                          disabled={isPending}
+                          maxLength={500}
+                          onChange={(event) =>
+                            setTender(tender.id, {
+                              unpaidSessionOverride: {
+                                ...tender.unpaidSessionOverride!,
+                                reason: event.target.value,
+                              },
+                            })
+                          }
+                        />
+                        <p className="text-xs text-ink-muted">
+                          The server verifies the manager PIN and current role. Approval and reason
+                          are audited; the PIN is not retained.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
                 {isRedemption ? (
@@ -636,38 +718,41 @@ export default function PaymentDialog({
             <>
               <p className="text-xs text-ink-muted">
                 Amounts are SGD. Enter how each recorded money tender pays each cart line. This
-                saves evidence only, not commission earnings. Package/credit tenders and change are
-                not supported yet. Server-priced line limits are checked on submission.
+                saves evidence only, not commission earnings. Package/credit tenders are not fresh
+                cash: their allocation is zero. Change is not supported. Server-priced line limits
+                are checked on submission.
               </p>
-              {tenders.map((tender, index) => (
-                <fieldset key={tender.id} disabled={isPending} className="flex flex-col gap-2">
-                  <legend className="text-sm font-bold">
-                    Tender {index + 1}: {formatPrice(centsToPrice(tenderCents[index] ?? 0))}
-                  </legend>
-                  {lines.map((line, position) => (
-                    <label
-                      key={position}
-                      className="flex items-center justify-between gap-2 text-sm"
-                    >
-                      Line {position + 1}: {line.itemName ?? line.itemType}
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        aria-label={`Tender ${index + 1} allocation to line ${position + 1}`}
-                        className={cn(CONTROL_CLASS, "w-28 px-2")}
-                        value={allocationDraft[`${tender.id}:${position}`] ?? ""}
-                        onChange={(event) => {
-                          setAllocationDraft((current) => ({
-                            ...current,
-                            [`${tender.id}:${position}`]: event.target.value,
-                          }));
-                          setCollectionConfirmed(false);
-                        }}
-                      />
-                    </label>
-                  ))}
-                </fieldset>
-              ))}
+              {tenders.map((tender, index) =>
+                isRedemptionPaymentMethod(tender.method) ? null : (
+                  <fieldset key={tender.id} disabled={isPending} className="flex flex-col gap-2">
+                    <legend className="text-sm font-bold">
+                      Tender {index + 1}: {formatPrice(centsToPrice(tenderCents[index] ?? 0))}
+                    </legend>
+                    {lines.map((line, position) => (
+                      <label
+                        key={position}
+                        className="flex items-center justify-between gap-2 text-sm"
+                      >
+                        Line {position + 1}: {line.itemName ?? line.itemType}
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          aria-label={`Tender ${index + 1} allocation to line ${position + 1}`}
+                          className={cn(CONTROL_CLASS, "w-28 px-2")}
+                          value={allocationDraft[`${tender.id}:${position}`] ?? ""}
+                          onChange={(event) => {
+                            setAllocationDraft((current) => ({
+                              ...current,
+                              [`${tender.id}:${position}`]: event.target.value,
+                            }));
+                            setCollectionConfirmed(false);
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </fieldset>
+                ),
+              )}
               <label className="flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"

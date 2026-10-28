@@ -16,6 +16,7 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useCustomerList } from "@/hooks/useCustomers";
 import { useModules } from "@/hooks/useSettings";
 import { getErrorMessage, getPaginated, post } from "@/lib/api";
+import PackagePayrollDetail from "./PackagePayrollDetail";
 
 export default function CustomerSessionPackagesPanel({ customerId }: { customerId: string }) {
   const modules = useModules();
@@ -41,6 +42,7 @@ export function SessionPackagesPanel({ customerId }: { customerId: string }) {
   const [page, setPage] = useState(1);
   const [historyPage, setHistoryPage] = useState(1);
   const [selected, setSelected] = useState<SessionPackageHolding | null>(null);
+  const [detailId, setDetailId] = useState<string | null>(null);
   const [openedAt] = useState(() => Date.now());
   const canManage =
     !isReadOnly && (user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER");
@@ -86,6 +88,7 @@ export function SessionPackagesPanel({ customerId }: { customerId: string }) {
           <ul>
             {holdings.data.data.map((row) => (
               <li key={row.id} className="my-3 rounded-md border border-line p-3">
+                <Button onClick={() => setDetailId(row.id)}>Purchase, payments and sessions</Button>
                 <strong>{row.name}</strong> — {`${row.quantityRemaining} sessions`} ·{" "}
                 {row.expiresAt ? `Expires ${formatDateTime(row.expiresAt)}` : "No expiry"}
                 <Button
@@ -112,6 +115,13 @@ export function SessionPackagesPanel({ customerId }: { customerId: string }) {
         </>
       )}
       <h4 className="mt-4 font-bold">Transfer history</h4>
+      {detailId ? (
+        <PackagePayrollDetail
+          customerId={customerId}
+          holdingId={detailId}
+          onClose={() => setDetailId(null)}
+        />
+      ) : null}
       <p>Transfer evidence only. This is not a complete session-change ledger.</p>
       {history.isPending ? (
         <p role="status">Loading transfer history…</p>

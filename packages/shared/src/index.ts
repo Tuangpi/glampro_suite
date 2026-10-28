@@ -7,6 +7,7 @@
 export * from "./constants.js";
 export * from "./package-allocation.js";
 export * from "./commission-payroll/index.js";
+export * from "./schemas/payroll-holding.js";
 export * from "./types.js";
 export * from "./schemas/auth.js";
 export * from "./schemas/platform.js";

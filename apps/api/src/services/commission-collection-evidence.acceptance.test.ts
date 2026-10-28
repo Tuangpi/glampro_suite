@@ -727,6 +727,10 @@ test(
             customerId: customer.id,
             lines: [{ itemType: "PACKAGE", itemId: packageItem.id, quantity: 1 }],
             payments: [{ method: "CASH", amount: 999 }],
+            collection: {
+              currency: "SGD",
+              allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "99900" }],
+            },
           });
           const completedHolding = await prisma.customerPackageHolding.findFirstOrThrow({
             where: { saleLine: { saleId: heldPackage.id } },
@@ -735,13 +739,13 @@ test(
             completedHolding.payrollPurchaseSnapshot as PayrollPackagePurchase;
           assert.equal(completedSnapshot.grantedSessions, 99);
           assert.equal(completedSnapshot.grossCents, "99900");
-          assert.equal(completedSnapshot.currency, null);
+          assert.equal(completedSnapshot.currency, "SGD");
           assert.equal(completedSnapshot.sellers, null);
           assert.deepEqual(completedSnapshot.commissionSettings, {
             ...policy,
             sale: { mode: "FOLLOW_PLAN" },
           });
-          assert.deepEqual(completedSnapshot.missingEvidence, ["SALE_CURRENCY", "SELLERS"]);
+          assert.deepEqual(completedSnapshot.missingEvidence, ["SELLERS"]);
           assert.deepEqual(
             (
               await prisma.customerPackageHolding.findFirstOrThrow({

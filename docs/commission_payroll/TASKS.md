@@ -205,6 +205,9 @@ Existing implementation and reference tests need verification, not automatic cre
 ## CP-004 — Transactional capture and package workflows
 
 - Status: **IN PROGRESS** (October 28, 2026).
+- STOP checkpoint: local application migration safety incident recorded in PROGRESS.md.
+  Further DB work requires owner review. Lifecycle implementation is partial and
+  unaccepted; do not deploy or activate. Latest expanded tests not yet executed.
 - Dependencies: CP-003.
 - Settings checkpoint (October 28): explicit sale/redemption FOLLOW_PLAN/EXCLUDE/
   FIXED and minimum deposit contracts, nullable prospective catalogue persistence,

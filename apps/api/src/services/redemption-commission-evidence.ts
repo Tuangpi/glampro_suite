@@ -16,6 +16,13 @@ import { commissionAmount } from "./commission-ledger.js";
 import { Prisma } from "../../generated/prisma/client.js";
 import { readCommissionAttributionPolicy } from "./commission-attribution-policy.js";
 import {
+  payrollSessionEvidenceSchema,
+  payrollSessionEvidence,
+  type drawPayrollPackageSessions,
+} from "./payroll-package-session.js";
+import { appendPayrollSource, reversePayrollSources } from "./payroll-source-event.js";
+import { readPayrollPackagePurchase } from "@glampro_suite/shared";
+import {
   activeRedemptionEarnings,
   assertRedemptionEarnings,
   currentCommissionPeriod,
@@ -46,6 +53,7 @@ const rateSnapshotSchema = z.object({
   amount: z.string().nullable(),
 });
 export const redemptionCommissionEvidenceSchema = z.object({
+  payrollSession: payrollSessionEvidenceSchema.optional(),
   version: z.literal(1),
   coverage: redemptionCoverageSchema,
   performers: commissionSharesSchema.nullable(),
@@ -176,6 +184,7 @@ export async function captureRedemptionCommission(
   redemptionId: string,
   coverage: RedemptionCoverage,
   explicit?: CommissionShares,
+  payrollDraw?: Awaited<ReturnType<typeof drawPayrollPackageSessions>>,
 ) {
   const scope = tenant();
   await lockCommissionConfiguration(tx, scope.tenantId);
@@ -205,6 +214,15 @@ export async function captureRedemptionCommission(
         }
       : null;
   const evidence = redemptionCommissionEvidenceSchema.parse({
+    ...(payrollDraw
+      ? {
+          payrollSession: payrollSessionEvidence(
+            redemption.holdingId!,
+            payrollDraw,
+            choice.performers,
+          ),
+        }
+      : {}),
     version: 1,
     coverage,
     performers: choice.performers,
@@ -222,7 +240,7 @@ export async function captureRedemptionCommission(
     postingStatus: "PENDING_RELEASE",
     previousSnapshotId: null,
   });
-  return tx.commissionRedemptionSnapshot.create({
+  const snapshot = await tx.commissionRedemptionSnapshot.create({
     data: {
       tenantId: scope.tenantId,
       redemptionId,
@@ -235,6 +253,32 @@ export async function captureRedemptionCommission(
       evidence,
     },
   });
+  if (evidence.payrollSession) {
+    const source = evidence.payrollSession;
+    const purchase = source.purchase ? readPayrollPackagePurchase(source.purchase) : null;
+    const policy = purchase?.commissionSettings?.redemption;
+    await appendPayrollSource(tx, {
+      sourceKey: `redemption:${redemptionId}:0`,
+      sourceType: "REDEMPTION",
+      sourceId: redemptionId,
+      saleId: redemption.saleId,
+      occurredAt: redemption.usedAt,
+      reason: "Original session economics and performers",
+      commissionType: "PKG_RED",
+      baseAmount: source.baseAmount,
+      units: `${redemption.quantity}.0000`,
+      shares: choice.performers,
+      itemId: redemption.itemId,
+      mode: policy?.mode ?? "FOLLOW_PLAN",
+      fixedCommission:
+        policy?.mode === "FIXED"
+          ? new Prisma.Decimal(policy.amount).mul(redemption.quantity).toFixed(4)
+          : undefined,
+      missingEvidence: source.missingEvidence,
+      confirmedSourceCurrency: purchase?.currency,
+    });
+  }
+  return snapshot;
 }
 
 export async function correctRedemptionAttribution(
@@ -297,6 +341,23 @@ export async function correctRedemptionAttribution(
     const performers = canonicalShares(input.performers);
     const evidence = redemptionCommissionEvidenceSchema.parse({
       ...original,
+      ...(original.payrollSession
+        ? {
+            payrollSession: payrollSessionEvidence(
+              original.payrollSession.holdingId,
+              {
+                purchase: original.payrollSession.purchase as Awaited<
+                  ReturnType<typeof drawPayrollPackageSessions>
+                >["purchase"],
+                ordinals: original.payrollSession.ordinals,
+                missingEvidence: original.payrollSession.missingEvidence.filter(
+                  (entry) => entry !== "PERFORMERS",
+                ),
+              },
+              performers,
+            ),
+          }
+        : {}),
       performers,
       attributionStatus: "CORRECTED",
       previousSnapshotId: previous.id,
@@ -322,6 +383,39 @@ export async function correctRedemptionAttribution(
         evidence,
       },
     });
+    if (evidence.payrollSession) {
+      await reversePayrollSources(
+        tx,
+        redemption.saleId,
+        input.reason,
+        `correction:${corrected.id}`,
+        `redemption:${redemptionId}:${previous.revision}`,
+      );
+      const source = evidence.payrollSession;
+      const purchase = source.purchase ? readPayrollPackagePurchase(source.purchase) : null;
+      const policy = purchase?.commissionSettings?.redemption;
+      await appendPayrollSource(tx, {
+        sourceKey: `redemption:${redemptionId}:${corrected.revision}`,
+        sourceType: "CORRECTION",
+        sourceId: redemptionId,
+        saleId: redemption.saleId,
+        occurredAt: new Date(),
+        reason: input.reason,
+        commissionType: "PKG_RED",
+        baseAmount: source.baseAmount,
+        units: `${redemption.quantity}.0000`,
+        shares: performers,
+        itemId: redemption.itemId,
+        mode: policy?.mode ?? "FOLLOW_PLAN",
+        fixedCommission:
+          policy?.mode === "FIXED"
+            ? new Prisma.Decimal(policy.amount).mul(redemption.quantity).toFixed(4)
+            : undefined,
+        missingEvidence: source.missingEvidence,
+        confirmedSourceCurrency: purchase?.currency,
+        rateAt: new Date(original.evaluatedAt),
+      });
+    }
     if (active.length) {
       const posting = await currentCommissionPeriod(tx);
       await reverseRedemptionEarnings(tx, corrected, active, actorId, input.reason, posting);
@@ -343,6 +437,14 @@ export async function voidRedemptionCommissionEvidence(
     orderBy: { revision: "desc" },
   });
   if (!previous || previous.eventType === "VOID") return;
+  const redemption = await tx.customerRedemption.findFirstOrThrow({ where: { id: redemptionId } });
+  await reversePayrollSources(
+    tx,
+    redemption.saleId,
+    "Manager voided source session",
+    `session-void:${redemptionId}`,
+    `redemption:${redemptionId}:${previous.revision}`,
+  );
   const active = await activeRedemptionEarnings(tx, redemptionId);
   if (active.length) {
     if (!actorId) throw forbidden("Posted redemption void requires an authenticated manager.");

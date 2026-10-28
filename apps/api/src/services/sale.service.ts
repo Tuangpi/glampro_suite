@@ -26,9 +26,15 @@
  */
 import { resolveCommission } from "./commission-rules.js";
 import { captureCollectionEvidence } from "./commission-collection-evidence.js";
+import {
+  drawPayrollPackageSessions,
+  restorePayrollPackageSessions,
+} from "./payroll-package-session.js";
+import { appendPayrollSource, reversePayrollSources } from "./payroll-source-event.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import {
   captureRedemptionCommission,
+  redemptionCommissionEvidenceSchema,
   voidRedemptionCommissionEvidence,
 } from "./redemption-commission-evidence.js";
 import { readCommissionAttributionPolicy } from "./commission-attribution-policy.js";
@@ -36,6 +42,8 @@ import {
   allocatePackage,
   capturePayrollPackagePurchase,
   payrollPackageSettingsSchema,
+  minimumPayrollPackageDeposit,
+  payrollValuePackageSpend,
   GST_INCLUSIVE_DIVISOR_STRING,
   GST_RATE_DECIMAL_STRING,
   GST_RATE_PERCENT,
@@ -77,6 +85,8 @@ import { currentScope, runAsTenant } from "../lib/tenant-context.js";
 import { lockPrepaid, prepaidSaleContext } from "../lib/prepaid-lock.js";
 import { resolveLowStockThreshold } from "./catalogue.service.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import { z } from "zod";
+import { createHash } from "node:crypto";
 import { holdingPackageRules } from "../lib/package-rules.js";
 import { packagePurchaseValue } from "../lib/package-valuation.js";
 import {
@@ -1280,6 +1290,7 @@ async function writeSale(
           soldAt,
           note: input.note ?? null,
           idempotencyKey: input.idempotencyKey ?? null,
+          requestHash: saleRequestHash(input),
         },
         select: { id: true },
       });
@@ -1327,6 +1338,7 @@ async function writeSale(
         note: input.note ?? null,
         receiptNumber: receiptCounter,
         idempotencyKey: input.idempotencyKey ?? null,
+        requestHash: saleRequestHash(input),
       },
       select: { id: true },
     });
@@ -1500,18 +1512,22 @@ async function writePayments(
         );
       seen.add(key);
     }
-    if (
-      payments.some(
-        (payment) => isRedemptionPaymentMethod(payment.method) || payment.sessionId !== undefined,
-      )
-    )
+    if (payments.some((payment) => payment.sessionId !== undefined))
       throw badRequest(
-        "Collection capture currently supports recorded money tenders without gateway sessions only.",
+        "Collection capture supports recorded external money tenders without gateway sessions only.",
       );
     for (const [index, tender] of payments.entries()) {
       const allocated = collection.allocations
         .filter((row) => row.paymentIndex === index)
         .reduce((sum, row) => sum + BigInt(row.grossCents), 0n);
+      if (isRedemptionPaymentMethod(tender.method)) {
+        if (allocated !== 0n)
+          throw badRequest("Package and prepaid redemption cannot create new cash collection.");
+        await tx.salePayment.create({
+          data: { tenantId, saleId, method: tender.method, amount: tender.amount },
+        });
+        continue;
+      }
       if (allocated !== BigInt(new Prisma.Decimal(tender.amount).times(100).toFixed(0)))
         throw badRequest(
           "Each tender's explicit allocations must equal its recorded amount.",
@@ -1735,6 +1751,12 @@ async function redeemPackage(
     .filter((line) => line.quantity > 0);
   allocated.splice(0, allocated.length, ...allocation.units);
 
+  const payrollDraw = await drawPayrollPackageSessions(
+    tx,
+    holding.id,
+    sessions,
+    tender.unpaidSessionOverride,
+  );
   const drawn = await tx.customerPackageHolding.updateMany({
     where: { id: holding.id, quantityRemaining: { gte: sessions } },
     data: { quantityRemaining: { decrement: sessions } },
@@ -1780,6 +1802,7 @@ async function redeemPackage(
       };
     }),
     tender.performers,
+    payrollDraw,
   );
 }
 
@@ -1832,7 +1855,7 @@ async function redeemCredit(
       });
       if (drawn.count !== 1)
         throw conflict("Family credit changed. Nothing was charged.", "HOLDING_INSUFFICIENT");
-      await tx.customerRedemption.create({
+      const redemption = await tx.customerRedemption.create({
         data: {
           tenantId,
           customerId,
@@ -1845,6 +1868,15 @@ async function redeemCredit(
           holdingId: holding.id,
         },
       });
+      await captureValueSpend(
+        tx,
+        holding.id,
+        redemption.id,
+        saleId,
+        amount,
+        holding.amountRemaining,
+        usedAt,
+      );
       remaining = remaining.minus(amount);
     }
     return;
@@ -1895,7 +1927,7 @@ async function redeemCredit(
     );
   }
 
-  await tx.customerRedemption.create({
+  const redemption = await tx.customerRedemption.create({
     data: {
       tenantId,
       customerId,
@@ -1907,6 +1939,87 @@ async function redeemCredit(
       usedAt,
       holdingId: holding.id,
     },
+  });
+  await captureValueSpend(
+    tx,
+    holding.id,
+    redemption.id,
+    saleId,
+    amount,
+    holding.amountRemaining,
+    usedAt,
+  );
+}
+
+async function captureValueSpend(
+  tx: SaleTransaction,
+  holdingId: string,
+  redemptionId: string,
+  saleId: string,
+  amount: Prisma.Decimal,
+  remainingBefore: Prisma.Decimal,
+  at: Date,
+) {
+  const holding = await tx.customerValuePackageHolding.findFirstOrThrow({
+    where: { id: holdingId },
+  });
+  if (!holding.payrollPurchaseSnapshot) return; // Legacy ratio is unavailable, never inferred.
+  const purchase = z
+    .object({
+      version: z.literal(1),
+      paidNet: z.string(),
+      credit: z.string(),
+      currency: z.string().nullable(),
+      saleLineId: z.string(),
+      sellers: z.array(z.object({ staffId: z.string(), share: z.number().int() })).nullable(),
+    })
+    .parse(holding.payrollPurchaseSnapshot);
+  const spentBefore = new Prisma.Decimal(purchase.credit).minus(remainingBefore).toFixed(2);
+  const baseAmount = payrollValuePackageSpend(
+    purchase.paidNet,
+    purchase.credit,
+    spentBefore,
+    amount.toFixed(2),
+  );
+  const sourceSale = await tx.sale.findFirstOrThrow({ where: { id: saleId } });
+  const sourceLines = await tx.saleLine.findMany({ where: { saleId } });
+  const performers = sourceLines
+    .filter((line) => line.itemType === "SERVICE")
+    .map((line) =>
+      line.attribution
+        ? (commissionAttributionSchema.parse(line.attribution).performers ?? null)
+        : null,
+    );
+  const first = performers[0] ?? null;
+  const shares =
+    first && performers.every((row) => JSON.stringify(row) === JSON.stringify(first))
+      ? first
+      : null;
+  const snapshot = {
+    version: 1,
+    purchase: holding.payrollPurchaseSnapshot,
+    baseAmount,
+    spentBefore,
+    spentNow: amount.toFixed(2),
+    performers: shares,
+    sourceSaleId: sourceSale.id,
+    postingStatus: "PENDING_RELEASE",
+  };
+  await appendPayrollSource(tx, {
+    sourceKey: `value-spend:${redemptionId}`,
+    sourceType: "VALUE_SPEND",
+    sourceId: redemptionId,
+    saleId,
+    occurredAt: at,
+    reason: "Original paid-to-credit ratio draw",
+    commissionType: "VP_SPEND",
+    baseAmount,
+    units: "1.0000",
+    shares,
+    itemId: holding.valuePackageId,
+    sourceSnapshot: snapshot,
+    confirmedSourceCurrency: purchase.currency,
+    missingEvidence: purchase.currency ? [] : ["PURCHASE_CURRENCY"],
   });
 }
 
@@ -2094,6 +2207,73 @@ async function fillLedgers(
       })),
     });
   }
+  // Rate-free evidence is separate from legacy operational commissions and never activates payroll.
+  const sourceLines = await tx.saleLine.findMany({ where: { saleId } });
+  const sourceRedemptions = await tx.customerRedemption.findMany({
+    where: { saleId },
+    select: { id: true },
+  });
+  const redemptionSnapshots = await tx.commissionRedemptionSnapshot.findMany({
+    where: { redemptionId: { in: sourceRedemptions.map((row) => row.id) }, eventType: "CAPTURE" },
+  });
+  const covered = new Map<string, number>();
+  for (const snapshot of redemptionSnapshots) {
+    const parsed = redemptionCommissionEvidenceSchema.parse(snapshot.evidence);
+    for (const row of parsed.coverage)
+      covered.set(row.saleLineId, (covered.get(row.saleLineId) ?? 0) + row.quantity);
+  }
+  const creditPaid = await tx.customerRedemption.count({
+    where: { saleId, itemType: "VALUE_PACKAGE" },
+  });
+  for (const [position, line] of priced.entries()) {
+    if (line.item.itemType !== "SERVICE" && line.item.itemType !== "PRODUCT") continue;
+    const stored = sourceLines.find((row) => row.position === position)!;
+    const quantity = line.input.quantity - (covered.get(stored.id) ?? 0);
+    if (quantity <= 0) continue;
+    const category =
+      line.item.itemType === "PRODUCT"
+        ? (await tx.product.findFirstOrThrow({ where: { id: line.item.itemId } })).departmentId
+        : (await tx.service.findFirstOrThrow({ where: { id: line.item.itemId } })).departmentId;
+    const foc = line.item.itemType === "SERVICE" && line.netLineTotal.isZero();
+    const externalAllocations = await tx.commissionCollectionAllocation.findMany({
+      where: { saleLineId: stored.id },
+    });
+    const externalNet = externalAllocations.reduce((sum, row) => sum + row.netCents, 0n);
+    const net = foc
+      ? line.item.unitPrice.mul(quantity)
+      : line.netLineTotal.minus(line.taxAmount).mul(quantity).div(line.input.quantity);
+    await appendPayrollSource(tx, {
+      sourceKey: `sale-line:${stored.id}`,
+      sourceType: "SALE_LINE",
+      sourceId: stored.id,
+      saleId,
+      occurredAt: soldAt,
+      reason: "Completed POS source economics",
+      commissionType: foc ? "FOC" : line.item.itemType === "PRODUCT" ? "PRD" : "SVC",
+      baseAmount:
+        creditPaid && !externalAllocations.length
+          ? null
+          : creditPaid
+            ? new Prisma.Decimal(externalNet.toString()).div(100).toFixed(4)
+            : net.toFixed(4),
+      units: `${quantity}.0000`,
+      shares:
+        line.item.itemType === "PRODUCT"
+          ? (line.input.attribution?.sellers ?? null)
+          : (line.input.attribution?.performers ?? null),
+      itemId: line.item.itemId,
+      category,
+      sourceSnapshot: {
+        listUnitPrice: line.item.unitPrice.toFixed(2),
+        netLineAmount: line.netLineTotal.minus(line.taxAmount).toFixed(2),
+        originalQuantity: line.input.quantity,
+        coveredPackageQuantity: covered.get(stored.id) ?? 0,
+        category,
+      },
+      missingEvidence:
+        creditPaid && !externalAllocations.length ? ["EXTERNAL_TENDER_LINE_ALLOCATION"] : [],
+    });
+  }
 }
 
 /**
@@ -2158,6 +2338,25 @@ async function grantHoldings(
           line.voucherDiscountAmount.toFixed(2),
           line.taxAmount.toFixed(2),
         );
+        const settings =
+          catalogue.commissionSettings === null
+            ? null
+            : payrollPackageSettingsSchema.parse(catalogue.commissionSettings);
+        if (settings) {
+          const collections = await tx.commissionCollectionAllocation.findMany({
+            where: { saleLineId: lineId },
+          });
+          const collected = collections.reduce((sum, row) => sum + row.grossCents, 0n);
+          if (
+            collected <
+            minimumPayrollPackageDeposit(economics.grossCents, settings.minimumDepositPct)
+          )
+            throw badRequest(
+              "Record explicit package collection allocations meeting the minimum deposit before completion.",
+              undefined,
+              "PACKAGE_MINIMUM_DEPOSIT",
+            );
+        }
         const holding = await tx.customerPackageHolding.create({
           data: {
             tenantId,
@@ -2167,6 +2366,7 @@ async function grantHoldings(
             quantity: sessions,
             quantityRemaining: sessions,
             redemptionRules,
+            payrollAvailableOrdinals: [{ first: 1, last: sessions }],
             payrollPurchaseSnapshot: capturePayrollPackagePurchase({
               saleId,
               saleLineId: lineId,
@@ -2180,10 +2380,7 @@ async function grantHoldings(
               netCents: economics.netCents.toString(),
               taxCents: economics.taxCents.toString(),
               sellers: line.input.attribution?.sellers ?? null,
-              commissionSettings:
-                catalogue.commissionSettings === null
-                  ? null
-                  : payrollPackageSettingsSchema.parse(catalogue.commissionSettings),
+              commissionSettings: settings,
             }),
             expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },
@@ -2194,6 +2391,12 @@ async function grantHoldings(
 
       case "VALUE_PACKAGE": {
         const credit = (line.item.grant as Prisma.Decimal).mul(quantity);
+        const source = stored[priced.indexOf(line)]!;
+        const economics = packagePurchaseValue(
+          line.lineTotal.toFixed(2),
+          line.voucherDiscountAmount.toFixed(2),
+          line.taxAmount.toFixed(2),
+        );
         await tx.customerValuePackageHolding.create({
           data: {
             tenantId,
@@ -2202,6 +2405,15 @@ async function grantHoldings(
             saleLineId: lineId,
             amount: credit,
             amountRemaining: credit,
+            payrollPurchaseSnapshot: {
+              version: 1,
+              saleId,
+              saleLineId: lineId,
+              currency: source.sale.collectionCurrency,
+              paidNet: new Prisma.Decimal(economics.netCents.toString()).div(100).toFixed(2),
+              credit: credit.toFixed(2),
+              sellers: line.input.attribution?.sellers ?? null,
+            },
             expiresAt: packageExpiry(line.item.validityDays, soldAt),
           },
         });
@@ -2444,7 +2656,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 /** The sale a key already produced, or `null`. Scoped, so it is this salon's own. */
-async function findByIdempotencyKey(key: string) {
+async function findByIdempotencyKey(key: string, input: CreateSaleInput) {
   const scope = currentScope();
   if (scope?.kind !== "tenant") throw new Error("Sale lookup requires a tenant scope.");
   // Keys are tenant-unique. A key used in another branch must be a conflict,
@@ -2452,13 +2664,41 @@ async function findByIdempotencyKey(key: string) {
   const replay = await runAsTenant(scope.tenantId, () =>
     prisma.sale.findFirst({
       where: { idempotencyKey: key },
-      select: { id: true, outletId: true },
+      select: { id: true, outletId: true, requestHash: true },
     }),
   );
   if (replay && scope.outletId && replay.outletId !== scope.outletId) {
     throw conflict("This attempt belongs to another outlet.", "IDEMPOTENCY_OUTLET_MISMATCH");
   }
+  if (replay?.requestHash && replay.requestHash !== saleRequestHash(input))
+    throw conflict(
+      "This checkout retry has different cart or payment evidence.",
+      "SALE_RETRY_MISMATCH",
+    );
   return replay;
+}
+
+function saleRequestHash(input: CreateSaleInput) {
+  // JSON object key order is not evidence; array order is (cart positions and tenders).
+  const canonical = (value: unknown): unknown =>
+    Array.isArray(value)
+      ? value.map(canonical)
+      : value && typeof value === "object"
+        ? Object.fromEntries(
+            Object.entries(value)
+              .filter(([, item]) => item !== undefined)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([key, item]) => [key, canonical(item)]),
+          )
+        : value;
+  const scope = currentScope();
+  return createHash("sha256")
+    .update(
+      JSON.stringify(
+        canonical({ ...input, actorId: scope?.kind === "tenant" ? (scope.actorId ?? null) : null }),
+      ),
+    )
+    .digest("hex");
 }
 
 /**
@@ -2483,7 +2723,7 @@ export async function createSale(input: CreateSaleInput): Promise<SaleDetail> {
 
   const key = input.idempotencyKey;
   if (key !== undefined) {
-    const replay = await findByIdempotencyKey(key);
+    const replay = await findByIdempotencyKey(key, input);
     if (replay) return getSale(replay.id);
   }
 
@@ -2497,7 +2737,7 @@ export async function createSale(input: CreateSaleInput): Promise<SaleDetail> {
     // The concurrent-double-post case: this call lost the unique index to one that has
     // already written the sale, so that sale exists and is the answer to this request.
     if (key !== undefined && isUniqueViolation(error)) {
-      const winner = await findByIdempotencyKey(key);
+      const winner = await findByIdempotencyKey(key, input);
       if (winner) return getSale(winner.id);
     }
     throw error;
@@ -2917,6 +3157,7 @@ async function reverseForVoid(
   tenantId: string,
   sale: VoidableSale,
 ): Promise<void> {
+  await reversePayrollSources(tx, sale.id, "Source sale voided", `void:${sale.id}`);
   for (const line of sale.lines) {
     if (line.itemType !== "PRODUCT") continue;
     const restored = await tx.product.updateMany({
@@ -2960,6 +3201,7 @@ async function reverseForVoid(
             "REVERSAL_HOLDING_MISSING",
           );
         await restorePackageRedemption(tx, redemption.holdingId, redemption.id);
+        await restorePayrollPackageSessions(tx, redemption.id, redemption.holdingId);
         await voidRedemptionCommissionEvidence(
           tx,
           redemption.id,
@@ -3164,6 +3406,7 @@ export async function refundSale(
 
   try {
     await prisma.$transaction(async (tx) => {
+      await lockPrepaid(tx, requireTenantScope(), actorId, input.reason);
       // Lock the sale row first. A void racing this refund either waits and then sees
       // the row below, or holds the row itself and this read sees `VOID` — so the two
       // endings cannot both be recorded.
@@ -3243,6 +3486,7 @@ export async function refundSale(
           refundedAt: new Date(),
         },
       });
+      await reversePayrollSources(tx, sale.id, input.reason, `refund:${sale.id}`);
 
       const performances = await tx.employeePerformance.findMany({
         where: { saleId: sale.id, refundAdjustment: false },

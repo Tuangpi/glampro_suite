@@ -165,6 +165,9 @@ export type UpdateCustomerInput = z.infer<typeof updateCustomerSchema>;
  * credit — prepaid credit is fungible and pays for anything in the cart.
  */
 export const customerHoldingSchema = z.object({
+  paidSessionsRemaining: z.number().int().min(0).nullable().optional(),
+  balanceDueCents: z.string().nullable().optional(),
+  purchaseSaleId: z.string().nullable().optional(),
   redemptionMode: z.enum(["PER_UNIT", "SERVICE_SET"]).optional(),
   serviceSet: z
     .array(z.object({ serviceId: z.string(), quantity: z.number().int().positive() }))

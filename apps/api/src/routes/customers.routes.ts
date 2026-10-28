@@ -77,6 +77,7 @@ import {
   listSessionPackageTransfers,
   transferSessionPackage,
 } from "../services/session-transfer.service.js";
+import { getPayrollHoldingDetail } from "../services/payroll-holding-detail.js";
 
 /**
  * Customers — handoff screen 07.
@@ -90,6 +91,21 @@ import {
  * that exists passes it.
  */
 export const customersRouter = Router();
+customersRouter.get(
+  "/:id/session-packages/:holdingId/payroll",
+  auth,
+  requireModule("customers"),
+  requireModule("packages"),
+  validate(sessionHoldingParamsSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id, holdingId } = validated<{ id: string; holdingId: string }>(req, "params");
+      res.json({ data: await getPayrollHoldingDetail(id, holdingId) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 for (const [path, list] of [
   ["session-packages", listOwnedSessionPackages],

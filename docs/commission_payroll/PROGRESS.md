@@ -2,6 +2,21 @@
 
 ## Current State
 
+- **STOP / safety incident, October 28, 2026:** CP-004 remains IN PROGRESS.
+  An incorrectly targeted `npm run db:migrate` applied 12 pending migrations to
+  the configured local application database `glampro_suite` at `localhost:5432`.
+  No automatic rollback attempted. Owner review is required before further database
+  work. Log: `/tmp/cp004-lifecycle-unsafe-migrate-notrun.log` (despite its filename,
+  the command DID execute successfully). Earlier no-application-write statements
+  describe earlier checkpoints only, not this session.
+- New lifecycle code is unfinished and must not be deployed. Latest workspace
+  typecheck passed; earlier lifecycle/collection 2/2 and focused API 72/72 passed
+  on a disposable DB before subsequent edits. Focused web 40/40 passed before
+  latest detail/editor changes. No full regression/build/browser acceptance.
+  Expanded lifecycle tests, concurrency, value refunds, legacy gaps, fixed award
+  quantity handling, source evidence validation and complete UI acceptance remain.
+  Do not mark CP-004 DONE; CP-005 remains unstarted. No earnings activation.
+
 - Current task: CP-004 — IN PROGRESS. CP-003 configuration-only scope accepted.
 - Most recently completed: CP-003 — DONE, October 28, 2026.
 - Priority: this project before unrelated backlog. New requirements govern policy;
