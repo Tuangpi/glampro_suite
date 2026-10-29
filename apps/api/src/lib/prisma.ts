@@ -73,6 +73,7 @@ export const TENANT_SCOPED_MODELS = [
   "PayrollConfigurationEvent",
   "PayrollClose",
   "PayrollCloseEvent",
+  "PayrollCarryAuthorization",
   "PayrollSourceEvent",
   "CommissionPeriod",
   "CommissionRedemptionSnapshot",

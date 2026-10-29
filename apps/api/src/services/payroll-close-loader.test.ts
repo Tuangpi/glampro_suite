@@ -12,6 +12,7 @@ import {
   type PayrollCloseInputs,
 } from "./payroll-close-state.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
+import type { PayrollOpeningCarry } from "./payroll-close-opening.js";
 
 const owner = { id: "owner", role: "SUPER_ADMIN", disabled: false, twoFactorEnabled: true };
 const D = (value: string) => new Prisma.Decimal(value);
@@ -55,6 +56,7 @@ export function loaderFixture() {
     id: "line",
     saleId: "sale",
     itemType: "SERVICE",
+    itemId: "service",
     quantity: 1,
     lineTotal: D("109"),
     voucherDiscountAmount: D("0"),
@@ -86,6 +88,20 @@ export function loaderFixture() {
       status: "CAPTURED",
       postingStatus: "PENDING_RELEASE",
       currency: "SGD",
+      itemId: "service",
+      rateProvenance: {
+        version: 1,
+        rateAt: sale.soldAt.toISOString(),
+        itemId: "service",
+        category: null as string | null,
+        selections: [
+          {
+            staffId: "staff",
+            legacyServiceRate: "10",
+            selection: { rate: "10", source: "LEGACY_STAFF", ruleId: null as string | null },
+          },
+        ],
+      },
       lines: [
         {
           id: "base",
@@ -212,6 +228,8 @@ export function loaderFixture() {
         state: data.prior.state,
       }),
     },
+    payrollCarryAuthorization: many("payrollCarryAuthorization", () => []),
+    commissionRule: many("commissionRule", () => []),
   } as unknown as PayrollCloseTransaction;
   const load = () =>
     runAsTenant(
@@ -400,6 +418,15 @@ test("orphan captures and mismatched prior audit fail closed", async () => {
   await assert.rejects(audit.load(), /audit does not match/);
 });
 
+test("authoritative loader blocks ordinary captured fallback tampering", async () => {
+  const f = loaderFixture();
+  f.data.events[0].evidence.lines[0].fallbackRatePct = "90";
+  await assert.rejects(f.load(), /RATE_PROVENANCE_UNCONFIRMED/);
+  const legacy = loaderFixture();
+  Reflect.deleteProperty(legacy.data.events[0].evidence, "rateProvenance");
+  await assert.rejects(legacy.load(), /RATE_PROVENANCE_UNCONFIRMED/);
+});
+
 test("operational changes invalidate a calculated draft at approval", async () => {
   const f = loaderFixture();
   const inputs = await f.load();
@@ -422,4 +449,105 @@ test("operational changes invalidate a calculated draft at approval", async () =
       approvePayrollClose(draft, 1, changed, owner, "2026-10-01T00:00:00.000Z", "Approved review"),
     /inputs changed/,
   );
+});
+
+test("persisted opening and exact settlement compose authoritative inputs and invalidate stale approval", async () => {
+  const f = loaderFixture();
+  const opening: PayrollOpeningCarry = {
+    id: "opening",
+    tenantId: "salon",
+    periodKey: "2026-09",
+    revision: 1,
+    timeZone: "Asia/Singapore",
+    effectiveAt: "2026-08-31T16:00:00.000Z",
+    firstClose: true,
+    completeInventory: true,
+    approval: { actorId: "owner", at: "2026-08-01T00:00:00.000Z", reason: "Complete cutover debt" },
+    evidence: { reference: "audited-opening" },
+    staff: [{ staffId: "staff", carryForward: [], fallbackCarryCommission: "-5.1234567890" }],
+  };
+  const row = (
+    payload: PayrollOpeningCarry | import("./payroll-close-settlements.js").PayrollCarrySettlement,
+    kind: string,
+    targetId: string,
+  ) => ({
+    id: payload.id,
+    tenantId: "salon",
+    periodKey: payload.periodKey,
+    revision: payload.revision,
+    kind,
+    targetId,
+    actorId: payload.approval.actorId,
+    reason: payload.approval.reason,
+    createdAt: new Date(payload.approval.at),
+    payloadHash: payrollInputHash(payload),
+    payload,
+  });
+  const records = [row(opening, "OPENING", "opening")];
+  f.tx.payrollClose.findFirst = (async () => null) as unknown as typeof f.tx.payrollClose.findFirst;
+  f.tx.payrollClose.findMany = (async () => []) as unknown as typeof f.tx.payrollClose.findMany;
+  f.tx.payrollClose.count = (async () => 0) as unknown as typeof f.tx.payrollClose.count;
+  f.tx.payrollCarryAuthorization.findMany = (async () =>
+    records) as unknown as typeof f.tx.payrollCarryAuthorization.findMany;
+  const inputs = await f.load();
+  assert.equal(inputs.staff[0].calculation.fallbackCarryCommission, "-5.1234567890");
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    inputs,
+    owner,
+    "2026-10-01T00:00:00.000Z",
+  );
+  assert.equal(draft.calculation!.statements[0].payroll.takeHome, "2004.88");
+  records.push(
+    row(
+      {
+        id: "settlement",
+        tenantId: "salon",
+        periodKey: "2026-09",
+        revision: 1,
+        staffId: "staff",
+        balanceHash: payrollInputHash(opening.staff[0]),
+        components: [],
+        fallbackWriteOff: { amount: "-5.1234567890" },
+        evidence: { reference: "owner-write-off" },
+        approval: {
+          actorId: "owner",
+          at: "2026-09-20T00:00:00.000Z",
+          reason: "Exact debt writeoff",
+        },
+      },
+      "SETTLEMENT",
+      "staff",
+    ),
+  );
+  const settled = await f.load();
+  assert.equal(settled.staff[0].calculation.fallbackCarryCommission, "0.0000000000");
+  assert.throws(
+    () =>
+      approvePayrollClose(
+        draft,
+        1,
+        settled,
+        owner,
+        "2026-10-01T00:00:00.000Z",
+        "Changed settlement denied",
+      ),
+    /inputs changed/,
+  );
+  const recalculated = calculatePayrollClose(draft, 1, settled, owner, "2026-10-01T00:00:00.000Z");
+  assert.equal(recalculated.calculation!.statements[0].payroll.takeHome, "2010.00");
+  assert.equal(
+    approvePayrollClose(
+      recalculated,
+      2,
+      settled,
+      owner,
+      "2026-10-01T00:00:00.000Z",
+      "Settled payroll review",
+    ).status,
+    "APPROVED",
+  );
+  records[0].payloadHash = "0".repeat(64);
+  await assert.rejects(f.load(), /audit mismatch/);
 });

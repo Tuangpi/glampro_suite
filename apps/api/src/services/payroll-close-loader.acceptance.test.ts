@@ -167,6 +167,27 @@ test(
         const statement = draft.calculation!.statements.find((row) => row.staff.id === staffId)!;
         assert.equal(statement.inputs.collection, "100.0000");
         assert.equal(statement.payroll.takeHome, "2000.00");
+        // Current legacy staff rate and later-published backdated rules must not
+        // rewrite a source whose operational writer froze the earlier selection.
+        await prisma.$transaction(async (tx) => {
+          await lockCommissionConfiguration(tx, tenantId);
+          await tx.user.update({ where: { id: staffId }, data: { commissionRate: "75" } });
+          await tx.commissionRule.create({
+            data: {
+              tenantId,
+              staffId,
+              itemKind: "SERVICE",
+              scope: "ITEM",
+              targetId: "synthetic-service",
+              scopeKey: JSON.stringify([staffId, "SERVICE", "ITEM", "synthetic-service"]),
+              rate: "90",
+              effectiveAt: new Date("2026-09-01T00:00:00Z"),
+              createdAt: new Date(Date.now() + 60_000),
+              actorId: ownerId,
+              reason: "Synthetic later publication",
+            },
+          });
+        });
         await prisma.$transaction(async (tx) => {
           await lockCommissionConfiguration(tx, tenantId);
           await tx.payrollConfigurationEvent.create({
@@ -191,6 +212,11 @@ test(
         assert.equal(
           updated.calculation!.statements.find((row) => row.staff.id === staffId)!.payroll.takeHome,
           "2100.00",
+        );
+        assert.equal(
+          updated.calculation!.inputs.staff.find((row) => row.staff.id === staffId)!.calculation
+            .lines[0].fallbackRatePct,
+          "0",
         );
         const approved = await approveStoredPayrollClose(
           "2026-09",

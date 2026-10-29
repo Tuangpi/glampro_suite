@@ -2,6 +2,38 @@
 
 ## Current State
 
+- **CP-005 ordinary rate-provenance checkpoint, October 29, 2026:** IN PROGRESS;
+  latest completed CP-004. Source writer freezes per-staff fallback selection,
+  legacy rate and item/category/time; ordinary loader replays immutable independent
+  rule inventory at capture time. Missing/mismatched provenance fails closed;
+  current staff rates and later-published rules cannot rewrite captured decisions.
+  Focused plus tenancy **236/236**, zero skips (three isolated DB tests), related
+  regressions **78/78**, shared **302/302**; API types/build/lint passed. See feature
+  handoff and `docs/commission_payroll/CLOSE_ACCEPTANCE.md`. Continue CP-005 remaining
+  package/usage/prepaid/FOC/refund/void loading, source-base corrections and close
+  API/UI/full acceptance. Old captures lacking provenance deliberately unavailable;
+  no backfill/migration/activation. Disposable cluster stopped, data retained.
+  No application DB access, deployment, commit or push. CP-003A/CP-006 untouched.
+
+## Previous checkpoint — persisted carry authorization
+
+- **CP-005 persisted carry authorization checkpoint, October 29, 2026:** IN PROGRESS;
+  latest completed CP-004. Internal verified-owner opening/settlement persistence
+  now feeds the authoritative loader. Immutable server-stamped hash/revision audits,
+  full staff opening inventory, future-boundary/first-close checks, exact settlements,
+  stale-balance rejection and explicit reauthorization tested. Focused **223/223**
+  plus tenancy **4/4** (**227/227**, zero skips, three isolated DB acceptance tests);
+  shared **302/302**; API typecheck/build/lint passed. Migration applied only to the
+  authorized disposable DB, then cluster stopped with data retained. No existing
+  application DB access, activation, deployment, commit or push. See feature handoff
+  and `docs/commission_payroll/CLOSE_ACCEPTANCE.md`. Continue CP-005 remaining
+  operational loaders/provenance, source-base corrections, close API/UI and full
+  acceptance. First-close future calculation tested, not end-of-month approval;
+  owner-attested opening and write-off are not legacy debt reconstruction/cash repayment.
+  CP-003A/CP-006 untouched; CP-005 not DONE.
+
+## Previous checkpoint — authoritative ordinary inputs
+
 - **CP-005 authoritative ordinary-input checkpoint, October 29, 2026:** IN PROGRESS;
   latest completed CP-004. Server-owned transactional loader now defaults internal
   calculation/approval; ordinary operational bases, attribution, recorded payments,

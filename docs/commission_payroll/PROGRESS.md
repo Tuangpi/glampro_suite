@@ -2,6 +2,54 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — ordinary rate-provenance checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Operational source writer now
+  freezes rate evaluation time, item/category, legacy staff rate and selected
+  rate/source/rule identity per credited staff. Default ordinary loader independently
+  inventories immutable rules and replays selections available when captured.
+  Missing provenance, altered rate/category/staff/item/time and rule mismatch block
+  close; current staff/catalogue values never reconstruct historical decisions.
+- Tested: focused plus tenancy **236/236**, zero skips, including all three isolated
+  DB acceptance tests; rate/collection/refund regressions **78/78**; shared **302/302**;
+  API typecheck/build/lint passed. Logs/exit markers:
+  `/tmp/cp005-rates-{combined,regression,shared,types,build,lint}.{log,exit}`.
+  DB loader acceptance preserves captured zero after current legacy-rate edit and
+  later-published backdated rule, then recalculates/approves historical salary change.
+- Next: remaining CP-005 package/usage/prepaid/FOC/refund/void authoritative loading,
+  source-base corrections, close API/UI and full transactional/browser acceptance.
+  Historical category/legacy rate are immutable operational capture attestations,
+  not independently reconstructed catalogue/user history. Old captures without
+  provenance deliberately block; no migration/backfill/activation. Disposable DB
+  only, stopped after verification with data retained. No application DB access,
+  deployment, commit or push. CP-005 not DONE.
+
+## Previous checkpoint — persisted carry authorization
+
+- **CP-005 IN PROGRESS — persisted carry authorization checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Added internal verified-owner
+  opening/settlement persistence and default-loader integration under the tenant
+  source lock. Server-stamped actor/time/reason, immutable hashed revisions, complete
+  all-staff cutover inventory, no backdated opening, first-close eligibility and
+  exact-balance settlements fail closed. Opening changes invalidate settlements;
+  explicit owner reauthorization repairs them without changing history.
+- Tested: focused **223/223**, plus tenancy schema checks **4/4** in the same run
+  (**227/227**, zero skips), including three isolated DB acceptance tests; shared
+  **302/302**; API typecheck/build/lint passed. Logs/exit markers:
+  `/tmp/cp005-auth-{combined,shared,types,build,lint,migrate}.{log,exit}`.
+  DB acceptance calculates a future first close from persisted complete opening and
+  write-off without synthetic prior-close bootstrap. Loader unit coverage verifies
+  settlement composition, changed-input approval rejection, recalculation and approval.
+  Actual first-month end/approval and full payroll acceptance are not claimed.
+- Next: continue CP-005 remaining operational loaders/provenance (package, usage,
+  prepaid, FOC, refund/void and fallback/classification authenticity), source-base
+  corrections, then close API/UI and full transactional/browser acceptance. Opening
+  debt is explicit owner attestation, not independently reconstructed legacy debt;
+  settlement supports audited remap/write-off, not cash debt repayment. New migration
+  applied only to the authorized disposable DB; cluster stopped, data retained.
+  No application DB access, activation, deployment, commit or push.
+
+## Previous checkpoint — authoritative ordinary inputs
+
 - **CP-005 IN PROGRESS — authoritative ordinary-input checkpoint (October 29).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Internal calculation/approval
   now default to a server-owned, tenant-locked transactional loader. Independent

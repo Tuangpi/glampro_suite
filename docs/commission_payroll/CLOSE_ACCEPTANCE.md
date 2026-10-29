@@ -33,6 +33,65 @@ Applied the existing migrations, then three new migrations:
 
 ## Implemented and checked
 
+### Ordinary rate-provenance continuation — October 29
+
+- Operational source writer now retains evaluation time, item/category, legacy
+  staff rate and selected fallback rate/source/rule identity for every credited
+  staff line. Default ordinary loader loads the independent append-only rule
+  inventory and replays rules with effective dates at occurrence and publication
+  dates no later than capture. It verifies item/time/staff/category, rule identity,
+  precedence and exact captured fallback. Missing evidence blocks older captures;
+  no current staff/catalogue fallback, historical backfill or activation was added.
+- Category and legacy staff rate remain immutable operational-writer attestations,
+  not independent historical user/catalogue reconstruction. This boundary assumes
+  server-owned transactional source creation; it does not authorize source uploads
+  or repair historical evidence. Other workflow provenance remains unsupported.
+- Tests cover absent/tampered provenance, rule identity and precedence, explicit
+  zero, inheritance, department ties, foreign rules, future rules/publications,
+  detached snapshots and operation/capture ordering. DB loader acceptance changes
+  current staff rate and publishes a later backdated rule, then verifies the
+  captured zero rate survives recalculation and approval unchanged.
+- Focused plus tenant/schema checks **236/236**, zero skips, including three
+  isolated DB acceptance tests; related rule/collection/refund regressions **78/78**;
+  shared **302/302**. API typecheck/build/lint passed. Logs/exit markers:
+  `/tmp/cp005-rates-{combined,regression,shared,types,build,lint}.{log,exit}`.
+  No new migrations. Only authorized disposable DB used, then stopped; data retained.
+
+### Persisted carry authorization continuation — October 29
+
+- New migration `20261029130000_payroll_carry_authorizations` applied only to the
+  authorized isolated DB. Immutable tenant-scoped owner approvals carry hashes and
+  contiguous revisions; database insert guard verifies active, 2FA-enabled owner,
+  tenant and approval timestamp. Initial migration attempt rolled back because users
+  have no composite tenant/id unique key; fixed to the existing user primary-key FK
+  plus explicit tenant/owner insert guard, resolved the isolated failed attempt and
+  applied successfully. No application databases were accessed.
+- Internal owner write boundary shares the tenant source/configuration lock with
+  close calculation/approval. It rejects manager/staff/unverified owner, outlet,
+  cross-tenant, non-writable tenant and approved-month writes; stamps approval
+  identity/time/reason itself. All salon staff, including zero/departed balances,
+  must appear explicitly in the first opening inventory. Opening approval cannot be
+  backdated; it must precede the salon-local first-month boundary. Earlier history
+  or a competing opening prevents cutover. This is authenticated owner attestation,
+  not proof of reconstructed legacy debt completeness.
+- Default loader now reads/reconciles persisted opening and exact carry settlements.
+  Supports existing component remap/write-off and exact fallback debt write-off,
+  not actual cash debt repayment. Changed balances block stale settlements;
+  reasoned owner reauthorization replaces the current revision without deleting any
+  earlier evidence. Changes freeze into input hashes and reject stale close approval.
+- DB acceptance verifies write races, isolation/permissions, immutable rows, rollback,
+  stale balances and repair, and actual default-loader future first-close calculation
+  with departed debt from authenticated opening/write-off, without prior-close
+  bootstrap. Future month approval remains prohibited until the month ends.
+  Loader unit test covers debt/write-off money, stale approval, recalculation and
+  approval with persisted-shaped audited records. This is not full first-close
+  end-of-month acceptance or full authoritative payroll acceptance.
+- Final focused checks: **223/223** plus tenant/schema checks **4/4**, total
+  **227/227**, zero skips, including all three isolated DB tests; shared **302/302**.
+  API types/build/lint pass; logs and zero exit markers:
+  `/tmp/cp005-auth-{combined,shared,types,build,lint,migrate}.{log,exit}`.
+  Cluster stopped cleanly after checks; data retained. No close routes/UI activated.
+
 ### Authoritative input-loading continuation — October 29
 
 - Internal calculation/approval now default to a server-owned transactional loader.
@@ -125,7 +184,9 @@ Do not point this command at an application database.
 2. Integrate next-open-period **source-base** correction posting into operational
    captures, with occurrence versus posting dates, idempotency and approval/source
    races. Internal monetary adjustments are not a substitute.
-3. Persist and authenticate opening/settlement workflows and approval evidence.
+3. Complete opening/settlement API/UI and end-of-month acceptance on top of the
+   internal authenticated persistence above; verify component plan-switch mapping
+   and approved-month races. Cash debt repayment is unsupported and must fail closed.
 4. Monthly-close API and UI with authenticated module/role/outlet boundaries,
    own-data frozen reads, adjustments, calculation/approval and separate payout.
 5. Full money reconciliation and transactional acceptance using authoritative

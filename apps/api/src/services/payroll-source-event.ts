@@ -74,6 +74,7 @@ export async function appendPayrollSource(
   const rateAt = input.rateAt ?? input.occurredAt;
   const rules = await tx.commissionRule.findMany({ where: { effectiveAt: { lte: rateAt } } });
   const lines = [];
+  const rateSelections = [];
   for (const base of bases) {
     const person = await tx.user.findFirst({ where: { id: base.staffId } });
     if (!person) throw conflict("Original payroll staff does not belong to this salon.");
@@ -103,6 +104,11 @@ export async function appendPayrollSource(
       rateAt,
     );
     if (!fallback) missing.push("FALLBACK_RATE");
+    rateSelections.push({
+      staffId: base.staffId,
+      legacyServiceRate: person.commissionRate.toString(),
+      selection: { rate: fallback.rate, source: fallback.source, ruleId: fallback.ruleId },
+    });
     lines.push(
       payrollBaseLineSchema.parse({
         id: `${input.sourceKey}:${base.staffId}`,
@@ -142,6 +148,13 @@ export async function appendPayrollSource(
         bases,
         units,
         lines,
+        rateProvenance: {
+          version: 1,
+          rateAt: rateAt.toISOString(),
+          itemId: input.itemId,
+          category: input.category ?? null,
+          selections: rateSelections,
+        },
         originalEventId: input.originalEventId ?? null,
         sourceSnapshot: input.sourceSnapshot ?? null,
         postingStatus: "PENDING_RELEASE",

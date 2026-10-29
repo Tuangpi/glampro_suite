@@ -337,6 +337,25 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Ordinary rate-provenance checkpoint (October 29): operational writer freezes
+  evaluation time/item/category/legacy rate and per-staff selected rate/source/rule.
+  Default ordinary loader replays independent immutable rule inventory as of capture;
+  absent/mismatched provenance blocks close, without current catalogue/staff fallback.
+  Focused plus tenancy 236/236 (zero skips, three isolated DB tests), related
+  regressions 78/78, shared 302/302; API types/build/lint passed. Old captures require
+  unavailable readiness, not inferred history. No migration/backfill/activation.
+  Remaining operational workflows/source-base corrections/close API/UI/full
+  acceptance still pending. See latest handoff; CP-005 remains IN PROGRESS.
+- Persisted carry authorization checkpoint (October 29): internal owner-only
+  opening/settlement write boundary and immutable hashed revision store now feed
+  default authoritative calculation/approval. Complete explicit staff inventory,
+  first-close/future boundary checks, server approval metadata, stale-balance
+  rejection/reauthorization, tenant isolation, write races and loader stale approval
+  verified. Focused 223/223 plus tenancy 4/4; shared 302/302; API types/build/lint
+  passed. New migration applied only to authorized disposable DB, then stopped.
+  Future first-close calculation tested; real first-month approval/full acceptance
+  still pending. Remaining operational provenance/loaders, source-base posting and
+  close API/UI remain; no activation, CP-003A/CP-006 or production DB work.
 - Active continuation (October 29): implement server-owned transactional input
   loading with independent operational inventory, historical configuration, verified
   prior carry and fail-closed unsupported evidence. CP-003A/CP-006 remain untouched.

@@ -1600,6 +1600,24 @@ model PayrollConfigurationEvent {
   @@map("payroll_configuration_events")
 }
 
+/// Immutable owner-authorized opening inventory and exact carry settlement revisions.
+model PayrollCarryAuthorization {
+  id String @id @default(cuid())
+  tenantId String
+  kind String
+  periodKey String
+  targetId String
+  revision Int
+  actorId String
+  reason String
+  payload Json
+  payloadHash String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, kind, periodKey, targetId, revision])
+  @@index([tenantId, kind, periodKey])
+  @@map("payroll_carry_authorizations")
+}
+
 /// Internal CP-005 frozen close. No earnings activation or public input upload.
 model PayrollClose {
   id String @id @default(cuid())

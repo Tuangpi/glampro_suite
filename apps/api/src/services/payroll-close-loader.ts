@@ -18,10 +18,11 @@ import {
   type PayrollCloseInputRecords,
 } from "./payroll-close-inputs.js";
 import { resolvePayrollCloseCash } from "./payroll-close-cash.js";
-import { resolvePayrollCloseCarry } from "./payroll-close-carry.js";
+import { loadStoredPayrollCarry } from "./payroll-close-authorizations.js";
 import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
 import { resolvePayrollCloseConfiguration } from "./payroll-close-configuration.js";
 import { resolvePayrollCloseGroupMetrics } from "./payroll-close-group-metrics.js";
+import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { payrollInputHash } from "./payroll-close-state.js";
 import { verifiedPayrollClose, type PayrollCloseLoader } from "./payroll-close-store.js";
 
@@ -79,6 +80,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     collections,
     legacy,
     closes,
+    commissionRules,
   ] = await Promise.all([
     tx.sale.findMany({
       where: { tenantId, OR: [{ soldAt: range, status: { not: "HELD" } }, { voidedAt: range }] },
@@ -122,6 +124,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       where: { tenantId, status: "APPROVED", periodKey: { not: periodKey } },
       orderBy: { periodKey: "asc" },
     }),
+    tx.commissionRule.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
   ]);
   if (redemptions.length) unavailable("REDEMPTION_WORKFLOW_NOT_LOADED");
   if (
@@ -138,15 +141,11 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   ];
   if (await tx.customerRedemption.count({ where: { tenantId, saleId: { in: saleIds } } }))
     unavailable("SALE_USAGE_COVERAGE_NOT_LOADED");
-  const previousKey = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
-  const previous = await verifiedPayrollClose(tx, previousKey);
-  const carry = {
-    tenantId,
-    periodKey,
-    previous: previous ? { id: previous.stored.id, tenantId, state: previous.state } : null,
-  };
-  const carryResult = resolvePayrollCloseCarry(carry);
-  if (!carryResult.carry) unavailable("APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED");
+  const {
+    carry,
+    resolved: carryResult,
+    settlements,
+  } = await loadStoredPayrollCarry(tx, tenantId, periodKey);
 
   const operations: PayrollCloseInputRecords["inventoryOperations"] = [];
   for (const sale of sales) {
@@ -194,6 +193,14 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
           )
         )
           unavailable("ORDINARY_SOURCE_ECONOMICS_MISMATCH");
+        verifyOrdinaryPayrollRateProvenance(
+          event.evidence,
+          line,
+          event.occurredAt,
+          event.createdAt,
+          commissionRules,
+          tenantId,
+        );
       }
       operations.push({
         tenantId,
@@ -377,7 +384,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const requiredStaffIds = [
     ...new Set([
       ...sourceResult.sources.requiredStaffIds,
-      ...carryResult.carry.requiredStaffIds,
+      ...carryResult.requiredStaffIds,
       ...cash.cash.staff.map((row) => row.staffId),
       ...state.adjustments.map((row) => row.staffId),
     ]),
@@ -455,6 +462,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     configuration,
     sources,
     carry,
+    carrySettlements: settlements,
     metrics,
     inventoryOperations: operations,
     cashAttributions,
