@@ -11,7 +11,7 @@ import {
 import { conflict, forbidden } from "../lib/http-error.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
 
-export const PAYROLL_CALCULATION_VERSION = "cp-005-v1";
+export const PAYROLL_CALCULATION_VERSION = "cp-005-v2";
 export interface PayrollCloseActor {
   id: string;
   role: string;
@@ -196,12 +196,20 @@ export function approvePayrollClose(
   const inputs = resolvedInputs(state, authoritativeInputs);
   if (new Date(timestamp(at)) < new Date(inputs.endsAt))
     throw conflict("The salon-local calendar month must end before approval.");
+  if (new Date(at) < new Date(timestamp(state.calculation.calculatedAt)))
+    throw conflict("Approval cannot predate calculation.");
   const hash = payrollInputHash({ version: PAYROLL_CALCULATION_VERSION, inputs });
   if (
     state.calculation.version !== PAYROLL_CALCULATION_VERSION ||
     state.calculation.inputHash !== hash
   )
     throw conflict("Payroll inputs changed. Recalculate before approval.");
+  if (
+    payrollInputHash(state.calculation.inputs) !== payrollInputHash(inputs) ||
+    payrollInputHash(state.calculation.statements) !==
+      payrollInputHash(inputs.staff.map(assemblePayrollStatement))
+  )
+    throw conflict("Payroll calculation snapshot changed. Recalculate before approval.");
   return {
     ...structuredClone(state),
     status: "APPROVED",

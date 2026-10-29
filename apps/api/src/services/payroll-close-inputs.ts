@@ -1,4 +1,12 @@
 import { z } from "zod";
+import {
+  resolvePayrollCarrySettlements,
+  type PayrollCarrySettlement,
+} from "./payroll-close-settlements.js";
+import type { PayrollNoCashSaleVoid, PayrollReturnedCashSaleVoid } from "./payroll-close-voids.js";
+import type { PayrollSaleRefund } from "./payroll-close-sale-refunds.js";
+import type { PayrollNoCashReversal } from "./payroll-close-reversals.js";
+import type { PayrollRefundPayout } from "./payroll-close-refunds.js";
 import { resolvePayrollCloseGroupMetrics } from "./payroll-close-group-metrics.js";
 import { resolvePayrollCloseCash, type PayrollCashAttribution } from "./payroll-close-cash.js";
 import {
@@ -50,6 +58,12 @@ const metricSchema = z.object({
   evidence: z.unknown().refine((value) => value !== undefined && value !== null),
 });
 export interface PayrollCloseInputRecords {
+  carrySettlements?: PayrollCarrySettlement[];
+  returnedCashSaleVoids?: PayrollReturnedCashSaleVoid[];
+  noCashSaleVoids?: PayrollNoCashSaleVoid[];
+  saleRefunds?: PayrollSaleRefund[];
+  noCashReversals?: PayrollNoCashReversal[];
+  refundPayouts?: PayrollRefundPayout[];
   cashAttributions: PayrollCashAttribution[];
   inventoryOperations: PayrollCloseInventoryRecords["operations"];
   state: PayrollCloseState;
@@ -76,8 +90,24 @@ export function resolvePayrollCloseInputs(raw: PayrollCloseInputRecords) {
     operations: raw.inventoryOperations,
   });
   const collections = resolvePayrollCloseCollections(raw.sources);
-  const cash = resolvePayrollCloseCash({ ...raw.sources, cashAttributions: raw.cashAttributions });
+  const cash = resolvePayrollCloseCash({
+    ...raw.sources,
+    cashAttributions: raw.cashAttributions,
+    refundPayouts: raw.refundPayouts,
+    noCashReversals: raw.noCashReversals,
+    saleRefunds: raw.saleRefunds,
+    noCashSaleVoids: raw.noCashSaleVoids,
+    returnedCashSaleVoids: raw.returnedCashSaleVoids,
+  });
   const carry = resolvePayrollCloseCarry(raw.carry);
+  if (carry.carry?.opening && carry.carry.opening.timeZone !== scope.timeZone)
+    throw new Error("Payroll opening carry has inconsistent timezone.");
+  const settlements = resolvePayrollCarrySettlements(
+    raw.carrySettlements ?? [],
+    scope.tenantId,
+    scope.periodKey,
+    carry.carry?.staff ?? [],
+  );
   const requiredStaffIds = [
     ...new Set([
       ...scope.requiredStaffIds,
@@ -186,6 +216,7 @@ export function resolvePayrollCloseInputs(raw: PayrollCloseInputRecords) {
     collections,
     cash,
     carry,
+    settlements,
     configuration,
     groups,
     metrics,
@@ -204,6 +235,7 @@ export function resolvePayrollCloseInputs(raw: PayrollCloseInputRecords) {
       staff: staff.map((row) => {
         const metric = metrics.find((entry) => entry.staffId === row.staff.id)!;
         const previous = carry.carry!.staff.find((entry) => entry.staffId === row.staff.id);
+        const settlement = settlements.find((entry) => entry.staffId === row.staff.id);
         return {
           staff: row.staff,
           profile: row.profile!,
@@ -229,7 +261,10 @@ export function resolvePayrollCloseInputs(raw: PayrollCloseInputRecords) {
               : null,
             lines: sources.sources!.lines.filter((line) => line.staffId === row.staff.id),
             carryForward: previous?.carryForward ?? [],
-            fallbackCarryCommission: previous?.fallbackCarryCommission ?? "0.0000000000",
+            carryResolutions: settlement?.components ?? [],
+            fallbackCarryCommission: settlement?.fallbackWriteOff
+              ? "0.0000000000"
+              : (previous?.fallbackCarryCommission ?? "0.0000000000"),
             groupMetrics: metric.groupMetrics.map((group) =>
               group.metric === "SUM_INDIVIDUAL"
                 ? groups.groups!.metrics.find(

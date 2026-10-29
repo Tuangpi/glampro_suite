@@ -2,6 +2,166 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — isolated persistence/scoped carry checkpoint (October 29).**
+  Latest completed CP-004. User authorized new isolated disposable DB migrations/
+  acceptance only; existing DBs, production access, activation and deployment remain
+  forbidden. New cluster on loopback 55485, DB `payroll_close_test`; path marker
+  `/tmp/cp005-disposable-cluster.path`. Added internal locked close persistence,
+  immutable/atomic audit constraints, own-data reads, payout race protection and
+  next-open-month monetary correction. Synthetic loader acceptance only; no route.
+  Added scoped plan/fallback statement composition (`cp-005-v2`), fixed-award pooling,
+  supplied audited opening carry/settlement and draft-output replay protection.
+  Combined focused 211/211 incl. isolated DB, shared 302/302, existing UI regressions
+  40/40; API build/types/lint, shared lint and web typecheck passed.
+  See `CLOSE_ACCEPTANCE.md` for exact scope, logs and limits. Next: authoritative
+  complete operational/settlement/carry loader and persisted authenticated opening/
+  settlement workflows; source-base corrections, close API/UI and full transactional/
+  browser acceptance still required. CP-005 not DONE. Do not start CP-003A/CP-006.
+  Disposable cluster stopped cleanly after checks; data retained for continuation.
+
+## Prior checkpoint history
+
+- **Active: CP-005 IN PROGRESS; completion DB-blocked (October 29, 2026).** Latest
+  completed task CP-004. User requested continuation through CP-005 completion;
+  no permission to lift the explicit DB pause has been inferred. Latest checkpoint:
+  explicit audited supplied opening carry and first-close composition; preserves
+  component/fallback debt, requires complete first-close evidence, rejects conflicts
+  and stale revisions. Draft approval now replays outputs and rejects stored
+  snapshot tampering and approval before calculation. Eleven added tests; focused
+  207/207, shared 298/298, API typecheck/lint/build passed. Logs/exit markers:
+  `/tmp/cp005-continuation-{tests,shared,types,lint,build}.log` / `.exit`.
+  No DB access, migrations, activation, deployment or browser acceptance. Mandatory
+  transactional/race acceptance cannot pass under the pause. Remaining: trusted
+  settlement/opening loaders, cancelled-settlement evidence, carry settlement,
+  scoped composition, persistence/locking, correction posting, API/UI acceptance.
+  Next decision: retain all-DB pause or explicitly authorize disposable isolated DB
+  implementation/acceptance only. Production and activation remain unauthorized.
+
+## Recent checkpoints
+
+- **October 29, 2026 — CP-005 ordinary returned-void checkpoint:** CP-005
+  IN PROGRESS; latest completed CP-004. Full service/product returned voids now
+  reconcile independent payout tenders/full external-cash allocations against
+  original sale-line identity, historical staff splits and exact reversals.
+  Complete supplied sale-line inventory required; mixed ordinary/package sources
+  and partial/uncertain returns remain unsupported. Overlapping current collections
+  must match sale, item type, amounts, outlet and historical shares. Returned net
+  subtracts once; same-month service/product returns net to zero. Frozen disposition
+  revisions reject stale approval and departed-staff debt remains intact.
+  Ten added tests; focused 196/196 (payroll-close, preview-inputs, correction-period,
+  package-void), API typecheck/lint/build passed. Logs and exit markers:
+  `/tmp/cp005-ordinary-void-{tests,types,lint,build}.log` / `.exit`.
+  Tests disabled dotenv and used an unusable loopback DB URL. No DB access,
+  migrations, activation, deployment or transactional/browser acceptance occurred.
+  Supplied evidence still cannot prove settlement authenticity/timing, historical
+  allocation identity, inventory completeness or prior/cross-workflow exclusivity.
+  Next: cancelled-settlement evidence and authoritative-loader design, then remaining
+  carry/settlement, scoped composition, persistence/locking, correction posting and
+  API/UI acceptance. Do not mark CP-005 DONE or start CP-003A/CP-006.
+
+- **October 29, 2026 — CP-005 returned-cash collection-void checkpoint:** CP-005
+  IN PROGRESS; latest completed CP-004. Independent RETURNED disposition with
+  settled payout tenders and complete package/value-package original allocation
+  evidence now reconciles full collected returns. Exact net/GST/gross, original
+  source identities/staff splits and exact reversals checked; net cash subtracts
+  once. Same-month collections/returns net to zero; current allocation overlap
+  mismatches and conflicting dispositions fail closed. Composer retains departed
+  debt and freezes payout/allocation evidence for stale approval. Nine new tests;
+  focused 192/192, API typecheck/lint/build, formatting and Git whitespace pass.
+  Changed void/reversal/cash/input resolvers and void/composition tests. Logs:
+  `/tmp/cp005-void-return-{tests,types,lint,build}.log` and saved exit markers.
+  All DB operations remain paused: no DB access, migrations, activation, deployment
+  or browser acceptance. Tests used disabled dotenv and unusable loopback DB URL.
+  Supplied records do not prove settlement timing/authenticity, historical allocation
+  sale-line identity, complete cash inventory or prior/cross-workflow exclusivity.
+  Next: ordinary returned void/cancelled-settlement evidence and authoritative
+  loaders, opening carry/settlement, scoped plan/fallback composition,
+  persistence/locking, correction posting and API/UI acceptance. Partial/uncertain
+  cash remains unavailable. Real transactional acceptance remains DB-blocked;
+  do not mark CP-005 DONE or start CP-003A/CP-006.
+
+- **October 29, 2026 — CP-005 no-cash sale-void checkpoint:** CP-005 IN PROGRESS;
+  latest completed CP-004. Independent explicit NO_MOVEMENT evidence supports
+  sale-line/collection void reversals with no cash subtraction. Reconciles complete
+  supplied original/reversal inventory, identity, outlet, timing and exact source
+  negation. Same-month original collections remain cash; void status is not payout
+  proof. Composer preserves departed-staff debt, freezes disposition revisions and
+  rejects stale approval. Refund/no-cash conflicts and incomplete/uncertain evidence
+  fail closed. New `apps/api/src/services/payroll-close-voids.ts` and adjacent tests;
+  reversal/input integration and composition regression. Ten new tests; focused
+  183/183, API typecheck/lint/build, formatting and Git whitespace pass. Logs:
+  `/tmp/cp005-void-{tests,types,lint,build}.log` and saved exit markers.
+  All DB operations paused: no DB access, migrations, activation, deployment or
+  browser acceptance. Tests use disabled dotenv/unusable DB URL. Supplied records
+  do not prove cash disposition authenticity, complete inventories or absence of
+  prior-month/cross-workflow refunds. No operational source behavior changed.
+  Next: returned/cancelled-settlement void cash and authoritative loaders, opening
+  carry/settlement, scoped plan/fallback composition, persistence/locking, correction
+  posting and API/UI acceptance. Real transactional acceptance remains DB-blocked.
+  Do not mark CP-005 DONE or start CP-003A/CP-006.
+
+- **October 29, 2026 — CP-005 ordinary-sale refund checkpoint:** CP-005 IN PROGRESS;
+  latest completed CP-004. Full service/product refund cash now reconciles supplied
+  independent tender/settlement net/GST/gross, original sale-line allocations,
+  historical staff splits and exact source reversals. Subtracts net once across
+  split tenders; preserves four-decimal residuals and departed-staff debt. Composer
+  checks derived cash assertions and freezes settlement/allocation revisions for
+  stale approval. Unsupported partial refunds, collection/void effects, duplicate
+  identities and cash/no-cash conflicts fail closed. New resolver/test at
+  `apps/api/src/services/payroll-close-sale-refunds.ts` and adjacent test; integrated
+  into reversal/cash/input composition. Thirteen new tests; focused 173/173,
+  API typecheck/lint/build, formatting and Git whitespace checks pass. Logs:
+  `/tmp/cp005-sale-refund-{tests,types,lint,build}.log` and saved exit markers.
+  All DB operations remain paused: no DB access, migrations, activation, deployment
+  or browser acceptance. Tests use disabled dotenv/unusable DB URL. Supplied-record
+  validation does not establish complete funding, authentic settlement, inventory
+  completeness or cross-workflow payout exclusivity. No operational source changes.
+  Next: collection/void cash reconciliation and authoritative loaders, opening
+  carry/settlement, scoped plan/fallback composition, persistence/locking, correction
+  posting and API/UI acceptance. Real transactional acceptance remains blocked by
+  DB pause. Do not mark CP-005 DONE or start CP-003A/CP-006.
+
+- **October 29, 2026 — CP-005 non-cash reversal checkpoint:** CP-005 IN PROGRESS;
+  latest completed CP-004. Explicit independent zero-money evidence permits
+  redemption/value-spend/session-correction reversals without treating negative
+  commission bases as cash refunds. Validates exact original source/operation,
+  sale/outlet/date and full source lineage; missing/foreign/duplicate/mismatched
+  records fail closed. Composer freezes operational revisions, rejects stale
+  approval and retains departed-staff negative commission debt with zero cash.
+  New resolver/tests in `apps/api/src/services/payroll-close-reversals.ts` and
+  adjacent test; cash/input resolver integration and composition regression added.
+  Ten new tests; focused 160/160, API typecheck/lint/build, formatting and Git
+  whitespace checks pass. Logs `/tmp/cp005-reversal-{tests,types,lint,build}.log`
+  and saved exit markers. Tests use disabled dotenv and unusable loopback DB URL;
+  no database queries, migrations, activation, deployment or browser acceptance.
+  Explicit all-database pause remains. Supplied records do not establish actual
+  absence of payout, evidence authenticity or inventory completeness.
+  Next: sale-line/collection cash reversal reconciliation and authoritative loaders,
+  opening carry/settlement, scoped plan/fallback composition, persistence/locking,
+  correction posting and API/UI acceptance. Real transactional acceptance remains
+  blocked by DB pause. Do not mark CP-005 DONE or start CP-003A/CP-006.
+
+- **October 29, 2026 — CP-005 refund cash checkpoint:** CP-005 IN PROGRESS;
+  latest completed CP-004. Package/value-package refund cash now requires supplied
+  independent payout identity/date/tender/net/GST/gross plus original collection
+  allocation/sale-line and seller reconciliation. Exact net payouts subtract from
+  staff/outlet/salon cash, preserving negative totals, original departed sellers
+  and stable residuals. Explicit zero/NONE cancellation supported; reused sources,
+  missing/mismatched/orphaned payouts fail closed. Composer accepts payout evidence,
+  includes refund-only staff and rejects stale approval after payout revision changes.
+  New service: `apps/api/src/services/payroll-close-refunds.ts`; integration in
+  cash/input resolvers, 12 new refund/composition tests. Focused 150/150; API
+  typecheck/lint/build pass (saved exits 0), formatting/whitespace pass. Logs:
+  `/tmp/cp005-refund-{tests,types,lint,build}.log` and `.exit` markers.
+  Tests used disabled dotenv and an unusable loopback DB URL; no DB queries or
+  browser acceptance. No database operations, migrations, activation or deployment.
+  All-database pause remains. Existing refund capture does not itself prove actual
+  payout; independent settlement authenticity/completeness remains the loader's job.
+  Next: generic reversal cash reconciliation and authoritative source/metric/payout
+  loaders, opening carry/settlement, scoped plan/fallback composition,
+  persistence/locking, correction posting and API/UI acceptance. Real transactional
+  acceptance remains blocked. Do not mark CP-005 DONE or start CP-003A/CP-006.
+
 - **October 29, 2026 — CP-005 SUM_INDIVIDUAL checkpoint:** CP-005 IN PROGRESS;
   latest completed CP-004. Non-DB group resolver derives totals from validated
   source lines using recipient selected rule/types/assignment outlets. Population

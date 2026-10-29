@@ -1600,6 +1600,37 @@ model PayrollConfigurationEvent {
   @@map("payroll_configuration_events")
 }
 
+/// Internal CP-005 frozen close. No earnings activation or public input upload.
+model PayrollClose {
+  id String @id @default(cuid())
+  tenantId String
+  periodKey String
+  revision Int
+  status String
+  state Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, periodKey])
+  @@map("payroll_closes")
+}
+
+/// Append-only complete transition evidence, including each prior/new state hash.
+model PayrollCloseEvent {
+  id String @id @default(cuid())
+  tenantId String
+  periodKey String
+  revision Int
+  action String
+  actorId String
+  reason String
+  previousHash String?
+  stateHash String
+  state Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, periodKey, revision])
+  @@map("payroll_close_events")
+}
+
 model CommissionPeriod {
   id String @id @default(cuid())
   tenantId String

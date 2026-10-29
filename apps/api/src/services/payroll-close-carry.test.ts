@@ -207,7 +207,7 @@ test("returned evidence is a deep copy and resolution does not mutate frozen his
   const result = resolvePayrollCloseCarry(input);
   assert.deepEqual(input, before);
   result.carry!.staff[0].carryForward[0].base = "0.0000";
-  result.carry!.calculation.inputs.staff[0].profile.basicSalary = "9999";
+  result.carry!.calculation!.inputs.staff[0].profile.basicSalary = "9999";
   assert.deepEqual(input, before);
 });
 

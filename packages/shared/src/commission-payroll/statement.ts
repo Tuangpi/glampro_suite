@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { payrollDecimalSchema } from "./contracts.js";
-import { calculatePayrollStaffPeriod, type PayrollStaffPeriodInput } from "./period.js";
+import { type PayrollStaffPeriodInput } from "./period.js";
+import { calculateScopedPayrollStaffPeriod } from "./scoped-period.js";
 import { payrollProfileSchema } from "./settings.js";
 import { add, cmp, div, exact, fixed, mul, neg, sum, ZERO } from "./decimal.js";
 
@@ -44,7 +45,7 @@ export function assemblePayrollStatement(raw: PayrollStatementInput) {
     throw new Error("Adjustment IDs must be unique.");
   if (adjustments.some((row) => row.staffId !== staff.id))
     throw new Error("Statement contains another staff member's adjustment.");
-  const result = calculatePayrollStaffPeriod(raw.calculation);
+  const result = calculateScopedPayrollStaffPeriod(raw.calculation);
   const total = (kind: PayrollAdjustment["kind"]) =>
     sum(adjustments.filter((row) => row.kind === kind).map((row) => exact(row.amount)));
   // Round salary components independently, so displayed statement lines reconcile to the cent.

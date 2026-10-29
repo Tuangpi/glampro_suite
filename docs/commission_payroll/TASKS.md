@@ -337,6 +337,82 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Isolated persistence/scoped carry checkpoint (October 29): internal tenant-locked
+  close store, expected revisions, atomic immutable audit/snapshots, own-data reads,
+  payout races and reasoned next-open-month monetary correction verified with a
+  synthetic loader in the authorized disposable DB. Scoped plan/fallback statement
+  composition and audited supplied carry settlement added; calculation `cp-005-v2`.
+  Combined focused 211/211, shared 302/302, existing UI regression 40/40, API
+  build/types/lint, shared lint and web types passed. See `CLOSE_ACCEPTANCE.md`.
+  No authoritative loader, close API/UI or source-base posting integration yet;
+  full acceptance still pending. No production access, activation or deployment.
+- Authorization update (October 29): user approved new isolated disposable DB
+  implementation/migrations/acceptance only. Existing DBs, production access,
+  activation and deployment remain forbidden. Isolated internal persistence and
+  synthetic-loader acceptance underway; this is not full authoritative acceptance.
+- First-close/approval-integrity checkpoint (October 29): explicit audited supplied
+  opening inventory replaces a missing previous close only for an asserted first
+  close. Exact nonpositive component/fallback debt and departed staff preserved;
+  missing evidence, duplicate scope, positive balances, prior-close conflicts,
+  timezone/boundary mismatches and unmapped debt fail closed. Opening revisions
+  reject stale approval. Approval replays draft outputs and rejects snapshot
+  tampering or approval before calculation. Eleven added tests; focused 207/207,
+  shared 298/298, API typecheck/lint/build passed. No DB operations. Authoritative
+  first-close/settlement loaders, carry settlement, scoped composition, persistence/
+  locks/corrections/API/UI remain. Mandatory transactional/race acceptance is blocked
+  by the existing DB pause, not waived by supplied-record tests.
+- Ordinary returned-void checkpoint (October 29): full service/product supplied
+  cash returns reconcile original sale-line identity, complete supplied inventory,
+  historical shares and exact reversals. Current collection overlap checks sale,
+  item type, amounts, outlet and shares; same-month returns net to zero. Composer
+  retains departed debt and rejects stale disposition approval. Ten added tests;
+  focused 196/196 (close/preview-inputs/correction-period/package-void), API
+  typecheck/lint/build passed. No DB operations. Cancelled-settlement evidence,
+  authoritative loaders and remaining CP-005 acceptance remain pending.
+- Returned-cash collection-void checkpoint (October 29): independent settled
+  payouts/allocations reconcile full package/value-package returns against original
+  collected net/GST, staff splits and exact reversals. Subtract net once; same-month
+  collections/returns net to zero. Frozen evidence rejects stale approval. Nine new
+  tests; focused 192/192, API typecheck/lint/build and format/whitespace pass.
+  Supplied records only; ordinary returned voids, partial/cancelled-settlement cash,
+  authoritative loaders and remaining carry/scoped composition/persistence/API/UI
+  acceptance remain. No DB operations; CP-005 remains IN PROGRESS.
+- No-cash sale-void checkpoint (October 29): explicit independent NO_MOVEMENT
+  evidence reconciles complete supplied sale-line/collection reversal identities,
+  timing/outlets and exact source negation. Keeps original collected cash intact;
+  freezes disposition revisions and preserves departed staff/debt. Conflicting
+  refunds, missing or uncertain cash evidence fail closed. Ten new tests; focused
+  183/183, API typecheck/lint/build and format/whitespace pass. Supplied records
+  only; returned/cancelled-settlement void cash, authoritative loaders, settlement,
+  scoped composition, persistence/locking/corrections/API/UI acceptance remain.
+  All DB operations paused; CP-005 remains IN PROGRESS.
+- Ordinary-sale refund checkpoint (October 29): full service/product refund cash
+  reconciles independent tender/settlement totals, GST, original line allocations,
+  source-time sellers and exact reversal identities. Net cash subtracts once;
+  frozen revisions reject stale approval and departed staff/debt remain included.
+  Partial refunds, collection/void cash and conflicting no-cash assertions fail
+  closed. Thirteen new tests; focused 173/173, API typecheck/lint/build and
+  formatting/whitespace pass. Supplied-record validation only; authoritative
+  funding/settlement/loading and remaining carry/composition/persistence/API/UI
+  acceptance remain. All database operations paused; CP-005 not DONE.
+- Non-cash reversal checkpoint (October 29): independent zero-money operational
+  evidence now permits exact redemption/value-spend/session-correction reversals
+  without subtracting commission bases from cash. Original identities/lineage,
+  date/outlet and frozen revision are checked; missing/foreign/duplicate/mismatched
+  evidence fails closed. Composer preserves departed staff/debt and rejects stale
+  approval on operational revision changes. Ten new tests; focused 160/160,
+  API typecheck/lint/build and formatting/whitespace pass. Supplied records only;
+  sale-line/collection cash reversals, authoritative loaders and remaining close
+  persistence/settlement/API/UI acceptance remain. All database operations paused.
+- Refund cash checkpoint (October 29): package/value-package refunds require
+  independent payout and original allocation/seller reconciliation; subtract net
+  payouts from exact staff/outlet cash, including negative totals and departed staff.
+  Explicit zero/NONE cancellation supported; payout revisions freeze with inputs
+  and invalidate stale approval. Generic reversals still fail closed. Twelve new
+  tests; focused 150/150, API typecheck/lint/build, formatting/whitespace pass.
+  Supplied-record validation only; authoritative settlement/loading, generic reversal
+  reconciliation, carry/settlement, scoped composition, persistence/locking,
+  correction posting and API/UI/transactional acceptance remain. All DB work paused.
 - SUM_INDIVIDUAL checkpoint (October 29): derive selected-rule eligible totals
   across all credited staff with assignment/outlet scope, negative/fixed/excluded
   activity and retained population identities. Composer verifies assertions and

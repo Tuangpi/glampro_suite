@@ -103,6 +103,42 @@ test("manual adjustments invalidate drafts and survive repeated calculation", ()
   );
 });
 
+test("approval rejects altered frozen draft inputs or outputs even with an unchanged input hash", () => {
+  for (const change of ["input", "salary", "carry", "missing", "extra"]) {
+    const draft = calculated();
+    const originalHash = draft.calculation!.inputHash;
+    if (change === "input") draft.calculation!.inputs.staff[0].profile.basicSalary = "9999";
+    if (change === "salary") draft.calculation!.statements[0].payroll.takeHome = "9999.00";
+    if (change === "carry")
+      draft.calculation!.statements[0].result.fallbackCarryCommission = "-99.0000000000";
+    if (change === "missing") draft.calculation!.statements = [];
+    if (change === "extra")
+      draft.calculation!.statements.push(structuredClone(draft.calculation!.statements[0]));
+    assert.equal(draft.calculation!.inputHash, originalHash);
+    assert.throws(
+      () => approvePayrollClose(draft, 1, inputs(), owner, at, "Reviewed close"),
+      /snapshot changed/,
+      change,
+    );
+    assert.equal(draft.status, "CALCULATED");
+    assert.equal(draft.approval, null);
+  }
+});
+
+test("approval cannot predate calculation even after the month ends", () => {
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    inputs(),
+    manager,
+    "2026-10-02T00:00:00.000Z",
+  );
+  assert.throws(
+    () => approvePayrollClose(draft, 1, inputs(), owner, at, "Reviewed close"),
+    /predate calculation/,
+  );
+});
+
 test("salary, attribution, source, carry and denominator changes reject stale approval", () => {
   const mutations: ((value: PayrollCloseInputs) => void)[] = [
     (value) => {

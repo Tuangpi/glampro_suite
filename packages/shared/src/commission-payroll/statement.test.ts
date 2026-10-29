@@ -76,6 +76,131 @@ test("zero and negative collection have no ratio or alert", () => {
   }
 });
 
+test("scoped statement combines plan and source-rate fallback once without duplicating salary", () => {
+  const input = fixture();
+  input.calculation.joinDate = "2020-01-01";
+  input.calculation.plan = {
+    planId: "hair",
+    versionId: "v1",
+    definition: { ...hairPayrollExample(), incentives: [] },
+    outletIds: ["branch"],
+  };
+  input.calculation.lines.push({
+    ...input.calculation.lines[0],
+    id: "fallback",
+    outletId: "other",
+    baseAmount: "500",
+    fallbackRatePct: "20",
+  });
+  const result = assemblePayrollStatement(input);
+  const planOnly = assemblePayrollStatement({
+    ...input,
+    calculation: { ...input.calculation, lines: [input.calculation.lines[0]] },
+  });
+  assert.equal(Number(result.payroll.commission) - Number(planOnly.payroll.commission), 100);
+  assert.equal(Number(result.payroll.takeHome) - Number(planOnly.payroll.takeHome), 100);
+  assert.equal(
+    result.result.components.filter((row) => row.componentKey === "flat_rules").length,
+    1,
+  );
+  assert.equal(result.result.planId, "hair");
+  assert.equal(result.inputs.calculation.lines.length, 2);
+});
+
+test("scoped fallback debt stays exact and is never offset against plan earnings", () => {
+  const input = fixture();
+  input.calculation.joinDate = "2020-01-01";
+  input.calculation.plan = {
+    planId: "hair",
+    versionId: "v1",
+    definition: { ...hairPayrollExample(), incentives: [] },
+    outletIds: ["branch"],
+  };
+  input.calculation.lines.push({
+    ...input.calculation.lines[0],
+    id: "negative-fallback",
+    outletId: "other",
+    baseAmount: "-100",
+    fallbackRatePct: "10",
+  });
+  const first = assemblePayrollStatement(input);
+  assert.equal(first.result.fallbackCarryCommission, "-10.0000000000");
+  input.calculation.fallbackCarryCommission = first.result.fallbackCarryCommission;
+  input.calculation.lines[1].baseAmount = "20";
+  input.calculation.lines[1].fallbackRatePct = "20";
+  assert.equal(assemblePayrollStatement(input).result.fallbackCarryCommission, "-6.0000000000");
+  input.calculation.lines.pop();
+  assert.throws(() => assemblePayrollStatement(input), /explicit settlement/);
+});
+
+test("scoped statements reject duplicate cross-partition sources and unknown outlets", () => {
+  const input = fixture();
+  input.calculation.joinDate = "2020-01-01";
+  input.calculation.plan = {
+    planId: "hair",
+    versionId: "v1",
+    definition: { ...hairPayrollExample(), incentives: [] },
+    outletIds: ["branch"],
+  };
+  input.calculation.lines.push({ ...input.calculation.lines[0], outletId: "other" });
+  assert.throws(() => assemblePayrollStatement(input), /Duplicate/);
+  input.calculation.lines.pop();
+  input.calculation.lines[0].outletId = null;
+  assert.throws(() => assemblePayrollStatement(input), /outlet attribution/);
+});
+
+test("scoped fixed awards retain one component and incentives use only assigned outlets", () => {
+  const input = fixture();
+  input.calculation.joinDate = "2020-01-01";
+  input.calculation.plan = {
+    planId: "hair",
+    versionId: "v1",
+    definition: {
+      ...hairPayrollExample(),
+      incentives: [
+        {
+          key: "target",
+          name: "Assigned target",
+          type: "INDIVIDUAL_TARGET",
+          groupMetric: "SALON_CASH",
+          individualMetricTypes: ["SVC"],
+          scope: "SALON",
+          rows: [{ individualTarget: "1500", amount: "50" }],
+        },
+      ],
+    },
+    outletIds: ["branch"],
+  };
+  input.calculation.lines.push({
+    ...input.calculation.lines[0],
+    id: "outside",
+    outletId: "other",
+    baseAmount: "1000",
+  });
+  for (const outletId of ["branch", "other"])
+    input.calculation.lines.push({
+      ...input.calculation.lines[0],
+      id: `fixed-${outletId}`,
+      outletId,
+      mode: "FIXED",
+      fixedCommission: "5",
+      baseAmount: "0",
+    });
+  const result = assemblePayrollStatement(input);
+  assert.equal(result.payroll.incentive, "0.00");
+  const awards = result.result.components.filter((row) => row.componentKey === "package_fixed");
+  assert.equal(awards.length, 1);
+  assert.equal(awards[0].amount, "10.00");
+  assert.equal(result.result.incentives[0].individualMetric, "1000.0000");
+  for (const line of input.calculation.lines.filter((line) => line.mode === "FIXED"))
+    line.fixedCommission = "0.005";
+  const fractional = assemblePayrollStatement(input);
+  assert.equal(
+    fractional.result.components.find((row) => row.componentKey === "package_fixed")!.amount,
+    "0.01",
+  );
+});
+
 test("salary component rounding reconciles displayed cents and compares unrounded KPI", () => {
   const input = fixture();
   input.calculation.lines = [];

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { payrollPeriodKeySchema } from "@glampro_suite/shared";
+import { resolvePayrollOpeningCarry, type PayrollOpeningCarry } from "./payroll-close-opening.js";
 import {
   calculatePayrollClose,
   openPayrollClose,
@@ -13,12 +14,13 @@ export interface PayrollCloseCarryRecords {
   periodKey: string;
   /** Null means unavailable, never evidence that opening carry is zero. */
   previous: { id: string; tenantId: string; state: PayrollCloseState } | null;
+  opening?: PayrollOpeningCarry;
 }
 
 /** Validates supplied frozen records only; grants no access and performs no DB reads.
- * Only the immediately preceding approved close can supply carry. Replaying the
+ * Carry requires the preceding approved close or explicit audited cutover evidence. Replaying the
  * frozen inputs checks consistency, not authenticity or database immutability.
- * Opening/cutover carry needs separately audited evidence, not an automatic zero.
+ * Supplied cutover approval is not authentication or proof of first-close eligibility.
  */
 export function resolvePayrollCloseCarry(raw: PayrollCloseCarryRecords) {
   const tenantId = id.parse(raw.tenantId);
@@ -33,6 +35,33 @@ export function resolvePayrollCloseCarry(raw: PayrollCloseCarryRecords) {
     blockers: [code],
     carry: null,
   });
+  if (raw.opening && raw.previous) return unavailable("OPENING_PREVIOUS_CLOSE_CONFLICT");
+  if (raw.opening) {
+    const opening = resolvePayrollOpeningCarry(raw.opening, tenantId, periodKey);
+    const staff = opening.staff;
+    return structuredClone({
+      status: "CARRY_EVIDENCE_READY" as const,
+      earningsActive: false as const,
+      periodKey,
+      previousPeriodKey,
+      blockers: [],
+      carry: {
+        previousCloseId: null,
+        previousCloseRevision: null,
+        approval: opening.approval,
+        calculation: null,
+        opening,
+        staff,
+        requiredStaffIds: staff
+          .filter(
+            (row) =>
+              row.carryForward.some((part) => /[1-9]/.test(part.base + part.units)) ||
+              /[1-9]/.test(row.fallbackCarryCommission),
+          )
+          .map((row) => row.staffId),
+      },
+    });
+  }
   if (!raw.previous) return unavailable("APPROVED_PREVIOUS_CLOSE_UNAVAILABLE");
   if (raw.previous.tenantId !== tenantId)
     throw new Error("Payroll carry contains another salon's close.");
@@ -93,6 +122,7 @@ export function resolvePayrollCloseCarry(raw: PayrollCloseCarryRecords) {
         previousCloseRevision: state.revision,
         approval: state.approval,
         calculation: state.calculation,
+        opening: null,
         staff,
         requiredStaffIds: staff
           .filter((row) => row.carryForward.length > 0 || /^-/.test(row.fallbackCarryCommission))

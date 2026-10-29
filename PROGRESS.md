@@ -2,6 +2,92 @@
 
 ## Current State
 
+- **CP-005 isolated persistence/scoped carry checkpoint, October 29, 2026:**
+  IN PROGRESS; latest completed CP-004. User approved new isolated disposable DB
+  implementation/migrations/acceptance only. Fresh loopback cluster 55485, DB
+  `payroll_close_test`; no existing/production DB access, activation or deployment.
+  Internal locked frozen-close store/atomic immutable audits, payout race protection,
+  owner-only next-open-month monetary correction, audited supplied opening/carry
+  settlement and scoped plan/fallback composition added. Version `cp-005-v2`.
+  Focused 211/211 incl. isolated persistence acceptance; shared 302/302; existing UI
+  regression 40/40; API build/types/lint, shared lint and web typecheck passed.
+  Still missing authoritative loaders, persisted authenticated opening/settlement,
+  source-base correction integration and monthly-close API/UI/full acceptance.
+  See `docs/commission_payroll/CLOSE_ACCEPTANCE.md`. CP-005 is not DONE.
+
+- **CP-005 first-close/approval-integrity checkpoint, October 29, 2026:** IN PROGRESS;
+  latest completed CP-004. Explicit audited supplied opening inventory now composes
+  a first close without inventing previous zero history. Preserves exact component/
+  fallback debt and departed staff; conflicting, missing or unmapped evidence fails
+  closed. Opening revisions reject stale approval. Approval replays draft outputs
+  and rejects snapshot tampering or approval before calculation. Eleven added tests;
+  focused 207/207, shared 298/298, API typecheck/lint/build passed. No DB operations,
+  migrations, activation or deployment. User requested continuation to CP-005 DONE;
+  mandatory persistence/race/transactional/API/UI acceptance remains blocked by the
+  DB pause. Need explicit decision before isolated disposable DB work; production
+  remains unauthorized. See commission-payroll handoff for remaining scope.
+
+- **CP-005 ordinary returned-void checkpoint, October 29, 2026:** IN PROGRESS;
+  CP-004 latest completed. Supplied independent settled payouts/full original
+  external-cash allocations now reconcile service/product returned voids as well
+  as collection voids. Validates sale-line identity, complete supplied inventory,
+  staff splits, exact reversals and current collection sale/type/outlet/shares.
+  Net subtracts once; same-month cash nets to zero. Frozen revisions reject stale
+  approval and retain departed debt. Ten added tests; focused 196/196, API
+  typecheck/lint/build passed. Suite covers payroll-close, preview inputs,
+  correction-period and package-void tests. No DB operations or activation.
+  Next: cancelled-settlement evidence and trusted-loader design; partial/uncertain
+  returns, carry/scoped composition/persistence/corrections/API/UI remain pending.
+
+- **CP-005 returned-cash collection-void checkpoint, October 29, 2026:** IN PROGRESS;
+  CP-004 latest completed. Independent settled payouts/original allocations support
+  full package/value-package collection returns, net/GST/staff reconciliation and
+  same-month zero netting. Frozen revisions reject stale approval; departed debt
+  retained. Nine new tests; focused 192/192, API typecheck/lint/build and format/
+  whitespace pass. Supplied records only; ordinary returned/cancelled-settlement
+  void cash, trusted loaders, carry/scoped composition/persistence/API/UI remain.
+  All DB operations paused; no DB access, migrations, activation or deployment.
+  See commission-payroll handoff for limitations and remaining acceptance.
+
+- **CP-005 no-cash sale-void checkpoint, October 29, 2026:** IN PROGRESS;
+  CP-004 latest completed. Independent NO_MOVEMENT disposition reconciles complete
+  supplied sale-line/collection reversals without erasing original collected cash.
+  Frozen revisions reject stale approval; departed debt preserved. Ten new tests;
+  focused 183/183, API typecheck/lint/build and format/whitespace pass. Supplied
+  records only; returned/uncertain void cash, trusted loaders, carry/settlement,
+  scoped composition, persistence/locks/corrections/API/UI remain. All DB operations
+  paused; no DB access, migrations, activation or deployment. See CP handoff.
+
+- **CP-005 ordinary-sale refund checkpoint, October 29, 2026:** IN PROGRESS;
+  CP-004 latest completed. Full service/product refund cash reconciles independent
+  payout tenders/GST/net, original line allocations/sellers and exact reversals.
+  Frozen settlement revisions reject stale approval; departed staff/debt retained.
+  Thirteen new tests; focused 173/173, API typecheck/lint/build, format/whitespace
+  pass. Supplied records only; collection/void cash, authoritative loaders,
+  carry/settlement, scoped composition, persistence/locks/corrections/API/UI remain.
+  All DB operations paused; no DB access, migrations, activation or deployment.
+  See commission-payroll handoff for remaining acceptance and limitations.
+
+- **CP-005 non-cash reversal checkpoint, October 29, 2026:** IN PROGRESS;
+  CP-004 latest completed. Independent zero-money operational evidence permits
+  exact redemption/value-spend/session-correction reversals without changing cash.
+  Frozen revisions reject stale approval; departed staff/debt preserved. Ten new
+  tests; focused 160/160, API typecheck/lint/build and format/whitespace pass.
+  Supplied-record validation only; sale cash reversal reconciliation, authoritative
+  loaders, settlement/scoped composition, persistence/locks/corrections/API/UI remain.
+  All DB operations paused; no DB access, migrations, activation or deployment.
+  See commission-payroll handoff for details and remaining acceptance.
+
+- **CP-005 refund cash checkpoint, October 29, 2026:** IN PROGRESS; CP-004 latest
+  completed. Non-DB package/value-package payout and original allocation/seller
+  reconciliation subtracts net refunds from staff/outlet cash, preserving negative
+  totals and departed staff. Frozen payout revisions reject stale approval.
+  Twelve new tests; focused 150/150, API typecheck/lint/build pass. Supplied-record
+  validation only; generic reversal cash, authoritative loaders, carry/settlement,
+  scoped composition, persistence/locks/corrections/API/UI acceptance remain.
+  All DB operations paused; no DB access, migrations, activation or deployment.
+  See commission-payroll handoff for limitations and remaining acceptance.
+
 - **CP-005 SUM_INDIVIDUAL checkpoint, October 29, 2026:** IN PROGRESS; CP-004
   latest completed. Added exact group-base population resolver and composer
   reconciliation using selected rule/assignment scope, including departed and

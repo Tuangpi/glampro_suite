@@ -8,6 +8,164 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 scoped statements and internal persistence (October 29, 2026)
+
+- Compose one statement from disjoint assigned-outlet plan and out-of-scope
+  source-rate fallback calculations. Plan incentives exclude fallback activity;
+  salary/collection/adjustments appear once. Pool FIXED source awards across both
+  paths before cent rounding; preserve reserved component identities once.
+  Keep fallback debt separate from plan earnings; no silent debt loss when fallback
+  activity disappears. Calculation version changes to `cp-005-v2`; incompatible
+  historical replay fails closed, not silently recomputed under changed semantics.
+- Supplied audited settlements may map/write off component carry or explicitly
+  write off exact fallback debt, bound to the resolved prior staff-balance hash.
+  No inferred cash settlement, partial write-off or unauthenticated public upload.
+- Internal close persistence shares tenant source/configuration lock and optimistic
+  revision checks. Append complete states with chained hashes atomically; approved
+  entitlement and audit rows are immutable. Separate payout records change only
+  payout/revision. DB constraints reject state-only or orphan audit commits.
+  Loader is injected only by server code; no default or public write route exists.
+- Owner-only monetary correction may append a linked adjustment to the next open
+  month, preserving the original approved snapshot and rejecting backdating. This
+  does not replace immutable source-base correction capture/operational integration.
+- Isolated synthetic-loader DB tests verify persistence, not authoritative cash
+  loading or complete CP-005 acceptance. See `CLOSE_ACCEPTANCE.md`.
+
+### CP-005 disposable database authorization (October 29, 2026)
+
+- User explicitly authorized CP-005 work on a **new isolated disposable test
+  database**, including test migrations and acceptance. This supersedes the all-DB
+  pause only for that environment. Existing databases, production DB access,
+  activation and deployment remain unauthorized.
+- Created a fresh local PostgreSQL cluster on loopback port 55485, database
+  `payroll_close_test`, with dotenv disabled and explicit CLI/runtime URLs. Never
+  reuse application database credentials or existing cluster data. The isolated
+  cluster path is saved locally at `/tmp/cp005-disposable-cluster.path`.
+
+### CP-005 first-close opening carry and approval integrity (October 29, 2026)
+
+- A first close may consume explicit audited opening inventory instead of a
+  fabricated preceding close. Require tenant/month/timezone, exact salon-local
+  effective boundary, positive revision, complete-inventory/first-close assertions,
+  owner approval identity/reason/time and JSON provenance. Approval must be no later
+  than the effective boundary. No preceding record plus no opening remains unavailable;
+  supplying both conflicts, even if the preceding record is unapproved.
+- Opening debt retains original stable component keys and nonpositive four-decimal
+  bases/units or exact ten-decimal fallback commission. Reject positive balances,
+  repeated staff/components and missing evidence. Explicit reviewed empty inventory
+  permits zero; missing inventory never implies zero. Keep departed debt staff and
+  freeze sorted detached evidence for stale approval. Unmapped debt still blocks
+  calculation; no implicit plan-switch settlement or write-off is added.
+- These records are internal supplied facts, not proof of eligibility, complete
+  historical debt or authenticated approval. A trusted locked loader must establish
+  these facts before operational use. No cutover, DB operation or activation occurs.
+- Before approving a draft, replay statements from current resolved inputs and
+  compare both stored inputs and outputs, in addition to the versioned input hash.
+  Reject altered snapshots and approval timestamps preceding calculation.
+
+### CP-005 ordinary returned-void cash extension (October 29, 2026)
+
+- Extend the bounded RETURNED contract below to fully returned ordinary service/
+  product sales. Require independent settled payouts and full original external-cash
+  allocation evidence per original sale line, including net/GST/gross, historical
+  shares and evidence revisions. Match SERVICE/PRODUCT to SVC/PRD original bases,
+  sale-line source identity and exact reversals. No payout is inferred from bases.
+- Require complete supplied original/reversal inventory. A returned void may use
+  ordinary SALE_LINE or package COLLECTION sources, not a mix. Existing refund/
+  void conflicts remain unavailable. Partial returns, cancelled authorizations and
+  uncertain settlement remain unsupported; NO_MOVEMENT is not inferred from them.
+- Current collection overlaps must match sale, item type, sale-line identity,
+  net/GST/gross, outlet and historical staff shares. Subtract returned net once;
+  preserve same-month positive cash so full returns net to zero. Freeze all supplied
+  evidence for stale approval; retain departed staff and negative carry.
+- This supersedes only the earlier ordinary-return exclusion. Settlement timing/
+  authenticity, historical allocation provenance, complete cash inventory and
+  prior/cross-workflow payout exclusivity still require authoritative loaders.
+  No loader, operational write, payout, database operation or activation is added.
+
+### CP-005 fully returned collection void cash (October 29, 2026)
+
+- Accept RETURNED void disposition only with independent settled payout identities/
+  tenders, exact net/GST/gross and complete original package/value-package collection
+  allocations. Each collected allocation must reconcile fully to original source
+  bases and historical staff splits; exact source reversal checks remain mandatory.
+- Subtract returned net cash once in the requested void month. Preserve original
+  same-month positive collections, so full collection/return nets to zero. Validate
+  overlapping current allocation identities and amounts; retain prior-month lineage
+  independently. Require known cash outlet and freeze payout/allocation revisions.
+- This bounded contract excludes ordinary-sale returned voids, partial returns,
+  mixed unsupported activity and cancelled authorizations/unsettled cash. Those
+  remain unavailable, not presumed refunds or zero. Independent settlement timing,
+  original sale-line identity for historical allocations, complete money inventory,
+  and prior/cross-workflow payout exclusivity remain trusted-loader obligations.
+  No actual payout, void write, database access or operational activation is added.
+
+### CP-005 no-cash sale voids (October 29, 2026)
+
+- Existing sale voids reverse payroll captures but do not independently record a
+  payout. Neither VOID status nor negative commission bases proves money returned.
+  Accept unchanged cash only with explicit independent NO_MOVEMENT disposition,
+  zero net/GST/gross and frozen operational/cash-disposition revisions.
+- Require complete supplied SALE_LINE/COLLECTION original and reversal identities
+  for the sale, exact source reversal validation, sale/outlet scope and chronological
+  month evidence. Preserve same-month original collections; do not erase external
+  cash merely because operational sale activity was voided.
+- Conflicting refund/no-cash claims fail closed. Returned, cancelled-settlement or
+  uncertain void cash remains unavailable pending independently reconciled money
+  effects. A trusted loader must prove disposition authenticity, complete source/
+  payout inventory and absence of cross-workflow refunds, including prior months.
+  This contract neither performs a void nor introduces database/payout operations.
+
+### CP-005 full ordinary-sale refund cash (October 29, 2026)
+
+- Match the existing bounded refund workflow: full, externally funded service/product
+  sales only. Supplied independent settlement records must reconcile payout tenders,
+  net/GST/gross totals and complete original line allocations. Do not infer cash
+  from reversal bases or extend this to partial refunds, package collection voids,
+  redemption-funded sales or unsupported payout methods.
+- Each allocation identifies the original sale-line capture and its exact reversal.
+  Original source-time staff splits and full net line bases must reconcile; subtract
+  those net amounts once, excluding GST. Payout evidence may precede source capture
+  within the same requested month because existing writers timestamp them separately;
+  original activity must predate payout and reversal cannot predate payout.
+- Retain independent settlement/allocation revisions in frozen inputs. Conflicting
+  cash/no-cash assertions, reused refund/sale/line/reversal identities and incomplete
+  supplied line inventories fail closed. Trusted loading must still prove complete
+  funding, inventory, authentic settlement and no duplicate cross-workflow payouts.
+  No source workflow, DB schema, payout execution or operational permission changes.
+
+### CP-005 non-cash usage reversals (October 29, 2026)
+
+- REVERSAL is not synonymous with customer payout: source writers also reverse
+  redemption, value-spend and session-correction activity. Those bases must not
+  automatically subtract from cash. Require independent operational no-cash
+  evidence with original operation/event identity, sale/outlet, timestamp, SGD,
+  explicit zero net/tax/gross and a frozen operational revision.
+- Validate original source lineage and exact negative base/unit evidence before
+  accepting zero cash. Missing evidence is unavailable, not assumed zero. Restrict
+  this contract to REDEMPTION, VALUE_SPEND and CORRECTION originals; SALE_LINE and
+  COLLECTION reversals still require separately reconciled actual money effects.
+- This supplied-record contract does not prove operational authenticity, complete
+  reversal inventory or absence of a separate payout. Those checks belong to the
+  trusted loader. No new payout, source write or DB access is introduced.
+
+### CP-005 refund cash reconciliation (October 29, 2026)
+
+- Package/value-package cash metrics subtract independently evidenced settled net
+  payouts in the refund month, excluding GST. Preserve negative staff/outlet totals;
+  do not floor denominators to zero or substitute commission earnings for cash.
+- Reconcile payout identity, date, tender and net/tax/gross against captured refund
+  evidence. Require original collection allocation/sale-line amounts and source-time
+  seller shares; refund bases must exactly negate the split refunded net amount.
+  One original collection source cannot fund multiple package cancellation events.
+- Zero/NONE cancellation needs explicit independent zero-payout evidence. It is not
+  inferred from missing payout records. Preserve payout revisions in frozen inputs.
+- Supplied records are not proof of settlement, completeness or authenticity. Trusted
+  loading must establish those facts. Existing refund services record no provider
+  payout; their event alone cannot satisfy this new independent evidence contract.
+  Generic reversals remain unavailable until independent cash effects are reconciled.
+  No database access or acceptance is authorized by these non-DB changes.
+
 ### CP-005 sum-individual population (October 29, 2026)
 
 - Under the delegated policy defaults, SUM_INDIVIDUAL means the sum of eligible
