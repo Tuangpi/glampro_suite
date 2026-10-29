@@ -5,6 +5,7 @@ import { currentOutletId, currentScope } from "../lib/tenant-context.js";
 import { conflict, forbidden, notFound } from "../lib/http-error.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
+import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import {
   adjustPayrollClose,
   approvePayrollClose,
@@ -21,14 +22,14 @@ import {
 export type PayrollCloseTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 /** Server-owned loader only. Must resolve complete authoritative inputs in this
  * transaction while the tenant source/configuration lock is held. Never accept
- * this function or its returned records from an HTTP request. No default loader. */
+ * this function or its returned records from an HTTP request. */
 export type PayrollCloseLoader = (
   tx: PayrollCloseTransaction,
   state: PayrollCloseState,
 ) => Promise<PayrollCloseInputs>;
 type Json = Parameters<PayrollCloseTransaction["payrollClose"]["create"]>[0]["data"]["state"];
 
-async function verifiedState(tx: PayrollCloseTransaction, periodKey: string) {
+export async function verifiedPayrollClose(tx: PayrollCloseTransaction, periodKey: string) {
   const stored = await tx.payrollClose.findFirst({ where: { periodKey } });
   if (!stored) return null;
   const audit = await tx.payrollCloseEvent.findFirst({
@@ -95,7 +96,7 @@ async function transition(
       });
       if (resolveTenantStatus(tenant.status, subscription?.endDate ?? null) !== "ACTIVE")
         throw forbidden("Payroll close requires a writable salon.");
-      const verified = await verifiedState(tx, periodKey);
+      const verified = await verifiedPayrollClose(tx, periodKey);
       const stored = verified?.stored;
       const state = verified?.state ?? openPayrollClose(periodKey);
       if (state.revision !== expectedRevision)
@@ -134,7 +135,7 @@ async function transition(
 export function calculateStoredPayrollClose(
   periodKey: string,
   revision: number,
-  load: PayrollCloseLoader,
+  load: PayrollCloseLoader = loadAuthoritativePayrollCloseInputs,
 ) {
   return transition(
     periodKey,
@@ -150,7 +151,7 @@ export function approveStoredPayrollClose(
   periodKey: string,
   revision: number,
   reason: string,
-  load: PayrollCloseLoader,
+  load: PayrollCloseLoader = loadAuthoritativePayrollCloseInputs,
 ) {
   return transition(periodKey, revision, "APPROVE", reason, true, async (tx, state, user) =>
     approvePayrollClose(
@@ -205,7 +206,7 @@ export function correctStoredPayrollClose(
     adjustment.reason,
     true,
     async (tx, state, user) => {
-      const original = await verifiedState(tx, originalPeriodKey);
+      const original = await verifiedPayrollClose(tx, originalPeriodKey);
       if (!original || original.state.status !== "APPROVED")
         throw conflict("Correction requires an original approved payroll close.");
       const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: context().tenantId } });
@@ -253,7 +254,7 @@ export async function readStoredPayrollStatement(period: string, staffId: string
     await lockCommissionConfiguration(tx, scope.tenantId);
     const user = await tx.user.findFirst({ where: { id: scope.actorId, disabled: false } });
     if (!user) throw forbidden("Payroll actor unavailable.");
-    const verified = await verifiedState(tx, periodKey);
+    const verified = await verifiedPayrollClose(tx, periodKey);
     if (!verified) throw notFound("Payroll close not found.");
     return readFrozenPayrollStatement(verified.state, staffId, {
       id: user.id,

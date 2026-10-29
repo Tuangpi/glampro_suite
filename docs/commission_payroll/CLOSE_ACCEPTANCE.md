@@ -33,6 +33,34 @@ Applied the existing migrations, then three new migrations:
 
 ## Implemented and checked
 
+### Authoritative input-loading continuation — October 29
+
+- Internal calculation/approval now default to a server-owned transactional loader.
+  Explicit loader injection remains an internal test seam, never HTTP input. There
+  is still no public close route or earnings activation.
+- First supported slice: ordinary non-FOC service/product operational sale lines,
+  recorded non-gateway external payments, outstanding-payment identity checks,
+  independent complete month inventories, historical configuration, audit-verified
+  preceding approved carry and cross-close source exclusion. Exact-cent cumulative
+  collection allocation is replayed against operational purchase tax, not bases.
+  Ordinary base amounts, units/types/staff reconcile against sale-line attribution.
+  Cash attribution requires historical allocation sellers matching the original line.
+- Unsupported package purchase/collection, redemption/value spend, prepaid tenders,
+  FOC and refund/void/correction workflows fail closed, including independent usage,
+  refund and void inventory without captures. Missing persisted opening cannot become
+  zero. This is **not the complete authoritative loader acceptance** in item 1 below;
+  package refunds also still lack independent payout inventory, and fallback-rate/
+  classification provenance needs expanded operational acceptance before activation.
+- New isolated DB acceptance verifies the default loader's ordinary calculation,
+  missing-capture rollback without close/audit insertion, historical-profile stale
+  approval rejection, recalculation and approved snapshot immutability. It explicitly
+  bootstraps a synthetic preceding close, not authenticated opening acceptance.
+- API typecheck/build/lint passed. Final focused suite:
+  **221/221 passed, zero skipped**, including both opt-in DB tests; shared **302/302**.
+  Logs `/tmp/cp005-loader-{combined,shared,types,lint,build}.log`
+  and matching exit markers. No schema changes/migrations, existing DB access,
+  browser acceptance, activation or deployment in this continuation.
+
 - Explicit supplied opening inventory supports first-close composition without a
   fabricated previous close. Missing evidence still fails closed. Frozen opening
   debt preserves departed staff, stable component keys and ten-decimal fallback

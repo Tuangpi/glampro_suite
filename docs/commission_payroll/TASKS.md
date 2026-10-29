@@ -337,6 +337,15 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Active continuation (October 29): implement server-owned transactional input
+  loading with independent operational inventory, historical configuration, verified
+  prior carry and fail-closed unsupported evidence. CP-003A/CP-006 remain untouched.
+- Input-loading checkpoint: internal store defaults to the server-owned ordinary
+  sale/payment loader; complete independent inventories, base/attribution/tax/cash
+  reconciliation, verified prior carry and historical selection added. Unsupported
+  packages/usage/refund/void/FOC/prepaid/correction fail closed. Persisted opening/
+  settlement and remaining operational provenance are still outstanding; this does
+  not complete CP-005. See `CLOSE_ACCEPTANCE.md` and latest handoff for actual tests.
 - Isolated persistence/scoped carry checkpoint (October 29): internal tenant-locked
   close store, expected revisions, atomic immutable audit/snapshots, own-data reads,
   payout races and reasoned next-open-month monetary correction verified with a

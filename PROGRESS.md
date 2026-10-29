@@ -2,6 +2,21 @@
 
 ## Current State
 
+- **CP-005 authoritative ordinary-input checkpoint, October 29, 2026:** IN PROGRESS;
+  latest completed CP-004. Server-owned transactional loader now defaults internal
+  calculation/approval; ordinary operational bases, attribution, recorded payments,
+  exact GST/cash, historical configuration and verified prior carry reconcile.
+  Complete independent inventories detect missing captures. Unsupported package/
+  prepaid/usage/FOC/refund/void/correction evidence fails closed; no inferred opening
+  zero. Focused **221/221**, zero skips (both isolated DB tests), shared **302/302**,
+  API typecheck/build/lint pass. See `docs/commission_payroll/CLOSE_ACCEPTANCE.md`
+  and feature handoff for limits and logs. Continue CP-005 operational provenance/
+  loaders and persisted authenticated opening/settlement, then source-base posting
+  and close API/UI. CP-003A/CP-006 untouched; CP-005 not DONE. No migrations,
+  existing DB access, activation, deployment, commit or push.
+
+## Previous checkpoint history
+
 - **CP-005 isolated persistence/scoped carry checkpoint, October 29, 2026:**
   IN PROGRESS; latest completed CP-004. User approved new isolated disposable DB
   implementation/migrations/acceptance only. Fresh loopback cluster 55485, DB

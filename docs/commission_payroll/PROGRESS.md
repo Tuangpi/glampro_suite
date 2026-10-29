@@ -2,6 +2,27 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — authoritative ordinary-input checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Internal calculation/approval
+  now default to a server-owned, tenant-locked transactional loader. Independent
+  complete sale/payment/usage/refund/void inventories prevent omitted captures from
+  becoming empty payroll. Ordinary non-FOC bases, staff/units, recorded cash,
+  cumulative GST allocation, historical configuration, prior audited carry and
+  cross-close exclusion reconcile. Unsupported packages, prepaid, FOC, usage,
+  refund/void/correction workflows fail closed; no fabricated opening zero.
+- Tested: focused **221/221**, zero skips, including default-loader isolated DB
+  rollback/stale approval/recalculation/immutability and existing persistence races;
+  shared **302/302**; API typecheck/build/lint passed. Logs/exit markers:
+  `/tmp/cp005-loader-{combined,shared,types,build,lint}.{log,exit}`.
+- Next: continue CP-005 complete operational loading/provenance and persisted
+  authenticated opening/settlement; then source-base corrections and close API/UI.
+  Synthetic preceding close used only to bootstrap DB acceptance; first-close and
+  full payroll acceptance are not claimed. No migrations, existing DB access,
+  activation, deployment, commit or push. See `CLOSE_ACCEPTANCE.md` for limits.
+  Authorized disposable cluster stopped cleanly after checks; data retained.
+
+## Previous current-state checkpoint
+
 - **CP-005 IN PROGRESS — isolated persistence/scoped carry checkpoint (October 29).**
   Latest completed CP-004. User authorized new isolated disposable DB migrations/
   acceptance only; existing DBs, production access, activation and deployment remain
