@@ -337,6 +337,16 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- FOC operational-economics checkpoint (October 29): original checkout writes
+  immutable independent sale-line snapshot; default close reconciles full FOC list
+  price/quantity/performer shares/category and historical rates, never receipt cash
+  or current catalogue. Missing original evidence/mixed usage/prepaid fail closed.
+  Focused plus tenancy 241/241, zero skips (three DB tests), regressions 78/78,
+  shared 302/302; API types/build/lint/schema checks passed. DB-dependent sale suite
+  unavailable at intentionally unreachable URL; isolated checkout acceptance passes.
+  Migration only in authorized disposable DB, then stopped; no backfill/activation.
+  Remaining package/usage/prepaid/refund/void/source corrections/API/UI/full
+  acceptance pending. CP-005 remains IN PROGRESS; see latest handoff.
 - Ordinary rate-provenance checkpoint (October 29): operational writer freezes
   evaluation time/item/category/legacy rate and per-staff selected rate/source/rule.
   Default ordinary loader replays independent immutable rule inventory as of capture;

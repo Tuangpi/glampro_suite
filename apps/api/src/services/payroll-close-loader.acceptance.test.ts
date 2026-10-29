@@ -13,6 +13,8 @@ import {
 } from "./payroll-close-store.js";
 import { payrollInputHash } from "./payroll-close-state.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
+import { createSale } from "./sale.service.js";
+import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 
 test(
   "CP-005 isolated authoritative ordinary close, missing-capture rollback and stale approval",
@@ -163,10 +165,127 @@ test(
             itemId: "synthetic-service",
           });
         });
+        // Actual checkout writes independent immutable FOC economics. Catalogue
+        // member/list prices intentionally differ and later catalogue edits cannot
+        // rewrite the original list-price activity.
+        const catalogue = await prisma.module.upsert({
+          where: { code: "catalogue" },
+          update: {},
+          create: { code: "catalogue", name: "Catalogue", category: "Core", isCore: true },
+        });
+        await prisma.tenantModule.create({ data: { tenantId, moduleId: catalogue.id } });
+        const complimentary = await prisma.service.create({
+          data: {
+            tenantId,
+            name: "FOC independent list",
+            memberPrice: "100",
+            nonmemberPrice: "492",
+          },
+        });
+        const focSale = await runAtOutlet(outlet.id, () =>
+          createSale({
+            lines: [
+              {
+                itemType: "SERVICE",
+                itemId: complimentary.id,
+                quantity: 2,
+                discountPercent: 100,
+                attribution: { performers: shares },
+              },
+            ],
+            payments: [],
+          }),
+        );
+        const checkoutLine = await prisma.saleLine.findFirstOrThrow({
+          where: { saleId: focSale.id },
+        });
+        const checkoutSale = await prisma.sale.findFirstOrThrow({ where: { id: focSale.id } });
+        assert.equal(
+          resolvePayrollFocEconomics(checkoutLine, checkoutSale.soldAt).baseAmount,
+          "984.0000",
+        );
+        await assert.rejects(
+          prisma.saleLine.update({
+            where: { id: checkoutLine.id },
+            data: {
+              payrollEconomics: { listUnitPrice: "1.00" },
+            },
+          }),
+          /immutable/,
+        );
+        await assert.rejects(
+          prisma.saleLine.delete({ where: { id: checkoutLine.id } }),
+          /immutable/,
+        );
+        await prisma.service.update({
+          where: { id: complimentary.id },
+          data: { nonmemberPrice: "999" },
+        });
+        // Historical synthetic receipt exercises default-loader month calculation;
+        // it carries the same shape as the actual independently verified checkout.
+        const historicalFoc = await runAtOutlet(outlet.id, () =>
+          prisma.sale.create({
+            data: {
+              tenantId,
+              outletId: outlet.id,
+              status: "COMPLETED",
+              collectionCurrency: "SGD",
+              totalQuantity: 2,
+              totalAmount: "0",
+              paidAmount: "0",
+              soldAt: at,
+            },
+          }),
+        );
+        const historicalLine = await prisma.saleLine.create({
+          data: {
+            tenantId,
+            saleId: historicalFoc.id,
+            itemType: "SERVICE",
+            itemId: complimentary.id,
+            itemName: "Synthetic historical FOC",
+            quantity: 2,
+            unitPrice: "0",
+            lineTotal: "0",
+            attribution: { performers: shares },
+          },
+        });
+        await assert.rejects(
+          calculateStoredPayrollClose("2026-09", 0),
+          /FOC_OPERATIONAL_LIST_PRICE_NOT_LOADED/,
+        );
+        await prisma.saleLine.update({
+          where: { id: historicalLine.id },
+          data: {
+            payrollEconomics: {
+              ...(checkoutLine.payrollEconomics as object),
+              saleId: historicalFoc.id,
+              saleLineId: historicalLine.id,
+              soldAt: at.toISOString(),
+            },
+          },
+        });
+        await assert.rejects(calculateStoredPayrollClose("2026-09", 0), /INVENTORY_UNAVAILABLE/);
+        await prisma.$transaction(async (tx) => {
+          await lockCommissionConfiguration(tx, tenantId);
+          await appendPayrollSource(tx, {
+            sourceKey: `sale-line:${historicalLine.id}`,
+            sourceType: "SALE_LINE",
+            sourceId: historicalLine.id,
+            saleId: historicalFoc.id,
+            occurredAt: at,
+            reason: "Synthetic historical FOC",
+            commissionType: "FOC",
+            baseAmount: "984.0000",
+            units: "2.0000",
+            shares,
+            itemId: complimentary.id,
+          });
+        });
         const draft = await calculateStoredPayrollClose("2026-09", 0);
         const statement = draft.calculation!.statements.find((row) => row.staff.id === staffId)!;
         assert.equal(statement.inputs.collection, "100.0000");
-        assert.equal(statement.payroll.takeHome, "2000.00");
+        assert.equal(statement.payroll.takeHome, "2049.20");
         // Current legacy staff rate and later-published backdated rules must not
         // rewrite a source whose operational writer froze the earlier selection.
         await prisma.$transaction(async (tx) => {
@@ -211,11 +330,12 @@ test(
         const updated = await calculateStoredPayrollClose("2026-09", 1);
         assert.equal(
           updated.calculation!.statements.find((row) => row.staff.id === staffId)!.payroll.takeHome,
-          "2100.00",
+          "2149.20",
         );
         assert.equal(
-          updated.calculation!.inputs.staff.find((row) => row.staff.id === staffId)!.calculation
-            .lines[0].fallbackRatePct,
+          updated
+            .calculation!.inputs.staff.find((row) => row.staff.id === staffId)!
+            .calculation.lines.find((row) => row.commissionType === "SVC")!.fallbackRatePct,
           "0",
         );
         const approved = await approveStoredPayrollClose(

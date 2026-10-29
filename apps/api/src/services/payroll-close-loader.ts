@@ -23,6 +23,7 @@ import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
 import { resolvePayrollCloseConfiguration } from "./payroll-close-configuration.js";
 import { resolvePayrollCloseGroupMetrics } from "./payroll-close-group-metrics.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
+import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 import { payrollInputHash } from "./payroll-close-state.js";
 import { verifiedPayrollClose, type PayrollCloseLoader } from "./payroll-close-store.js";
 
@@ -155,10 +156,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       if (["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType))
         unavailable("PACKAGE_PURCHASE_WORKFLOW_NOT_LOADED");
       if (!["SERVICE", "PRODUCT"].includes(line.itemType)) continue;
-      // FOC list price and mixed/prepaid quantity coverage need separate immutable
-      // operational economics. Do not trust a capture's self-asserted source snapshot.
       const gross = line.lineTotal.minus(line.voucherDiscountAmount);
-      if (gross.isZero()) unavailable("FOC_OPERATIONAL_LIST_PRICE_NOT_LOADED");
+      const foc = gross.isZero() ? resolvePayrollFocEconomics(line, sale.soldAt) : null;
+      if (foc && !line.taxAmount.isZero()) unavailable("FOC_OPERATIONAL_TAX_MISMATCH");
       const event = events.find(
         (row) => row.sourceType === "SALE_LINE" && row.sourceId === line.id,
       );
@@ -180,27 +180,32 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         const attribution = commissionAttributionSchema.parse(line.attribution);
         const shares = line.itemType === "PRODUCT" ? attribution.sellers : attribution.performers;
         if (!shares) unavailable("ORDINARY_LINE_ATTRIBUTION_UNAVAILABLE");
-        const expected = allocatePayrollSplit(gross.minus(line.taxAmount).toFixed(4), shares);
+        const expected = allocatePayrollSplit(
+          foc?.baseAmount ?? gross.minus(line.taxAmount).toFixed(4),
+          shares,
+        );
         const units = allocatePayrollSplit(`${line.quantity}.0000`, shares);
         if (
           captured.lines.length !== expected.length ||
           captured.lines.some(
             (part) =>
-              part.commissionType !== (line.itemType === "PRODUCT" ? "PRD" : "SVC") ||
+              part.commissionType !== (foc ? "FOC" : line.itemType === "PRODUCT" ? "PRD" : "SVC") ||
               part.baseAmount !==
                 expected.find((entry) => entry.staffId === part.staffId)?.amount ||
               part.units !== units.find((entry) => entry.staffId === part.staffId)?.amount,
           )
         )
           unavailable("ORDINARY_SOURCE_ECONOMICS_MISMATCH");
-        verifyOrdinaryPayrollRateProvenance(
+        const provenance = verifyOrdinaryPayrollRateProvenance(
           event.evidence,
-          line,
+          { ...line, foc: !!foc },
           event.occurredAt,
           event.createdAt,
           commissionRules,
           tenantId,
         );
+        if (foc && provenance.category !== foc.economics.category)
+          unavailable("FOC_OPERATIONAL_CATEGORY_MISMATCH");
       }
       operations.push({
         tenantId,

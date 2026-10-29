@@ -61,6 +61,7 @@ export function loaderFixture() {
     lineTotal: D("109"),
     voucherDiscountAmount: D("0"),
     taxAmount: D("9"),
+    payrollEconomics: null as unknown,
     attribution: { sellers: shares, performers: shares },
   };
   const sale = {
@@ -425,6 +426,174 @@ test("authoritative loader blocks ordinary captured fallback tampering", async (
   const legacy = loaderFixture();
   Reflect.deleteProperty(legacy.data.events[0].evidence, "rateProvenance");
   await assert.rejects(legacy.load(), /RATE_PROVENANCE_UNCONFIRMED/);
+});
+
+function focFixture() {
+  const f = loaderFixture();
+  const line = f.data.sales[0].lines[0];
+  line.lineTotal = D("0");
+  line.taxAmount = D("0");
+  line.quantity = 2;
+  line.payrollEconomics = {
+    version: 1,
+    saleId: "sale",
+    saleLineId: "line",
+    itemId: "service",
+    itemType: "SERVICE",
+    soldAt: f.data.sales[0].soldAt.toISOString(),
+    listUnitPrice: "492.00",
+    netLineAmount: "0.00",
+    originalQuantity: 2,
+    coveredPackageQuantity: 0,
+    category: null,
+  };
+  const capture = f.data.events[0].evidence;
+  Object.assign(capture.lines[0], {
+    commissionType: "FOC",
+    baseAmount: "984.0000",
+    units: "2.0000",
+    fallbackRatePct: "5",
+  });
+  capture.rateProvenance.selections[0].selection = {
+    rate: "5",
+    source: "FOC_DEFAULT",
+    ruleId: null,
+  };
+  f.data.payments = [];
+  f.data.collections = [];
+  return f;
+}
+
+test("FOC independent checkout list price produces activity and default commission without cash", async () => {
+  const f = focFixture();
+  const inputs = await f.load();
+  assert.equal(inputs.staff[0].collection, "0.0000");
+  assert.equal(inputs.staff[0].calculation.lines[0].baseAmount, "984.0000");
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    inputs,
+    owner,
+    "2026-10-01T00:00:00.000Z",
+  );
+  assert.equal(draft.calculation!.statements[0].payroll.takeHome, "2049.20");
+  assert.equal(
+    approvePayrollClose(draft, 1, inputs, owner, "2026-10-01T00:00:00.000Z", "FOC review complete")
+      .status,
+    "APPROVED",
+  );
+});
+
+test("FOC absent, foreign, malformed or changed operational economics cannot be replaced by a capture assertion", async () => {
+  for (const change of [
+    { listUnitPrice: null },
+    { listUnitPrice: "-492.00" },
+    { originalQuantity: 3 },
+    { saleId: "foreign" },
+    { saleLineId: "foreign" },
+    { itemId: "foreign" },
+    { soldAt: "2026-09-14T00:00:00.000Z" },
+    { coveredPackageQuantity: 1 },
+    { netLineAmount: "1.00" },
+    { itemType: "PRODUCT" },
+  ]) {
+    const f = focFixture();
+    Object.assign(f.data.sales[0].lines[0].payrollEconomics as object, change);
+    await assert.rejects(f.load(), /FOC_OPERATIONAL_LIST_PRICE_NOT_LOADED/);
+  }
+  const missing = focFixture();
+  missing.data.sales[0].lines[0].payrollEconomics = null;
+  Object.assign(missing.data.events[0].evidence, { sourceSnapshot: { listUnitPrice: "492.00" } });
+  await assert.rejects(missing.load(), /FOC_OPERATIONAL_LIST_PRICE_NOT_LOADED/);
+  const tax = focFixture();
+  tax.data.sales[0].lines[0].taxAmount = D("1");
+  await assert.rejects(tax.load(), /FOC_OPERATIONAL_TAX_MISMATCH/);
+});
+
+test("FOC captures must reconcile independent price, category, type and performer shares", async () => {
+  for (const change of [
+    { baseAmount: "492.0000" },
+    { units: "1.0000" },
+    { commissionType: "SVC" },
+    { staffId: "other" },
+  ]) {
+    const f = focFixture();
+    Object.assign(f.data.events[0].evidence.lines[0], change);
+    await assert.rejects(f.load(), /ORDINARY_SOURCE_ECONOMICS_MISMATCH/);
+  }
+  const category = focFixture();
+  Object.assign(category.data.sales[0].lines[0].payrollEconomics as object, {
+    category: "department",
+  });
+  await assert.rejects(category.load(), /FOC_OPERATIONAL_CATEGORY_MISMATCH/);
+  const rate = focFixture();
+  rate.data.events[0].evidence.lines[0].fallbackRatePct = "10";
+  await assert.rejects(rate.load(), /RATE_PROVENANCE_UNCONFIRMED/);
+  const missingCapture = focFixture();
+  missingCapture.data.events = [];
+  await assert.rejects(missingCapture.load(), /INVENTORY_UNAVAILABLE/);
+});
+
+test("FOC usage and prepaid tenders remain blocked even with independent list-price evidence", async () => {
+  const usage = focFixture();
+  usage.data.usageCount = 1;
+  await assert.rejects(usage.load(), /SALE_USAGE_COVERAGE_NOT_LOADED/);
+  const prepaid = focFixture();
+  prepaid.data.payments = [
+    { ...loaderFixture().data.payments[0], method: "PREPAID_CREDIT", sale: prepaid.data.sales[0] },
+  ];
+  await assert.rejects(prepaid.load(), /PREPAID_PAYMENT_WORKFLOW_NOT_LOADED/);
+});
+
+test("FOC exact multi-performer residuals are retained with no fabricated cash", async () => {
+  const f = focFixture();
+  const shares = [
+    { staffId: "staff", share: 3333 },
+    { staffId: "other", share: 6667 },
+  ];
+  f.data.sales[0].lines[0].attribution.performers = shares;
+  f.data.staff.push({ tenantId: "salon", id: "other", name: "Other performer", disabled: true });
+  for (const event of f.data.configuration.filter((row) => row.targetId === "staff"))
+    f.data.configuration.push({ ...event, id: `${event.id}-other`, targetId: "other" });
+  const original = f.data.events[0].evidence.lines[0];
+  f.data.events[0].evidence.lines = [
+    { ...original, baseAmount: "327.9672", units: "0.6666" },
+    { ...original, id: "base-other", staffId: "other", baseAmount: "656.0328", units: "1.3334" },
+  ];
+  f.data.events[0].evidence.rateProvenance.selections.push({
+    staffId: "other",
+    legacyServiceRate: "0",
+    selection: { rate: "5", source: "FOC_DEFAULT", ruleId: null },
+  });
+  const inputs = await f.load();
+  assert.equal(inputs.staff.length, 2);
+  assert.equal(inputs.staff.find((row) => row.staff.id === "other")!.staff.disabled, true);
+  for (const person of inputs.staff) assert.equal(person.collection, "0.0000");
+  const changed = focFixture();
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    await changed.load(),
+    owner,
+    "2026-10-01T00:00:00.000Z",
+  );
+  Object.assign(changed.data.sales[0].lines[0].payrollEconomics as object, {
+    listUnitPrice: "493.00",
+  });
+  changed.data.events[0].evidence.lines[0].baseAmount = "986.0000";
+  const changedInputs = await changed.load();
+  assert.throws(
+    () =>
+      approvePayrollClose(
+        draft,
+        1,
+        changedInputs,
+        owner,
+        "2026-10-01T00:00:00.000Z",
+        "Changed FOC refused",
+      ),
+    /inputs changed/,
+  );
 });
 
 test("operational changes invalidate a calculated draft at approval", async () => {

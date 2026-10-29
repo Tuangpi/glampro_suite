@@ -2,6 +2,29 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — FOC operational-economics checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Checkout now writes independent
+  immutable sale-line payroll economics. Default loader supports wholly FOC services
+  using original list price/quantity, performer splits and historical FOC rules;
+  cash remains zero. Missing/foreign/mismatched snapshot, tax/category/rate/base/
+  quantity mismatch, mixed usage/prepaid and unsupported reversals fail closed.
+- Tested: focused plus tenancy **241/241**, zero skips, including three isolated
+  DB tests; related non-DB regressions **78/78**; shared **302/302**. API types/build/
+  lint and Prisma validation passed. Logs/exit markers:
+  `/tmp/cp005-foc-{combined,regression-focused,shared,types,build,lint,schema,migrate}.{log,exit}`.
+  Actual createSale verifies independent snapshot/immutability and catalogue edit;
+  historical synthetic FOC receipt verifies missing-evidence rollback, calculation,
+  stale approval, recalculation and approval. Multi-performer residuals/departed
+  staff and changed FOC approval tested. Existing broad sale suite failed against
+  deliberately unreachable DB (DB-dependent cleanup); not accepted/run on retained DB.
+- Next: remaining CP-005 package/usage/prepaid/refund/void loaders/provenance,
+  source-base corrections, close API/UI and full transactional/browser acceptance.
+  Legacy FOC without original checkout snapshot remains unavailable, never backfilled.
+  New migration applied only to authorized disposable DB, then stopped; data retained.
+  No application DB access, activation, deployment, commit or push. CP-005 not DONE.
+
+## Previous checkpoint — ordinary rate provenance
+
 - **CP-005 IN PROGRESS — ordinary rate-provenance checkpoint (October 29).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Operational source writer now
   freezes rate evaluation time, item/category, legacy staff rate and selected

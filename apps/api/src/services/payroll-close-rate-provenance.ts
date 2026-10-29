@@ -32,7 +32,7 @@ const schema = z.object({
  * This is not a migration/backfill or authorization of supplied source uploads. */
 export function verifyOrdinaryPayrollRateProvenance(
   evidence: unknown,
-  line: { itemId: string; itemType: string },
+  line: { itemId: string; itemType: string; foc?: boolean },
   occurredAt: Date,
   capturedAt: Date,
   rules: (RuleCandidate & { tenantId: string })[],
@@ -67,7 +67,7 @@ export function verifyOrdinaryPayrollRateProvenance(
       {
         staffId: part.staffId,
         itemId: line.itemId,
-        itemKind: line.itemType === "PRODUCT" ? "PRODUCT" : "SERVICE",
+        itemKind: line.foc ? "FOC" : line.itemType === "PRODUCT" ? "PRODUCT" : "SERVICE",
         departmentId: provenance.category,
         legacyServiceRate: recorded.legacyServiceRate,
       },

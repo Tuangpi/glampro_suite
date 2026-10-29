@@ -2253,6 +2253,26 @@ async function fillLedgers(
       creditPaid: creditPaid > 0,
       externalNetCents: externalAllocations.length ? externalNet : null,
     });
+    // Independent immutable checkout evidence, not a close-time catalogue lookup
+    // or a list price inferred from the payroll event being reconciled.
+    await tx.saleLine.update({
+      where: { id: stored.id },
+      data: {
+        payrollEconomics: {
+          version: 1,
+          saleId,
+          saleLineId: stored.id,
+          itemId: line.item.itemId,
+          itemType: line.item.itemType,
+          soldAt: soldAt.toISOString(),
+          listUnitPrice: line.item.listUnitPrice?.toFixed(2) ?? null,
+          netLineAmount: line.netLineTotal.minus(line.taxAmount).toFixed(2),
+          originalQuantity: line.input.quantity,
+          coveredPackageQuantity: covered.get(stored.id) ?? 0,
+          category,
+        },
+      },
+    });
     await appendPayrollSource(tx, {
       sourceKey: `sale-line:${stored.id}`,
       sourceType: "SALE_LINE",

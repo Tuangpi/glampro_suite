@@ -2,6 +2,22 @@
 
 ## Current State
 
+- **CP-005 FOC operational-economics checkpoint, October 29, 2026:** IN PROGRESS;
+  latest completed CP-004. Independent immutable checkout sale-line economics now
+  support full FOC list-price activity, exact performer splits and historical FOC
+  rates with zero cash in the default loader. Missing/tampered evidence, mixed
+  usage/prepaid and unsupported reversals block close. Focused plus tenancy
+  **241/241**, zero skips (three isolated DB tests), regressions **78/78**, shared
+  **302/302**; API types/build/lint and Prisma validation passed. Broad DB-dependent
+  sale suite could not run on unreachable URL; not run against retained DB cleanup.
+  See feature handoff and `docs/commission_payroll/CLOSE_ACCEPTANCE.md`. Continue
+  CP-005 package/usage/prepaid/refund/void loading, source-base corrections, close
+  API/UI/full acceptance. New migration only on authorized disposable DB, stopped
+  with data retained; no legacy backfill/application DB access/activation/deployment/
+  commit/push. CP-003A/CP-006 untouched; CP-005 not DONE.
+
+## Previous checkpoint — ordinary rate provenance
+
 - **CP-005 ordinary rate-provenance checkpoint, October 29, 2026:** IN PROGRESS;
   latest completed CP-004. Source writer freezes per-staff fallback selection,
   legacy rate and item/category/time; ordinary loader replays immutable independent

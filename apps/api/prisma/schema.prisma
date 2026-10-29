@@ -1948,6 +1948,8 @@ model SaleLine {
   attribution Json?
   /// Applied commission decision, including explicit zero. Null for legacy/held lines.
   commissionSnapshot Json?
+  /// Immutable original checkout economics. Null for legacy/held lines; never backfilled by close.
+  payrollEconomics Json?
   id       String @id @default(cuid())
   tenantId String
   saleId   String

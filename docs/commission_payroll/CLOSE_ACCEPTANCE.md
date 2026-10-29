@@ -33,6 +33,36 @@ Applied the existing migrations, then three new migrations:
 
 ## Implemented and checked
 
+### FOC operational-economics continuation — October 29
+
+- Migration `20261029140000_sale_line_payroll_economics` adds nullable original
+  checkout economics to sale lines. Database trigger prevents rewriting/removing
+  populated evidence or moving its line/tenant/sale identity. Checkout writes it in
+  the sale transaction, independently from the payroll source event. Legacy rows
+  remain null; no current-catalogue reconstruction or backfill is authorized.
+- Default loader supports wholly complimentary service lines using independent
+  original nonmember list price, quantity, date/identity/category and performer
+  shares. It checks zero tax and source FOC type/base/units plus historical FOC
+  rule/default provenance. Two units at 492 yield 984 activity, 49.20 default
+  commission and zero external cash. Zero-price products, mixed package/value usage,
+  prepaid and unsupported reversal/refund workflows remain blocked.
+- DB acceptance uses actual createSale to verify snapshot writing/immutability and
+  catalogue-edit independence; a separate synthetic historical FOC receipt verifies
+  default monthly loader missing-snapshot/capture rollback, calculation, stale
+  approval, recalculation and approval. It does not claim end-to-end backdated POS
+  checkout or full payroll/browser acceptance. Unit checks cover invalid identity,
+  category/tax/rate/base/quantity, capture-only price assertions, multi-performer
+  exact residuals and departed staff. Original list price remains checkout-attested,
+  not independently reconstructed catalogue history.
+- Focused plus tenancy **241/241**, zero skips, including three isolated DB tests;
+  related regressions **78/78**; shared **302/302**. API types/build/lint/schema pass.
+  Logs/exit markers `/tmp/cp005-foc-{combined,regression-focused,shared,types,build,lint,schema,migrate}.{log,exit}`.
+  Broad sale.service suite was attempted against intentionally unreachable DB and
+  failed DB setup/cleanup; it was not redirected to retained immutable fixtures.
+  Earlier acceptance attempt rejected collection metadata without a positive tender;
+  actual FOC checkout test now correctly omits collection metadata. Only authorized
+  disposable DB migrated/used, then stopped; data retained. No activation/deployment.
+
 ### Ordinary rate-provenance continuation — October 29
 
 - Operational source writer now retains evaluation time, item/category, legacy
