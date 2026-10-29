@@ -2,6 +2,89 @@
 
 ## Current State
 
+- **October 29, 2026 — CP-005 SUM_INDIVIDUAL checkpoint:** CP-005 IN PROGRESS;
+  latest completed CP-004. Non-DB group resolver derives totals from validated
+  source lines using recipient selected rule/types/assignment outlets. Population
+  includes all credited staff, departed/different-plan staff, fixed/excluded bases
+  and negative earned corrections; exact four-decimal sums, no cash substitution.
+  Retains selected rule/version and population staff/line IDs. Composer rejects
+  mismatched amount/month/rule/scope assertions and uses derived SUM_INDIVIDUAL
+  metrics in statements. Population changes invalidate stale approval. Recorded
+  delegated population default in DECISIONS.md. Thirteen new tests cover resolver
+  and complete selected-plan incentive integration. Combined focused tests 138/138,
+  API typecheck/lint/build, Prettier and Git whitespace checks pass. Logs:
+  `/tmp/cp005-group-final-{tests,types,lint,build}.log`. No database/browser
+  acceptance run. No DB commands, migrations, routes, activation
+  or deployment; explicit all-database pause remains.
+  Next: refund cash reconciliation, authoritative source/metric loading, opening
+  carry/settlement and scoped plan/fallback composition, persistence/locking,
+  correction posting and API/UI acceptance. Real transactional acceptance blocked
+  by DB pause. Supplied-record validation is not complete CP-005 acceptance.
+
+- **October 29, 2026 — CP-005 cash-metric reconciliation checkpoint:** current
+  CP-005 IN PROGRESS; latest completed CP-004. Added non-DB cash resolver deriving
+  staff and salon/outlet net external collections from reconciled allocations and
+  explicit historical allocation attribution. Uses existing four-decimal split/
+  stable residual handling; excludes GST, never sums commission bases for cash.
+  Package attribution must match captured staff/base/outlet; missing, foreign,
+  orphaned or duplicate attribution fails closed. Collection-only departed staff
+  enter required configuration selection. Composer checks caller staff and scoped
+  SALON_CASH assertions against derived money, uses derived statement denominators,
+  and freezes attribution/revisions so changed evidence rejects stale approval.
+  Fourteen new tests; combined focused suite 125/125; API typecheck/lint/build
+  exit 0. Logs `/tmp/cp005-cash-final-{tests,types,lint,build}.log`.
+  Refund/reversal cash reconciliation and SUM_INDIVIDUAL explicitly unavailable;
+  no silent zero refund or base-to-cash substitution. Empty supplied reconciled
+  payment inventory permits zero, but does not prove authoritative completeness.
+  Historical attribution authenticity, ordinary-line attribution/outlet policy,
+  settled-payment inventory and refund loading remain the trusted loader's job.
+  Next: refund reconciliation, SUM_INDIVIDUAL population/scopes, trusted loaders,
+  opening carry/settlement, persistence/source-approval locks, correction posting
+  and API/UI acceptance. All DB operations remain paused by explicit user choice;
+  no migration, DB access, routes, activation or deployment. Real transactional
+  acceptance remains blocked; these supplied-record validators are not CP-005 DONE.
+
+- **October 29, 2026 — CP-005 composition/reconciliation checkpoint:** current
+  task CP-005 IN PROGRESS; latest completed CP-004. User explicitly retained the
+  all-database pause when asked about disposable CP-005 acceptance. No database
+  operations, migrations, activation or deployment performed.
+  Added internal non-activating services/tests for independent operation/capture
+  inventory matching, external payment/collection/GST/package-base reconciliation,
+  next-open correction-period selection and combined close-input assembly.
+  Required staff now derive from activity, frozen debt and manual amounts before
+  configuration selection; missing carry/metrics/inventory blocks usable inputs.
+  Composition tests include departed staff, exact fallback debt, preserved manual
+  adjustments and complete-evidence stale approval checks. Allocator retains period
+  revisions but does not post corrections or implement transactional locking.
+  These validate supplied records, not authoritative inventory completeness or
+  actual provider settlement. Metric attribution, refunds/scoped group totals,
+  audited opening carry, carry settlement/mapping and full outlet composition
+  remain unaccepted. No route, UI or persistence schema added.
+  Next: implement trusted complete loaders, collection metric/refund allocation,
+  opening carry/settlement policy, persisted immutable closes/audit and shared
+  source/approval locking, actual correction posting and API/UI acceptance.
+  Real migration/rollback/retry/race acceptance is blocked by the explicit DB pause;
+  code work also remains. Do not mark CP-005 DONE or start CP-003A/CP-006.
+  Verification logs: `/tmp/cp005-final-{tests,types,lint,build,shared}.log`;
+  focused tests 111/111, shared tests 298/298, API typecheck/lint/build all exit 0.
+  Prettier and Git whitespace checks pass. No database or browser acceptance run.
+
+- **October 28, 2026 — CP-005 legacy exclusion checkpoint:** non-DB resolver
+  checks candidate and lineage sales against supplied legacy commission records.
+  Paid, unpaid, zero, unreleased and offsetting reversal overlaps fail closed;
+  null sale identity and reconciliation-required rows also block. No netting,
+  deletion or historical rewrite. Sorted exact-money evidence is retained and
+  detached. Eight new tests; focused legacy/source/carry/config/close/preview/
+  statement tests 75/75; API typecheck/lint/build pass. Test log:
+  `/tmp/cp005-legacy-final-tests.log`. CP-005 remains IN PROGRESS; CP-004 latest
+  completed. This validates supplied records only, not authoritative inventory
+  completeness, immutable DB evidence or actual legacy payout disablement.
+  Next: authoritative inventory and legacy exclusion integration, collection
+  reconciliation, complete carry/required-staff loading, corrections, persistence/
+  locks and API/UI/transactional acceptance. CP-003A/CP-006 remain TODO.
+  No DB commands, migrations, routes, activation or deployment; CP-005 database
+  authorization remains absent.
+
 - **October 28, 2026 — CP-005 frozen carry evidence checkpoint:** internal non-DB
   resolver requires the immediately previous approved close and replays frozen
   calculation inputs/audited adjustments to check snapshot consistency. Retains

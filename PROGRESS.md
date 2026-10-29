@@ -2,6 +2,45 @@
 
 ## Current State
 
+- **CP-005 SUM_INDIVIDUAL checkpoint, October 29, 2026:** IN PROGRESS; CP-004
+  latest completed. Added exact group-base population resolver and composer
+  reconciliation using selected rule/assignment scope, including departed and
+  different-plan staff. Frozen population evidence rejects stale approval.
+  Supplied-record validation only; refund cash reconciliation, authoritative
+  loaders, carry settlement, persistence/locks/corrections/API/UI acceptance remain.
+  All DB operations paused; no DB access, migrations, activation or deployment.
+  See commission-payroll handoff for actual checks and next steps.
+  Focused 138/138, API typecheck/lint/build, formatting and whitespace pass.
+
+- **CP-005 cash-metric checkpoint, October 29, 2026:** IN PROGRESS; CP-004 latest
+  completed. Non-DB collection attribution now derives staff and salon/outlet net
+  cash totals, reconciles caller metric assertions and supplies statement collection
+  denominators. Includes collection-only departed staff and stale attribution checks.
+  Fourteen new tests; focused 125/125, API typecheck/lint/build pass. Refund/reversal
+  and SUM_INDIVIDUAL fail closed; trusted loading, persistence/locks, actual correction
+  posting and API/UI/transactional acceptance remain. All DB operations still paused;
+  no migrations, DB access, activation or deployment. See commission-payroll handoff.
+
+- **CP-005 composition checkpoint, October 29, 2026:** IN PROGRESS; CP-004 latest
+  completed. Added non-DB inventory/payment/collection reconciliation, next-open
+  correction allocation and combined close-input evidence with required departed
+  staff integration. Supplied-record validation only, not authoritative loaders,
+  persisted closes, actual correction posting or API/UI acceptance. User explicitly
+  retained all-database pause; mandatory real transactional acceptance is blocked.
+  No DB operations, migrations, activation or deployment. Resume CP-005, not CP-006;
+  detailed remaining scope and verification in commission-payroll handoff.
+  Focused non-DB tests 111/111, shared 298/298; API typecheck/lint/build,
+  formatting and whitespace checks pass. No database/browser acceptance run.
+
+- **CP-005 legacy exclusion checkpoint, October 28, 2026:** non-DB resolver
+  blocks overlapping legacy sale commissions, missing sale identity and unresolved
+  reconciliation, without netting reversals or rewriting history. Focused tests
+  75/75; API typecheck/lint/build pass. Supplied-record validation only, not
+  authoritative inventory or disabling legacy payouts. CP-005 IN PROGRESS;
+  inventory/collection/carry integration, corrections, persistence/locks/API/UI
+  and transactional acceptance remain. No DB commands, migrations or activation.
+  CP-004 latest completed; resume CP-005. See commission-payroll handoff.
+
 - **CP-005 frozen carry checkpoint, October 28, 2026:** non-DB resolver checks
   immediately previous approved snapshots against replayed frozen inputs, retaining
   exact component/fallback debt and departed staff. Missing history is unavailable,

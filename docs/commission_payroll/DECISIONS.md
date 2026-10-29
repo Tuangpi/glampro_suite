@@ -8,6 +8,25 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 sum-individual population (October 29, 2026)
+
+- Under the delegated policy defaults, SUM_INDIVIDUAL means the sum of eligible
+  credited individual activity across the supplied salon/month source inventory,
+  including departed staff and staff assigned other plans. It is not limited to
+  active logins, plan recipients or caller-provided metric assertion rows.
+- The recipient's selected rule determines commission metric types; its historical
+  assignment outlets constrain the population. Salon scope sums those eligible
+  outlets; outlet scope separately sums each recipient activity outlet, matching
+  engine cardinality. Missing required outlet evidence fails closed.
+- Fixed/excluded activity still participates; negative earned lines subtract.
+  Four-decimal residuals are preserved without applying component rates, base
+  percentages, caps or incentive awards. This base metric is not SALON_CASH and
+  must never be used as the statement cash denominator.
+- Retain rule/version/population line identities with frozen close evidence.
+  Deriving totals from supplied records does not establish inventory completeness,
+  authoritative selection, correction allocation or release acceptance. The trusted
+  transactional loader and CP-005 acceptance remain outstanding; no activation.
+
 ### CP-004 isolated acceptance authorization (October 28, 2026)
 
 - Owner explicitly authorized isolated disposable-database CP-004 acceptance only;

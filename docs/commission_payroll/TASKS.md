@@ -337,6 +337,38 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- SUM_INDIVIDUAL checkpoint (October 29): derive selected-rule eligible totals
+  across all credited staff with assignment/outlet scope, negative/fixed/excluded
+  activity and retained population identities. Composer verifies assertions and
+  uses derived group metrics; selected-plan incentive/stale approval tests added.
+  Supplied-record evidence only; no DB loading, persistence or acceptance credit.
+  Verification: focused 138/138, API typecheck/lint/build, formatting and whitespace
+  pass. No database/browser acceptance. CP-005 remains IN PROGRESS.
+- Cash-metric checkpoint (October 29): derive exact staff and salon/outlet net
+  collections from reconciled allocations/historical attribution, verify caller
+  staff/SALON_CASH assertions, include collection-only departed staff and freeze
+  attribution revisions. Package attribution matches captured bases/outlet.
+  Refund/reversal and SUM_INDIVIDUAL metrics fail closed pending reconciliation.
+  Focused non-DB tests 125/125; API typecheck/lint/build pass. Supplied-record
+  validation only; trusted loaders, persistence/locks/corrections/API/UI and actual
+  transactional acceptance remain. No DB operations; explicit database pause holds.
+- October 29 composition checkpoint: non-DB inventory matching, payment/collection/
+  GST/package-base reconciliation, next-open-period correction allocation and
+  combined input assembly implemented with focused tests. Required departed staff
+  derive from activity/debt/manual amounts; no assumed zero carry/metrics.
+  These are supplied-record validators, not authoritative DB loaders or complete
+  correction posting. Trusted inventory/metrics/refund loading, opening carry,
+  settlement, persistence/locking, API/UI and transactional acceptance remain.
+  User explicitly retained the all-DB pause; mandatory DB acceptance is blocked.
+  Verification: focused non-DB tests 111/111; shared 298/298; API typecheck,
+  lint and build exit 0; formatting and whitespace checks pass. Not CP-005 acceptance.
+- Legacy exclusion checkpoint: non-DB validation blocks overlapping sales, null
+  legacy sale identity and unreconciled rows, including paid/unpaid/zero/unreleased
+  and offsetting reversal candidates. Retains sorted, detached legacy evidence.
+  Focused tests 75/75; API typecheck/lint/build pass. This checks supplied records,
+  not authoritative inventory completeness or disabling the legacy payout path.
+  Source inventory, collection/carry loading, corrections, persistence and API/UI
+  acceptance remain. No database operations or activation authorized.
 - Frozen carry checkpoint: supplied preceding approved close replayed for snapshot
   consistency; stable component carry/exact fallback debt and required staff retained.
   Missing history never becomes zero. Focused tests 67/67; API lint/typecheck/build
