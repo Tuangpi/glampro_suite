@@ -6,7 +6,26 @@
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
-## Latest checkpoint — package tender reconciliation
+## Latest checkpoint — session-package transfer reconciliation
+
+- Complete append-only transfer and unreversed draw history replays original-buyer
+  ownership, transfer remaining quantity/expiry and owner-at-draw. Final owner and
+  quantity must match holding inventory. Missing/foreign/duplicate/ambiguous history
+  never falls back to current owner. Original purchase value, sellers and ordinal
+  economics remain unchanged; transfer history freezes with close evidence.
+- Real transfer-service write moves the original paid holding to a new recipient.
+  Recipient draws reconcile through persisted holding history and monthly reload.
+  Original three 10.0000 draws, uncovered 109.0000 service and 100.0000 current cash
+  remain unchanged. Missing/from-owner/quantity/expiry/tied-time/foreign transfer
+  corruption refuses without changing saved draft/audit; approved September/October
+  hashes remain unchanged. No immutable history was rewritten for negative tests.
+- Selected API **269/269**, including three isolated DB suites, zero skips; shared
+  **302/302**; API typecheck/build/lint pass. Unit tests also cover transfers both
+  before and after draws and no-draw transfers. Logs `/tmp/cp005-transfer-*`.
+- Manager overrides, reversals/corrections, prepaid-credit spending/refunds/voids,
+  partial package FOC and close API/UI/full acceptance remain open. CP-005 not DONE.
+
+## Previous checkpoint — package tender reconciliation
 
 - Complete sale-level PACKAGE payment inventory matches verified draw count and
   covered service gross, using POS residual-cent allocation after voucher discount.

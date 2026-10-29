@@ -2,6 +2,19 @@
 
 ## Current State
 
+- **CP-005 session-package transfer reconciliation, October 29, 2026:** IN PROGRESS;
+  latest completed CP-004. Append-only transfer/draw history replays original-buyer
+  ownership, quantity/expiry continuity and owner-at-draw. Purchase value/sellers
+  preserved. Real transfer writer, recipient draws and monthly reload pass; six
+  corrupted histories refuse without draft/audit changes; prior approvals unchanged.
+  Selected API 269/269 (three DB suites, zero skips), shared 302/302; API types/build/
+  lint pass. Next: manager overrides and remaining lifecycle/acceptance, partial FOC,
+  prepaid-credit spending and close API/UI. CP-005 not DONE; CP-003A/CP-006 untouched.
+  No application DB/schema changes, activation/deployment/commit/push. See CP handoff.
+  Formatting/whitespace pass; disposable cluster stopped cleanly, synthetic fixtures retained.
+
+## Previous checkpoint — package tender reconciliation
+
 - **CP-005 package tender reconciliation, October 29, 2026:** IN PROGRESS; latest
   completed CP-004. Complete sale-level PACKAGE tender inventory matches verified
   draws/coverage with exact POS residual cents; matched tenders add no fresh cash.

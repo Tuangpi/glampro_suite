@@ -337,6 +337,14 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Transfer reconciliation (October 29): complete append-only transfer/draw timeline
+  verifies original/current owner, owner-at-draw, remaining quantity and expiry.
+  Original purchase value/sellers preserved. Real transfer-service write, recipient
+  draw/history and monthly reload verified; six corrupted histories refuse without
+  draft/audit changes; approved September/October unchanged. Selected API 269/269
+  (three isolated DB suites, zero skips), shared 302/302; API types/build/lint pass.
+  Manager overrides, reversals/corrections, credit spending/refunds/voids, partial FOC
+  and close API/UI/full acceptance remain; CP-005 not DONE. Logs `/tmp/cp005-transfer-*`.
 - Package tender reconciliation (October 29): complete sale-level PACKAGE payment
   inventory now matches independently verified coverage using POS residual-cent
   allocation and one tender per draw. Verified package payments add no fresh cash;

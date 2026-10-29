@@ -21,6 +21,7 @@ import { loadPayrollPackageRedemptionHistory } from "./payroll-close-redemption-
 import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import { openPayrollClose } from "./payroll-close-state.js";
+import { transferSessionPackage } from "./session-transfer.service.js";
 
 test(
   "CP-005 isolated authoritative ordinary close, missing-capture rollback and stale approval",
@@ -691,6 +692,27 @@ test(
           payrollInputHash((september.state as unknown as typeof approved).calculation),
           frozenSeptember,
         );
+        // Real append-only transfer writer preserves the purchase and seller
+        // snapshot, while November usage belongs to the recipient.
+        mock.timers.reset();
+        const recipient = await prisma.customer.create({
+          data: { tenantId, name: "Synthetic package recipient" },
+        });
+        const beforeTransfer = await prisma.customerPackageHolding.findFirstOrThrow({
+          where: { id: packageHolding.id },
+        });
+        const transfer = await transferSessionPackage(
+          customer.id,
+          packageHolding.id,
+          {
+            targetCustomerId: recipient.id,
+            expectedUpdatedAt: beforeTransfer.updatedAt.toISOString(),
+            reason: "Synthetic original-value transfer acceptance",
+            confirmed: true,
+          },
+          ownerId,
+        );
+        assert.equal(transfer.quantity, 10);
         // Server-owned holding history remains separate from enabling monthly
         // usage coverage. Exercise real draw/capture writers on the isolated DB.
         mock.timers.reset();
@@ -701,7 +723,7 @@ test(
               tx.sale.create({
                 data: {
                   tenantId,
-                  customerId: customer.id,
+                  customerId: recipient.id,
                   outletId: outlet.id,
                   status: "COMPLETED",
                   collectionCurrency: "SGD",
@@ -738,7 +760,7 @@ test(
             const redemption = await tx.customerRedemption.create({
               data: {
                 tenantId,
-                customerId: customer.id,
+                customerId: recipient.id,
                 saleId: usage.id,
                 itemType: "PACKAGE",
                 itemId: sessionPackage.id,
@@ -788,6 +810,10 @@ test(
           loadPayrollPackageRedemptionHistory(tx, packageHolding.id),
         );
         assert.equal(history.verified.redemptions[0].session.baseAmount, "10.0000");
+        assert.equal(history.verified.purchase.originalCustomerId, customer.id);
+        assert.deepEqual(history.verified.purchase.sellers, shares);
+        assert.equal(history.evidence.ownership.customerId, recipient.id);
+        assert.equal(history.evidence.transfers.length, 1);
         assert.equal(history.evidence.receipts.length, 3);
         const coverage = await prisma.$transaction((tx) =>
           loadPayrollSalePackageCoverage(tx, history.evidence.redemptions[0].saleId),
@@ -804,7 +830,7 @@ test(
             tx.sale.create({
               data: {
                 tenantId,
-                customerId: customer.id,
+                customerId: recipient.id,
                 outletId: outlet.id,
                 status: "COMPLETED",
                 collectionCurrency: "SGD",
@@ -833,7 +859,7 @@ test(
           const holding = await tx.customerPackageHolding.create({
             data: {
               tenantId,
-              customerId: customer.id,
+              customerId: recipient.id,
               packageId: sessionPackage.id,
               saleLineId: line.id,
               quantity: 10,
@@ -847,7 +873,7 @@ test(
                 saleId: purchase.id,
                 saleLineId: line.id,
                 packageId: sessionPackage.id,
-                originalCustomerId: customer.id,
+                originalCustomerId: recipient.id,
                 outletId: outlet.id,
                 purchasedAt: purchase.soldAt.toISOString(),
                 currency: "SGD",
@@ -895,7 +921,7 @@ test(
                 tx.sale.create({
                   data: {
                     tenantId,
-                    customerId: customer.id,
+                    customerId: recipient.id,
                     outletId: outlet.id,
                     status: "COMPLETED",
                     collectionCurrency: "SGD",
@@ -924,7 +950,7 @@ test(
                 const redemption = await tx.customerRedemption.create({
                   data: {
                     tenantId,
-                    customerId: customer.id,
+                    customerId: recipient.id,
                     saleId: usage.id,
                     itemType: "PACKAGE",
                     itemId: sessionPackage.id,
@@ -1041,6 +1067,68 @@ test(
             assert.equal(inputs.collection, "100.0000");
             const reloadedDraft = await calculateStoredPayrollClose("2026-11", november.revision);
             assert.equal(reloadedDraft.calculation!.inputHash, november.calculation!.inputHash);
+            for (const corruption of [
+              "MISSING",
+              "FROM",
+              "QUANTITY",
+              "EXPIRY",
+              "TIE",
+              "FOREIGN",
+            ] as const) {
+              const before = await prisma.payrollClose.findFirstOrThrow({
+                where: { periodKey: "2026-11" },
+              });
+              const audits = await prisma.payrollCloseEvent.count({
+                where: { periodKey: "2026-11" },
+              });
+              const alteredLoader: PayrollCloseLoader = (tx, state) =>
+                loadAuthoritativePayrollCloseInputs(
+                  new Proxy(tx, {
+                    get(target, property) {
+                      if (property !== "sessionPackageTransferEvent")
+                        return Reflect.get(target, property);
+                      return new Proxy(target.sessionPackageTransferEvent, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                            const rows = await delegate.findMany(args);
+                            if (corruption === "MISSING") return [];
+                            return rows.map((row) => ({
+                              ...row,
+                              ...(corruption === "FROM" ? { fromCustomerId: recipient.id } : {}),
+                              ...(corruption === "QUANTITY" ? { quantity: row.quantity - 1 } : {}),
+                              ...(corruption === "EXPIRY"
+                                ? { expiresAt: new Date("2027-01-01T00:00:00Z") }
+                                : {}),
+                              ...(corruption === "TIE"
+                                ? { createdAt: history.evidence.redemptions[0].usedAt }
+                                : {}),
+                              ...(corruption === "FOREIGN" ? { tenantId: "foreign" } : {}),
+                            }));
+                          };
+                        },
+                      });
+                    },
+                  }),
+                  state,
+                );
+              await assert.rejects(
+                calculateStoredPayrollClose("2026-11", reloadedDraft.revision, alteredLoader),
+                /PACKAGE_OWNERSHIP_UNCONFIRMED/,
+                corruption,
+              );
+              assert.equal(
+                payrollInputHash(
+                  (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: "2026-11" } }))
+                    .state,
+                ),
+                payrollInputHash(before.state),
+              );
+              assert.equal(
+                await prisma.payrollCloseEvent.count({ where: { periodKey: "2026-11" } }),
+                audits,
+              );
+            }
             for (const corruption of [
               "MISSING",
               "AMOUNT",

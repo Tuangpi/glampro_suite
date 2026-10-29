@@ -9,6 +9,7 @@ import {
   verifyPayrollPackageCollection,
 } from "./payroll-close-package-purchase.js";
 import { verifyPayrollPackageRedemptionInventory } from "./payroll-close-package-redemption.js";
+import { verifyPayrollPackageOwnership } from "./payroll-close-package-ownership.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
@@ -20,8 +21,8 @@ const unavailable = (): never => {
 };
 
 /** Internal, non-activating complete holding history. No client-supplied records.
- * Holds the same tenant lock as source writes. Supports original-owner, unreversed,
- * paid-session history only; transfers, refunds, corrections and overrides remain
+ * Holds the same tenant lock as source writes. Supports ownership-reconciled, unreversed,
+ * paid-session history only; refunds, corrections and overrides remain
  * blocked. This does not reconcile coverage against OTHER holdings on a sale, and
  * must not on its own enable the monthly close's usage-coverage gate.
  */
@@ -65,7 +66,6 @@ export async function loadPayrollPackageRedemptionHistory(
   });
   if (siblings.length !== 1 || siblings[0].id !== holding.id) return unavailable();
   const purchase = verifyPayrollPackagePurchase(siblings, line, sale, tenantId);
-  if (holding.customerId !== purchase.originalCustomerId) return unavailable();
   const [
     redemptions,
     receipts,
@@ -114,7 +114,6 @@ export async function loadPayrollPackageRedemptionHistory(
   );
   const relatedIds = new Set(related.map((row) => row.id));
   if (
-    transfers.length ||
     refunds.length ||
     snapshots.some((row) => row.tenantId !== tenantId) ||
     events.some((row) => row.sourceType === "REVERSAL" && relatedIds.has(row.sourceId)) ||
@@ -122,6 +121,14 @@ export async function loadPayrollPackageRedemptionHistory(
     new Set(receipts.map((row) => `${row.sourceType}:${row.sourceId}`)).size !== receipts.length
   )
     return unavailable();
+
+  const ownership = verifyPayrollPackageOwnership({
+    tenantId,
+    purchase,
+    holding,
+    transfers,
+    redemptions,
+  });
 
   const paymentFacts = [
     ...payments
@@ -297,7 +304,6 @@ export async function loadPayrollPackageRedemptionHistory(
       !usage ||
       usage.tenantId !== tenantId ||
       usage.collectionCurrency !== "SGD" ||
-      redemption.customerId !== purchase.originalCustomerId ||
       usage.customerId !== redemption.customerId ||
       (holding.expiresAt && redemption.usedAt >= holding.expiresAt)
     )
@@ -331,6 +337,8 @@ export async function loadPayrollPackageRedemptionHistory(
       receipts,
       payments,
       outstanding,
+      transfers,
+      ownership,
       snapshots: snapshots.filter((row) => redemptionIds.has(row.redemptionId)),
       related,
       redemptions,

@@ -8,6 +8,21 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 session-package transfer reconciliation (October 29, 2026)
+
+- Replay complete append-only session transfer and unreversed draw history from
+  original purchase owner, not current customer alone. Each transfer must name the
+  previous owner, a different recipient, actor/reason, exact remaining quantity and
+  unchanged expiry. Each draw belongs to the owner at its timestamp; final owner
+  and quantity must match the holding. Reject ambiguous equal timestamps rather
+  than ordering by arbitrary IDs. Freeze transfer evidence with holding history.
+- Transfers do not revalue purchases, change sellers, create fresh cash or reset
+  original session ordinals/paid-session gates. Current actor roles are not a
+  substitute for historical append-only transfer evidence. Existing transfer writer
+  remains responsible for transaction-time actor/customer checks and locking.
+- This enables only ownership-reconciled unreversed paid-session histories. Manager
+  overrides, corrected/reversed histories, credit spending and refunds remain gated.
+
 ### CP-005 package tender reconciliation (October 29, 2026)
 
 - SalePayment does not persist a holding ID. Match the complete sale-level PACKAGE

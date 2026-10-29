@@ -811,6 +811,42 @@ test("server history loader independently inventories original purchase, settled
   });
 });
 
+test("server history preserves original economics through transfers before and after a draw", async () => {
+  const f = historyLoaderFixture();
+  f.data.holding.customerId = "final-owner";
+  f.data.redemptions[0].customerId = "recipient";
+  f.data.usage.customerId = "recipient";
+  const transfer = {
+    id: "before",
+    tenantId: "salon",
+    holdingId: "holding",
+    fromCustomerId: "original-buyer",
+    toCustomerId: "recipient",
+    actorId: "owner",
+    quantity: 3,
+    expiresAt: null,
+    reason: "Transfer remaining sessions",
+    createdAt: new Date("2026-09-01T00:00:00Z"),
+  };
+  f.data.transfers = [
+    {
+      ...transfer,
+      id: "after",
+      fromCustomerId: "recipient",
+      toCustomerId: "final-owner",
+      quantity: 1,
+      createdAt: new Date("2026-09-16T00:00:00Z"),
+    },
+    transfer,
+  ];
+  const result = await f.load();
+  assert.equal(result.evidence.ownership.customerId, "final-owner");
+  assert.equal(result.evidence.transfers.length, 2);
+  assert.equal(result.verified.purchase.originalCustomerId, "original-buyer");
+  assert.equal(result.verified.purchase.sellers![0].staffId, "seller");
+  assert.equal(result.verified.redemptions[0].session.baseAmount, "66.6667");
+});
+
 test("server history loader fails closed for omitted inventory, unsupported lifecycle and payment tampering", async () => {
   const mutations: ((f: ReturnType<typeof historyLoaderFixture>) => void)[] = [
     (f) => {

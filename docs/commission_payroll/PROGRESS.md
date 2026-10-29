@@ -2,6 +2,27 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — session-package transfer reconciliation (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Complete append-only transfer
+  and draw inventory now replays ownership from original buyer through current
+  owner, enforcing remaining quantity, expiry continuity and owner-at-draw. Original
+  purchase value, seller attribution and ordinal economics remain unchanged.
+- Verified selected API **269/269**, including three isolated DB suites, zero skips;
+  shared **302/302**; API typecheck/build/lint pass. Real transfer-service write,
+  recipient draws, holding-history reload and monthly draft/reload reconcile at
+  original 10.0000 per draw and unchanged 100.0000 current cash. Missing/from-owner/
+  quantity/expiry/tied-time/foreign transfer evidence refuses without draft/audit
+  changes. Approved September/October hashes remain unchanged. Unit coverage includes
+  transfers before/after draws, no-draw transfers and invalid/ambiguous histories.
+  Logs `/tmp/cp005-transfer-*`.
+  Formatting/whitespace checks pass; disposable cluster stopped cleanly, fixtures retained.
+- Next: manager overrides, reversals/corrections, prepaid-credit spending/refunds/
+  voids, partial package FOC and close API/UI/full acceptance. These gates remain
+  closed; CP-005 is not DONE. Application databases/schemas untouched; no activation,
+  deployment, commit or push.
+
+## Previous checkpoint — package tender reconciliation
+
 - **CP-005 IN PROGRESS — package tender reconciliation (October 29).** Latest
   completed CP-004; CP-003A/CP-006 untouched. Complete sale-level PACKAGE payments
   reconcile to independently verified draws/coverage with exact POS residual cents.
