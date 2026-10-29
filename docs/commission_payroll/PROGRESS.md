@@ -2,6 +2,265 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — package tender reconciliation (October 29).** Latest
+  completed CP-004; CP-003A/CP-006 untouched. Complete sale-level PACKAGE payments
+  reconcile to independently verified draws/coverage with exact POS residual cents.
+  Matched tenders create no fresh cash; exact monthly rows match complete sale
+  inventory and both are frozen. Zero-price draws require explicit zero tenders.
+- Verified selected API **265/265**, including three isolated DB suites, zero skips;
+  shared **302/302**; API types/build/lint pass. DB draft/reload accepts three package
+  tenders without increasing 100.0000 current cash; missing/altered/gateway/cash-
+  relabeled/credit-relabeled/month-omitted tenders fail without draft/audit changes.
+  Approved September/October remain unchanged. Logs `/tmp/cp005-tender-*`.
+  Formatting/whitespace checks pass; disposable cluster stopped cleanly, fixtures retained.
+- Next: remaining lifecycle integration and acceptance: transfers, manager overrides,
+  reversals/corrections, prepaid-credit spending/refunds/voids, partial package FOC
+  and close API/UI. Gates remain closed; CP-005 is not DONE. Application databases
+  and schemas untouched; no activation/deployment/commit/push.
+
+## Previous checkpoint — monthly redemption integration
+
+- **CP-005 IN PROGRESS — monthly redemption integration (October 29).** Latest
+  completed CP-004; CP-003A/CP-006 untouched. Monthly loader now inventories all usage
+  on affected sales, reconciles every involved holding and exact monthly operational/
+  capture records, and snapshots verified history. Original-owner unreversed paid
+  draws contribute only current-month bases; ordinary service base/units use uncovered
+  quantities. Fully covered lines must have no ordinary capture.
+- Verified selected API **260/260**, including three isolated DB tests, zero skips;
+  shared **302/302**; API types/build/lint pass. November draft/reload contains three
+  10.0000 redemption bases, one 109.0000/1-unit service and 100.0000 current cash.
+  Missing captures, full-line double counting, unexpected covered-line captures,
+  reversals and December aggregate overclaim refused; December writes no close/audit.
+  Approved September/October hashes unchanged. Logs `/tmp/cp005-monthly-*`.
+  Formatting/whitespace checks passed; disposable cluster stopped cleanly with
+  synthetic fixtures retained.
+- Next: prepaid package tender and unsupported lifecycle integration/acceptance:
+  transfers, manager overrides, reversals/corrections, credit spending/refunds/voids,
+  partial package FOC, close API/UI and full acceptance remain. These gates stay
+  closed; original-owner paid draws alone are now wired. CP-005 not DONE. No
+  application DB/schema changes, activation/deployment/commit/push.
+
+## Previous checkpoint — multi-holding DB acceptance
+
+- **CP-005 IN PROGRESS — multi-holding DB acceptance (October 29).** Latest
+  completed CP-004; CP-003A/CP-006 untouched. Extended isolated acceptance with an
+  independently purchased/paid second holding, real draw/capture writers, shared
+  usage-line covered/remaining quantities, missing-capture refusal, and aggregate
+  overclaim refusal while each holding independently passes. Fresh persisted JSONB
+  reloads agree. No immutable evidence was removed or rewritten for negative tests.
+- Verified selected API **260/260**, including three DB tests, zero skips; shared
+  **302/302**; API types/build/lint pass. Blocked November calculation leaves no
+  draft/audit rows; approved September and October calculation hashes unchanged.
+  Logs `/tmp/cp005-multiholding-*`. Previous disposable directory was absent;
+  recreated an isolated cluster, applied repository migrations with dotenv disabled.
+  Cluster stopped cleanly after checks; synthetic fixtures retained. Formatting and
+  whitespace checks passed.
+  No application DB access, application schema changes, activation/deployment/commit/push.
+- Next: authoritative monthly redemption integration and uncovered-service base
+  reconciliation with completeness/authorization/lifecycle refusal tests. Gates
+  retained. Transfers, overrides, reversals/corrections, credit spending/refunds/voids,
+  close API/UI and full acceptance remain; CP-005 not DONE.
+
+## Previous checkpoint — cross-holding coverage
+
+- **CP-005 IN PROGRESS — cross-holding usage-sale coverage (October 29).** Latest
+  completed CP-004; CP-003A/CP-006 untouched. New internal sale loader inventories
+  every redemption kind, verifies every involved holding history, matches records/
+  captures under the tenant lock and sums service coverage across holdings. Rejects
+  overclaims, omitted captures, foreign/duplicate inventory and unsupported lifecycle.
+- Verified: selected close/source/session **260/260, zero skips**, including three
+  isolated DB tests; shared **302/302**; API build/typecheck/lint pass. Logs
+  `/tmp/cp005-coverage-*`. Real writer single-holding sale coverage/persisted reload
+  pass and approved September remains unchanged. Multi-holding overflow has focused
+  unit coverage, not yet DB acceptance. Disposable cluster stopped; fixtures retained.
+- Next: add multi-holding DB acceptance and wire monthly redemption/remaining service
+  bases using verified histories; test completeness and unsupported lifecycle refusal
+  before relaxing gates. Transfers, overrides, reversals/corrections, credit spending/
+  refunds/voids, close API/UI and full acceptance remain. Monthly gates retained;
+  CP-005 not DONE. No application DB/schema/backfill/activation/deployment/commit/push.
+
+## Previous checkpoint — server-owned holding history
+
+- **CP-005 IN PROGRESS — server-owned holding history (October 29).** Latest
+  completed CP-004; CP-003A/CP-006 untouched. Added internal transaction loader
+  independently inventorying original holding/sale, all holding redemptions,
+  receipts/payments/outstanding debt, snapshots, source events, transfers and refunds.
+  Original purchase/deposit, cumulative GST, cash identities, historical rate/policy
+  and paid-session/ordinal inventory reconcile. Original-owner, unreversed history
+  only; unsupported transfers, corrections/refunds and unpaid overrides fail closed.
+- Fixed JSONB key-order hash verification by reconstructing the operational writer's
+  schema order, including nested canonical purchase. No snapshot rewrite/backfill.
+  Added corruption regression and real draw/capture/persisted-history DB acceptance.
+- Verified: selected close/source/session **256/256, zero skips**, including three
+  isolated DB tests; shared **302/302**; API build/typecheck/lint passed. Logs
+  `/tmp/cp005-history-*`. Initial DB checks exposed JSONB ordering and an outlet-less
+  synthetic fixture; fixed both before the passing final run. No existing application
+  DB access, schema migration, activation, deployment, commit or push.
+- Next: cross-holding sale coverage and authoritative monthly redemption wiring;
+  transfer/override/reversal/correction paths, credit spending/refunds/voids, close
+  API/UI and full acceptance remain. Monthly redemption gate intentionally retained.
+  Isolated disposable cluster stopped after verification; synthetic fixtures retained.
+  CP-005 not DONE.
+
+## Previous checkpoint — supplied holding reconciliation
+
+- **CP-005 IN PROGRESS — supplied holding reconciliation (October 29).** Latest
+  completed CP-004; CP-003A/CP-006 untouched. Redemption verification now requires
+  original holding coverage rules and the exact initial capture key. Replays
+  PER_UNIT/SERVICE_SET coverage, paid-session limits using only earlier receipts,
+  lowest-first original ordinals, remaining holding inventory and aggregate service
+  coverage. Rejects ambiguous timestamp order, duplicate/foreign evidence,
+  overcollection, later-payment authorization and overlapping draws.
+- Verified this continuation: selected close/source/session tests **249 passed,
+  three DB-gated skips, zero failures**; shared **302/302**; API typecheck/lint and
+  build passed; whitespace check passed. Logs: `/tmp/cp005-inventory-*`.
+  Fourteen redemption tests include multiple corruption assertions. No database
+  access, schema change, backfill, activation, deployment, commit or push.
+- **Not complete:** this is supplied-record verification, not independently loaded
+  operational inventory/payment evidence, transfer authorization, manager override
+  or reversal/correction acceptance. Default loader still blocks redemptions.
+  Next: authoritative redemption lifecycle/coverage loading and isolated DB
+  acceptance, then credit spending/refunds/voids, source corrections and close
+  API/UI/full acceptance. CP-005 must not be marked DONE.
+
+## Previous checkpoint — redemption evidence foundation
+
+- **CP-005 IN PROGRESS — redemption evidence foundation (October 29).** Latest
+  completed CP-004; CP-003A/CP-006 untouched. Added supplied-record redemption
+  verifier for original session ordinals/four-decimal economics, performer splits,
+  snapshot hashes, sale/tenant/coverage identity, original policies and per-session
+  fixed awards. Historical rate replay distinguishes PACKAGE_REDEMPTION from sales.
+- Verified: focused close/context plus source/redemption tests **248 passed, three
+  DB-gated skips, zero failures**; shared **302/302**; API types/build/lint passed.
+  Logs: `/tmp/cp005-redemption-{focused,shared,types,build,lint}.{log,exit}`.
+  Four new verifier tests exercise all policies and 27 tampering cases, explicit
+  tender attribution, detached results, exact residuals and rule-kind separation.
+- Default redemption loader remains blocked. Verifier is NOT inventory/paid-session/
+  override/ownership-transfer/reversal acceptance. Next: independent paid collection
+  history, complete session lifecycle and coverage reconciliation, then wire loader
+  and run disposable DB acceptance. Credit spending/refund/void, source corrections
+  and close API/UI/full acceptance still pending. No DB access/schema/backfill/
+  activation/deployment/commit/push; retained disposable cluster was not started.
+  Prior cross-month package checkpoint remains valid. CP-005 not DONE.
+
+## Previous checkpoint — cross-month package history
+
+- **CP-005 IN PROGRESS — cross-month package history checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Package receipts now reconcile
+  prior-month sale/outstanding payments and captures as verification-only evidence.
+  Original purchase/deposit, payment/debt identities, ordered receipts, GST, source
+  envelopes, historical rates and once-only units/fixed awards remain enforced.
+  Only current-month net cash and source lines enter payroll and group metrics.
+- Verified: focused close plus tenant-context **245/245**, zero skips, including
+  three isolated DB tests; related selected regressions **49/49**; shared **302/302**;
+  API types/build/lint pass. Logs: `/tmp/cp005-crossmonth-*.{log,exit}`. These are
+  this run's selected suites, not the broader previous checkpoint's suite counts.
+  Persisted September approval remains unchanged after an October boundary receipt;
+  stale October approval fails, recalculation/approval pass under post-month test clock.
+- Next: usage/credit spending/refund/void loading, source corrections and close
+  API/UI/full acceptance. Future receipt history still fails closed; no historical
+  reconstruction/backfill, schema change, application DB access, activation,
+  deployment, commit or push. Cross-month route/UI/POS acceptance is not claimed.
+  Authorized disposable DB stopped with synthetic fixtures retained. CP-005 not DONE.
+
+## Previous checkpoint — same-month outstanding packages
+
+- **CP-005 IN PROGRESS — same-month outstanding package checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Package receipts may now use
+  same-month outstanding payments after original SALE_PAYMENT deposit. Independent
+  payment inventory verifies receipt source/amount/time/currency/sale; explicit
+  tenant, customer, sale and outstanding-ID checks reject foreign/mismatched debt.
+  Original minimum deposit, historical rates/policy, GST replay and once-only
+  units/fixed award remain enforced. Cross-month purchase/receipt history blocked.
+- Tested: focused plus tenancy **271/271**, zero skips (three isolated DB tests);
+  related regressions including loader **133/133**; shared **302/302**; API types/
+  build/lint passed. Logs: `/tmp/cp005-outstanding-{combined,regression,shared,types,build,lint}.{log,exit}`.
+  DB fixture uses actual outstanding/debt rows and collection/source writer:
+  deposit calculation, outstanding balance, stale approval, recalculation and
+  persisted approval pass. Units/fixed award not repeated after catalogue edits.
+  Unit tests cover all policies, payment/debt scope, amount/time/source/capture,
+  changed debt evidence and retained cross-month/first-deposit guards.
+- Next: cross-month package payment/capture verification without double-counting
+  prior cash/units/awards; usage/credit spending/refund/void, source corrections and
+  close API/UI/full acceptance. This is not end-to-end outstanding-payment UI/POS
+  acceptance. No schema change/backfill/application DB access/activation/deployment/
+  commit/push. Authorized disposable DB stopped, fixtures retained. CP-005 not DONE.
+
+## Previous checkpoint — same-month package instalments
+
+- **CP-005 IN PROGRESS — same-month package instalment checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Default loader supports package
+  deposits and later SALE_PAYMENT receipts when purchase and all collections are
+  in the requested month. Original minimum deposit rounds up to cents and is
+  required on the first receipt. Complete matching monthly/history inventory,
+  unambiguous creation order and nondecreasing occurrence times are required.
+  Each receipt uses collected net; units and fixed award appear only on the first.
+- Tested: focused plus tenancy **267/267**, zero skips (three isolated DB tests);
+  related regressions including loader **129/129**; shared **302/302**; API types/
+  build/lint passed. Logs: `/tmp/cp005-instalment-{combined,regression,shared,types,build,lint}.{log,exit}`.
+  DB fixture uses actual collection/source writer: deposit-only calculation, later
+  receipt stale-approval rejection, zero repeated units/award, recalculation and
+  approval pass. Unit tests cover all sale policies, upward rounding, incomplete/
+  ambiguous/foreign/out-of-period history, missing payment/capture, GST tampering
+  and unsettled gateway evidence. This is not end-to-end package checkout acceptance.
+- Next: historical/cross-month and outstanding-payment package loading, usage/
+  credit spending/refund/void, source corrections and close API/UI/full acceptance.
+  Those package receipt paths remain blocked; first receipt below minimum also
+  blocks even if later receipts meet it. No schema change/backfill/application DB
+  access/activation/deployment/commit/push. Authorized disposable DB stopped with
+  fixtures retained. CP-005 remains IN PROGRESS.
+
+## Previous checkpoint — full package purchase
+
+- **CP-005 IN PROGRESS — full package-purchase checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Default loader supports fully
+  collected single SALE_PAYMENT receipt package purchases. Independent original
+  holding snapshot must reconcile canonical session economics, original grant,
+  tenant/sale/line/package/customer/outlet/date, net/tax/gross and sellers. Original
+  FOLLOW_PLAN/EXCLUDE/FIXED policies and historical PACKAGE_SALE rates are checked;
+  fixed award is once per sale line, not multiplied by quantity.
+- Tested: focused plus tenancy **265/265**, zero skips (three isolated DB tests);
+  related regressions including loader **127/127**; shared **302/302**; API types/
+  build/lint passed. Logs/exit markers:
+  `/tmp/cp005-package-{combined,regression,shared,types,build,lint}.{log,exit}`.
+  Synthetic DB package receipt uses actual collection/source writer and immutable
+  holding snapshot: missing evidence rollback, rewrite rejection, catalogue-edit
+  independence, fixed award, persisted calculation and approval passed. Unit checks
+  cover policy/economics/rate mismatches, seller residuals, units, stale approval,
+  partial/multiple/missing collections and later-published historical rules.
+- Next: CP-005 package deposit/instalment loading, usage/credit spending/refund/void,
+  source corrections and close API/UI/full acceptance. Partial/multiple receipts,
+  missing originals and unsupported workflows remain blocked; no inferred backfill.
+  This is not end-to-end package checkout or browser acceptance. No schema change,
+  application DB access, activation, deployment, commit or push. Authorized
+  disposable DB stopped with fixtures retained. CP-005 remains IN PROGRESS.
+
+## Previous checkpoint — value-purchase collections
+
+- **CP-005 IN PROGRESS — value-purchase collection checkpoint (October 29).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Default loader independently
+  loads immutable value holding purchase snapshots and reconciles sale/line/item/
+  tenant, paid net, credit grant and sellers. External collections use net cash,
+  not bonus credit; historical stored-credit sale rules are replayed and units
+  appear only on the first collection. Missing capture/evidence, altered base/
+  units/mode/rate and ambiguous same-timestamp collection order fail closed.
+- Tested: focused plus tenancy **260/260**, zero skips including three isolated DB
+  tests; related regressions including loader **122/122**; shared **302/302**. API
+  typecheck/build/lint and formatting/whitespace passed. Logs/exit markers:
+  `/tmp/cp005-value-{combined,regression,shared,types,build,lint}.{log,exit}`.
+  DB synthetic historical value purchase verifies missing-evidence rollback,
+  immutable snapshot, catalogue-edit independence, default calculation and approval.
+  Unit tests cover later instalments, seller splits and stale purchase evidence.
+  This is not new end-to-end value checkout/outstanding-payment/browser acceptance.
+- Next: CP-005 package purchase/usage/credit spending/refund/void authoritative
+  loading, source-base corrections, close API/UI and full acceptance. No schema
+  change, inferred backfill, activation or application DB access. Authorized
+  disposable DB stopped with evidence retained; no deployment/commit/push.
+  Existing snapshots attest original paid/credit/sellers; they do not independently
+  reconstruct historic catalogue or customer ownership. CP-005 remains IN PROGRESS.
+
+## Previous checkpoint — FOC operational economics
+
 - **CP-005 IN PROGRESS — FOC operational-economics checkpoint (October 29).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Checkout now writes independent
   immutable sale-line payroll economics. Default loader supports wholly FOC services

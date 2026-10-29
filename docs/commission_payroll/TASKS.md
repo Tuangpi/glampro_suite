@@ -337,6 +337,97 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Package tender reconciliation (October 29): complete sale-level PACKAGE payment
+  inventory now matches independently verified coverage using POS residual-cent
+  allocation and one tender per draw. Verified package payments add no fresh cash;
+  exact monthly payment inventory is cross-checked and frozen. Isolated DB reload
+  and missing/altered/gateway/cash-relabeled/credit-relabeled/month-omitted tender
+  refusals preserve draft/audit and prior approvals. Remaining unsupported lifecycle,
+  partial package FOC, prepaid-credit spending and close API/UI acceptance stay open.
+  Selected API 265/265 (three DB suites, zero skips), shared 302/302; API types/build/
+  lint pass. Logs `/tmp/cp005-tender-*`; no application DB/schema or activation.
+  CP-005 remains IN PROGRESS; CP-003A/CP-006 untouched.
+- Monthly redemption integration (October 29): independently reconciled sale coverage/
+  holding histories wired into monthly inventory; exact current draws only, ordinary
+  services scaled to uncovered quantity, fully covered ordinary captures refused.
+  November draft/reload and missing/double-counted captures verified; December
+  overclaim refuses without close/audit; approved September/October unchanged. API
+  260/260 (three DB tests, zero skips), shared 302/302; types/build/lint pass. Prepaid
+  tenders, unsupported lifecycle and partial package FOC stay blocked; not DONE.
+- Multi-holding DB acceptance (October 29): independent purchases and real collection/
+  draw/capture writers prove shared coverage, uncovered units, missing-capture refusal
+  and aggregate overclaim refusal despite valid individual histories, including fresh
+  persisted reload. Blocked November writes no close/audit; approved September/October
+  hashes unchanged. API 260/260 (three DB tests, zero skips), shared 302/302; API types/
+  build/lint pass. Monthly integration remains next; gates retained; not DONE.
+- Cross-holding sale coverage (October 29): server-owned complete usage inventory,
+  verified holding histories and cumulative coverage bounds added. Two individually
+  valid holdings jointly overclaiming a line fail closed. Selected tests 260/260
+  (three isolated DB tests, zero skips), shared 302/302; API types/build/lint pass.
+  Single-holding real-writer/persisted coverage verified; multi-holding DB acceptance
+  and monthly integration still pending. Monthly gates retained; CP-005 not DONE.
+- Server-owned holding history (October 29): independent original purchase,
+  receipt/payment/debt/tax, capture and redemption inventory loading added for
+  original-owner unreversed paid draws. JSONB hash replay fixed; real draw/capture
+  and persisted-history acceptance pass. Selected tests 256/256 (three isolated DB
+  tests, zero skips), shared 302/302; API types/build/lint pass. Monthly redemption
+  gate retained pending cross-holding coverage/wiring and remaining lifecycle work.
+  CP-005 stays IN PROGRESS; CP-003A/CP-006 untouched. No application DB/schema/
+  backfill/activation/deployment. Disposable cluster stopped after verification.
+- Supplied holding reconciliation (October 29): original PER_UNIT/SERVICE_SET
+  coverage, exact capture key, receipt-before-draw paid sessions, chronological
+  lowest-first ordinals, remaining inventory and aggregate service quantities now
+  verified. Selected close/source/session 249 pass/three DB-gated skips, shared
+  302/302; API types/lint/build pass. No DB operations or activation. Independent
+  operational loading/payment reconciliation, transfer/override/reversal acceptance,
+  credit spending/refunds/voids, source corrections and close API/UI remain required.
+  Default redemption loader stays blocked; CP-005 is not DONE.
+- Redemption evidence foundation (October 29): supplied-record verifier replays
+  original ordinals/economics, performer splits, snapshot hash, coverage identity,
+  policy/per-session fixed awards and PACKAGE_REDEMPTION historical rates. Default
+  loader still blocks redemptions; paid-session/override/transfer/lifecycle and
+  cross-redemption coverage reconciliation remain required before wiring it.
+  Focused 248 passed/three DB-gated skips, shared 302/302; API types/build/lint pass.
+  No DB access/schema/backfill/activation. CP-005 remains IN PROGRESS.
+- Cross-month package history checkpoint (October 29): prior sale/outstanding
+  payments and captures verified independently without entering monthly cash/bases,
+  units or awards again. Original deposit, GST, purchase policy/rates and identities
+  enforced. Focused close plus context 245/245 (zero skips, three isolated DB tests),
+  selected regressions 49/49, shared 302/302; API types/build/lint passed. Persisted
+  September immutable, October boundary balance/recalculation/approval verified
+  under explicit post-month test clock. Future receipts remain fail-closed; no
+  schema/backfill/activation. Full operational/API/UI acceptance still pending.
+  CP-005 remains IN PROGRESS; disposable DB stopped. See latest PROGRESS.
+- Same-month outstanding package checkpoint (October 29): independently inventoried
+  outstanding payments supported after original sale-payment deposit. Explicit
+  tenant/customer/sale/debt identity and receipt amount/time reconciliation;
+  collected net only, units/fixed award once. Cross-month history remains blocked.
+  Focused plus tenancy 271/271 (zero skips, three isolated DB tests), related
+  regressions 133/133, shared 302/302; API types/build/lint passed. No schema change/
+  backfill/activation; disposable DB stopped. CP-005 remains IN PROGRESS.
+- Same-month package instalment checkpoint (October 29): deposit/later settled
+  SALE_PAYMENT receipts supported with complete same-month history and matching
+  inventory. Original minimum deposit rounds up on first receipt; net cash per
+  receipt, units/fixed award once. Cross-month/outstanding-payment package receipts
+  remain blocked. Focused plus tenancy 267/267 (zero skips, three isolated DB tests),
+  related regressions 129/129, shared 302/302; API types/build/lint passed. No schema
+  change/backfill/activation; disposable DB stopped. CP-005 still IN PROGRESS.
+- Full package-purchase checkpoint (October 29): default loader reconciles fully
+  collected single-receipt package purchases against immutable original grant,
+  canonical economics/settings/sellers and historical PACKAGE_SALE rates. All sale
+  policies checked, fixed award once per line. Partial/multiple/missing collections
+  and usage/refund/void remain blocked. Focused plus tenancy 265/265 (zero skips,
+  three isolated DB tests), related regressions including loader 127/127, shared
+  302/302; API types/build/lint passed. No schema change/backfill/activation;
+  disposable DB stopped. CP-005 remains IN PROGRESS; full acceptance still pending.
+- Value-purchase collection checkpoint (October 29): default loader reconciles
+  original immutable holding purchase economics/sellers with external net cash,
+  per-seller bases, first-collection units and historical stored-credit sale rates.
+  Bonus credit is not cash; unsupported spending/package/refund/void paths remain
+  blocked. Focused plus tenancy 260/260 (zero skips, three isolated DB tests),
+  related regressions including loader 122/122, shared 302/302; API types/build/lint
+  passed. No schema change/backfill/activation; disposable DB stopped, data retained.
+  CP-005 remains IN PROGRESS; source corrections/API/UI/full acceptance pending.
 - FOC operational-economics checkpoint (October 29): original checkout writes
   immutable independent sale-line snapshot; default close reconciles full FOC list
   price/quantity/performer shares/category and historical rates, never receipt cash

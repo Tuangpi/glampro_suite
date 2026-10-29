@@ -8,6 +8,18 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 package tender reconciliation (October 29, 2026)
+
+- SalePayment does not persist a holding ID. Match the complete sale-level PACKAGE
+  tender count to verified draw count and aggregate gross to covered service units,
+  using POS first-unit residual-cent allocation after voucher discount. Do not invent
+  a payment-to-holding pairing. Zero-price covered units still require zero tenders.
+- Match complete sale payment inventory to exact current-month payment rows; freeze
+  both inventories. A matched PACKAGE tender is not fresh cash and is excluded from
+  external payment operations. Missing/unmatched/duplicate/negative/gateway-linked
+  tenders and prepaid-credit spending remain unavailable. This does not authorize
+  transfers, overrides, corrected/reversed histories or partial-package FOC.
+
 ### CP-005 scoped statements and internal persistence (October 29, 2026)
 
 - Compose one statement from disjoint assigned-outlet plan and out-of-scope

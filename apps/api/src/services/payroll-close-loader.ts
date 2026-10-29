@@ -3,6 +3,7 @@ import {
   commissionAttributionSchema,
   commissionSharesSchema,
   allocatePayrollSplit,
+  minimumPayrollPackageDeposit,
   payrollPeriodKeySchema,
   payrollPlanVersionSchema,
   type PayrollGroupMetric,
@@ -24,6 +25,16 @@ import { resolvePayrollCloseConfiguration } from "./payroll-close-configuration.
 import { resolvePayrollCloseGroupMetrics } from "./payroll-close-group-metrics.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
+import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js";
+import { verifyPayrollPackageTenders } from "./payroll-close-package-tender.js";
+import {
+  verifyPayrollPackagePurchase,
+  verifyPayrollPackageCollection,
+} from "./payroll-close-package-purchase.js";
+import {
+  verifyPayrollValuePurchase,
+  verifyPayrollValueCollection,
+} from "./payroll-close-value-purchase.js";
 import { payrollInputHash } from "./payroll-close-state.js";
 import { verifiedPayrollClose, type PayrollCloseLoader } from "./payroll-close-store.js";
 
@@ -127,21 +138,83 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     }),
     tx.commissionRule.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
   ]);
-  if (redemptions.length) unavailable("REDEMPTION_WORKFLOW_NOT_LOADED");
+  if (redemptions.some((row) => row.itemType !== "PACKAGE" || row.revertedAt !== null))
+    unavailable("REDEMPTION_WORKFLOW_NOT_LOADED");
   if (
     refunds.length ||
     sales.some((sale) => sale.voidedAt && sale.voidedAt >= from && sale.voidedAt < to)
   )
     unavailable("REFUND_OR_VOID_WORKFLOW_NOT_LOADED");
-  if (events.some((event) => !["SALE_LINE", "COLLECTION"].includes(event.sourceType)))
+  if (events.some((event) => !["SALE_LINE", "COLLECTION", "REDEMPTION"].includes(event.sourceType)))
     unavailable("SOURCE_WORKFLOW_NOT_LOADED");
-  // A prior usage can cover sale-line quantities. Until its coverage is loaded,
-  // do not incorrectly treat a partially covered sale as an ordinary full line.
+  // A prior usage can cover sale-line quantities. Reconcile all holdings on
+  // each affected sale before resolving any ordinary service economics.
   const saleIds = [
-    ...new Set([...sales.map((sale) => sale.id), ...collections.map((row) => row.saleId)]),
+    ...new Set([
+      ...sales.map((sale) => sale.id),
+      ...collections.map((row) => row.saleId),
+      ...redemptions.map((row) => row.saleId),
+    ]),
   ];
-  if (await tx.customerRedemption.count({ where: { tenantId, saleId: { in: saleIds } } }))
-    unavailable("SALE_USAGE_COVERAGE_NOT_LOADED");
+  const saleCoverage = new Map<
+    string,
+    Awaited<ReturnType<typeof loadPayrollSalePackageCoverage>>
+  >();
+  const packageTenders = new Map<string, unknown>();
+  const verifiedPackagePaymentIds = new Set<string>();
+  for (const saleId of saleIds) {
+    const usageCount = await tx.customerRedemption.count({ where: { tenantId, saleId } });
+    if (!usageCount) continue;
+    const covered = await loadPayrollSalePackageCoverage(tx, saleId);
+    const tenderPayments = await tx.salePayment.findMany({
+      where: { tenantId, saleId },
+      orderBy: { id: "asc" },
+    });
+    const tender = verifyPayrollPackageTenders(
+      covered.evidence.sale,
+      tenderPayments,
+      covered.lines,
+      covered.evidence.redemptions.length,
+    );
+    const monthlyTenders = payments.filter(
+      (row) => row.saleId === saleId && row.method === "PACKAGE",
+    );
+    const expectedMonthlyTenders = tenderPayments.filter(
+      (row) => row.method === "PACKAGE" && row.createdAt >= from && row.createdAt < to,
+    );
+    if (
+      monthlyTenders.length !== expectedMonthlyTenders.length ||
+      expectedMonthlyTenders.some(
+        (row) =>
+          !monthlyTenders.some((candidate) => {
+            const { sale: _sale, ...payment } = candidate;
+            return payrollInputHash(snapshot(payment)) === payrollInputHash(snapshot(row));
+          }),
+      )
+    )
+      unavailable("PACKAGE_TENDER_MONTH_INVENTORY_UNCONFIRMED");
+    packageTenders.set(saleId, { tender, payments: snapshot(tenderPayments) });
+    for (const id of tender.paymentIds) verifiedPackagePaymentIds.add(id);
+    if (covered.evidence.redemptions.length !== usageCount)
+      unavailable("SALE_PACKAGE_COVERAGE_UNCONFIRMED");
+    const monthly = covered.evidence.redemptions.filter(
+      (row) => row.usedAt >= from && row.usedAt < to,
+    );
+    const inventoried = redemptions.filter((row) => row.saleId === saleId);
+    if (
+      monthly.length !== inventoried.length ||
+      monthly.some(
+        (row) =>
+          !inventoried.some(
+            (other) => payrollInputHash(snapshot(row)) === payrollInputHash(snapshot(other)),
+          ),
+      )
+    )
+      unavailable("REDEMPTION_MONTH_INVENTORY_UNCONFIRMED");
+    saleCoverage.set(saleId, covered);
+  }
+  if (redemptions.some((row) => !saleCoverage.has(row.saleId)))
+    unavailable("REDEMPTION_MONTH_INVENTORY_UNCONFIRMED");
   const {
     carry,
     resolved: carryResult,
@@ -149,14 +222,96 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   } = await loadStoredPayrollCarry(tx, tenantId, periodKey);
 
   const operations: PayrollCloseInputRecords["inventoryOperations"] = [];
+  for (const redemption of redemptions) {
+    const covered = saleCoverage.get(redemption.saleId)!;
+    const capture = covered.evidence.captures.find((row) => row.sourceId === redemption.id);
+    const monthly = events.filter(
+      (row) => row.sourceType === "REDEMPTION" && row.sourceId === redemption.id,
+    );
+    if (
+      !capture ||
+      monthly.length !== 1 ||
+      payrollInputHash(snapshot(capture)) !== payrollInputHash(snapshot(monthly[0]))
+    )
+      unavailable("REDEMPTION_MONTH_CAPTURE_UNCONFIRMED");
+    operations.push({
+      tenantId,
+      sourceType: "REDEMPTION",
+      sourceId: redemption.id,
+      saleId: redemption.saleId,
+      outletId: covered.evidence.sale.outletId,
+      occurredAt: redemption.usedAt,
+      evidence: snapshot({ redemption, coverage: covered.lines }),
+    });
+  }
+  const packagePurchases = new Map<string, ReturnType<typeof verifyPayrollPackagePurchase>>();
+  const packageCollections = new Set<string>();
+  const loadPackagePurchase = async (
+    line: (typeof sales)[number]["lines"][number],
+    sale: (typeof sales)[number],
+  ) => {
+    const existing = packagePurchases.get(line.id);
+    if (existing) return existing;
+    if (sale.status !== "COMPLETED") unavailable("PACKAGE_PURCHASE_SALE_UNCONFIRMED");
+    const holdings = await tx.customerPackageHolding.findMany({
+      where: { tenantId, saleLineId: line.id },
+      orderBy: { id: "asc" },
+    });
+    const purchase = verifyPayrollPackagePurchase(holdings, line, sale, tenantId);
+    packagePurchases.set(line.id, purchase);
+    return purchase;
+  };
+  const valuePurchases = new Map<string, ReturnType<typeof verifyPayrollValuePurchase>>();
+  const loadValuePurchase = async (line: (typeof sales)[number]["lines"][number]) => {
+    const existing = valuePurchases.get(line.id);
+    if (existing) return existing;
+    const holdings = await tx.customerValuePackageHolding.findMany({
+      where: { tenantId, saleLineId: line.id },
+      orderBy: { id: "asc" },
+    });
+    const purchase = verifyPayrollValuePurchase(
+      holdings,
+      line,
+      tenantId,
+      packagePurchaseValue(
+        line.lineTotal.toFixed(2),
+        line.voucherDiscountAmount.toFixed(2),
+        line.taxAmount.toFixed(2),
+      ).netCents,
+    );
+    valuePurchases.set(line.id, purchase);
+    return purchase;
+  };
   for (const sale of sales) {
     if (sale.soldAt < from || sale.soldAt >= to) continue;
     if (sale.collectionCurrency !== "SGD") unavailable("SALE_CURRENCY_UNCONFIRMED");
     for (const line of sale.lines) {
-      if (["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType))
-        unavailable("PACKAGE_PURCHASE_WORKFLOW_NOT_LOADED");
+      if (line.itemType === "PACKAGE") {
+        await loadPackagePurchase(line, sale);
+        continue;
+      }
+      if (line.itemType === "VALUE_PACKAGE") {
+        if (sale.status !== "COMPLETED") unavailable("VALUE_PURCHASE_SALE_UNCONFIRMED");
+        await loadValuePurchase(line);
+        continue;
+      }
       if (!["SERVICE", "PRODUCT"].includes(line.itemType)) continue;
+      const usage = saleCoverage.get(sale.id);
+      if (
+        usage &&
+        payrollInputHash(snapshot(usage.evidence.sale)) !== payrollInputHash(snapshot(sale))
+      )
+        unavailable("SALE_USAGE_INVENTORY_UNCONFIRMED");
+      const quantity =
+        usage?.lines.find((row) => row.saleLineId === line.id)?.remainingQuantity ?? line.quantity;
+      if (quantity === 0) {
+        if (events.some((row) => row.sourceType === "SALE_LINE" && row.sourceId === line.id))
+          unavailable("COVERED_SERVICE_SOURCE_UNEXPECTED");
+        continue;
+      }
       const gross = line.lineTotal.minus(line.voucherDiscountAmount);
+      if (quantity !== line.quantity && gross.isZero())
+        unavailable("PARTIAL_PACKAGE_FOC_NOT_LOADED");
       const foc = gross.isZero() ? resolvePayrollFocEconomics(line, sale.soldAt) : null;
       if (foc && !line.taxAmount.isZero()) unavailable("FOC_OPERATIONAL_TAX_MISMATCH");
       const event = events.find(
@@ -181,10 +336,11 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         const shares = line.itemType === "PRODUCT" ? attribution.sellers : attribution.performers;
         if (!shares) unavailable("ORDINARY_LINE_ATTRIBUTION_UNAVAILABLE");
         const expected = allocatePayrollSplit(
-          foc?.baseAmount ?? gross.minus(line.taxAmount).toFixed(4),
+          foc?.baseAmount ??
+            gross.minus(line.taxAmount).mul(quantity).div(line.quantity).toFixed(4),
           shares,
         );
-        const units = allocatePayrollSplit(`${line.quantity}.0000`, shares);
+        const units = allocatePayrollSplit(`${quantity}.0000`, shares);
         if (
           captured.lines.length !== expected.length ||
           captured.lines.some(
@@ -219,14 +375,25 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     }
   }
   const paymentOperations: PayrollCloseInputRecords["sources"]["operations"] = [];
-  for (const payment of payments) {
-    if (["PACKAGE", "PREPAID_CREDIT"].includes(payment.method))
-      unavailable("PREPAID_PAYMENT_WORKFLOW_NOT_LOADED");
+  const addSalePayment = (payment: (typeof payments)[number], target = paymentOperations) => {
+    if (
+      payment.tenantId !== tenantId ||
+      payment.sale.tenantId !== tenantId ||
+      payment.saleId !== payment.sale.id
+    )
+      unavailable("PAYMENT_SALE_UNCONFIRMED");
+    if (payment.method === "PACKAGE") {
+      if (!verifiedPackagePaymentIds.has(payment.id)) unavailable("PACKAGE_TENDER_UNCONFIRMED");
+      // Matched prepaid session tender is consideration already collected at
+      // purchase, not an external payment operation or current cash receipt.
+      return;
+    }
+    if (payment.method === "PREPAID_CREDIT") unavailable("PREPAID_PAYMENT_WORKFLOW_NOT_LOADED");
     if (payment.sessionId !== null) unavailable("GATEWAY_SETTLEMENT_UNCONFIRMED");
     if (payment.sale.status === "HELD" || payment.sale.collectionCurrency !== "SGD")
       unavailable("PAYMENT_SALE_UNCONFIRMED");
-    if (payment.amount.isZero()) continue;
-    paymentOperations.push({
+    if (payment.amount.isZero()) return;
+    target.push({
       tenantId,
       sourceType: "SALE_PAYMENT",
       sourceId: payment.id,
@@ -235,20 +402,27 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       grossCents: payment.amount.mul(100).toFixed(0),
       occurredAt: payment.createdAt,
     });
-  }
-  for (const payment of outstanding) {
+  };
+  const addOutstandingPayment = (
+    payment: (typeof outstanding)[number],
+    target = paymentOperations,
+  ) => {
     if (
       !payment.sale ||
+      payment.tenantId !== tenantId ||
+      payment.sale.tenantId !== tenantId ||
+      payment.sale.id !== payment.saleId ||
       payment.sale.status === "HELD" ||
       payment.sale.collectionCurrency !== "SGD" ||
       payment.sale.customerId !== payment.customerId ||
       payment.outstanding.saleId !== payment.saleId ||
       payment.outstanding.customerId !== payment.customerId ||
+      payment.outstanding.id !== payment.outstandingId ||
       payment.outstanding.tenantId !== tenantId
     )
       unavailable("OUTSTANDING_PAYMENT_IDENTITY_UNCONFIRMED");
-    if (payment.paidAmount.isZero()) continue;
-    paymentOperations.push({
+    if (payment.paidAmount.isZero()) return;
+    target.push({
       tenantId,
       sourceType: "OUTSTANDING_PAYMENT",
       sourceId: payment.id,
@@ -257,7 +431,10 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       grossCents: payment.paidAmount.mul(100).toFixed(0),
       occurredAt: payment.paidAt,
     });
-  }
+  };
+  outstanding.forEach((payment) => addOutstandingPayment(payment));
+  payments.forEach((payment) => addSalePayment(payment));
+  const packageHistory = new Map<string, unknown>();
   const cashAttributions: PayrollCloseInputRecords["cashAttributions"] = [];
   const normalizedCollections: PayrollCloseInputRecords["sources"]["collections"] = [];
   for (const collection of collections) {
@@ -271,7 +448,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     // including prior-month instalments. Gross equality alone cannot prove net cash.
     const history = await tx.commissionCollection.findMany({
       where: { tenantId, saleId: sale.id },
-      include: { allocations: true },
+      include: { allocations: { orderBy: { id: "asc" } } },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     const collected = new Map<string, bigint>();
@@ -307,11 +484,251 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       }
       if (receipt.id === collection.id) break;
     }
+    for (const allocation of collection.allocations) {
+      const line = sale.lines.find((row) => row.id === allocation.saleLineId);
+      if (line?.itemType === "PACKAGE") {
+        const purchase = await loadPackagePurchase(line, sale);
+        const receipts = history.filter((row) =>
+          row.allocations.some((part) => part.saleLineId === line.id),
+        );
+        if (
+          sale.soldAt >= to ||
+          !receipts.length ||
+          new Set(receipts.map((row) => row.id)).size !== receipts.length ||
+          new Set(receipts.map((row) => `${row.sourceType}:${row.sourceId}`)).size !==
+            receipts.length ||
+          !receipts.some((row) => row.id === collection.id) ||
+          receipts.some(
+            (row, index) =>
+              !["SALE_PAYMENT", "OUTSTANDING_PAYMENT"].includes(row.sourceType) ||
+              (index === 0 && row.sourceType !== "SALE_PAYMENT") ||
+              row.occurredAt < sale.soldAt ||
+              row.occurredAt >= to ||
+              row.tenantId !== tenantId ||
+              row.saleId !== sale.id ||
+              row.currency !== "SGD" ||
+              (index > 0 &&
+                (row.createdAt <= receipts[index - 1].createdAt ||
+                  row.occurredAt < receipts[index - 1].occurredAt)),
+          )
+        )
+          unavailable("PACKAGE_COLLECTION_HISTORY_UNCONFIRMED");
+        // Historical inventory is verification-only: never append it to monthly cash
+        // operations, source lines, group metrics or required staff.
+        let receiptPayments = paymentOperations;
+        let receiptEvents = events;
+        if (receipts.some((row) => row.occurredAt < from)) {
+          const [priorPayments, priorOutstanding, priorEvents] = await Promise.all([
+            tx.salePayment.findMany({
+              where: { tenantId, saleId: sale.id, createdAt: { lt: from } },
+              include: { sale: true },
+              orderBy: { id: "asc" },
+            }),
+            tx.customerOutstandingPayment.findMany({
+              where: { tenantId, saleId: sale.id, paidAt: { lt: from } },
+              include: { outstanding: true, sale: true },
+              orderBy: { id: "asc" },
+            }),
+            tx.payrollSourceEvent.findMany({
+              where: { tenantId, saleId: sale.id, occurredAt: { lt: from } },
+              orderBy: { id: "asc" },
+            }),
+          ]);
+          receiptPayments = [...paymentOperations];
+          priorPayments.forEach((payment) => {
+            if (
+              payment.tenantId !== tenantId ||
+              payment.saleId !== sale.id ||
+              payment.createdAt >= from
+            )
+              unavailable("PACKAGE_COLLECTION_PAYMENT_UNCONFIRMED");
+            addSalePayment(payment, receiptPayments);
+          });
+          priorOutstanding.forEach((payment) => {
+            if (payment.saleId !== sale.id || payment.paidAt >= from)
+              unavailable("PACKAGE_COLLECTION_PAYMENT_UNCONFIRMED");
+            addOutstandingPayment(payment, receiptPayments);
+          });
+          if (
+            priorEvents.some(
+              (event) =>
+                event.saleId !== sale.id ||
+                event.tenantId !== tenantId ||
+                event.occurredAt >= from ||
+                event.sourceType !== "COLLECTION" ||
+                !history.some((receipt) =>
+                  receipt.allocations.some((part) => part.id === event.sourceId),
+                ),
+            )
+          )
+            unavailable("PACKAGE_COLLECTION_HISTORY_UNCONFIRMED");
+          receiptEvents = [...events, ...priorEvents];
+          if (
+            receiptPayments
+              .filter((payment) => payment.saleId === sale.id && payment.occurredAt < from)
+              .some(
+                (payment) =>
+                  history.filter(
+                    (receipt) =>
+                      receipt.sourceType === payment.sourceType &&
+                      receipt.sourceId === payment.sourceId,
+                  ).length !== 1,
+              )
+          )
+            unavailable("PACKAGE_COLLECTION_PAYMENT_UNCONFIRMED");
+          packageHistory.set(sale.id, snapshot({ priorPayments, priorOutstanding, priorEvents }));
+        }
+        if (
+          receipts.some((receipt) => {
+            const matching = receiptPayments.filter(
+              (row) => row.sourceType === receipt.sourceType && row.sourceId === receipt.sourceId,
+            );
+            const payment = matching[0];
+            return (
+              matching.length !== 1 ||
+              !payment ||
+              payment.saleId !== sale.id ||
+              payment.currency !== receipt.currency ||
+              payment.grossCents !== receipt.grossCents.toString() ||
+              payment.occurredAt.getTime() !== receipt.occurredAt.getTime()
+            );
+          })
+        )
+          unavailable("PACKAGE_COLLECTION_PAYMENT_UNCONFIRMED");
+        if (
+          receipts.some((receipt) => {
+            if (receipt.occurredAt < from) return false;
+            const inventoried = collections.find((row) => row.id === receipt.id);
+            return (
+              !inventoried ||
+              payrollInputHash(snapshot(inventoried)) !== payrollInputHash(snapshot(receipt))
+            );
+          })
+        )
+          unavailable("PACKAGE_COLLECTION_HISTORY_UNCONFIRMED");
+        const firstAllocation = receipts[0].allocations.find((row) => row.saleLineId === line.id)!;
+        if (
+          firstAllocation.grossCents <
+          minimumPayrollPackageDeposit(
+            BigInt(purchase.grossCents),
+            purchase.commissionSettings.minimumDepositPct,
+          )
+        )
+          unavailable("PACKAGE_MINIMUM_DEPOSIT_UNCONFIRMED");
+        for (const [index, receipt] of receipts.entries()) {
+          if (index > receipts.findIndex((row) => row.id === collection.id)) break;
+          const part = receipt.allocations.find((row) => row.saleLineId === line.id)!;
+          const captures = receiptEvents.filter(
+            (row) => row.sourceType === "COLLECTION" && row.sourceId === part.id,
+          );
+          if (captures.length !== 1) unavailable("PACKAGE_COLLECTION_CAPTURE_MISSING");
+          const event = captures[0];
+          if (
+            part.tenantId !== tenantId ||
+            part.collectionId !== receipt.id ||
+            event.tenantId !== tenantId ||
+            event.saleId !== sale.id ||
+            event.outletId !== sale.outletId ||
+            event.occurredAt.getTime() !== receipt.occurredAt.getTime()
+          )
+            unavailable("PACKAGE_COLLECTION_HISTORY_UNCONFIRMED");
+          // Reuse source-envelope validation in the receipt's own local month;
+          // its returned lines are deliberately not included in current payroll.
+          const dateParts = new Intl.DateTimeFormat("en", {
+            timeZone: tenant.timeZone,
+            year: "numeric",
+            month: "2-digit",
+          }).formatToParts(event.occurredAt);
+          const receiptPeriod = ["year", "month"]
+            .map((type) => dateParts.find((part) => part.type === type)!.value)
+            .join("-");
+          if (
+            !resolvePayrollCloseSources({
+              ...common,
+              periodKey: receiptPeriod,
+              events: [{ ...event, sourceType: "COLLECTION" }],
+              lineageEvents: [],
+            }).sources
+          )
+            unavailable("PACKAGE_COLLECTION_HISTORY_UNCONFIRMED");
+          verifyPayrollPackageCollection(
+            event.evidence,
+            purchase,
+            line.quantity,
+            part.netCents,
+            index,
+          );
+          const provenance = verifyOrdinaryPayrollRateProvenance(
+            event.evidence,
+            line,
+            event.occurredAt,
+            event.createdAt,
+            commissionRules,
+            tenantId,
+          );
+          if (provenance.category !== null) unavailable("PACKAGE_COLLECTION_CATEGORY_MISMATCH");
+        }
+        operations.push({
+          tenantId,
+          sourceType: "COLLECTION",
+          sourceId: allocation.id,
+          saleId: sale.id,
+          outletId: sale.outletId,
+          occurredAt: collection.occurredAt,
+          evidence: snapshot({ sale, line, purchase, allocation, history }),
+        });
+        packageCollections.add(line.id);
+        continue;
+      }
+      if (line?.itemType !== "VALUE_PACKAGE") continue;
+      if (sale.status !== "COMPLETED" || collection.occurredAt < sale.soldAt)
+        unavailable("VALUE_PURCHASE_SALE_UNCONFIRMED");
+      const purchase = await loadValuePurchase(line);
+      const receipts = history.filter((row) =>
+        row.allocations.some((part) => part.saleLineId === line.id),
+      );
+      const first = receipts[0];
+      if (
+        !first ||
+        !receipts.some((row) => row.id === collection.id) ||
+        receipts.some(
+          (row, index) =>
+            index > 0 && row.createdAt.getTime() === receipts[index - 1].createdAt.getTime(),
+        )
+      )
+        unavailable("VALUE_COLLECTION_ORDER_UNCONFIRMED");
+      const event = events.find(
+        (row) => row.sourceType === "COLLECTION" && row.sourceId === allocation.id,
+      );
+      if (!event) unavailable("VALUE_COLLECTION_CAPTURE_MISSING");
+      verifyPayrollValueCollection(
+        event.evidence,
+        allocation.netCents,
+        first.id === collection.id ? `${line.quantity}.0000` : "0.0000",
+        purchase.sellers,
+      );
+      const provenance = verifyOrdinaryPayrollRateProvenance(
+        event.evidence,
+        line,
+        event.occurredAt,
+        event.createdAt,
+        commissionRules,
+        tenantId,
+      );
+      if (provenance.category !== null) unavailable("VALUE_COLLECTION_CATEGORY_MISMATCH");
+      operations.push({
+        tenantId,
+        sourceType: "COLLECTION",
+        sourceId: allocation.id,
+        saleId: sale.id,
+        outletId: sale.outletId,
+        occurredAt: collection.occurredAt,
+        evidence: snapshot({ sale, line, purchase, allocation, history }),
+      });
+    }
     const allocations = collection.allocations.map((allocation) => {
       const line = sale.lines.find((row) => row.id === allocation.saleLineId);
       if (!line) unavailable("ALLOCATION_SALE_LINE_UNAVAILABLE");
-      if (["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType))
-        unavailable("PACKAGE_PURCHASE_WORKFLOW_NOT_LOADED");
       const historical = z
         .object({
           version: z.literal(1),
@@ -357,6 +774,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       allocations,
     });
   }
+  if ([...packagePurchases.keys()].some((id) => !packageCollections.has(id)))
+    unavailable("PACKAGE_COLLECTION_REQUIRED");
   const sources = {
     ...common,
     events: events as PayrollCloseInputRecords["sources"]["events"],
@@ -478,6 +897,11 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     authoritative: {
       version: 1,
       operations: snapshot({ sales, payments, outstanding }),
+      valuePurchases: snapshot([...valuePurchases].sort(([a], [b]) => a.localeCompare(b))),
+      packageHistory: snapshot([...packageHistory].sort(([a], [b]) => a.localeCompare(b))),
+      packagePurchases: snapshot([...packagePurchases].sort(([a], [b]) => a.localeCompare(b))),
+      saleCoverage: snapshot([...saleCoverage].sort(([a], [b]) => a.localeCompare(b))),
+      packageTenders: snapshot([...packageTenders].sort(([a], [b]) => a.localeCompare(b))),
       priorCloses: priorEvidence,
     },
   };

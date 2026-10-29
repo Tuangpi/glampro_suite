@@ -67,7 +67,17 @@ export function verifyOrdinaryPayrollRateProvenance(
       {
         staffId: part.staffId,
         itemId: line.itemId,
-        itemKind: line.foc ? "FOC" : line.itemType === "PRODUCT" ? "PRODUCT" : "SERVICE",
+        itemKind: line.foc
+          ? "FOC"
+          : line.itemType === "PACKAGE_REDEMPTION"
+            ? "PACKAGE_REDEMPTION"
+            : line.itemType === "VALUE_PACKAGE"
+              ? "STORED_CREDIT_SALE"
+              : line.itemType === "PACKAGE"
+                ? "PACKAGE_SALE"
+                : line.itemType === "PRODUCT"
+                  ? "PRODUCT"
+                  : "SERVICE",
         departmentId: provenance.category,
         legacyServiceRate: recorded.legacyServiceRate,
       },

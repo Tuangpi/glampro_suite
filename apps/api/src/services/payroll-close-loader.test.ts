@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
+import {
+  PAYROLL_DEFAULT_SETTINGS,
+  capturePayrollPackagePurchase,
+  type PayrollPackageSettings,
+} from "@glampro_suite/shared";
 import { Prisma } from "../../generated/prisma/client.js";
 import { runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
@@ -16,6 +20,857 @@ import type { PayrollOpeningCarry } from "./payroll-close-opening.js";
 
 const owner = { id: "owner", role: "SUPER_ADMIN", disabled: false, twoFactorEnabled: true };
 const D = (value: string) => new Prisma.Decimal(value);
+function packagePurchaseFixture(mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FOLLOW_PLAN") {
+  const f = valuePurchaseFixture();
+  const sale = f.data.sales[0];
+  sale.customerId = "customer";
+  const line = sale.lines[0];
+  line.itemType = "PACKAGE";
+  const settings: PayrollPackageSettings = {
+    sale: mode === "FIXED" ? { mode, amount: "12.34" } : { mode },
+    redemption: { mode: "FOLLOW_PLAN" },
+    minimumDepositPct: "30",
+  };
+  f.data.packageHoldings.push({
+    tenantId: "salon",
+    saleLineId: line.id,
+    packageId: line.itemId,
+    quantity: 10,
+    payrollPurchaseSnapshot: capturePayrollPackagePurchase({
+      saleId: sale.id,
+      saleLineId: line.id,
+      packageId: line.itemId,
+      originalCustomerId: sale.customerId,
+      outletId: sale.outletId,
+      purchasedAt: sale.soldAt.toISOString(),
+      currency: "SGD",
+      grantedSessions: 10,
+      grossCents: "10900",
+      netCents: "10000",
+      taxCents: "900",
+      sellers: line.attribution.sellers,
+      commissionSettings: settings,
+    }),
+  });
+  const captured = f.data.events[0].evidence
+    .lines[0] as (typeof f.data.events)[0]["evidence"]["lines"][number] & {
+    fixedCommission?: string;
+  };
+  captured.commissionType = "PKG_SALE";
+  captured.mode = mode;
+  if (mode === "FIXED") captured.fixedCommission = "12.3400";
+  return f;
+}
+
+test("full single-receipt package purchases reconcile all original sale policies", async () => {
+  for (const mode of ["FOLLOW_PLAN", "EXCLUDE", "FIXED"] as const) {
+    const f = packagePurchaseFixture(mode);
+    const inputs = await f.load();
+    const line = inputs.staff[0].calculation.lines[0];
+    assert.equal(inputs.staff[0].collection, "100.0000");
+    assert.equal(line.commissionType, "PKG_SALE");
+    assert.equal(line.baseAmount, "100.0000");
+    assert.equal(line.units, "1.0000");
+    assert.equal(line.mode, mode);
+    assert.equal(line.fixedCommission, mode === "FIXED" ? "12.3400" : undefined);
+    assert.equal(payrollInputHash(await f.load()), payrollInputHash(inputs));
+    const query = f.queries.find((row) => row.model === "customerPackageHolding")!;
+    assert.deepEqual(query.args, {
+      where: { tenantId: "salon", saleLineId: "line" },
+      orderBy: { id: "asc" },
+    });
+  }
+});
+
+test("package purchases reject missing, foreign, noncanonical and changed original economics", async () => {
+  for (const mutate of [
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.packageHoldings = [];
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.packageHoldings.push(f.data.packageHoldings[0]);
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.packageHoldings[0].tenantId = "other";
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.packageHoldings[0].saleLineId = "other";
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.packageHoldings[0].packageId = "other";
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.packageHoldings[0].quantity = 11;
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.packageHoldings[0].payrollPurchaseSnapshot = null;
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.sales[0].customerId = "other";
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.sales[0].lines[0].taxAmount = D("8");
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      const s = f.data.packageHoldings[0].payrollPurchaseSnapshot as Record<string, unknown>;
+      s.sessionBaseFloor = "999.0000";
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      const s = f.data.packageHoldings[0].payrollPurchaseSnapshot as Record<string, unknown>;
+      s.commissionSettings = null;
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.events[0].evidence.lines[0].units = "10.0000";
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.events[0].evidence.lines[0].baseAmount = "109.0000";
+    },
+    (f: ReturnType<typeof packagePurchaseFixture>) => {
+      f.data.events[0].evidence.lines[0].mode = "EXCLUDE";
+    },
+  ]) {
+    const f = packagePurchaseFixture();
+    mutate(f);
+    await assert.rejects(f.load(), /PACKAGE_PURCHASE_EVIDENCE_UNCONFIRMED/);
+  }
+  const fixed = packagePurchaseFixture("FIXED");
+  (fixed.data.events[0].evidence.lines[0] as { fixedCommission?: string }).fixedCommission =
+    "24.6800";
+  await assert.rejects(fixed.load(), /PACKAGE_PURCHASE_EVIDENCE_UNCONFIRMED/);
+});
+
+test("package deposits use receipt net cash and require capture, rates and a collection", async () => {
+  const partial = packagePurchaseFixture();
+  partial.data.payments[0].amount = D("54.50");
+  partial.data.collections[0].grossCents = 5450n;
+  Object.assign(partial.data.collections[0].allocations[0], {
+    grossCents: 5450n,
+    netCents: 5000n,
+    taxCents: 450n,
+  });
+  partial.data.events[0].evidence.lines[0].baseAmount = "50.0000";
+  const inputs = await partial.load();
+  assert.equal(inputs.staff[0].collection, "50.0000");
+  assert.equal(inputs.staff[0].calculation.lines[0].baseAmount, "50.0000");
+  const absent = packagePurchaseFixture();
+  absent.data.collections = [];
+  absent.data.payments = [];
+  absent.data.events = [];
+  await assert.rejects(absent.load(), /PACKAGE_COLLECTION_REQUIRED/);
+  const missing = packagePurchaseFixture();
+  missing.data.events = [];
+  await assert.rejects(missing.load(), /PACKAGE_COLLECTION_CAPTURE_MISSING/);
+  const rate = packagePurchaseFixture();
+  rate.data.events[0].evidence.lines[0].fallbackRatePct = "10";
+  await assert.rejects(rate.load(), /RATE_PROVENANCE_UNCONFIRMED/);
+  const multiple = packagePurchaseFixture();
+  const current = multiple.data.collections[0];
+  const prior = {
+    ...current,
+    id: "prior",
+    createdAt: new Date("2026-09-14T00:00:00Z"),
+    grossCents: 5450n,
+    allocations: [
+      { ...current.allocations[0], grossCents: 5450n, netCents: 5000n, taxCents: 450n },
+    ],
+  };
+  current.grossCents = 5450n;
+  Object.assign(current.allocations[0], { grossCents: 5450n, netCents: 5000n, taxCents: 450n });
+  multiple.data.payments[0].amount = D("54.50");
+  multiple.tx.commissionCollection.findMany = (async (args: { where: { saleId?: string } }) =>
+    args.where.saleId
+      ? [prior, current]
+      : [current]) as unknown as typeof multiple.tx.commissionCollection.findMany;
+  await assert.rejects(multiple.load(), /PACKAGE_COLLECTION_HISTORY_UNCONFIRMED/);
+});
+
+function packageInstalmentFixture(mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FIXED") {
+  const f = packagePurchaseFixture(mode);
+  const first = f.data.collections[0];
+  first.grossCents = 3270n;
+  Object.assign(first.allocations[0], { grossCents: 3270n, netCents: 3000n, taxCents: 270n });
+  f.data.payments[0].amount = D("32.70");
+  const at = new Date("2026-09-20T00:00:00Z");
+  const next = {
+    ...first,
+    id: "collection-2",
+    sourceId: "payment-2",
+    createdAt: at,
+    occurredAt: at,
+    grossCents: 7630n,
+    allocations: [
+      {
+        ...first.allocations[0],
+        id: "allocation-2",
+        collectionId: "collection-2",
+        grossCents: 7630n,
+        netCents: 7000n,
+        taxCents: 630n,
+      },
+    ],
+  };
+  f.data.collections.push(next);
+  f.data.payments.push({
+    ...f.data.payments[0],
+    id: "payment-2",
+    amount: D("76.30"),
+    createdAt: at,
+  });
+  const event = f.data.events[0];
+  event.evidence.lines[0].baseAmount = "30.0000";
+  const later = structuredClone(event);
+  later.id = "capture-2";
+  later.sourceId = "allocation-2";
+  later.sourceKey = "collection:allocation-2";
+  later.occurredAt = later.createdAt = at;
+  later.evidence.rateProvenance.rateAt = at.toISOString();
+  Object.assign(later.evidence.lines[0], {
+    id: "base-2",
+    businessDate: "2026-09-20",
+    baseAmount: "70.0000",
+    units: "0.0000",
+    ...(mode === "FIXED" ? { fixedCommission: "0.0000" } : {}),
+  });
+  f.data.events.push(later);
+  return f;
+}
+
+function crossMonthPackageFixture(
+  mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FIXED",
+  outstanding = false,
+) {
+  const f = outstanding ? packageOutstandingFixture(mode) : packageInstalmentFixture(mode);
+  const at = new Date("2026-08-31T15:59:59.999Z");
+  const sale = f.data.sales[0];
+  sale.soldAt = at;
+  const purchase = f.data.packageHoldings[0].payrollPurchaseSnapshot as ReturnType<
+    typeof capturePayrollPackagePurchase
+  >;
+  purchase.purchasedAt = at.toISOString();
+  f.data.collections[0].occurredAt = f.data.collections[0].createdAt = at;
+  f.data.payments[0].createdAt = at;
+  const event = f.data.events[0];
+  event.occurredAt = event.createdAt = at;
+  event.evidence.rateProvenance.rateAt = at.toISOString();
+  event.evidence.lines[0].businessDate = "2026-08-31";
+  type Query = { where: { saleId?: string; createdAt?: unknown; occurredAt?: unknown } };
+  f.tx.sale.findMany = (async () => []) as typeof f.tx.sale.findMany;
+  f.tx.commissionCollection.findMany = (async ({ where }: Query) =>
+    where.saleId
+      ? f.data.collections
+      : f.data.collections.slice(1)) as unknown as typeof f.tx.commissionCollection.findMany;
+  f.tx.salePayment.findMany = (async ({ where }: Query) =>
+    where.saleId
+      ? f.data.payments.slice(0, 1)
+      : f.data.payments.slice(1)) as unknown as typeof f.tx.salePayment.findMany;
+  f.tx.payrollSourceEvent.findMany = (async ({ where }: Query) =>
+    where.saleId
+      ? f.data.events.slice(0, 1)
+      : f.data.events.slice(1)) as unknown as typeof f.tx.payrollSourceEvent.findMany;
+  f.tx.customerOutstandingPayment.findMany = (async ({ where }: Query) =>
+    where.saleId
+      ? []
+      : f.data.outstanding) as unknown as typeof f.tx.customerOutstandingPayment.findMany;
+  return f;
+}
+
+test("cross-month package history verifies prior cash without repeating its bases, units or awards", async () => {
+  for (const mode of ["FOLLOW_PLAN", "EXCLUDE", "FIXED"] as const) {
+    for (const outstanding of [false, true]) {
+      const f = crossMonthPackageFixture(mode, outstanding);
+      const inputs = await f.load();
+      assert.equal(inputs.staff[0].collection, "70.0000");
+      assert.equal(inputs.staff[0].calculation.lines.length, 1);
+      const line = inputs.staff[0].calculation.lines[0];
+      assert.equal(line.baseAmount, "70.0000");
+      assert.equal(line.units, "0.0000");
+      assert.equal(line.mode, mode);
+      assert.equal(line.fixedCommission, mode === "FIXED" ? "0.0000" : undefined);
+      assert.equal(payrollInputHash(await f.load()), payrollInputHash(inputs));
+    }
+  }
+});
+
+test("cross-month package history rejects missing or altered historical payment and capture evidence", async () => {
+  for (const mutate of [
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.payments.shift();
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.payments[0].amount = D("32.69");
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.payments[0].tenantId = "foreign";
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.payments[0].sessionId = "unsettled";
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.events.shift();
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.events[0].saleId = "other";
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.events[0].evidence.lines[0].units = "0.0000";
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.events[0].evidence.lines[0].fixedCommission = "0.0000";
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.events[0].evidence.lines[0].fallbackRatePct = "10";
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.collections[0].allocations[0].netCents += 1n;
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.events[1].evidence.lines[0].units = "1.0000";
+    },
+    (f: ReturnType<typeof crossMonthPackageFixture>) => {
+      f.data.events[1].evidence.lines[0].fixedCommission = "12.3400";
+    },
+  ]) {
+    const f = crossMonthPackageFixture();
+    mutate(f);
+    await assert.rejects(f.load(), /Authoritative payroll inputs unavailable/);
+  }
+});
+
+test("historical evidence changes invalidate a cross-month draft without adding prior cash", async () => {
+  const f = crossMonthPackageFixture();
+  const inputs = await f.load();
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    inputs,
+    owner,
+    "2026-10-01T00:00:00.000Z",
+  );
+  f.data.events[0].createdAt = new Date("2026-08-31T16:00:01.000Z");
+  const changed = await f.load();
+  assert.equal(changed.staff[0].collection, "70.0000");
+  assert.throws(
+    () => approvePayrollClose(draft, 1, changed, owner, "2026-10-01T01:00:00.000Z", "Review"),
+    /inputs changed/,
+  );
+});
+
+test("same-month package instalments reconcile net cash with units and fixed award only once", async () => {
+  for (const mode of ["FOLLOW_PLAN", "EXCLUDE", "FIXED"] as const) {
+    const f = packageInstalmentFixture(mode);
+    const inputs = await f.load();
+    assert.equal(inputs.staff[0].collection, "100.0000");
+    const lines = inputs.staff[0].calculation.lines;
+    assert.deepEqual(lines.map((row) => row.baseAmount).sort(), ["30.0000", "70.0000"]);
+    assert.deepEqual(lines.map((row) => row.units).sort(), ["0.0000", "1.0000"]);
+    if (mode === "FIXED")
+      assert.deepEqual(lines.map((row) => row.fixedCommission).sort(), ["0.0000", "12.3400"]);
+    f.data.events[1].evidence.lines[0].units = "1.0000";
+    await assert.rejects(f.load(), /PACKAGE_PURCHASE_EVIDENCE_UNCONFIRMED/);
+  }
+  const fixed = packageInstalmentFixture();
+  fixed.data.events[1].evidence.lines[0].fixedCommission = "12.3400";
+  await assert.rejects(fixed.load(), /PACKAGE_PURCHASE_EVIDENCE_UNCONFIRMED/);
+});
+
+function packageOutstandingFixture(mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FIXED") {
+  const f = packageInstalmentFixture(mode);
+  const receipt = f.data.collections[1];
+  receipt.sourceType = "OUTSTANDING_PAYMENT";
+  const payment = f.data.payments.pop()!;
+  const outstanding = { id: "debt", tenantId: "salon", saleId: "sale", customerId: "customer" };
+  const balance = {
+    id: payment.id,
+    tenantId: "salon",
+    saleId: "sale",
+    customerId: "customer",
+    outstandingId: outstanding.id,
+    paidAmount: payment.amount,
+    paidAt: payment.createdAt,
+    outstanding,
+    sale: f.data.sales[0],
+  };
+  f.data.outstanding.push(balance);
+  return { ...f, balance };
+}
+
+test("same-month outstanding package balances add only collected net without repeating award or units", async () => {
+  for (const mode of ["FOLLOW_PLAN", "EXCLUDE", "FIXED"] as const) {
+    const f = packageOutstandingFixture(mode);
+    const inputs = await f.load();
+    assert.equal(inputs.staff[0].collection, "100.0000");
+    const later = inputs.staff[0].calculation.lines.find((row) => row.units === "0.0000")!;
+    assert.equal(later.baseAmount, "70.0000");
+    assert.equal(later.mode, mode);
+    assert.equal(later.fixedCommission, mode === "FIXED" ? "0.0000" : undefined);
+    assert.equal(payrollInputHash(await f.load()), payrollInputHash(inputs));
+  }
+});
+
+test("outstanding package balances reject foreign or mismatched payment/debt identity", async () => {
+  for (const mutate of [
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.tenantId = "other";
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.sale.tenantId = "other";
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.saleId = "other";
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.customerId = "other";
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.outstandingId = "other";
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.outstanding.tenantId = "other";
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.outstanding.saleId = "other";
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.outstanding.customerId = "other";
+    },
+  ]) {
+    const f = packageOutstandingFixture();
+    mutate(f);
+    await assert.rejects(f.load(), /OUTSTANDING_PAYMENT_IDENTITY_UNCONFIRMED/);
+  }
+});
+
+test("outstanding package receipts require independently matching payment amount, time and capture", async () => {
+  for (const mutate of [
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.data.outstanding = [];
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.paidAmount = D("76.29");
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.balance.paidAt = new Date("2026-09-21T00:00:00Z");
+    },
+    (f: ReturnType<typeof packageOutstandingFixture>) => {
+      f.data.collections[1].sourceId = "other";
+    },
+  ]) {
+    const f = packageOutstandingFixture();
+    mutate(f);
+    await assert.rejects(f.load(), /PACKAGE_COLLECTION_PAYMENT_UNCONFIRMED/);
+  }
+  const missing = packageOutstandingFixture();
+  missing.data.events.pop();
+  await assert.rejects(missing.load(), /PACKAGE_COLLECTION_CAPTURE_MISSING/);
+  const changed = packageOutstandingFixture();
+  const inputs = await changed.load();
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    inputs,
+    owner,
+    "2026-10-01T00:00:00.000Z",
+  );
+  changed.balance.outstanding.id = "new-debt";
+  changed.balance.outstandingId = "new-debt";
+  const awaitInputs = await changed.load();
+  assert.throws(
+    () => approvePayrollClose(draft, 1, awaitInputs, owner, "2026-10-01T01:00:00.000Z", "Review"),
+    /inputs changed/,
+  );
+});
+
+test("historical package purchases allow later deposits but still require an original sale-payment deposit", async () => {
+  const historical = packageOutstandingFixture();
+  historical.data.sales[0].soldAt = new Date("2026-08-15T00:00:00Z");
+  const snapshot = historical.data.packageHoldings[0].payrollPurchaseSnapshot as ReturnType<
+    typeof capturePayrollPackagePurchase
+  >;
+  snapshot.purchasedAt = historical.data.sales[0].soldAt.toISOString();
+  assert.equal((await historical.load()).staff[0].collection, "100.0000");
+  const first = packageOutstandingFixture();
+  first.data.collections[0].sourceType = "OUTSTANDING_PAYMENT";
+  await assert.rejects(first.load(), /PACKAGE_COLLECTION_HISTORY_UNCONFIRMED/);
+  const duplicated = packageOutstandingFixture();
+  duplicated.data.collections[1].sourceId = duplicated.data.collections[0].sourceId;
+  await assert.rejects(duplicated.load(), /PACKAGE_COLLECTION_PAYMENT_UNCONFIRMED/);
+});
+
+test("package deposit threshold rounds up and ambiguous, foreign or out-of-period history blocks close", async () => {
+  const rounded = packageInstalmentFixture();
+  const original = rounded.data.packageHoldings[0].payrollPurchaseSnapshot as ReturnType<
+    typeof capturePayrollPackagePurchase
+  >;
+  const {
+    version: _version,
+    status: _status,
+    sessionBaseFloor: _floor,
+    extraBaseTickSessions: _extra,
+    missingEvidence: _missing,
+    ...purchase
+  } = original;
+  rounded.data.packageHoldings[0].payrollPurchaseSnapshot = capturePayrollPackagePurchase({
+    ...purchase,
+    commissionSettings: { ...purchase.commissionSettings!, minimumDepositPct: "30.01" },
+  });
+  // 10900 * 30.01% = 3271.09 cents; the required deposit is 3272, never 3271.
+  rounded.data.collections[0].grossCents = 3271n;
+  Object.assign(rounded.data.collections[0].allocations[0], {
+    grossCents: 3271n,
+    netCents: 3001n,
+    taxCents: 270n,
+  });
+  rounded.data.payments[0].amount = D("32.71");
+  await assert.rejects(rounded.load(), /PACKAGE_MINIMUM_DEPOSIT_UNCONFIRMED/);
+  const under = packageInstalmentFixture();
+  under.data.collections[0].grossCents = 3269n;
+  Object.assign(under.data.collections[0].allocations[0], {
+    grossCents: 3269n,
+    netCents: 2999n,
+    taxCents: 270n,
+  });
+  under.data.payments[0].amount = D("32.69");
+  await assert.rejects(under.load(), /PACKAGE_MINIMUM_DEPOSIT_UNCONFIRMED/);
+  for (const mutate of [
+    (f: ReturnType<typeof packageInstalmentFixture>) => {
+      f.data.collections[1].createdAt = f.data.collections[0].createdAt;
+    },
+    (f: ReturnType<typeof packageInstalmentFixture>) => {
+      f.data.collections[1].occurredAt = new Date("2026-10-01T00:00:00Z");
+    },
+    (f: ReturnType<typeof packageInstalmentFixture>) => {
+      f.data.collections[1].tenantId = "foreign";
+    },
+    (f: ReturnType<typeof packageInstalmentFixture>) => {
+      f.data.collections[1].sourceType = "OUTSTANDING_PAYMENT";
+    },
+    (f: ReturnType<typeof packageInstalmentFixture>) => {
+      f.data.events.pop();
+    },
+    (f: ReturnType<typeof packageInstalmentFixture>) => {
+      f.data.payments.pop();
+    },
+  ]) {
+    const f = packageInstalmentFixture();
+    mutate(f);
+    await assert.rejects(
+      f.load(),
+      /PACKAGE_COLLECTION_HISTORY_UNCONFIRMED|PACKAGE_COLLECTION_PAYMENT_UNCONFIRMED|PACKAGE_COLLECTION_CAPTURE_MISSING|CASH_RECONCILIATION_UNAVAILABLE/,
+    );
+  }
+  const incomplete = packageInstalmentFixture();
+  const history = [...incomplete.data.collections];
+  incomplete.tx.commissionCollection.findMany = (async (args: { where: { saleId?: string } }) =>
+    args.where.saleId
+      ? history
+      : [history[1]]) as unknown as typeof incomplete.tx.commissionCollection.findMany;
+  await assert.rejects(incomplete.load(), /PACKAGE_COLLECTION_HISTORY_UNCONFIRMED/);
+  const tax = packageInstalmentFixture();
+  tax.data.collections[1].allocations[0].netCents += 1n;
+  tax.data.collections[1].allocations[0].taxCents -= 1n;
+  await assert.rejects(tax.load(), /OPERATIONAL_COLLECTION_TAX_MISMATCH/);
+  const gateway = packageInstalmentFixture();
+  gateway.data.payments[1].sessionId = "unsettled";
+  await assert.rejects(gateway.load(), /GATEWAY_SETTLEMENT_UNCONFIRMED/);
+});
+
+test("fixed package award splits once per sale line and changed award invalidates approval", async () => {
+  const f = packagePurchaseFixture("FIXED");
+  const shares = [
+    { staffId: "staff", share: 3333 },
+    { staffId: "owner", share: 6667 },
+  ];
+  f.data.staff.push({ tenantId: "salon", id: "owner", name: "Owner", disabled: false });
+  f.data.configuration.push(
+    ...f.data.configuration
+      .slice(1)
+      .map((row) => ({ ...row, id: `${row.id}-owner`, targetId: "owner" })),
+  );
+  f.data.sales[0].lines[0].attribution.sellers = shares;
+  f.data.collections[0].allocations[0].evidence.sellers = shares;
+  const original = f.data.packageHoldings[0].payrollPurchaseSnapshot as ReturnType<
+    typeof capturePayrollPackagePurchase
+  >;
+  const {
+    version: _version,
+    status: _status,
+    sessionBaseFloor: _floor,
+    extraBaseTickSessions: _extra,
+    missingEvidence: _missing,
+    ...input
+  } = original;
+  const purchaseInput = { ...input, sellers: shares };
+  f.data.packageHoldings[0].payrollPurchaseSnapshot = capturePayrollPackagePurchase(purchaseInput);
+  const event = f.data.events[0];
+  event.evidence.lines = [
+    {
+      ...event.evidence.lines[0],
+      baseAmount: "33.3300",
+      units: "0.3333",
+      fixedCommission: "4.1129",
+    },
+    {
+      ...event.evidence.lines[0],
+      id: "owner-base",
+      staffId: "owner",
+      baseAmount: "66.6700",
+      units: "0.6667",
+      fixedCommission: "8.2271",
+    },
+  ] as typeof event.evidence.lines;
+  event.evidence.rateProvenance.selections.push({
+    ...event.evidence.rateProvenance.selections[0],
+    staffId: "owner",
+  });
+  const inputs = await f.load();
+  assert.equal(inputs.staff.find((row) => row.staff.id === "staff")!.collection, "33.3300");
+  assert.equal(inputs.staff.find((row) => row.staff.id === "owner")!.collection, "66.6700");
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    inputs,
+    owner,
+    "2026-10-01T00:00:00.000Z",
+  );
+  f.data.packageHoldings[0].payrollPurchaseSnapshot = capturePayrollPackagePurchase({
+    ...purchaseInput,
+    commissionSettings: {
+      ...purchaseInput.commissionSettings!,
+      sale: { mode: "FIXED", amount: "15" },
+    },
+  });
+  (event.evidence.lines[0] as { fixedCommission?: string }).fixedCommission = "4.9995";
+  (event.evidence.lines[1] as { fixedCommission?: string }).fixedCommission = "10.0005";
+  const changed = await f.load();
+  assert.throws(
+    () => approvePayrollClose(draft, 1, changed, owner, "2026-10-01T01:00:00.000Z", "Review"),
+    /inputs changed/,
+  );
+});
+
+test("package purchase uses historical package-sale rules and fixed award is not multiplied by units", async () => {
+  const f = packagePurchaseFixture("FIXED");
+  f.data.sales[0].lines[0].quantity = 2;
+  const event = f.data.events[0];
+  event.evidence.lines[0].units = "2.0000";
+  event.evidence.lines[0].fallbackRatePct = "7";
+  event.evidence.rateProvenance.selections[0].selection = {
+    rate: "7",
+    source: "PACKAGE",
+    ruleId: "historical-package",
+  };
+  const rule = {
+    id: "historical-package",
+    tenantId: "salon",
+    staffId: null,
+    itemKind: "PACKAGE_SALE",
+    scope: "PACKAGE",
+    targetId: "service",
+    rate: D("7"),
+    effectiveAt: new Date("2026-09-01T00:00:00Z"),
+    createdAt: new Date("2026-09-01T00:00:00Z"),
+  };
+  f.tx.commissionRule.findMany = (async () => [
+    rule,
+    { ...rule, id: "later-package", rate: D("90"), createdAt: new Date("2026-10-01T00:00:00Z") },
+  ]) as unknown as typeof f.tx.commissionRule.findMany;
+  const inputs = await f.load();
+  assert.equal(inputs.staff[0].calculation.lines[0].fallbackRatePct, "7");
+  assert.equal(inputs.staff[0].calculation.lines[0].fixedCommission, "12.3400");
+  assert.equal(inputs.staff[0].calculation.lines[0].units, "2.0000");
+  rule.itemKind = "SERVICE";
+  await assert.rejects(f.load(), /RATE_PROVENANCE_UNCONFIRMED/);
+});
+function valuePurchaseFixture() {
+  const f = loaderFixture();
+  const line = f.data.sales[0].lines[0];
+  line.itemType = "VALUE_PACKAGE";
+  const event = f.data.events[0];
+  event.sourceType = "COLLECTION";
+  event.sourceId = "allocation";
+  event.sourceKey = "collection:allocation";
+  event.evidence.lines[0].commissionType = "VP_SALE";
+  event.evidence.lines[0].fallbackRatePct = "0";
+  event.evidence.rateProvenance.selections[0].selection = {
+    rate: "0",
+    source: "NONE",
+    ruleId: null,
+  };
+  f.data.valueHoldings.push({
+    tenantId: "salon",
+    saleLineId: line.id,
+    valuePackageId: line.itemId,
+    amount: D("150"),
+    payrollPurchaseSnapshot: {
+      version: 1,
+      saleId: "sale",
+      saleLineId: "line",
+      currency: "SGD",
+      paidNet: "100.00",
+      credit: "150.00",
+      sellers: line.attribution.sellers,
+    },
+  });
+  return f;
+}
+
+test("value purchase uses collected net cash, not bonus credit, and inventories its capture", async () => {
+  const f = valuePurchaseFixture();
+  const inputs = await f.load();
+  assert.equal(inputs.staff[0].collection, "100.0000");
+  assert.equal(inputs.staff[0].calculation.lines[0].commissionType, "VP_SALE");
+  assert.equal(inputs.staff[0].calculation.lines[0].baseAmount, "100.0000");
+  assert.equal(inputs.staff[0].calculation.lines[0].units, "1.0000");
+  assert.equal(payrollInputHash(await f.load()), payrollInputHash(inputs));
+  const query = f.queries.find((row) => row.model === "customerValuePackageHolding")!;
+  assert.deepEqual(query.args, {
+    where: { tenantId: "salon", saleLineId: "line" },
+    orderBy: { id: "asc" },
+  });
+});
+
+test("value purchase independently rejects missing, foreign, duplicate or mismatched evidence", async () => {
+  for (const mutate of [
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.valueHoldings = [];
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.valueHoldings.push(f.data.valueHoldings[0]);
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.valueHoldings[0].tenantId = "other";
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.valueHoldings[0].saleLineId = "other";
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.valueHoldings[0].valuePackageId = "other";
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.valueHoldings[0].amount = D("151");
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.valueHoldings[0].payrollPurchaseSnapshot = null;
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.sales[0].lines[0].taxAmount = D("8");
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.sales[0].lines[0].attribution.sellers = [{ staffId: "other", share: 10000 }];
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.events[0].evidence.lines[0].baseAmount = "150.0000";
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.events[0].evidence.lines[0].units = "2.0000";
+    },
+    (f: ReturnType<typeof valuePurchaseFixture>) => {
+      f.data.events[0].evidence.lines[0].mode = "EXCLUDE";
+    },
+  ]) {
+    const f = valuePurchaseFixture();
+    mutate(f);
+    await assert.rejects(f.load(), /VALUE_PURCHASE_EVIDENCE_UNCONFIRMED/);
+  }
+});
+
+test("value collections require capture and stored-credit historical rate, not service fallback", async () => {
+  const missing = valuePurchaseFixture();
+  missing.data.events = [];
+  await assert.rejects(missing.load(), /VALUE_COLLECTION_CAPTURE_MISSING/);
+  const rate = valuePurchaseFixture();
+  rate.data.events[0].evidence.lines[0].fallbackRatePct = "10";
+  await assert.rejects(rate.load(), /RATE_PROVENANCE_UNCONFIRMED/);
+});
+
+test("later value instalments retain purchase evidence and contribute zero repeated units", async () => {
+  const f = valuePurchaseFixture();
+  const prior = structuredClone(f.data.collections[0]);
+  prior.id = "prior-collection";
+  prior.sourceId = "prior-payment";
+  prior.createdAt = prior.occurredAt = new Date("2026-08-15T00:00:00Z");
+  prior.grossCents = 5450n;
+  prior.allocations[0] = {
+    ...prior.allocations[0],
+    id: "prior-allocation",
+    collectionId: prior.id,
+    grossCents: 5450n,
+    netCents: 5000n,
+    taxCents: 450n,
+  };
+  const current = f.data.collections[0];
+  current.grossCents = 5450n;
+  Object.assign(current.allocations[0], { grossCents: 5450n, netCents: 5000n, taxCents: 450n });
+  f.data.payments[0].amount = D("54.50");
+  f.data.sales[0].soldAt = prior.occurredAt;
+  f.data.events[0].evidence.lines[0].baseAmount = "50.0000";
+  f.data.events[0].evidence.lines[0].units = "0.0000";
+  f.tx.commissionCollection.findMany = (async (args: { where: { saleId?: string } }) =>
+    args.where.saleId
+      ? [prior, current]
+      : [current]) as unknown as typeof f.tx.commissionCollection.findMany;
+  const inputs = await f.load();
+  assert.equal(inputs.staff[0].collection, "50.0000");
+  assert.equal(inputs.staff[0].calculation.lines[0].units, "0.0000");
+  f.data.events[0].evidence.lines[0].units = "1.0000";
+  await assert.rejects(f.load(), /VALUE_PURCHASE_EVIDENCE_UNCONFIRMED/);
+  f.data.events[0].evidence.lines[0].units = "0.0000";
+  prior.createdAt = current.createdAt;
+  await assert.rejects(f.load(), /VALUE_COLLECTION_ORDER_UNCONFIRMED/);
+});
+
+test("value purchase split residuals reconcile per seller and invalidate stale approval", async () => {
+  const f = valuePurchaseFixture();
+  const shares = [
+    { staffId: "staff", share: 3333 },
+    { staffId: "owner", share: 6667 },
+  ];
+  f.data.staff.push({ tenantId: "salon", id: "owner", name: "Owner", disabled: false });
+  f.data.configuration.push(
+    ...f.data.configuration
+      .slice(1)
+      .map((row) => ({ ...row, id: `${row.id}-owner`, targetId: "owner" })),
+  );
+  f.data.sales[0].lines[0].attribution.sellers = shares;
+  f.data.collections[0].allocations[0].evidence.sellers = shares;
+  const holding = f.data.valueHoldings[0];
+  const snapshot = holding.payrollPurchaseSnapshot as { sellers: typeof shares; credit: string };
+  snapshot.sellers = shares;
+  const event = f.data.events[0];
+  event.evidence.lines = [
+    { ...event.evidence.lines[0], baseAmount: "33.3300", units: "0.3333" },
+    {
+      ...event.evidence.lines[0],
+      id: "owner-base",
+      staffId: "owner",
+      baseAmount: "66.6700",
+      units: "0.6667",
+    },
+  ];
+  event.evidence.rateProvenance.selections.push({
+    ...event.evidence.rateProvenance.selections[0],
+    staffId: "owner",
+  });
+  const inputs = await f.load();
+  assert.equal(inputs.staff.find((row) => row.staff.id === "staff")!.collection, "33.3300");
+  assert.equal(inputs.staff.find((row) => row.staff.id === "owner")!.collection, "66.6700");
+  const draft = calculatePayrollClose(
+    openPayrollClose("2026-09"),
+    0,
+    inputs,
+    owner,
+    "2026-10-01T00:00:00.000Z",
+  );
+  holding.amount = D("151");
+  snapshot.credit = "151.00";
+  const changed = await f.load();
+  assert.notEqual(payrollInputHash(inputs), payrollInputHash(changed));
+  assert.throws(
+    () => approvePayrollClose(draft, 1, changed, owner, "2026-10-01T01:00:00.000Z", "Review"),
+    /inputs changed/,
+  );
+});
+
 export function loaderFixture() {
   const previousInputs: PayrollCloseInputs = {
     periodKey: "2026-08",
@@ -70,6 +925,7 @@ export function loaderFixture() {
     status: "COMPLETED",
     outletId: "branch",
     collectionCurrency: "SGD",
+    customerId: null as string | null,
     soldAt: new Date("2026-09-15T00:00:00Z"),
     voidedAt: null,
     lines: [line],
@@ -115,6 +971,7 @@ export function loaderFixture() {
           mode: "FOLLOW_PLAN",
           status: "EARNED",
           fallbackRatePct: "10",
+          ...({} as { fixedCommission?: string }),
         },
       ],
     },
@@ -138,6 +995,20 @@ export function loaderFixture() {
     refunds: [] as unknown[],
     events: [capture],
     legacy: [] as unknown[],
+    packageHoldings: [] as {
+      tenantId: string;
+      saleLineId: string;
+      packageId: string;
+      quantity: number;
+      payrollPurchaseSnapshot: unknown;
+    }[],
+    valueHoldings: [] as {
+      tenantId: string;
+      saleLineId: string;
+      valuePackageId: string;
+      amount: Prisma.Decimal;
+      payrollPurchaseSnapshot: unknown;
+    }[],
     configuration: [
       event("SETTINGS", "company", PAYROLL_DEFAULT_SETTINGS),
       event("STAFF", "staff", {
@@ -157,6 +1028,7 @@ export function loaderFixture() {
       {
         tenantId: "salon",
         id: "collection",
+        createdAt: sale.soldAt,
         sourceType: "SALE_PAYMENT",
         sourceId: "payment",
         saleId: "sale",
@@ -206,7 +1078,11 @@ export function loaderFixture() {
         twoFactorEnabled: true,
       }),
     },
-    sale: { ...many("sale", () => data.sales), findFirstOrThrow: async () => sale },
+    sale: {
+      ...many("sale", () => data.sales),
+      findFirstOrThrow: async () => sale,
+      findFirst: async () => sale,
+    },
     salePayment: many("salePayment", () => data.payments),
     customerOutstandingPayment: many("customerOutstandingPayment", () => data.outstanding),
     customerRedemption: {
@@ -214,6 +1090,7 @@ export function loaderFixture() {
       count: async () => data.usageCount,
     },
     saleRefund: many("saleRefund", () => data.refunds),
+    commissionRedemptionSnapshot: many("commissionRedemptionSnapshot", () => []),
     payrollSourceEvent: many("payrollSourceEvent", () => data.events),
     payrollConfigurationEvent: many("payrollConfigurationEvent", () => data.configuration),
     payrollPlanVersion: many("payrollPlanVersion", () => []),
@@ -231,6 +1108,8 @@ export function loaderFixture() {
     },
     payrollCarryAuthorization: many("payrollCarryAuthorization", () => []),
     commissionRule: many("commissionRule", () => []),
+    customerValuePackageHolding: many("customerValuePackageHolding", () => data.valueHoldings),
+    customerPackageHolding: many("customerPackageHolding", () => data.packageHoldings),
   } as unknown as PayrollCloseTransaction;
   const load = () =>
     runAsTenant(
@@ -327,13 +1206,13 @@ test("uncertain settlement, usage, refunds and package inputs fail closed indepe
       (f) => {
         f.data.usageCount = 1;
       },
-      /SALE_USAGE_COVERAGE_NOT_LOADED/,
+      /SALE_PACKAGE_COVERAGE_UNCONFIRMED/,
     ],
     [
       (f) => {
         f.data.sales[0].lines[0].itemType = "PACKAGE";
       },
-      /PACKAGE_PURCHASE_WORKFLOW_NOT_LOADED/,
+      /PACKAGE_PURCHASE_EVIDENCE_UNCONFIRMED/,
     ],
     [
       (f) => {
@@ -534,15 +1413,21 @@ test("FOC captures must reconcile independent price, category, type and performe
   await assert.rejects(missingCapture.load(), /INVENTORY_UNAVAILABLE/);
 });
 
-test("FOC usage and prepaid tenders remain blocked even with independent list-price evidence", async () => {
+test("unverified FOC usage and prepaid-credit tenders remain blocked even with list-price evidence", async () => {
   const usage = focFixture();
   usage.data.usageCount = 1;
-  await assert.rejects(usage.load(), /SALE_USAGE_COVERAGE_NOT_LOADED/);
+  await assert.rejects(usage.load(), /SALE_PACKAGE_COVERAGE_UNCONFIRMED/);
   const prepaid = focFixture();
   prepaid.data.payments = [
     { ...loaderFixture().data.payments[0], method: "PREPAID_CREDIT", sale: prepaid.data.sales[0] },
   ];
   await assert.rejects(prepaid.load(), /PREPAID_PAYMENT_WORKFLOW_NOT_LOADED/);
+});
+
+test("package tenders without independently verified usage cannot disappear from cash inventory", async () => {
+  const f = loaderFixture();
+  f.data.payments[0].method = "PACKAGE";
+  await assert.rejects(f.load(), /PACKAGE_TENDER_UNCONFIRMED/);
 });
 
 test("FOC exact multi-performer residuals are retained with no fabricated cash", async () => {
