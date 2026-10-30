@@ -22,6 +22,7 @@ import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import { openPayrollClose } from "./payroll-close-state.js";
 import { transferSessionPackage } from "./session-transfer.service.js";
+import { hashPassword } from "../lib/password.js";
 
 test(
   "CP-005 isolated authoritative ordinary close, missing-capture rollback and stale approval",
@@ -823,6 +824,10 @@ test(
         // A second independently purchased/paid holding shares usage service lines
         // with the first. Never clone immutable history or remove captures to make
         // a corruption case: inspect the incomplete state before its real writer.
+        await prisma.user.update({
+          where: { id: ownerId },
+          data: { posPinHash: await hashPassword("654321") },
+        });
         mock.timers.reset();
         mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-01T00:00:00Z") });
         const secondHolding = await prisma.$transaction(async (tx) => {
@@ -836,7 +841,7 @@ test(
                 collectionCurrency: "SGD",
                 totalQuantity: 1,
                 totalAmount: "109",
-                paidAmount: "109",
+                paidAmount: "32.70",
                 taxAmount: "9",
                 soldAt: new Date(),
               },
@@ -862,13 +867,13 @@ test(
               customerId: recipient.id,
               packageId: sessionPackage.id,
               saleLineId: line.id,
-              quantity: 10,
-              quantityRemaining: 10,
+              quantity: 2,
+              quantityRemaining: 2,
               redemptionRules: {
                 mode: "PER_UNIT",
                 requirements: [{ serviceId: complimentary.id, quantity: 1 }],
               },
-              payrollAvailableOrdinals: [{ first: 1, last: 10 }],
+              payrollAvailableOrdinals: [{ first: 1, last: 2 }],
               payrollPurchaseSnapshot: capturePayrollPackagePurchase({
                 saleId: purchase.id,
                 saleLineId: line.id,
@@ -877,7 +882,7 @@ test(
                 outletId: outlet.id,
                 purchasedAt: purchase.soldAt.toISOString(),
                 currency: "SGD",
-                grantedSessions: 10,
+                grantedSessions: 2,
                 grossCents: "10900",
                 netCents: "10000",
                 taxCents: "900",
@@ -891,7 +896,7 @@ test(
               tenantId,
               saleId: purchase.id,
               method: "CASH",
-              amount: "109",
+              amount: "32.70",
               createdAt: new Date(),
             },
           });
@@ -902,7 +907,15 @@ test(
             saleId: purchase.id,
             currency: "SGD",
             reason: "Second independent package purchase",
-            allocations: [{ saleLineId: line.id, grossCents: "10900" }],
+            allocations: [{ saleLineId: line.id, grossCents: "3270" }],
+          });
+          await tx.customerOutstanding.create({
+            data: {
+              tenantId,
+              customerId: recipient.id,
+              saleId: purchase.id,
+              unpaidAmount: "76.30",
+            },
           });
           return holding;
         });
@@ -946,7 +959,19 @@ test(
                 },
               });
               for (const holding of [packageHolding, secondHolding]) {
-                const draw = await drawPayrollPackageSessions(tx, holding.id, 1);
+                const draw = await drawPayrollPackageSessions(
+                  tx,
+                  holding.id,
+                  1,
+                  holding.id === secondHolding.id
+                    ? {
+                        managerId: ownerId,
+                        pin: "654321",
+                        reason: "Synthetic unpaid session approval",
+                      }
+                    : undefined,
+                  usage.id,
+                );
                 const redemption = await tx.customerRedemption.create({
                   data: {
                     tenantId,
@@ -1056,7 +1081,7 @@ test(
             assert.equal(packageDraws.length, 3);
             assert.deepEqual(
               packageDraws.map((row) => row.baseAmount),
-              ["10.0000", "10.0000", "10.0000"],
+              ["10.0000", "10.0000", "50.0000"],
             );
             assert.deepEqual(
               inputs.calculation.lines
@@ -1064,9 +1089,72 @@ test(
                 .map((row) => [row.baseAmount, row.units]),
               [["109.0000", "1.0000"]],
             );
-            assert.equal(inputs.collection, "100.0000");
+            assert.equal(inputs.collection, "30.0000");
             const reloadedDraft = await calculateStoredPayrollClose("2026-11", november.revision);
             assert.equal(reloadedDraft.calculation!.inputHash, november.calculation!.inputHash);
+            const overrides = await prisma.auditLog.findMany({
+              where: { targetId: secondHolding.id, action: "package.unpaid-session.override" },
+            });
+            assert.equal(overrides.length, 1);
+            assert.equal(JSON.stringify(overrides).includes("654321"), false);
+            for (const corruption of [
+              "MISSING",
+              "DUPLICATE",
+              "SALE",
+              "ROLE",
+              "PAID",
+              "LEGACY",
+            ] as const) {
+              const before = await prisma.payrollClose.findFirstOrThrow({
+                where: { periodKey: "2026-11" },
+              });
+              const audits = await prisma.payrollCloseEvent.count({
+                where: { periodKey: "2026-11" },
+              });
+              const alteredLoader: PayrollCloseLoader = (tx, state) =>
+                loadAuthoritativePayrollCloseInputs(
+                  new Proxy(tx, {
+                    get(target, property) {
+                      if (property !== "auditLog") return Reflect.get(target, property);
+                      return new Proxy(target.auditLog, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                            const rows = await delegate.findMany(args);
+                            if (corruption === "MISSING") return [];
+                            if (corruption === "DUPLICATE") return [...rows, ...rows];
+                            return rows.map((row) => {
+                              const metadata = { ...(row.metadata as Record<string, unknown>) };
+                              if (corruption === "SALE") metadata.saleId = "foreign";
+                              if (corruption === "ROLE") metadata.managerRole = "STAFF";
+                              if (corruption === "PAID") metadata.paidSessions = 2;
+                              if (corruption === "LEGACY") delete metadata.saleId;
+                              return { ...row, metadata };
+                            });
+                          };
+                        },
+                      });
+                    },
+                  }),
+                  state,
+                );
+              await assert.rejects(
+                calculateStoredPayrollClose("2026-11", reloadedDraft.revision, alteredLoader),
+                /REDEMPTION_EVIDENCE_UNCONFIRMED/,
+                corruption,
+              );
+              assert.equal(
+                payrollInputHash(
+                  (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: "2026-11" } }))
+                    .state,
+                ),
+                payrollInputHash(before.state),
+              );
+              assert.equal(
+                await prisma.payrollCloseEvent.count({ where: { periodKey: "2026-11" } }),
+                audits,
+              );
+            }
             for (const corruption of [
               "MISSING",
               "FROM",

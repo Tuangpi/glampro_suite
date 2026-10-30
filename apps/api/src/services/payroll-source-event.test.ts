@@ -6,6 +6,7 @@ import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
 test("source writer freezes fallback selection, legacy staff rate, item and department at capture", async () => {
   const at = new Date("2026-09-15T00:00:00Z");
+  const startedAt = Date.now();
   const tx = {
     payrollSourceEvent: {
       findFirst: async () => null,
@@ -39,6 +40,9 @@ test("source writer freezes fallback selection, legacy staff rate, item and depa
     rateProvenance: unknown;
     lines: { productCategory: string; fallbackRatePct: string }[];
   };
+  assert.ok(captured.createdAt instanceof Date);
+  assert.ok(captured.createdAt.getTime() >= startedAt);
+  assert.ok(captured.createdAt.getTime() <= Date.now());
   assert.deepEqual(evidence.rateProvenance, {
     version: 1,
     rateAt: at.toISOString(),

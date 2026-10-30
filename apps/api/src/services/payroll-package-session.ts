@@ -37,6 +37,7 @@ export async function drawPayrollPackageSessions(
   holdingId: string,
   quantity: number,
   override?: { managerId: string; pin: string; reason: string },
+  saleId?: string,
 ) {
   const holding = await tx.customerPackageHolding.findFirstOrThrow({ where: { id: holdingId } });
   if (
@@ -78,23 +79,32 @@ export async function drawPayrollPackageSessions(
     const manager = await tx.user.findFirst({ where: { id: override.managerId, disabled: false } });
     if (
       !manager ||
+      manager.tenantId !== holding.tenantId ||
       !["SUPER_ADMIN", "MANAGER"].includes(manager.globalRole) ||
       !manager.posPinHash ||
       !(await verifyPassword(override.pin, manager.posPinHash))
     )
       throw forbidden("A valid enabled salon manager PIN is required.", "INVALID_MANAGER_PIN");
     const scope = currentScope();
-    if (scope?.kind !== "tenant" || !scope.actorId)
+    if (scope?.kind !== "tenant" || !scope.actorId || scope.tenantId !== holding.tenantId)
       throw forbidden("An authenticated operator is required.");
+    const sale = saleId
+      ? await tx.sale.findFirst({ where: { id: saleId, tenantId: scope.tenantId } })
+      : null;
+    if (!sale || sale.customerId !== holding.customerId || !override.reason.trim())
+      throw conflict("A matching usage sale and reason are required for a package override.");
     await tx.auditLog.create({
       data: {
         tenantId: scope.tenantId,
+        createdAt: new Date(),
         action: "package.unpaid-session.override",
         targetType: "CustomerPackageHolding",
         targetId: holdingId,
         metadata: {
           actorId: scope.actorId,
           managerId: manager.id,
+          managerRole: manager.globalRole,
+          saleId: sale.id,
           reason: override.reason,
           quantity,
           paidSessions: paid,

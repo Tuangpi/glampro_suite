@@ -2,6 +2,30 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — manager-override reconciliation (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. POS now binds verified PIN
+  approval to usage sale/customer/tenant and records historical manager role,
+  actor/reason and paid/used quantities without PIN material. Complete holding
+  audit inventory is independently loaded, matched once to unpaid draws and frozen.
+  Missing, duplicate, foreign, legacy-unbound and mismatched approvals fail closed.
+- Fresh selected API **272/272**, including three isolated DB suites, zero skips;
+  shared **302/302**; API typecheck/build/lint pass. Real PIN writer, deposit-funded
+  unpaid draw and monthly reload retain original 50.0000 session base and only
+  30.0000 current cash. Six audit corruptions leave draft/audit unchanged; approved
+  September/October remain unchanged. Unit coverage verifies authorization failures,
+  no PIN leakage, replay counters and draw-to-capture authorization timing.
+- On resumption, prior `/tmp` logs/cluster were missing. Recreated a fresh isolated
+  PostgreSQL cluster at loopback 55485/database `payroll_close_test`, reapplied
+  repository migrations with dotenv disabled, and reran acceptance. Cluster path
+  recorded in `/tmp/cp005-disposable-cluster.path`; logs `/tmp/cp005-override-*`.
+  Formatting/whitespace checks pass. Disposable cluster stopped cleanly after
+  verification; synthetic fixtures retained.
+- Next: reversals/corrections, prepaid-credit spending/refunds/voids, partial package
+  FOC and close API/UI/full acceptance. Those gates remain closed; CP-005 not DONE.
+  No application database/schema changes, activation, deployment, commit or push.
+
+## Previous checkpoint — session-package transfer reconciliation
+
 - **CP-005 IN PROGRESS — session-package transfer reconciliation (October 29).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Complete append-only transfer
   and draw inventory now replays ownership from original buyer through current

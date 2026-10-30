@@ -337,6 +337,15 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Manager-override reconciliation (October 30): verified POS PIN audits now bind to
+  usage sale/customer/tenant and historical manager role, actor/reason and paid/used
+  counters. Independent complete audit inventory authorizes unpaid draws exactly
+  once and freezes with inputs; legacy-unbound or mismatched audits fail closed.
+  Real PIN writer/monthly reload preserve original session value and deposit-only
+  cash; six audit corruptions preserve draft/audit and approved prior months.
+  Selected API 272/272 (three isolated DB suites, zero skips), shared 302/302;
+  API typecheck/build/lint pass. Logs `/tmp/cp005-override-*`. Remaining lifecycle,
+  partial FOC and API/UI/full acceptance open; CP-005 not DONE, CP-003A/CP-006 untouched.
 - Transfer reconciliation (October 29): complete append-only transfer/draw timeline
   verifies original/current owner, owner-at-draw, remaining quantity and expiry.
   Original purchase value/sellers preserved. Real transfer-service write, recipient

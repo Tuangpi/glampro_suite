@@ -1761,6 +1761,7 @@ async function redeemPackage(
     holding.id,
     sessions,
     tender.unpaidSessionOverride,
+    saleId,
   );
   const drawn = await tx.customerPackageHolding.updateMany({
     where: { id: holding.id, quantityRemaining: { gte: sessions } },

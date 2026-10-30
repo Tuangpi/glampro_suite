@@ -1,12 +1,32 @@
 # CP-005 monthly close acceptance checkpoint
 
-## Status — October 29, 2026
+## Status — October 30, 2026
 
 **IN PROGRESS, not accepted.** CP-004 remains latest completed. No CP-003A or
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
-## Latest checkpoint — session-package transfer reconciliation
+## Latest checkpoint — manager-override reconciliation
+
+- New verified PIN audits bind usage sale/customer/tenant and historical manager
+  role, actor, reason and paid/used/draw counters. Complete holding audit inventory
+  independently matches unpaid draws exactly once and freezes with close inputs.
+  Legacy-unbound, missing, duplicate, foreign and mismatched audits fail closed.
+- Actual PIN writer authorizes a deposit-funded unpaid draw. Monthly draft/reload
+  includes original 50.0000 session base, not deposit-prorated value; current cash
+  is only 30.0000. Existing paid draws remain 10.0000 each. Six audit corruptions
+  preserve saved draft/audit; September/October approved calculations unchanged.
+  Unit coverage checks writer authorization failures/no PIN leakage, replay counters
+  and authorization between POS usage time and explicit source append time.
+- Fresh selected API **272/272**, three isolated DB suites and zero skips; shared
+  **302/302**; API typecheck/build/lint pass. Logs `/tmp/cp005-override-*`.
+  Prior temporary cluster/logs were missing on resumption; fresh isolated cluster
+  recreated, repository migrations replayed with dotenv disabled. No existing
+  application database or schema touched. No browser walkthrough in this checkpoint.
+- Reversals/corrections, prepaid-credit spending/refunds/voids, partial package FOC
+  and close API/UI/full acceptance remain open. CP-005 is not DONE.
+
+## Previous checkpoint — session-package transfer reconciliation
 
 - Complete append-only transfer and unreversed draw history replays original-buyer
   ownership, transfer remaining quantity/expiry and owner-at-draw. Final owner and

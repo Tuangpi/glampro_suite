@@ -22,7 +22,7 @@ const unavailable = (): never => {
 
 /** Internal, non-activating complete holding history. No client-supplied records.
  * Holds the same tenant lock as source writes. Supports ownership-reconciled, unreversed,
- * paid-session history only; refunds, corrections and overrides remain
+ * paid-session or sale-bound manager-override history; refunds and corrections remain
  * blocked. This does not reconcile coverage against OTHER holdings on a sale, and
  * must not on its own enable the monthly close's usage-coverage gate.
  */
@@ -76,6 +76,7 @@ export async function loadPayrollPackageRedemptionHistory(
     events,
     rules,
     refunds,
+    overrides,
   ] = await Promise.all([
     tx.customerRedemption.findMany({ where: { tenantId, holdingId }, orderBy: { id: "asc" } }),
     tx.commissionCollection.findMany({
@@ -103,6 +104,10 @@ export async function loadPayrollPackageRedemptionHistory(
     tx.payrollSourceEvent.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
     tx.commissionRule.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
     tx.saleRefund.findMany({ where: { tenantId, saleId: sale.id }, orderBy: { id: "asc" } }),
+    tx.auditLog.findMany({
+      where: { tenantId, targetId: holdingId, action: "package.unpaid-session.override" },
+      orderBy: { id: "asc" },
+    }),
   ]);
   const redemptionIds = new Set(redemptions.map((row) => row.id));
   const allocationIds = new Set(receipts.flatMap((row) => row.allocations.map((part) => part.id)));
@@ -327,6 +332,7 @@ export async function loadPayrollPackageRedemptionHistory(
     holding,
     redemptions: inputs,
     collections,
+    overrides,
   });
   return {
     verified,
@@ -338,6 +344,7 @@ export async function loadPayrollPackageRedemptionHistory(
       payments,
       outstanding,
       transfers,
+      overrides,
       ownership,
       snapshots: snapshots.filter((row) => redemptionIds.has(row.redemptionId)),
       related,

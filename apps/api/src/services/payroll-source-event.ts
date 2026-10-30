@@ -139,6 +139,9 @@ export async function appendPayrollSource(
       actorId: scope.actorId ?? null,
       reason: input.reason,
       occurredAt: input.occurredAt,
+      // PostgreSQL now() is transaction-start time, before a PIN check/draw.
+      // Capture the append time so source-time authorization can be reconciled.
+      createdAt: new Date(),
       evidence: {
         version: 1,
         status: missing.length ? "UNAVAILABLE" : "CAPTURED",

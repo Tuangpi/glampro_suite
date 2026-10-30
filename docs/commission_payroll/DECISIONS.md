@@ -8,6 +8,24 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 manager-override reconciliation (October 30, 2026)
+
+- POS must bind verified manager PIN authorization to the tenant/holding/customer
+  and usage sale. Freeze verified manager role, actor, reason and paid/used/draw
+  quantities in its audit, never PIN material. Current manager role or PIN hash is
+  not historical authorization evidence. Existing unbound audits remain unavailable;
+  do not infer matches, backfill approvals or rewrite source history.
+- Complete holding override audit inventory must match unpaid draws exactly once,
+  including exact paid/used counters from chronological receipt/session replay.
+  Reject orphan, duplicate, foreign, unnecessary or mismatched approvals. Freeze
+  audit inventory with monthly close evidence; override creates neither cash nor
+  changed purchase value, seller attribution or session ordinals.
+- POS assigns usage time before PIN verification. Approval time must fall between
+  that draw's usage time and source append time, after any prior draw. Source
+  appends explicitly capture application time: PostgreSQL `now()` defaults to
+  transaction start and cannot establish PIN-to-capture ordering. Existing evidence
+  is not rewritten. Reversals/corrections and other unsupported lifecycle remain gated.
+
 ### CP-005 session-package transfer reconciliation (October 29, 2026)
 
 - Replay complete append-only session transfer and unreversed draw history from

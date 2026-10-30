@@ -402,6 +402,119 @@ function inventoryFixture() {
   };
 }
 
+function overrideFixture() {
+  const input = inventoryFixture();
+  input.collections[0].netCents = 3333n;
+  return {
+    ...input,
+    overrides: [
+      {
+        id: "approval",
+        tenantId: "salon",
+        action: "package.unpaid-session.override",
+        targetType: "CustomerPackageHolding",
+        targetId: "holding",
+        createdAt: new Date("2026-09-15T00:00:00Z"),
+        metadata: {
+          actorId: "operator",
+          managerId: "manager",
+          managerRole: "MANAGER",
+          saleId: "usage-sale",
+          reason: "Approved exception",
+          quantity: 2,
+          paidSessions: 0,
+          usedSessions: 0,
+        },
+      },
+    ],
+  };
+}
+
+test("sale-bound override permits unpaid ordinals without changing purchase economics", () => {
+  const input = overrideFixture();
+  // The original per-session policy requires 3334 cents to fund session one.
+  const result = verifyPayrollPackageRedemptionInventory(input);
+  assert.equal(result.redemptions[0].session.baseAmount, "66.6667");
+  assert.deepEqual(result.remaining, [{ first: 3, last: 3 }]);
+  input.overrides[0].metadata.managerRole = "SUPER_ADMIN";
+  assert.deepEqual(verifyPayrollPackageRedemptionInventory(input), result);
+  // PIN verification happens after POS assigns usedAt, before capture append.
+  input.overrides[0].createdAt = new Date("2026-09-15T00:00:01Z");
+  input.redemptions[0].event.createdAt = new Date("2026-09-15T00:00:02Z");
+  assert.deepEqual(verifyPayrollPackageRedemptionInventory(input), result);
+});
+
+test("unpaid override reconciliation rejects missing, duplicate, foreign and mismatched audits", () => {
+  const mutations: ((input: ReturnType<typeof overrideFixture>) => void)[] = [
+    (i) => {
+      i.overrides.length = 0;
+    },
+    (i) => {
+      i.overrides.push(structuredClone(i.overrides[0]));
+    },
+    (i) => {
+      i.overrides.push({ ...structuredClone(i.overrides[0]), id: "another" });
+    },
+    (i) => {
+      i.overrides[0].tenantId = "foreign";
+    },
+    (i) => {
+      i.overrides[0].targetId = "foreign";
+    },
+    (i) => {
+      i.overrides[0].targetType = "Sale";
+    },
+    (i) => {
+      i.overrides[0].action = "other";
+    },
+    (i) => {
+      i.overrides[0].metadata.saleId = "other";
+    },
+    (i) => {
+      i.overrides[0].metadata.quantity = 1;
+    },
+    (i) => {
+      i.overrides[0].metadata.paidSessions = 1;
+    },
+    (i) => {
+      i.overrides[0].metadata.usedSessions = 1;
+    },
+    (i) => {
+      i.overrides[0].metadata.managerRole = "STAFF";
+    },
+    (i) => {
+      i.overrides[0].metadata.managerId = "";
+    },
+    (i) => {
+      i.overrides[0].metadata.actorId = "";
+    },
+    (i) => {
+      i.overrides[0].metadata.reason = " ";
+    },
+    (i) => {
+      Reflect.deleteProperty(i.overrides[0].metadata, "saleId");
+    },
+    (i) => {
+      i.overrides[0].createdAt = new Date("2026-09-16T00:00:00Z");
+    },
+    (i) => {
+      i.overrides[0].createdAt = new Date("2026-07-01T00:00:00Z");
+    },
+    (i) => {
+      i.collections[0].netCents = 10000n;
+    },
+  ];
+  for (const [index, mutate] of mutations.entries()) {
+    const input = overrideFixture();
+    mutate(input);
+    assert.throws(
+      () => verifyPayrollPackageRedemptionInventory(input),
+      /EVIDENCE_UNCONFIRMED/,
+      `mutation ${index}`,
+    );
+  }
+});
+
 test("supplied holding inventory reconciles paid sessions and remaining original ordinals", () => {
   const input = inventoryFixture();
   const result = verifyPayrollPackageRedemptionInventory(input);
@@ -721,6 +834,7 @@ function historyLoaderFixture() {
     events: [input.event, capture],
     transfers: [] as object[],
     refunds: [] as object[],
+    overrides: [] as object[],
     receipts: [
       {
         id: "receipt",
@@ -788,6 +902,7 @@ function historyLoaderFixture() {
     payrollSourceEvent: many("event", () => data.events),
     commissionRule: many("rule", () => []),
     saleRefund: many("refund", () => data.refunds),
+    auditLog: many("override", () => data.overrides),
   } as unknown as PayrollCloseTransaction;
   const load = () =>
     runAsTenant("salon", () => loadPayrollPackageRedemptionHistory(tx, "holding"), "owner");

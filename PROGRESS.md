@@ -2,6 +2,21 @@
 
 ## Current State
 
+- **CP-005 manager-override reconciliation, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004. Sale-bound PIN approval freezes historical role, actor,
+  reason and paid/used quantities; complete holding audit inventory reconciles each
+  unpaid draw once. Legacy-unbound/missing/duplicate/mismatched approvals refuse.
+  Real PIN writer and monthly reload retain original session base and deposit-only
+  cash; six corruptions preserve draft/audit, prior approvals unchanged. Selected
+  API 272/272 (three isolated DB suites, zero skips), shared 302/302; API types/build/
+  lint pass. Missing prior temporary cluster recreated in isolation, migrations
+  replayed with dotenv disabled. Next: reversals/corrections, credit lifecycle,
+  partial FOC and close API/UI/acceptance. CP-003A/CP-006 untouched; CP-005 not DONE.
+  No application DB/schema changes, activation/deployment/commit/push. See CP handoff.
+  Formatting/whitespace pass; disposable cluster stopped cleanly, fixtures retained.
+
+## Previous checkpoint — session-package transfer reconciliation
+
 - **CP-005 session-package transfer reconciliation, October 29, 2026:** IN PROGRESS;
   latest completed CP-004. Append-only transfer/draw history replays original-buyer
   ownership, quantity/expiry continuity and owner-at-draw. Purchase value/sellers

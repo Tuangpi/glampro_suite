@@ -284,7 +284,7 @@ export function verifyPayrollPackageRedemption(input: {
 /** Reconcile supplied, unreversed holding history. Callers must independently
  * inventory ALL redemptions/collections and reconcile each receipt's operational
  * payment and tax evidence first. This is not an authoritative loader, transfer
- * verifier or manager-PIN override verifier. Unpaid or reversed draws fail closed;
+ * verifier or manager-PIN verifier. Unpaid draws require sale-bound writer audits;
  * ownership/transfer authorization remains an independent caller prerequisite.
  */
 export function verifyPayrollPackageRedemptionInventory(input: {
@@ -301,6 +301,15 @@ export function verifyPayrollPackageRedemptionInventory(input: {
     redemptionRules: unknown;
   };
   redemptions: Parameters<typeof verifyPayrollPackageRedemption>[0][];
+  overrides?: {
+    id: string;
+    tenantId: string | null;
+    action: string;
+    targetType: string;
+    targetId: string | null;
+    metadata: unknown;
+    createdAt: Date;
+  }[];
   collections: {
     id: string;
     tenantId: string;
@@ -333,6 +342,34 @@ export function verifyPayrollPackageRedemptionInventory(input: {
       purchase.grantedSessions,
       payrollOrdinalSchema.parse(holding.payrollAvailableOrdinals),
     );
+    const overrides = input.overrides ?? [];
+    const consumedOverrides = new Set<string>();
+    if (new Set(overrides.map((row) => row.id)).size !== overrides.length) return fail();
+    const approvals = overrides.map((row) => {
+      const metadata = z
+        .strictObject({
+          actorId: z.string().trim().min(1),
+          managerId: z.string().trim().min(1),
+          managerRole: z.enum(["SUPER_ADMIN", "MANAGER"]),
+          saleId: z.string().min(1),
+          reason: z.string().trim().min(1),
+          quantity: z.number().int().positive(),
+          paidSessions: z.number().int().nonnegative(),
+          usedSessions: z.number().int().nonnegative(),
+        })
+        .parse(row.metadata);
+      if (
+        !row.id ||
+        row.tenantId !== tenantId ||
+        row.action !== "package.unpaid-session.override" ||
+        row.targetType !== "CustomerPackageHolding" ||
+        row.targetId !== holding.id ||
+        !Number.isFinite(row.createdAt.getTime()) ||
+        row.createdAt.getTime() < purchasedAt
+      )
+        return fail();
+      return { row, metadata };
+    });
     let totalCollected = 0n;
     for (const row of input.collections) {
       if (
@@ -367,15 +404,31 @@ export function verifyPayrollPackageRedemptionInventory(input: {
         payrollInputHash(row.redemptionRules) !== payrollInputHash(holding.redemptionRules)
       )
         return fail();
-      previousAt = at;
       const result = verifyPayrollPackageRedemption(row);
       // Equal timestamps cannot establish whether a receipt preceded the draw.
       if (input.collections.some((receipt) => receipt.occurredAt.getTime() === at)) return fail();
       const collected = input.collections
         .filter((receipt) => receipt.occurredAt.getTime() < at)
         .reduce((sum, receipt) => sum + receipt.netCents, 0n);
-      if (used + row.redemption.quantity > paidPayrollPackageSessions(purchase, collected))
-        return fail();
+      const paid = paidPayrollPackageSessions(purchase, collected);
+      const matching = approvals.filter((approval) => approval.metadata.saleId === row.sale.id);
+      if (used + row.redemption.quantity > paid) {
+        if (matching.length !== 1) return fail();
+        const { row: audit, metadata } = matching[0];
+        if (
+          consumedOverrides.has(audit.id) ||
+          metadata.quantity !== row.redemption.quantity ||
+          metadata.usedSessions !== used ||
+          metadata.paidSessions !== paid ||
+          // POS timestamps the usage before PIN verification; authorization must
+          // be inside that sale's draw-to-capture transaction interval.
+          audit.createdAt.getTime() < at ||
+          audit.createdAt.getTime() > row.event.createdAt.getTime() ||
+          (previousAt !== null && audit.createdAt.getTime() <= previousAt)
+        )
+          return fail();
+        consumedOverrides.add(audit.id);
+      } else if (matching.length) return fail();
       const draw = takePackageSessions(
         purchase.grantedSessions,
         remaining,
@@ -396,8 +449,10 @@ export function verifyPayrollPackageRedemptionInventory(input: {
         coverage.set(key, { quantity, capacity: saleLine.quantity, serviceId: line.serviceId });
       }
       verified.push({ redemptionId: row.redemption.id, ...result });
+      previousAt = at;
     }
     if (
+      consumedOverrides.size !== overrides.length ||
       used !== holding.quantity - holding.quantityRemaining ||
       payrollInputHash(remaining) !== payrollInputHash(available)
     )
