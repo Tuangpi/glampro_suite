@@ -18,7 +18,44 @@ During implementation, run focused checks for fast feedback and consolidate
 integrated regression at the milestone gate. Preserve all existing acceptance
 requirements; faster cadence does not permit weaker assertions or omitted paths.
 
-## Latest checkpoint — prepaid refund settlement inventory
+## Latest checkpoint — prepaid refund HTTP settlement workflow
+
+- `POST /sales/package-holdings/:id/refund` and
+  `POST /sales/value-package-holdings/:id/refund` already carried auth,
+  sales/packages module, writable-tenant and manager/owner guards and already
+  forwarded the optional `settlement` confirmation into the shared journal writer.
+  That workflow now has HTTP-level acceptance instead of service-only coverage.
+- New `apps/api/src/routes/prepaid-refund-settlement.http.test.ts` drives the real
+  router, middleware, zod validation and refund service over HTTP with replaced
+  persistence seams. One confirmed cancellation writes exactly one
+  `prepaidRefundSettlement` row (salon tenant, source key, holding/sale/line, actor
+  and role, reference, currency, zero net/tax/gross, 54500 cancelled gross, frozen
+  request plus operational hash) next to one refund source event, inside the
+  authenticated salon-wide scope.
+- Retry with the identical body replays the stored event and writes no second
+  settlement, journal row or holding update. A changed reference refuses 409, and a
+  row whose reference or frozen money evidence was altered refuses 409
+  `...unavailable`. An outlet-scoped session refuses 403 salon-wide, STAFF/CASHIER
+  refuse 403 before any transaction, a disabled session 401s and a foreign outlet
+  404s before persistence, and a malformed confirmation is refused 422 by the
+  strict schema.
+- A refund without confirmation still persists as a legacy capture with no journal
+  row, and confirmation cannot be added afterwards (409), so the close loader keeps
+  refusing that capture as `PREPAID_SETTLEMENT_MISSING` instead of accepting a
+  retroactive claim.
+- Refund suite **116/116 passed** over `payroll-value-package.http.test.ts`,
+  `payroll-close.http.test.ts`, the new HTTP suite, `prepaid-refund-settlement.test.ts`
+  and `payroll-value-package-refund.test.ts`, with zero skips; API typecheck, ESLint
+  and Prettier clean. Logs `/tmp/cp005v-http-settlement.log`,
+  `/tmp/cp005v-refund-suite.log`, `/tmp/cp005v-tsc2.log`, `/tmp/cp005v-eslint2.log`,
+  `/tmp/cp005v-prettier3.log`.
+- Deliberately not changed: confirmation stays optional, so a paid refund can still
+  be captured without settlement evidence and then fail closed at close. Making it
+  mandatory for every prepaid payout is an owner business decision, not a silent
+  code change. Remaining M1 work: mixed session/credit usage, spend-sale instalments,
+  full-credit paid lines without allocation evidence and the remaining void gates.
+
+## Previous checkpoint — prepaid refund settlement inventory
 
 - Prepaid package and value-package refunds are now inventoried from their own
   append-only settlement row, never from a capture event alone. Each settlement is

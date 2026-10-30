@@ -1,5 +1,32 @@
 # Glampro Suite — progress
 
+## CP-005 prepaid refund HTTP workflow — October 30, 2026
+
+CP-005 IN PROGRESS, M1 open. The manager-confirmed prepaid refund flow now has
+HTTP-level acceptance instead of service-only coverage: the existing
+`POST /sales/package-holdings/:id/refund` and
+`POST /sales/value-package-holdings/:id/refund` routes (auth, sales/packages
+modules, writable tenant, manager/owner roles) were driven end to end through the
+real router, zod schema and refund service with replaced persistence seams. One
+confirmed cancellation writes exactly one append-only settlement row (salon scope,
+source key, holding/sale/line, actor/role, reference, zero net/tax/gross, 54500
+cents cancelled gross, frozen request plus operational hash) next to one refund
+event. Identical retry replays the stored event with no second settlement, journal
+row or holding update; a changed reference, an altered journal reference and
+altered frozen money evidence all refuse 409; an outlet-scoped session refuses 403
+salon-wide; STAFF/CASHIER refuse 403 before any transaction; a disabled session
+401s and a foreign outlet 404s before persistence; malformed confirmations are
+refused 422. Confirmation stays optional on purpose: a refund without it remains a
+legacy capture and cannot be confirmed retroactively (409), so the close loader
+keeps refusing it as `PREPAID_SETTLEMENT_MISSING`. Making confirmation mandatory
+for every prepaid payout is an owner business decision and was not changed
+silently. Refund suite 116/116 with zero skips; API typecheck, ESLint and Prettier
+clean; no web checks, schema/migration change, application DB work, activation,
+deployment or push. Logs
+`/tmp/cp005v-{http-settlement,refund-suite,tsc2,eslint2,prettier3}.log`. Remaining
+M1: mixed session/credit usage, spend-sale instalments, full-credit paid lines
+without allocation evidence and the remaining void gates.
+
 ## CP-005 prepaid refund settlement inventory — October 30, 2026
 
 CP-005 IN PROGRESS, M1 open, no M2 work. Prepaid package/value-package refunds are
