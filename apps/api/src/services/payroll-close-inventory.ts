@@ -19,6 +19,8 @@ const operationSchema = z.object({
     "VALUE_PACKAGE_REFUND",
   ]),
   sourceId: id,
+  /** Corrections reuse a redemption ID; each immutable revision is a distinct operation. */
+  sourceKey: id.optional(),
   saleId: id,
   outletId: id.nullable(),
   occurredAt: z.date(),
@@ -40,8 +42,12 @@ export function resolvePayrollCloseInventory(raw: PayrollCloseInventoryRecords) 
   payrollInputHash(operations.map((row) => ({ ...row, occurredAt: row.occurredAt.toISOString() })));
   if (operations.some((row) => row.tenantId !== tenantId))
     throw new Error("Payroll inventory contains another salon's operation.");
-  const key = (row: { sourceType: string; sourceId: string }) =>
-    JSON.stringify([row.sourceType, row.sourceId]);
+  const key = (row: { sourceType: string; sourceId: string; sourceKey?: string }) =>
+    JSON.stringify([
+      row.sourceType,
+      row.sourceId,
+      row.sourceType === "CORRECTION" ? row.sourceKey : null,
+    ]);
   const keys = operations.map(key);
   if (new Set(keys).size !== keys.length) throw new Error("Duplicate payroll inventory operation.");
   const blockers: { code: string; sourceKey: string }[] = [];

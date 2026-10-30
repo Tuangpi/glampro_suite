@@ -93,6 +93,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     legacy,
     closes,
     commissionRules,
+    correctionSnapshots,
   ] = await Promise.all([
     tx.sale.findMany({
       where: { tenantId, OR: [{ soldAt: range, status: { not: "HELD" } }, { voidedAt: range }] },
@@ -137,6 +138,11 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       orderBy: { periodKey: "asc" },
     }),
     tx.commissionRule.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
+    // Complete operational inventory, independent of captured payroll IDs/dates.
+    tx.commissionRedemptionSnapshot.findMany({
+      where: { tenantId, eventType: "CORRECTION" },
+      orderBy: { id: "asc" },
+    }),
   ]);
   if (redemptions.some((row) => row.itemType !== "PACKAGE" || row.revertedAt !== null))
     unavailable("REDEMPTION_WORKFLOW_NOT_LOADED");
@@ -145,8 +151,26 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     sales.some((sale) => sale.voidedAt && sale.voidedAt >= from && sale.voidedAt < to)
   )
     unavailable("REFUND_OR_VOID_WORKFLOW_NOT_LOADED");
-  if (events.some((event) => !["SALE_LINE", "COLLECTION", "REDEMPTION"].includes(event.sourceType)))
+  if (
+    events.some(
+      (event) =>
+        !["SALE_LINE", "COLLECTION", "REDEMPTION", "CORRECTION", "REVERSAL"].includes(
+          event.sourceType,
+        ),
+    )
+  )
     unavailable("SOURCE_WORKFLOW_NOT_LOADED");
+  const correctionRedemptions = [];
+  for (const redemptionId of [
+    ...new Set(correctionSnapshots.map((row) => row.redemptionId)),
+  ].sort()) {
+    const redemption = await tx.customerRedemption.findFirst({
+      where: { tenantId, id: redemptionId },
+    });
+    if (!redemption || redemption.itemType !== "PACKAGE" || redemption.revertedAt !== null)
+      unavailable("CORRECTION_OPERATION_UNCONFIRMED");
+    correctionRedemptions.push(redemption);
+  }
   // A prior usage can cover sale-line quantities. Reconcile all holdings on
   // each affected sale before resolving any ordinary service economics.
   const saleIds = [
@@ -154,6 +178,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       ...sales.map((sale) => sale.id),
       ...collections.map((row) => row.saleId),
       ...redemptions.map((row) => row.saleId),
+      ...correctionRedemptions.map((row) => row.saleId),
     ]),
   ];
   const saleCoverage = new Map<
@@ -222,6 +247,85 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   } = await loadStoredPayrollCarry(tx, tenantId, periodKey);
 
   const operations: PayrollCloseInputRecords["inventoryOperations"] = [];
+  const noCashReversals: NonNullable<PayrollCloseInputRecords["noCashReversals"]> = [];
+  const lineage = new Map<string, (typeof events)[number]>();
+  const reconciledCorrections = new Set<string>();
+  const correctionEvidence = [];
+  for (const covered of saleCoverage.values()) {
+    for (const history of covered.evidence.histories) {
+      for (const chain of history.corrections) {
+        if (!correctionRedemptions.some((row) => row.id === chain.redemptionId)) continue;
+        for (const revision of chain.revisions) {
+          if (reconciledCorrections.has(revision.snapshotId)) continue;
+          reconciledCorrections.add(revision.snapshotId);
+          const operational = correctionSnapshots.find((row) => row.id === revision.snapshotId);
+          const stored = history.evidence.snapshots.find((row) => row.id === revision.snapshotId);
+          if (
+            !operational ||
+            payrollInputHash(snapshot(operational)) !== payrollInputHash(snapshot(stored))
+          )
+            unavailable("CORRECTION_OPERATION_UNCONFIRMED");
+          const replacement = history.evidence.related.find((row) => row.id === revision.eventId)!;
+          const reversal = history.evidence.correctionReversals.find(
+            (row) => row.id === revision.reversalEventId,
+          )!;
+          const original = history.evidence.related.find((row) => row.id === reversal.sourceId)!;
+          correctionEvidence.push(snapshot({ operational, revision }));
+          for (const event of [replacement, reversal]) {
+            if (event.occurredAt < from || event.occurredAt >= to) continue;
+            const inventoried = events.filter((row) => row.id === event.id);
+            if (
+              inventoried.length !== 1 ||
+              payrollInputHash(snapshot(inventoried[0])) !== payrollInputHash(snapshot(event))
+            )
+              unavailable("CORRECTION_MONTH_CAPTURE_UNCONFIRMED");
+            operations.push({
+              tenantId,
+              sourceType: event.sourceType as "CORRECTION" | "REVERSAL",
+              sourceId: event.sourceId,
+              sourceKey: event.sourceKey,
+              saleId: event.saleId,
+              outletId: event.outletId,
+              occurredAt: event.occurredAt,
+              evidence: snapshot({ operational, revision }),
+            });
+            if (event.id === reversal.id) {
+              if (!events.some((row) => row.id === original.id)) lineage.set(original.id, original);
+              noCashReversals.push({
+                id: operational.id,
+                tenantId,
+                eventId: reversal.id,
+                originalEventId: original.id,
+                originalSourceId: original.sourceId,
+                originalSourceType: original.sourceType as "REDEMPTION" | "CORRECTION",
+                saleId: original.saleId,
+                outletId: original.outletId,
+                occurredAt: reversal.occurredAt,
+                currency: "SGD",
+                netCents: "0",
+                taxCents: "0",
+                grossCents: "0",
+                evidence: snapshot({
+                  operational,
+                  purchase: revision.purchase,
+                  session: revision.session,
+                }),
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+  if (
+    reconciledCorrections.size !== correctionSnapshots.length ||
+    events.some(
+      (event) =>
+        ["CORRECTION", "REVERSAL"].includes(event.sourceType) &&
+        !operations.some((row) => row.sourceKey === event.sourceKey),
+    )
+  )
+    unavailable("CORRECTION_OPERATION_UNCONFIRMED");
   for (const redemption of redemptions) {
     const covered = saleCoverage.get(redemption.saleId)!;
     const capture = covered.evidence.captures.find((row) => row.sourceId === redemption.id);
@@ -779,7 +883,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const sources = {
     ...common,
     events: events as PayrollCloseInputRecords["sources"]["events"],
-    lineageEvents: [],
+    lineageEvents: [...lineage.values()] as PayrollCloseInputRecords["sources"]["lineageEvents"],
     operations: paymentOperations,
     collections: normalizedCollections,
     legacyCommissions: legacy.map((row) => ({ ...row, amount: row.amount.toFixed(10) })),
@@ -803,7 +907,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       hash: payrollInputHash(verified.state),
     });
   }
-  const cash = resolvePayrollCloseCash({ ...sources, cashAttributions });
+  const cash = resolvePayrollCloseCash({ ...sources, cashAttributions, noCashReversals });
   if (!cash.cash) unavailable("CASH_RECONCILIATION_UNAVAILABLE");
   const requiredStaffIds = [
     ...new Set([
@@ -890,6 +994,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     metrics,
     inventoryOperations: operations,
     cashAttributions,
+    noCashReversals,
   });
   if (!result.inputs) unavailable(result.blockers.map((blocker) => blocker.code).join(","));
   result.inputs.evidence = {
@@ -902,6 +1007,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       packagePurchases: snapshot([...packagePurchases].sort(([a], [b]) => a.localeCompare(b))),
       saleCoverage: snapshot([...saleCoverage].sort(([a], [b]) => a.localeCompare(b))),
       packageTenders: snapshot([...packageTenders].sort(([a], [b]) => a.localeCompare(b))),
+      corrections: correctionEvidence,
       priorCloses: priorEvidence,
     },
   };

@@ -53,6 +53,7 @@ const rateSnapshotSchema = z.object({
   amount: z.string().nullable(),
 });
 export const redemptionCommissionEvidenceSchema = z.object({
+  correctionRequest: correctRedemptionAttributionSchema.optional(),
   payrollSession: payrollSessionEvidenceSchema.optional(),
   version: z.literal(1),
   coverage: redemptionCoverageSchema,
@@ -360,6 +361,7 @@ export async function correctRedemptionAttribution(
         : {}),
       performers,
       attributionStatus: "CORRECTED",
+      correctionRequest: input,
       previousSnapshotId: previous.id,
       rates: await rates(
         tx,

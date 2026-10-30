@@ -8,6 +8,40 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 monthly correction reconciliation (October 30, 2026)
+
+- Complete correction snapshot inventory is independent of captured source IDs/dates.
+  Reconcile all affected usage sales and full holding chains before selecting monthly
+  replacements/reversals. Conservative full history may block an earlier draft when
+  later history is incomplete; do not infer or backfill missing evidence.
+- Match corrections by immutable source revision key as well as redemption ID:
+  multiple corrections to one redemption are distinct operations. Only current-month
+  lines enter payroll; preceding sources outside the month are lineage only.
+- Zero-money reversal evidence comes from verified operational correction snapshots,
+  preserved original purchase/session economics and correction semantics, never from
+  negative bases alone. Feed it through both cash and final-input reconciliation.
+  Corrections change attribution, not cash, session inventory or saved approved months.
+- Internal monthly correction support is now verified; this supersedes the earlier
+  holding-history-only gate below. Session voids, refunds, credit lifecycle and other
+  unsupported workflows remain closed; no production activation is authorized.
+
+### CP-005 redemption correction-chain history (October 30, 2026)
+
+- Reconcile complete holding attribution history separately from original session
+  consumption. Every contiguous correction links the previous snapshot, preserves
+  original purchase, ordinals, coverage and valuation, and has exactly one replacement
+  source and exact reversal of the preceding source. Independently verify actor,
+  reason, idempotency request hash and source-time rate selection. No latest-only
+  substitution, inferred missing revision or source-history rewriting.
+- The correction writer hashes the submitted request before canonicalizing performer
+  order. Retain that original request in new correction snapshots so JSONB reloads
+  can verify hashes without guessing ordering. Existing corrections without retained
+  request evidence remain unavailable; this does not authorize backfill.
+- Holding-history verification does not enable monthly correction/void inputs.
+  Monthly operational inventory, original-source lineage and independent zero-money
+  reconciliation must be integrated before those close gates open. Session voids,
+  refunds, credit lifecycle and other unsupported workflows stay blocked.
+
 ### CP-005 manager-override reconciliation (October 30, 2026)
 
 - POS must bind verified manager PIN authorization to the tenant/holding/customer

@@ -2,6 +2,52 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — monthly correction reconciliation (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Complete operational snapshot
+  inventory loads independently of payroll captures; verified chains feed monthly
+  revision-key operations, exact preceding-source lineage and no-cash reconciliation.
+  Only verified corrections are supported internally; unrelated reversals still refuse.
+- Selected API **277/277**, three isolated DB suites, zero skips; shared **302/302**;
+  API typecheck/build/lint pass. Two same-month corrections/retry/reload, six refusal
+  cases and a third next-month correction pass. Collections remain zero; sessions and
+  original purchase economics are unchanged. Saved draft/audit and approved
+  September/October/February calculations remain unchanged on refusal/later correction.
+- Acceptance uses explicit synthetic January carry because earlier fixtures deliberately
+  contain unsupported January sales; February/March correction inputs are authoritative.
+  Conservative full-chain verification includes all correction snapshots, not just this
+  month; missing/legacy/corrupted history blocks rather than inferring evidence.
+- Next: session-void restoration and monthly no-cash wiring, prepaid-credit lifecycle,
+  partial package FOC and close API/UI/full acceptance. CP-005 not DONE. No application
+  DB/schema changes, activation, deployment, commit or push. Existing isolated cluster
+  only; logs `/tmp/cp005-monthly-*`, path `/tmp/cp005-disposable-cluster.path`.
+  Formatting/whitespace pass; disposable cluster stopped cleanly, fixtures retained.
+
+## Previous checkpoint — redemption correction-chain history
+
+- **CP-005 IN PROGRESS — redemption correction-chain history (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Holding-history loader now
+  independently reconciles all attribution snapshots, replacement sources and
+  exact preceding-source reversals. Contiguous revisions, actor/reason/request hash,
+  previous snapshot, original ordinals/coverage/value and historical rate selection
+  must agree. New correction snapshots retain the original request ordering for
+  hash replay; legacy corrections missing that evidence fail closed without backfill.
+- Selected API **276/276**, including three isolated DB suites, zero skips; shared
+  **302/302**; API typecheck/build/lint pass. Real writer proves two corrections,
+  idempotent retry, unchanged session inventory and original 10.0000 base with
+  updated 4/6 then 2.5/7.5 attribution. Four read-only corruptions refuse; approved
+  September/October remain unchanged. Supplied-record tests cover 17 invalid chains.
+  Logs `/tmp/cp005-correction-*`.
+  Formatting/whitespace checks pass; disposable cluster stopped cleanly after
+  verification, synthetic fixtures retained.
+- This is holding-history integration, NOT monthly correction/void acceptance.
+  Monthly correction events remain explicitly blocked and write no close. Next:
+  correction operational inventory/no-cash monthly wiring, session void restoration,
+  prepaid-credit spending/refunds/voids, partial package FOC and close API/UI/full
+  acceptance. CP-005 not DONE. No application DB/schema changes, activation,
+  deployment, commit or push; isolated existing CP-005 cluster only.
+
+## Previous checkpoint — manager-override reconciliation
+
 - **CP-005 IN PROGRESS — manager-override reconciliation (October 30, 2026).**
   Latest completed CP-004; CP-003A/CP-006 untouched. POS now binds verified PIN
   approval to usage sale/customer/tenant and records historical manager role,

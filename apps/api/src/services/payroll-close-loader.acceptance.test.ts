@@ -16,13 +16,17 @@ import { lockCommissionConfiguration } from "./commission.service.js";
 import { createSale } from "./sale.service.js";
 import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 import { drawPayrollPackageSessions } from "./payroll-package-session.js";
-import { captureRedemptionCommission } from "./redemption-commission-evidence.js";
+import {
+  captureRedemptionCommission,
+  correctRedemptionAttribution,
+} from "./redemption-commission-evidence.js";
 import { loadPayrollPackageRedemptionHistory } from "./payroll-close-redemption-loader.js";
 import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import { openPayrollClose } from "./payroll-close-state.js";
 import { transferSessionPackage } from "./session-transfer.service.js";
 import { hashPassword } from "../lib/password.js";
+import { z } from "zod";
 
 test(
   "CP-005 isolated authoritative ordinary close, missing-capture rollback and stale approval",
@@ -1342,7 +1346,7 @@ test(
                 });
                 await assert.rejects(
                   loadAuthoritativePayrollCloseInputs(altered, openPayrollClose("2026-11")),
-                  /ORDINARY_SOURCE_ECONOMICS_MISMATCH|COVERED_SERVICE_SOURCE_UNEXPECTED|REDEMPTION_MONTH_CAPTURE_UNCONFIRMED|SOURCE_WORKFLOW_NOT_LOADED/,
+                  /ORDINARY_SOURCE_ECONOMICS_MISMATCH|COVERED_SERVICE_SOURCE_UNEXPECTED|REDEMPTION_MONTH_CAPTURE_UNCONFIRMED|CORRECTION_OPERATION_UNCONFIRMED/,
                   corruption,
                 );
               });
@@ -1356,6 +1360,245 @@ test(
         );
         assert.equal(await prisma.payrollClose.count({ where: { periodKey: "2026-12" } }), 0);
         assert.equal(await prisma.payrollCloseEvent.count({ where: { periodKey: "2026-12" } }), 0);
+        // Real correction writer retains request order for its immutable hash,
+        // while credited performers are canonicalized. Monthly close must reconcile
+        // each revision and its no-cash reversal independently.
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date("2027-02-05T00:00:00Z") });
+        const correctedRedemption = history.evidence.redemptions[0];
+        const correction = await correctRedemptionAttribution(
+          correctedRedemption.saleId,
+          correctedRedemption.id,
+          {
+            expectedRevision: 0,
+            idempotencyKey: randomUUID(),
+            performers: [
+              { staffId: staffId, share: 4000 },
+              { staffId: ownerId, share: 6000 },
+            ],
+            reason: "Synthetic authoritative correction history",
+          },
+          ownerId,
+        );
+        const correctedHistory = await prisma.$transaction((tx) =>
+          loadPayrollPackageRedemptionHistory(tx, packageHolding.id),
+        );
+        assert.equal(correctedHistory.corrections[0].revisions[0].snapshotId, correction.id);
+        assert.equal(correctedHistory.corrections[0].revisions[0].session.baseAmount, "10.0000");
+        assert.equal(correctedHistory.verified.redemptions[0].session.baseAmount, "10.0000");
+        assert.deepEqual(
+          correctedHistory.corrections[0].revisions[0].session.bases
+            .map((row) => row.amount)
+            .sort(),
+          ["4.0000", "6.0000"],
+        );
+        assert.equal(correctedHistory.evidence.holding.quantityRemaining, 7);
+        const secondRequest = {
+          expectedRevision: 1,
+          idempotencyKey: randomUUID(),
+          performers: [
+            { staffId: ownerId, share: 2500 },
+            { staffId, share: 7500 },
+          ],
+          reason: "Synthetic second attribution correction",
+        };
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date("2027-02-06T00:00:00Z") });
+        const secondCorrection = await correctRedemptionAttribution(
+          correctedRedemption.saleId,
+          correctedRedemption.id,
+          secondRequest,
+          ownerId,
+        );
+        assert.equal(
+          (
+            await correctRedemptionAttribution(
+              correctedRedemption.saleId,
+              correctedRedemption.id,
+              secondRequest,
+              ownerId,
+            )
+          ).id,
+          secondCorrection.id,
+        );
+        const secondHistory = await prisma.$transaction((tx) =>
+          loadPayrollPackageRedemptionHistory(tx, packageHolding.id),
+        );
+        assert.equal(secondHistory.corrections[0].revisions.length, 2);
+        assert.deepEqual(
+          secondHistory.corrections[0].revisions[1].session.bases.map((row) => row.amount).sort(),
+          ["2.5000", "7.5000"],
+        );
+        assert.deepEqual(secondHistory.verified.remaining, correctedHistory.verified.remaining);
+        // January contains intentionally unsupported sale fixtures above. An explicit
+        // synthetic prior close isolates February correction acceptance from that fixture.
+        const januaryBootstrap: PayrollCloseLoader = async (tx, state) => ({
+          ...(await bootstrap(tx, state)),
+          periodKey: "2027-01",
+          startsAt: "2026-12-31T16:00:00.000Z",
+          endsAt: "2027-01-31T16:00:00.000Z",
+        });
+        await calculateStoredPayrollClose("2027-01", 0, januaryBootstrap);
+        await approveStoredPayrollClose(
+          "2027-01",
+          1,
+          "Synthetic correction carry boundary",
+          januaryBootstrap,
+        );
+        const february = await calculateStoredPayrollClose("2027-02", 0);
+        const februaryReload = await calculateStoredPayrollClose("2027-02", february.revision);
+        assert.equal(februaryReload.calculation!.inputHash, february.calculation!.inputHash);
+        const correctionLines = february.calculation!.inputs.staff.flatMap((row) => {
+          assert.equal(row.collection, "0.0000");
+          return row.calculation.lines;
+        });
+        assert.equal(correctionLines.length, 7);
+        assert.deepEqual(
+          correctionLines.map((row) => row.baseAmount).sort(),
+          ["-10.0000", "-4.0000", "-6.0000", "2.5000", "4.0000", "6.0000", "7.5000"].sort(),
+        );
+        const savedFebruary = payrollInputHash(
+          (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: "2027-02" } })).state,
+        );
+        const februaryAudits = await prisma.payrollCloseEvent.count({
+          where: { periodKey: "2027-02" },
+        });
+        for (const corruption of [
+          "MISSING_REVERSAL",
+          "REQUEST",
+          "PREVIOUS",
+          "BASE",
+          "MONTH_CAPTURE",
+          "INVENTORY",
+        ] as const) {
+          const alteredLoader: PayrollCloseLoader = async (tx, state) => {
+            const altered = new Proxy(tx, {
+              get(target, property) {
+                if (
+                  property !== "commissionRedemptionSnapshot" &&
+                  property !== "payrollSourceEvent"
+                )
+                  return Reflect.get(target, property);
+                const delegate = target[property];
+                return new Proxy(delegate, {
+                  get(model, method) {
+                    if (method !== "findMany") return Reflect.get(model, method);
+                    return async (
+                      args: Parameters<typeof target.payrollSourceEvent.findMany>[0] &
+                        Parameters<typeof target.commissionRedemptionSnapshot.findMany>[0],
+                    ) => {
+                      const rows =
+                        property === "payrollSourceEvent"
+                          ? await target.payrollSourceEvent.findMany(args)
+                          : await target.commissionRedemptionSnapshot.findMany(args);
+                      if (
+                        corruption === "INVENTORY" &&
+                        property === "commissionRedemptionSnapshot" &&
+                        args?.where?.eventType === "CORRECTION"
+                      )
+                        return [];
+                      return rows.flatMap((row) => {
+                        if (property === "payrollSourceEvent") {
+                          if (
+                            corruption === "MONTH_CAPTURE" &&
+                            args?.where?.occurredAt &&
+                            "sourceType" in row &&
+                            row.sourceType === "CORRECTION"
+                          )
+                            return [];
+                          if (
+                            corruption === "MISSING_REVERSAL" &&
+                            "sourceType" in row &&
+                            row.sourceType === "REVERSAL"
+                          )
+                            return [];
+                          return [row];
+                        }
+                        if (!("eventType" in row) || row.eventType !== "CORRECTION") return [row];
+                        const evidence = structuredClone(row.evidence) as Record<string, unknown>;
+                        if (corruption === "REQUEST") delete evidence.correctionRequest;
+                        if (corruption === "PREVIOUS") evidence.previousSnapshotId = "foreign";
+                        if (corruption === "BASE")
+                          (evidence.payrollSession as Record<string, unknown>).baseAmount =
+                            "99.0000";
+                        return [{ ...row, evidence: z.json().parse(evidence) }];
+                      });
+                    };
+                  },
+                });
+              },
+            });
+            if (corruption !== "MONTH_CAPTURE" && corruption !== "INVENTORY")
+              await assert.rejects(
+                loadPayrollPackageRedemptionHistory(altered, packageHolding.id),
+                /EVIDENCE_UNCONFIRMED/,
+                corruption,
+              );
+            return loadAuthoritativePayrollCloseInputs(altered, state);
+          };
+          await assert.rejects(
+            calculateStoredPayrollClose("2027-02", februaryReload.revision, alteredLoader),
+            /EVIDENCE_UNCONFIRMED|HISTORY_UNCONFIRMED|COVERAGE_UNCONFIRMED|CORRECTION_MONTH_CAPTURE_UNCONFIRMED|CORRECTION_OPERATION_UNCONFIRMED/,
+            corruption,
+          );
+        }
+        assert.equal(
+          payrollInputHash(
+            (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: "2027-02" } })).state,
+          ),
+          savedFebruary,
+        );
+        assert.equal(
+          await prisma.payrollCloseEvent.count({ where: { periodKey: "2027-02" } }),
+          februaryAudits,
+        );
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date("2027-03-01T00:00:00Z") });
+        const februaryApproved = await approveStoredPayrollClose(
+          "2027-02",
+          februaryReload.revision,
+          "Synthetic reconciled corrections",
+        );
+        const frozenFebruary = payrollInputHash(februaryApproved.calculation);
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date("2027-03-04T00:00:00Z") });
+        await correctRedemptionAttribution(
+          correctedRedemption.saleId,
+          correctedRedemption.id,
+          {
+            expectedRevision: 2,
+            idempotencyKey: randomUUID(),
+            performers: [
+              { staffId, share: 5000 },
+              { staffId: ownerId, share: 5000 },
+            ],
+            reason: "Synthetic later-month attribution correction",
+          },
+          ownerId,
+        );
+        const march = await calculateStoredPayrollClose("2027-03", 0);
+        assert.deepEqual(
+          march
+            .calculation!.inputs.staff.flatMap((row) => {
+              assert.equal(row.collection, "0.0000");
+              return row.calculation.lines.map((line) => line.baseAmount);
+            })
+            .sort(),
+          ["-2.5000", "-7.5000", "5.0000", "5.0000"].sort(),
+        );
+        assert.equal(
+          (await calculateStoredPayrollClose("2027-03", march.revision)).calculation!.inputHash,
+          march.calculation!.inputHash,
+        );
+        const frozenCorrectionMonth = await prisma.payrollClose.findFirstOrThrow({
+          where: { periodKey: "2027-02" },
+        });
+        assert.equal(
+          payrollInputHash(
+            (frozenCorrectionMonth.state as unknown as typeof februaryApproved).calculation,
+          ),
+          frozenFebruary,
+        );
         const frozenAfterMultiHolding = await prisma.payrollClose.findFirstOrThrow({
           where: { periodKey: "2026-10" },
         });

@@ -15,7 +15,7 @@ const recordHash = (value: unknown) => payrollInputHash(JSON.parse(JSON.stringif
 /** Server-owned cross-holding coverage, not a public request-record verifier.
  * Complete sale inventory and every involved holding's history share the tenant
  * source lock. No current catalogue, inferred tender coverage or silent deduping.
- * Does not enable monthly redemption close, value spending or corrected history.
+ * Supports verified correction chains; value spending and voids remain blocked.
  */
 export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction, saleId: string) {
   const scope = currentScope();
@@ -70,7 +70,9 @@ export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction
       (row) =>
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
-        !["SALE_LINE", "COLLECTION", "REDEMPTION"].includes(row.sourceType),
+        !["SALE_LINE", "COLLECTION", "REDEMPTION", "CORRECTION", "REVERSAL"].includes(
+          row.sourceType,
+        ),
     ) ||
     snapshots.some((row) => row.tenantId !== tenantId)
   )
@@ -81,7 +83,8 @@ export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction
     captures.length !== redemptions.length ||
     new Set(captures.map((row) => row.sourceId)).size !== captures.length ||
     captures.some((row) => !ids.has(row.sourceId)) ||
-    snapshots.filter((row) => ids.has(row.redemptionId)).length !== redemptions.length
+    snapshots.filter((row) => ids.has(row.redemptionId) && row.eventType === "CAPTURE").length !==
+      redemptions.length
   )
     return unavailable();
   const histories = [];
@@ -136,6 +139,22 @@ export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction
     }
   }
   if (reconciled.size !== redemptions.length) return unavailable();
+  const verifiedEvents = new Map(
+    histories.flatMap((history) =>
+      [...history.evidence.related, ...history.evidence.correctionReversals].map(
+        (event) => [event.id, event] as const,
+      ),
+    ),
+  );
+  if (
+    events.some(
+      (event) =>
+        ["CORRECTION", "REVERSAL"].includes(event.sourceType) &&
+        (!verifiedEvents.has(event.id) ||
+          recordHash(verifiedEvents.get(event.id)) !== recordHash(event)),
+    )
+  )
+    return unavailable();
   return {
     lines: sale.lines
       .map((line) => ({

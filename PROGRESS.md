@@ -2,6 +2,35 @@
 
 ## Current State
 
+- **CP-005 monthly correction reconciliation, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004. Complete operational correction inventory and verified
+  chains now feed monthly revision-key matching, exact prior-source lineage and
+  independently reconciled no-cash reversals. Two same-month corrections/reload,
+  six corruption refusals and a third next-month correction pass; saved draft/audit
+  and approved September/October/February calculations remain unchanged on refusal
+  or later correction. Selected API 277/277 (three isolated DB suites, zero skips),
+  shared 302/302; API types/build/lint pass. Internal verified correction path only;
+  voids, credit lifecycle, partial package FOC and close API/UI/full acceptance remain
+  blocked/open. CP-003A/CP-006 untouched. No application DB/schema changes,
+  activation, deployment, commit or push. Logs `/tmp/cp005-monthly-*`.
+  Formatting/whitespace pass; disposable cluster stopped cleanly, fixtures retained.
+
+## Previous checkpoint — redemption correction-chain history
+
+- **CP-005 redemption correction-chain history, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004. Complete holding revisions/replacement sources/exact
+  prior reversals verify actor/reason/request hash, original coverage/ordinals/value
+  and historical rates. New corrections retain original request ordering; legacy
+  missing evidence refuses. Real two-correction/retry/reload acceptance preserves
+  sessions and prior approved months; four corruptions refuse. Selected API 276/276
+  (three isolated DB suites, zero skips), shared 302/302; API types/build/lint pass.
+  Monthly correction gate retained, no close written. Next: monthly correction
+  inventory/no-cash wiring, session voids and remaining lifecycle/API/UI acceptance.
+  CP-003A/CP-006 untouched; no application DB/schema/activation/deployment/commit/push.
+  Formatting/whitespace pass; isolated cluster stopped cleanly, fixtures retained.
+
+## Previous checkpoint — manager-override reconciliation
+
 - **CP-005 manager-override reconciliation, October 30, 2026:** IN PROGRESS;
   latest completed CP-004. Sale-bound PIN approval freezes historical role, actor,
   reason and paid/used quantities; complete holding audit inventory reconciles each

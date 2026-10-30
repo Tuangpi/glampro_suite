@@ -8,7 +8,10 @@ import {
   verifyPayrollPackagePurchase,
   verifyPayrollPackageCollection,
 } from "./payroll-close-package-purchase.js";
-import { verifyPayrollPackageRedemptionInventory } from "./payroll-close-package-redemption.js";
+import {
+  verifyPayrollPackageRedemptionInventory,
+  verifyPayrollRedemptionCorrections,
+} from "./payroll-close-package-redemption.js";
 import { verifyPayrollPackageOwnership } from "./payroll-close-package-ownership.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
@@ -22,8 +25,8 @@ const unavailable = (): never => {
 
 /** Internal, non-activating complete holding history. No client-supplied records.
  * Holds the same tenant lock as source writes. Supports ownership-reconciled, unreversed,
- * paid-session or sale-bound manager-override history; refunds and corrections remain
- * blocked. This does not reconcile coverage against OTHER holdings on a sale, and
+ * paid-session or sale-bound manager-override history and verified attribution
+ * correction chains. Refunds/voids remain blocked. This does not reconcile coverage against OTHER holdings on a sale, and
  * must not on its own enable the monthly close's usage-coverage gate.
  */
 export async function loadPayrollPackageRedemptionHistory(
@@ -121,8 +124,17 @@ export async function loadPayrollPackageRedemptionHistory(
   if (
     refunds.length ||
     snapshots.some((row) => row.tenantId !== tenantId) ||
-    events.some((row) => row.sourceType === "REVERSAL" && relatedIds.has(row.sourceId)) ||
-    related.some((row) => !["REDEMPTION", "COLLECTION"].includes(row.sourceType)) ||
+    events.some(
+      (row) =>
+        row.sourceType === "REVERSAL" &&
+        relatedIds.has(row.sourceId) &&
+        !related.some(
+          (original) =>
+            original.id === row.sourceId &&
+            ["REDEMPTION", "CORRECTION"].includes(original.sourceType),
+        ),
+    ) ||
+    related.some((row) => !["REDEMPTION", "COLLECTION", "CORRECTION"].includes(row.sourceType)) ||
     new Set(receipts.map((row) => `${row.sourceType}:${row.sourceId}`)).size !== receipts.length
   )
     return unavailable();
@@ -297,10 +309,13 @@ export async function loadPayrollPackageRedemptionHistory(
   }
   if (!collections.length) return unavailable();
   const inputs = [];
+  const corrections = [];
   for (const redemption of redemptions) {
     const captures = snapshots.filter((row) => row.redemptionId === redemption.id);
     const sources = related.filter((row) => row.sourceId === redemption.id);
-    if (captures.length !== 1 || sources.length !== 1) return unavailable();
+    const initial = captures.filter((row) => row.eventType === "CAPTURE");
+    const initialSources = sources.filter((row) => row.sourceType === "REDEMPTION");
+    if (initial.length !== 1 || initialSources.length !== 1) return unavailable();
     const usage = await tx.sale.findFirst({
       where: { tenantId, id: redemption.saleId },
       include: { lines: true },
@@ -313,18 +328,31 @@ export async function loadPayrollPackageRedemptionHistory(
       (holding.expiresAt && redemption.usedAt >= holding.expiresAt)
     )
       return unavailable();
-    inputs.push({
+    const original = {
       tenantId,
       timeZone: tenant.timeZone,
       purchase,
       redemptionRules: holding.redemptionRules,
       redemption,
-      snapshot: captures[0],
-      event: sources[0],
+      snapshot: initial[0],
+      event: initialSources[0],
       sale: usage,
       coverageLines: usage.lines,
       rules,
+    };
+    const sourceIds = new Set(sources.map((row) => row.id));
+    corrections.push({
+      redemptionId: redemption.id,
+      revisions: verifyPayrollRedemptionCorrections({
+        original,
+        snapshots: captures,
+        events: [
+          ...sources,
+          ...events.filter((row) => row.sourceType === "REVERSAL" && sourceIds.has(row.sourceId)),
+        ],
+      }),
     });
+    inputs.push(original);
   }
   const verified = verifyPayrollPackageRedemptionInventory({
     tenantId,
@@ -336,6 +364,7 @@ export async function loadPayrollPackageRedemptionHistory(
   });
   return {
     verified,
+    corrections,
     evidence: {
       holding,
       sale,
@@ -348,6 +377,9 @@ export async function loadPayrollPackageRedemptionHistory(
       ownership,
       snapshots: snapshots.filter((row) => redemptionIds.has(row.redemptionId)),
       related,
+      correctionReversals: events.filter(
+        (row) => row.sourceType === "REVERSAL" && relatedIds.has(row.sourceId),
+      ),
       redemptions,
       rules,
       usages: inputs.map((row) => row.sale),

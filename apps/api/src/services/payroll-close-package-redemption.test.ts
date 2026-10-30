@@ -12,6 +12,7 @@ import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 import {
   verifyPayrollPackageRedemption,
   verifyPayrollPackageRedemptionInventory,
+  verifyPayrollRedemptionCorrections,
 } from "./payroll-close-package-redemption.js";
 
 function fixture(mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FOLLOW_PLAN") {
@@ -77,6 +78,10 @@ function fixture(mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FOLLOW_PLAN") {
       revertedAt: null as Date | null,
     },
     snapshot: {
+      id: "snapshot",
+      eventKey: "capture:redemption",
+      actorId: "owner",
+      reason: "Original capture",
       tenantId: "salon",
       redemptionId: "redemption",
       revision: 0,
@@ -102,6 +107,8 @@ function fixture(mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FOLLOW_PLAN") {
       },
     ],
     event: {
+      actorId: "owner",
+      reason: "Original capture",
       id: "event",
       sourceKey: "redemption:redemption:0",
       tenantId: "salon",
@@ -372,6 +379,179 @@ test("whole-set redemption coverage reconciles every required service per sessio
   input.snapshot.evidence.coverage[0].quantity = 3;
   rehash();
   assert.throws(() => verifyPayrollPackageRedemption(input), /EVIDENCE_UNCONFIRMED/);
+});
+
+function correctionFixture() {
+  const original = fixture().input;
+  const at = new Date("2026-10-05T00:00:00Z");
+  // Keep request ordering distinct from the writer's canonical performer order.
+  const request = {
+    expectedRevision: 0,
+    idempotencyKey: "correction-test-01",
+    performers: [
+      { staffId: "z-other", share: 5000 },
+      { staffId: "performer", share: 5000 },
+    ],
+    reason: "Correct original performers",
+  };
+  const performers = [...request.performers].reverse();
+  const evidence = {
+    ...structuredClone(original.snapshot.evidence),
+    attributionStatus: "CORRECTED" as const,
+    correctionRequest: request,
+    previousSnapshotId: original.snapshot.id,
+    performers,
+    payrollSession: payrollSessionEvidence(
+      "holding",
+      {
+        purchase: original.purchase,
+        ordinals: original.snapshot.evidence.payrollSession.ordinals,
+        missingEvidence: [],
+      },
+      performers,
+    ),
+  };
+  const snapshot = {
+    ...original.snapshot,
+    id: "corrected-snapshot",
+    revision: 1,
+    eventType: "CORRECTION",
+    eventKey: `correction:${request.idempotencyKey}`,
+    reason: request.reason,
+    evidence,
+    eventHash: createHash("sha256")
+      .update(
+        JSON.stringify({
+          saleId: original.sale.id,
+          redemptionId: original.redemption.id,
+          actorId: "owner",
+          ...request,
+        }),
+      )
+      .digest("hex"),
+  };
+  const event = {
+    ...structuredClone(original.event),
+    id: "corrected-event",
+    sourceType: "CORRECTION",
+    sourceKey: "redemption:redemption:1",
+    occurredAt: at,
+    createdAt: at,
+    reason: request.reason,
+  };
+  event.evidence.lines = evidence.payrollSession.bases.map((base, index) => ({
+    ...event.evidence.lines[index],
+    id: `corrected-base-${index}`,
+    staffId: base.staffId,
+    baseAmount: base.amount,
+    units: evidence.payrollSession.units[index].amount,
+    businessDate: "2026-10-05",
+  }));
+  const reversal = {
+    ...structuredClone(original.event),
+    id: "reversal",
+    sourceType: "REVERSAL",
+    sourceId: original.event.id,
+    sourceKey: `correction:${snapshot.id}:${original.event.id}`,
+    occurredAt: at,
+    createdAt: at,
+    reason: request.reason,
+    evidence: {
+      ...structuredClone(original.event.evidence),
+      originalEventId: original.event.id,
+      lines: original.event.evidence.lines.map((line) => ({
+        ...line,
+        id: `reversed-${line.id}`,
+        baseAmount: `-${line.baseAmount}`,
+        units: `-${line.units}`,
+        businessDate: "2026-10-05",
+      })),
+    },
+  };
+  return {
+    original,
+    snapshots: [original.snapshot, snapshot],
+    events: [original.event, event, reversal],
+  };
+}
+
+test("correction chain verifies original economics, request-order hash, new attribution and exact prior reversal", () => {
+  const input = correctionFixture();
+  const result = verifyPayrollRedemptionCorrections(input);
+  assert.equal(result.length, 1);
+  assert.equal(result[0].session.baseAmount, "66.6667");
+  assert.deepEqual(
+    result[0].session.bases.map((row) => row.amount),
+    ["33.3334", "33.3333"],
+  );
+  assert.deepEqual(result[0].coverage, input.original.snapshot.evidence.coverage);
+  result[0].session.baseAmount = "0.0000";
+  assert.equal(verifyPayrollRedemptionCorrections(input)[0].session.baseAmount, "66.6667");
+});
+
+test("correction chain refuses incomplete, unbound, tampered and non-exact histories", () => {
+  const mutations: ((i: ReturnType<typeof correctionFixture>) => void)[] = [
+    (i) => {
+      i.events.pop();
+    },
+    (i) => {
+      i.snapshots.pop();
+    },
+    (i) => {
+      i.events.push(structuredClone(i.events[2]));
+    },
+    (i) => {
+      i.snapshots[1].revision = 2;
+    },
+    (i) => {
+      i.snapshots[1].tenantId = "foreign";
+    },
+    (i) => {
+      i.snapshots[1].eventHash = "tampered";
+    },
+    (i) => {
+      Reflect.deleteProperty(i.snapshots[1].evidence, "correctionRequest");
+    },
+    (i) => {
+      i.snapshots[1].evidence.previousSnapshotId = "other";
+    },
+    (i) => {
+      i.snapshots[1].evidence.coverage[0].quantity = 1;
+    },
+    (i) => {
+      i.snapshots[1].evidence.payrollSession.ordinals = [{ first: 2, last: 3 }];
+    },
+    (i) => {
+      i.events[1].actorId = "foreign";
+    },
+    (i) => {
+      i.events[1].reason = "Other reason";
+    },
+    (i) => {
+      i.events[1].evidence.lines[0].baseAmount = "99.0000";
+    },
+    (i) => {
+      i.events[1].evidence.rateProvenance.rateAt = i.events[1].occurredAt.toISOString();
+    },
+    (i) => {
+      i.events[2].sourceId = "other";
+    },
+    (i) => {
+      i.events[2].evidence.lines[0].baseAmount = "-1.0000";
+    },
+    (i) => {
+      i.events[2].occurredAt = new Date("2026-10-06T00:00:00Z");
+    },
+  ];
+  for (const [index, mutate] of mutations.entries()) {
+    const input = correctionFixture();
+    mutate(input);
+    assert.throws(
+      () => verifyPayrollRedemptionCorrections(input),
+      /EVIDENCE_UNCONFIRMED/,
+      `mutation ${index}`,
+    );
+  }
 });
 
 function inventoryFixture() {
@@ -743,6 +923,23 @@ test("holding inventory rejects ambiguous draw ordering rather than ordering by 
   assert.throws(() => verifyPayrollPackageRedemptionInventory(input), /EVIDENCE_UNCONFIRMED/);
 });
 
+test("server holding history verifies corrections without consuming sessions or replacing original capture", async () => {
+  const f = historyLoaderFixture();
+  const chain = correctionFixture();
+  f.data.snapshots = chain.snapshots as typeof f.data.snapshots;
+  f.data.events = [...chain.events, f.data.events[1]];
+  const result = await f.load();
+  assert.equal(result.verified.redemptions[0].session.baseAmount, "66.6667");
+  assert.deepEqual(
+    result.corrections[0].revisions[0].session.bases.map((row) => row.amount),
+    ["33.3334", "33.3333"],
+  );
+  assert.deepEqual(result.verified.remaining, [{ first: 3, last: 3 }]);
+  assert.equal(result.evidence.correctionReversals.length, 1);
+  f.data.events.splice(2, 1);
+  await assert.rejects(f.load(), /UNCONFIRMED/);
+});
+
 function historyLoaderFixture() {
   const { input } = fixture();
   const D = (value: string) => new Prisma.Decimal(value);
@@ -1106,6 +1303,8 @@ function saleCoverageFixture(twoHoldings = false) {
   second.data.redemptions[0].id = "second-redemption";
   second.data.redemptions[0].holdingId = second.data.holding.id;
   second.data.snapshots[0].redemptionId = "second-redemption";
+  second.data.snapshots[0].id = "second-snapshot";
+  second.data.snapshots[0].eventKey = "capture:second-redemption";
   const session = second.data.snapshots[0].evidence.payrollSession;
   session.holdingId = second.data.holding.id;
   session.purchase = second.data.holding.payrollPurchaseSnapshot;

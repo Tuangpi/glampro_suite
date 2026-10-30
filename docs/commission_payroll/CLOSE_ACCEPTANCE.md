@@ -6,7 +6,45 @@
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
-## Latest checkpoint — manager-override reconciliation
+## Latest checkpoint — monthly correction reconciliation
+
+- Complete operational correction inventory and full verified holding chains now
+  reconcile monthly revision-key operations, exact preceding-source reversals and
+  independent no-cash evidence. Non-correction reversals and missing evidence refuse.
+- Real writer: two same-month corrections, idempotent retry and stable DB reload;
+  original 10.0000 reverses exactly and replacement splits move 4/6 then 2.5/7.5.
+  A third following-month correction reverses only 2.5/7.5 and replaces with 5/5.
+  Both months have zero collections; sessions/original purchase economics unchanged.
+- Missing reversal, request, prior snapshot, altered base, omitted monthly replacement
+  and omitted operational inventory refuse through stored-close calculation. Saved
+  draft/audit unchanged; approved September/October/February calculations unchanged.
+  January carry is an explicit synthetic boundary because prior fixture sales there
+  are intentionally invalid; February/March inputs use the authoritative loader.
+- Selected API **277/277**, three isolated DB suites, zero skips; shared **302/302**;
+  API build/typecheck/lint pass. Logs `/tmp/cp005-monthly-*`. Existing isolated DB only;
+  no application DB/schema changes, deployment, activation or browser walkthrough.
+- CP-005 remains IN PROGRESS. Next: session-void restoration, prepaid-credit lifecycle,
+  partial package FOC and close API/UI/full acceptance. CP-003A/CP-006 untouched.
+
+## Previous checkpoint — redemption correction-chain holding history
+
+- Complete holding snapshots/replacement sources/exact preceding-source reversals
+  now reconcile contiguous revisions, request hash, actor/reason, previous snapshot,
+  original ordinals/coverage/value and historical rate selection. New writer retains
+  request ordering; legacy corrections without request evidence refuse, no backfill.
+- Actual correction writer and persisted reload verify two corrections and retry:
+  original 10.0000 session base splits 4/6 then 2.5/7.5 without consuming/restoring
+  sessions. Four read-only corruptions refuse; approved September/October unchanged.
+  Unit tests include 17 invalid chains and independent loader inventory checks.
+- Selected API **276/276**, three isolated DB suites, zero skips; shared **302/302**;
+  API typecheck/build/lint pass. Logs `/tmp/cp005-correction-*`. No application DB
+  access/schema changes or browser walkthrough. Existing isolated CP-005 DB only.
+- This does NOT enable monthly corrections: the monthly gate still refuses and
+  writes no close. Next: correction operational inventory/no-cash monthly integration,
+  session void restoration, credit lifecycle, partial FOC, close API/UI/full acceptance.
+  CP-005 remains IN PROGRESS; CP-003A/CP-006 untouched.
+
+## Previous checkpoint — manager-override reconciliation
 
 - New verified PIN audits bind usage sale/customer/tenant and historical manager
   role, actor, reason and paid/used/draw counters. Complete holding audit inventory

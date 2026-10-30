@@ -6,6 +6,7 @@ import {
   paidPayrollPackageSessions,
   payrollBaseLineSchema,
   readPayrollPackagePurchase,
+  correctRedemptionAttributionSchema,
 } from "@glampro_suite/shared";
 import { Prisma } from "../../generated/prisma/client.js";
 import { conflict } from "../lib/http-error.js";
@@ -79,6 +80,13 @@ export function verifyPayrollPackageRedemption(input: {
   };
   rules: Parameters<typeof verifyOrdinaryPayrollRateProvenance>[4];
 }) {
+  return verifyRedemption(input);
+}
+
+function verifyRedemption(
+  input: Parameters<typeof verifyPayrollPackageRedemption>[0],
+  correction?: { previousSnapshotId: string; requestHash: string },
+) {
   const { tenantId, redemption, snapshot, sale, event, coverageLines } = input;
   const evidence = redemptionCommissionEvidenceSchema.safeParse(snapshot.evidence);
   const capture = z.object({ lines: z.array(payrollBaseLineSchema) }).safeParse(event.evidence);
@@ -92,10 +100,12 @@ export function verifyPayrollPackageRedemption(input: {
       restored.payrollSession.purchase = readPayrollPackagePurchase(
         restored.payrollSession.purchase,
       );
-    storedHashMatches = [snapshot.evidence, restored].some(
-      (value) =>
-        snapshot.eventHash === createHash("sha256").update(JSON.stringify(value)).digest("hex"),
-    );
+    storedHashMatches = correction
+      ? snapshot.eventHash === correction.requestHash
+      : [snapshot.evidence, restored].some(
+          (value) =>
+            snapshot.eventHash === createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+        );
   } catch {
     return fail();
   }
@@ -114,13 +124,15 @@ export function verifyPayrollPackageRedemption(input: {
     sale.id !== redemption.saleId ||
     sale.soldAt.getTime() !== redemption.usedAt.getTime() ||
     snapshot.redemptionId !== redemption.id ||
-    snapshot.revision !== 0 ||
-    snapshot.eventType !== "CAPTURE" ||
+    (correction ? snapshot.revision <= 0 : snapshot.revision !== 0) ||
+    snapshot.eventType !== (correction ? "CORRECTION" : "CAPTURE") ||
     // PostgreSQL JSONB reorders object keys. The operational writer hashes the
     // schema-parsed object, whose field order must be reconstructed on reads.
     !storedHashMatches ||
-    source.previousSnapshotId !== null ||
-    source.attributionStatus === "CORRECTED" ||
+    source.previousSnapshotId !== (correction?.previousSnapshotId ?? null) ||
+    (correction
+      ? source.attributionStatus !== "CORRECTED"
+      : source.attributionStatus === "CORRECTED") ||
     source.evaluatedAt !== redemption.usedAt.toISOString() ||
     !source.performers ||
     !session ||
@@ -128,12 +140,14 @@ export function verifyPayrollPackageRedemption(input: {
     session.missingEvidence.length ||
     session.holdingId !== redemption.holdingId ||
     !session.ordinals?.length ||
-    event.sourceType !== "REDEMPTION" ||
-    event.sourceKey !== `redemption:${redemption.id}:0` ||
+    event.sourceType !== (correction ? "CORRECTION" : "REDEMPTION") ||
+    event.sourceKey !== `redemption:${redemption.id}:${snapshot.revision}` ||
     event.sourceId !== redemption.id ||
     event.saleId !== sale.id ||
     event.outletId !== sale.outletId ||
-    event.occurredAt.getTime() !== redemption.usedAt.getTime()
+    (correction
+      ? event.occurredAt < redemption.usedAt
+      : event.occurredAt.getTime() !== redemption.usedAt.getTime())
   ) {
     return fail();
   }
@@ -222,10 +236,10 @@ export function verifyPayrollPackageRedemption(input: {
   }
   const performers = redemptionPerformers(
     source.coverage,
-    source.attributionStatus === "EXPLICIT_TENDER" ? source.performers : undefined,
+    source.attributionStatus === "EXPLICIT_TENDER" || correction ? source.performers : undefined,
   );
   if (
-    performers.status !== source.attributionStatus ||
+    (!correction && performers.status !== source.attributionStatus) ||
     payrollInputHash(performers.performers) !== payrollInputHash(source.performers)
   )
     return fail();
@@ -254,7 +268,7 @@ export function verifyPayrollPackageRedemption(input: {
   const provenance = verifyOrdinaryPayrollRateProvenance(
     event.evidence,
     { itemId: redemption.itemId, itemType: "PACKAGE_REDEMPTION" },
-    event.occurredAt,
+    redemption.usedAt,
     event.createdAt,
     input.rules,
     tenantId,
@@ -273,12 +287,163 @@ export function verifyPayrollPackageRedemption(input: {
       tenantId,
       timeZone: input.timeZone,
       periodKey,
-      events: [{ ...event, sourceType: "REDEMPTION" }],
+      events: [{ ...event, sourceType: correction ? "CORRECTION" : "REDEMPTION" }],
       lineageEvents: [],
     }).sources
   )
     return fail();
   return structuredClone({ purchase, session: expected, coverage: source.coverage, provenance });
+}
+
+/** Complete supplied snapshot/source chain. Original draw verification remains
+ * independent; corrections cannot consume ordinals, change coverage or create cash.
+ * The authoritative caller must inventory all revisions and linked reversals.
+ */
+export function verifyPayrollRedemptionCorrections(input: {
+  original: Parameters<typeof verifyPayrollPackageRedemption>[0];
+  snapshots: (Parameters<typeof verifyPayrollPackageRedemption>[0]["snapshot"] & {
+    id: string;
+    eventKey: string;
+    actorId: string | null;
+    reason: string;
+  })[];
+  events: (Parameters<typeof verifyPayrollPackageRedemption>[0]["event"] & {
+    actorId: string | null;
+    reason: string;
+  })[];
+}) {
+  try {
+    const { original } = input;
+    verifyPayrollPackageRedemption(original);
+    const snapshots = [...input.snapshots].sort((a, b) => a.revision - b.revision);
+    const initial = snapshots[0];
+    if (
+      !initial ||
+      initial.revision !== 0 ||
+      !initial.id ||
+      new Set(snapshots.map((row) => row.id)).size !== snapshots.length ||
+      new Set(snapshots.map((row) => row.eventKey)).size !== snapshots.length ||
+      new Set(input.events.map((row) => row.id)).size !== input.events.length ||
+      new Set(input.events.map((row) => row.sourceKey)).size !== input.events.length ||
+      snapshots.length * 2 - 1 !== input.events.length ||
+      initial.eventKey !== `capture:${original.redemption.id}` ||
+      initial.tenantId !== original.tenantId ||
+      initial.redemptionId !== original.redemption.id ||
+      initial.eventHash !== original.snapshot.eventHash ||
+      payrollInputHash(initial.evidence) !== payrollInputHash(original.snapshot.evidence)
+    )
+      return fail();
+    let previous = initial;
+    let priorEvent = input.events.find((row) => row.id === original.event.id);
+    if (
+      !priorEvent ||
+      payrollInputHash(priorEvent.evidence) !== payrollInputHash(original.event.evidence)
+    )
+      return fail();
+    const results = [];
+    const consumedEvents = new Set([priorEvent.id]);
+    for (const snapshot of snapshots.slice(1)) {
+      const evidence = redemptionCommissionEvidenceSchema.parse(snapshot.evidence);
+      const previousEvidence = redemptionCommissionEvidenceSchema.parse(previous.evidence);
+      const event = input.events.find(
+        (row) => row.sourceKey === `redemption:${original.redemption.id}:${snapshot.revision}`,
+      );
+      const reversals = input.events.filter(
+        (row) => row.sourceType === "REVERSAL" && row.sourceId === priorEvent!.id,
+      );
+      if (
+        snapshot.revision !== previous.revision + 1 ||
+        !snapshot.actorId ||
+        !snapshot.id ||
+        !snapshot.eventKey.startsWith("correction:") ||
+        !event ||
+        reversals.length !== 1 ||
+        snapshot.tenantId !== original.tenantId ||
+        snapshot.redemptionId !== original.redemption.id ||
+        event.actorId !== snapshot.actorId ||
+        event.reason !== snapshot.reason ||
+        event.occurredAt < priorEvent.occurredAt ||
+        event.createdAt < event.occurredAt ||
+        payrollInputHash(evidence.coverage) !== payrollInputHash(previousEvidence.coverage) ||
+        payrollInputHash(evidence.valuation) !== payrollInputHash(previousEvidence.valuation) ||
+        payrollInputHash(evidence.payrollSession?.ordinals ?? null) !==
+          payrollInputHash(previousEvidence.payrollSession?.ordinals ?? null)
+      )
+        return fail();
+      const request = correctRedemptionAttributionSchema.parse(evidence.correctionRequest);
+      if (
+        request.expectedRevision !== previous.revision ||
+        request.idempotencyKey !== snapshot.eventKey.slice("correction:".length) ||
+        request.reason !== snapshot.reason ||
+        payrollInputHash(
+          [...request.performers].sort((a, b) => a.staffId.localeCompare(b.staffId)),
+        ) !== payrollInputHash(evidence.performers)
+      )
+        return fail();
+      const requestHash = createHash("sha256")
+        .update(
+          JSON.stringify({
+            saleId: original.sale.id,
+            redemptionId: original.redemption.id,
+            actorId: snapshot.actorId,
+            ...request,
+          }),
+        )
+        .digest("hex");
+      const result = verifyRedemption(
+        { ...original, snapshot, event },
+        {
+          previousSnapshotId: previous.id,
+          requestHash,
+        },
+      );
+      const reversal = reversals[0];
+      if (
+        consumedEvents.has(event.id) ||
+        consumedEvents.has(reversal.id) ||
+        reversal.sourceKey !== `correction:${snapshot.id}:${priorEvent.id}` ||
+        reversal.actorId !== snapshot.actorId ||
+        reversal.reason !== snapshot.reason ||
+        reversal.occurredAt < priorEvent.occurredAt ||
+        reversal.occurredAt > event.occurredAt
+      )
+        return fail();
+      consumedEvents.add(event.id);
+      consumedEvents.add(reversal.id);
+      const parts = new Intl.DateTimeFormat("en", {
+        timeZone: original.timeZone,
+        year: "numeric",
+        month: "2-digit",
+      }).formatToParts(reversal.occurredAt);
+      const periodKey = ["year", "month"]
+        .map((type) => parts.find((row) => row.type === type)!.value)
+        .join("-");
+      if (
+        !resolvePayrollCloseSources({
+          tenantId: original.tenantId,
+          timeZone: original.timeZone,
+          periodKey,
+          events: [{ ...reversal, sourceType: "REVERSAL" }],
+          lineageEvents: [
+            { ...priorEvent, sourceType: previous.revision ? "CORRECTION" : "REDEMPTION" },
+          ],
+        }).sources
+      )
+        return fail();
+      results.push({
+        snapshotId: snapshot.id,
+        eventId: event.id,
+        reversalEventId: reversal.id,
+        ...result,
+      });
+      previous = snapshot;
+      priorEvent = event;
+    }
+    if (consumedEvents.size !== input.events.length) return fail();
+    return structuredClone(results);
+  } catch {
+    return fail();
+  }
 }
 
 /** Reconcile supplied, unreversed holding history. Callers must independently

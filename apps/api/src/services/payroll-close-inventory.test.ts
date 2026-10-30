@@ -108,3 +108,40 @@ test("inventory snapshots remain detached and preserve revisions for hashing", (
   input.operations[0].evidence = { revision: 2 };
   assert.notEqual(payrollInputHash(resolve(input)), old);
 });
+
+test("repeated corrections match immutable revision keys, not the shared redemption ID", () => {
+  const input = fixture();
+  const template = input.events[0];
+  input.events = [1, 2].map((revision) => ({
+    ...structuredClone(template),
+    id: `event-${revision}`,
+    sourceType: "CORRECTION",
+    sourceId: "redemption",
+    sourceKey: `redemption:redemption:${revision}`,
+    evidence: {
+      ...(template.evidence as Record<string, unknown>),
+      lines: [
+        {
+          id: `base-${revision}`,
+          staffId: "staff",
+          outletId: "branch",
+          commissionType: "PKG_RED",
+          baseAmount: "10.0000",
+          units: "1.0000",
+          businessDate: "2026-09-15",
+          status: "EARNED",
+          mode: "FOLLOW_PLAN",
+        },
+      ],
+    },
+  }));
+  input.operations = input.events.map((event) => ({
+    ...event,
+    evidence: { revision: event.sourceKey },
+  }));
+  assert.ok(resolve(input).inventory);
+  input.operations[1].sourceKey = "wrong-revision";
+  assert.equal(resolve(input).inventory, null);
+  delete input.operations[1].sourceKey;
+  assert.equal(resolve(input).inventory, null);
+});

@@ -337,6 +337,24 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Monthly correction reconciliation (October 30): complete operational inventory,
+  revision-key matching, exact original/replacement lineage and independent zero-money
+  reconciliation now support verified corrections internally. Two same-month revisions,
+  retry/reload, six corruption refusals and a third following-month correction pass;
+  saved draft/audit and approved months remain unchanged. Selected API 277/277 (three
+  isolated DB suites, zero skips), shared 302/302; API types/build/lint pass. Session
+  void restoration, credit lifecycle, partial FOC and API/UI/full acceptance remain
+  next; CP-005 IN PROGRESS, CP-003A/CP-006 untouched. Logs `/tmp/cp005-monthly-*`.
+- Redemption correction-chain history (October 30): complete holding snapshot/source
+  inventory verifies contiguous replacements and exact prior reversals, original
+  ordinals/coverage/value, actor/reason/request hash and historical rates. New writer
+  retains original correction request ordering; legacy unbound corrections refuse.
+  Real writer verifies two corrections, retry, unchanged session inventory and prior
+  approved months; four corruptions refuse. Selected API 276/276 (three isolated DB
+  suites, zero skips), shared 302/302; API types/build/lint pass. This is per-holding
+  history only: monthly correction operational inventory/no-cash wiring and void
+  restoration remain next. Monthly gate retained, CP-005 IN PROGRESS; CP-003A/CP-006
+  untouched. Logs `/tmp/cp005-correction-*`.
 - Manager-override reconciliation (October 30): verified POS PIN audits now bind to
   usage sale/customer/tenant and historical manager role, actor/reason and paid/used
   counters. Independent complete audit inventory authorizes unpaid draws exactly
