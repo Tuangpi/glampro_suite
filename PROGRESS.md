@@ -1,13 +1,93 @@
 # Glampro Suite — progress
 
+## Commission payroll partial upfront purchase voids — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Partial upfront external funding now
+reconciles checkout paid/total/status, surviving tenders/collections, captured
+package deposit policies and exact reversals for the existing NO_MOVEMENT path.
+Later outstanding-payment sources remain gated; writer restrictions are unchanged.
+Selected API 87/87, types/lint/API/shared builds and in-memory full/30%-upfront
+session/credit monthly plus cross-month helper smoke pass. New repository coverage
+and real-writer DB/browser acceptance remain deferred. No DB/schema/activation/
+deployment changes. See docs/commission_payroll/PROGRESS.md for remaining M1 work.
+
+## Commission payroll mixed purchase voids — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Mixed service/product/FOC and package
+purchase NO_MOVEMENT voids now reconcile ordinary/purchase originals, complete
+cash collections and exact reversals, reusing historical ordinary economics checks.
+Existing API 103/103, API types/lint and API/shared builds pass. In-memory same/cross-
+month monthly, fixed/excluded policies, differing cash seller/performer, corruption
+and stale approval smoke pass. No new repository tests or real-writer acceptance.
+Remaining partial funding and prepaid lifecycle gaps are recorded in
+`docs/commission_payroll/PROGRESS.md`; no DB/schema/activation/deployment changes.
+
+## Commission payroll purchase-void reconciliation — October 30, 2026
+
+CP-005-M1 remains IN PROGRESS; M2 not started. Narrow purchase-only full-upfront
+NO_MOVEMENT voids now reconcile preserved snapshots with independent credit balance
+or session valuation journals, collections and exact reversals before monthly loading.
+Selected existing API 103/103, types/lint/API/shared builds and in-memory same-month
+monthly/cross-month helper smoke pass. Mixed/used/transferred/expired and outstanding-
+funded purchase voids, remaining lifecycle gaps and real-writer DB/browser acceptance
+remain open. No new repository tests or DB/schema/activation/deployment changes.
+Detailed current state: `docs/commission_payroll/PROGRESS.md`.
+
+## Commission payroll purchase-void evidence — October 30, 2026
+
+CP-005-M1 remains IN PROGRESS. Confirmed prospective purchase voids preserve holdings
+before deletion and bind their snapshot hash to cash confirmation. Snapshot verifier
+and package/value round-trip smoke pass; existing API regressions 173/173, types/lint
+and API/shared builds pass. Monthly purchase-void loading remains blocked pending
+independent grant/removal or valuation evidence plus collection/reversal integration.
+No new tests, DB access, migration or activation. See detailed current state in
+`docs/commission_payroll/PROGRESS.md` for exact unfinished M1 integration.
+
+## Commission payroll ordinary voids — October 30, 2026
+
+CP-005-M1 remains IN PROGRESS. Ordinary service/product-only NO_MOVEMENT voids now
+load through monthly inventory/cash using explicit manager audit confirmation and
+exact original/reversal evidence. Existing cash stays unchanged. Selected API
+regressions 173/173, types/lint and same/cross-month smoke pass. No new tests or DB
+acceptance; purchase/prepaid/mixed/returned-money voids remain gated. Next investigate
+purchase-void deleted-holding evidence. See `docs/commission_payroll/PROGRESS.md`.
+
+## Commission payroll refund attribution — October 30, 2026
+
+CP-005-M1 remains IN PROGRESS. Ordinary refunds now separate original commission
+performers from verified cash sellers and retain per-collection split residuals.
+Selected regressions 173/173, API types/lint and in-memory attribution smoke pass.
+No new tests; transactional acceptance is deferred. Next resume unsupported voids,
+prepaid payout evidence and remaining mixed usage/instalments. See detailed current
+state in `docs/commission_payroll/PROGRESS.md`; no M2 advancement or activation.
+
+## Commission payroll refund continuation — October 30, 2026
+
+CP-005-M1 remains IN PROGRESS. Full upfront money-funded ordinary refunds now load
+with independent payouts, complete collection/line evidence and exact reversals.
+Selected API regressions 173/173, API types/lint and in-memory same/cross-month
+cash/base smoke pass. New tests and DB/browser acceptance deferred. Differing service
+seller/performer attribution, FOC/prepaid/instalment refunds and unsupported voids
+remain gated. See `docs/commission_payroll/PROGRESS.md` for remaining M1 work.
+
+## Commission payroll expiry continuation — October 30, 2026
+
+CP-005-M1 remains IN PROGRESS. Explicit expiry journal replay feeds historical spend
+and restoration validation; other rows must preserve effective expiry and ambiguous
+chronology refuses. No expiry writer/UI, schema or activation change. Selected API
+regressions 150/150, API typecheck and targeted lint pass; new coverage and DB/browser
+acceptance are deferred. See `docs/commission_payroll/PROGRESS.md` for unfinished work.
+
 ## Current State
 
 - **CP-005 IN PROGRESS — delivery cadence updated October 30, 2026.** Latest
   completed task CP-004. None of the five remaining delivery milestones is done.
   Resume **CP-005-M1 authoritative lifecycle loading** as a coordinated pass, not
   another per-helper handoff. Supported credit monthly loading, private transfers
-  and historical sharing/membership/consent are implemented/tested; restorations, refunds/voids and other
-  required unsupported paths keep M1 open. Then source corrections, carry/plan
+  and historical sharing/membership/consent are implemented/tested. Prospective
+  confirmed credit voids and full-credit funding now have sale/month implementation,
+  not transactional acceptance. Refunds/other voids, expiry, mixed usage, instalments
+  and deferred verification keep M1 open. Then source corrections, carry/plan
   switches, application integration and final acceptance remain.
 - Read the short Current State in
   `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/PROGRESS.md`
@@ -15,10 +95,48 @@
   `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/TASKS.md`.
   Continue within M1 until verified completion or a genuine blocker/user instruction/
   session limit. No automatic start of the next milestone. Latest checks: selected
-  close API 316/316, shared 302/302; API build/typecheck/lint pass. No activation,
+  API 150/150, shared sales 45/45, web Sale 56/56; API/web builds/types and targeted
+  lint pass; new seams pass an in-memory smoke only. No activation,
   deployment, commit or push.
 
-## Latest implementation — historical sharing lifecycle
+## Latest continuation — prospective cash and full-credit integration
+
+- **CP-005-M1 remains IN PROGRESS.** Explicit optional manager NO_MOVEMENT void
+  confirmation flows from the unchecked UI checkbox to transactional audit evidence.
+  Credit sale/month loading now reconciles operational hashes and exact restorations/
+  reversals; original collected cash stays in its collection month. New full-credit
+  checkout freezes funding evidence so zero ordinary cash bases are independently
+  verifiable. Legacy missing evidence/other unsupported lifecycle still refuse.
+- Existing API 150/150, shared sale contracts 45/45, web Sale 56/56; API/web types,
+  API build and targeted lint pass. New tests and DB/browser acceptance deferred;
+  no live readiness claim. Resume remaining M1 refunds/voids, expiry, mixed usage,
+  instalments and acceptance, as detailed in commission-payroll Current State.
+  No DB/schema/activation/deployment/commit/push.
+
+## Previous continuation — restoration holding-loader integration
+
+- **CP-005-M1 remains IN PROGRESS.** User approved implementation-first development,
+  deferring new test writing. Existing restoration verifier now runs in full holding
+  loading; independent ledger replay supports restored credit and later re-spends.
+  Sale/month VOID gates remain closed: required independent cash-disposition evidence
+  is absent from current operational writers. Resolve that persistence contract next.
+- API typecheck, targeted lint, formatting/whitespace and 62 existing non-DB tests
+  pass. DB/browser/new integration coverage deferred; old blanket-refusal acceptance
+  assertions need revision. No DB/schema, activation, deployment, commit or push.
+  See commission-payroll Current State for exact remainder; M1 is not complete.
+
+## Previous continuation — restoration evidence verifier
+
+- **CP-005-M1 remains IN PROGRESS.** Added a non-activating supplied-record seam
+  for credit restoration: operational void, reverted redemption, database RESTORE
+  balance and exact historical payroll reversal must agree. Not yet wired into
+  authoritative loaders; existing unsupported-path gates remain unchanged.
+- Focused regression 30/30, zero skips; API typecheck/lint/build and changed-code
+  formatting pass. No database/web acceptance. Resume chronological restoration
+  loading, sale/month integration and real-writer acceptance; exact remainder in
+  the commission-payroll PROGRESS.md. No DB/schema/deployment/commit/push.
+
+## Previous implementation — historical sharing lifecycle
 
 - **CP-005-M1 IN PROGRESS, October 30, 2026.** Independent consent/membership
   replay now supports historical shared-credit monthly loading, explicit revocation,

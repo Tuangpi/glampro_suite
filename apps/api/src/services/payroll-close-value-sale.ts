@@ -16,6 +16,11 @@ import { payrollInputHash } from "./payroll-close-state.js";
 import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollCloseCash } from "./payroll-close-cash.js";
+import { loadSaleVoidCashConfirmation } from "./sale-void-cash.js";
+import { payrollFullCreditFunding } from "./payroll-full-credit-funding.js";
+import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
+import type { PayrollNoCashSaleVoid } from "./payroll-close-voids.js";
+import type { PayrollNoCashReversal } from "./payroll-close-reversals.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
 const fail = (): never => {
@@ -39,11 +44,12 @@ const economicsSchema = z.object({
   originalQuantity: z.number().int().safe().positive(),
   coveredPackageQuantity: z.literal(0),
   category: z.string().nullable(),
+  fullCreditFunding: z.unknown().optional(),
 });
 
 /** Internal sale-wide evidence, NOT monthly readiness or earnings activation.
  * Supports settled service/product receipts with ownership/consent-reconciled,
- * unreversed credit only.
+ * active credit or fully evidenced no-cash sale voids.
  * No inferred tender-to-line allocation, zero bases, outstanding or package usage. */
 export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction, saleId: string) {
   const scope = currentScope();
@@ -84,8 +90,8 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     !sale ||
     sale.tenantId !== tenantId ||
     sale.id !== saleId ||
-    sale.status !== "COMPLETED" ||
-    sale.voidedAt ||
+    !["COMPLETED", "VOID"].includes(sale.status) ||
+    (sale.status === "COMPLETED" && sale.voidedAt !== null) ||
     sale.collectionCurrency !== "SGD" ||
     !sale.customerId ||
     !sale.outletId ||
@@ -109,7 +115,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         row.customerId !== sale.customerId ||
         row.itemType !== "VALUE_PACKAGE" ||
         !row.holdingId ||
-        row.revertedAt ||
+        (sale.status === "VOID" ? row.revertedAt === null : row.revertedAt !== null) ||
         !row.amount?.isPositive() ||
         !row.amount.mul(100).isInteger(),
     ) ||
@@ -126,7 +132,9 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       (row) =>
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
-        !["SALE_LINE", "VALUE_SPEND"].includes(row.sourceType),
+        !["SALE_LINE", "VALUE_SPEND", ...(sale.status === "VOID" ? ["REVERSAL"] : [])].includes(
+          row.sourceType,
+        ),
     ) ||
     [sale.lines, payments, redemptions, events, collections].some(
       (rows) => new Set(rows.map((row) => row.id)).size !== rows.length,
@@ -283,8 +291,19 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       line.itemType === "SERVICE" && purchase.grossCents === 0n
         ? resolvePayrollFocEconomics(line, sale.soldAt)
         : null;
-    // No implicit zero when the writer could not establish an external allocation.
-    if (!foc && !net.has(line.id)) return fail();
+    // A zero base needs prospective, immutable funding evidence independently
+    // matched to the complete operational tender inventory. No legacy inference.
+    if (!foc && !net.has(line.id)) {
+      const funding = payrollFullCreditFunding(sale, sale.lines, payments);
+      if (
+        !funding ||
+        !economics.data.fullCreditFunding ||
+        collections.length ||
+        hash(funding) !== hash(economics.data.fullCreditFunding)
+      )
+        return fail();
+      net.set(line.id, 0n);
+    }
     const candidates = events.filter(
       (row) => row.sourceType === "SALE_LINE" && row.sourceId === line.id,
     );
@@ -329,7 +348,109 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       return fail();
     ordinary.push({ saleLineId: line.id, eventId: event.id, baseAmount });
   }
-  if (events.length !== ordinary.length + spendEvents.length) return fail();
+  const originals = events.filter((row) => row.sourceType !== "REVERSAL");
+  const reversals = events.filter((row) => row.sourceType === "REVERSAL");
+  if (originals.length !== ordinary.length + spendEvents.length) return fail();
+  const noCashReversals: PayrollNoCashReversal[] = [];
+  let noCashSaleVoid: PayrollNoCashSaleVoid | null = null;
+  const cashConfirmation =
+    sale.status === "VOID" ? await loadSaleVoidCashConfirmation(tx, tenantId, saleId) : null;
+  if (cashConfirmation) {
+    if (reversals.length !== originals.length || !sale.voidedAt) return fail();
+    const ordinaryReversals: PayrollNoCashSaleVoid["reversals"] = [];
+    for (const original of originals) {
+      const matches = reversals.filter((row) => row.sourceId === original.id);
+      if (matches.length !== 1) return fail();
+      const reversal = matches[0];
+      if (
+        reversal.sourceKey !== `void:${saleId}:${original.id}` ||
+        reversal.actorId !== sale.voidedById ||
+        reversal.reason !== "Source sale voided" ||
+        reversal.occurredAt < sale.voidedAt ||
+        reversal.occurredAt > new Date(cashConfirmation.confirmation.recordedAt)
+      )
+        return fail();
+      const parts = new Intl.DateTimeFormat("en", {
+        timeZone: tenant.timeZone,
+        year: "numeric",
+        month: "2-digit",
+      }).formatToParts(reversal.occurredAt);
+      const voidParts = new Intl.DateTimeFormat("en", {
+        timeZone: tenant.timeZone,
+        year: "numeric",
+        month: "2-digit",
+      }).formatToParts(sale.voidedAt);
+      // One no-cash sale disposition cannot be split across monthly inventories.
+      // Refuse a void transaction crossing a month boundary until posting-date
+      // reconciliation explicitly supports it; never drop one of its reversals.
+      if (
+        ["year", "month"].some(
+          (type) =>
+            parts.find((part) => part.type === type)?.value !==
+            voidParts.find((part) => part.type === type)?.value,
+        )
+      )
+        return fail();
+      if (
+        !resolvePayrollCloseSources({
+          tenantId,
+          timeZone: tenant.timeZone,
+          periodKey: ["year", "month"]
+            .map((type) => parts.find((part) => part.type === type)!.value)
+            .join("-"),
+          events: [reversal as Parameters<typeof resolvePayrollCloseSources>[0]["events"][number]],
+          lineageEvents: [
+            original as Parameters<typeof resolvePayrollCloseSources>[0]["events"][number],
+          ],
+        }).sources
+      )
+        return fail();
+      if (original.sourceType === "VALUE_SPEND") {
+        const restored = histories
+          .flatMap((history) => history.restorations)
+          .filter((row) => row.eventId === original.id && row.reversalEventId === reversal.id);
+        if (restored.length !== 1) return fail();
+        noCashReversals.push({
+          id: restored[0].restorationBalanceId,
+          tenantId,
+          eventId: reversal.id,
+          originalEventId: original.id,
+          originalSourceId: original.sourceId,
+          originalSourceType: "VALUE_SPEND",
+          saleId,
+          outletId: sale.outletId,
+          occurredAt: reversal.occurredAt,
+          currency: "SGD",
+          netCents: "0",
+          taxCents: "0",
+          grossCents: "0",
+          evidence: { restoration: restored[0], cashConfirmation },
+        });
+      } else if (original.sourceType === "SALE_LINE") {
+        ordinaryReversals.push({
+          eventId: reversal.id,
+          originalEventId: original.id,
+          originalSourceId: original.sourceId,
+          originalSourceType: "SALE_LINE",
+        });
+      } else return fail();
+    }
+    if (ordinaryReversals.length)
+      noCashSaleVoid = {
+        id: cashConfirmation.audit.id,
+        tenantId,
+        saleId,
+        outletId: sale.outletId,
+        occurredAt: sale.voidedAt,
+        currency: "SGD",
+        cashDisposition: "NO_MOVEMENT",
+        netCents: "0",
+        taxCents: "0",
+        grossCents: "0",
+        evidence: cashConfirmation,
+        reversals: ordinaryReversals,
+      };
+  } else if (reversals.length) return fail();
   const parts = new Intl.DateTimeFormat("en", {
     timeZone: tenant.timeZone,
     year: "numeric",
@@ -342,7 +463,9 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     tenantId,
     timeZone: tenant.timeZone,
     periodKey,
-    events: events as Parameters<typeof resolvePayrollCloseCash>[0]["events"],
+    // Original collection cash remains in its collection month. Void effects are
+    // independently reconciled by the monthly loader in the reversal month.
+    events: originals as Parameters<typeof resolvePayrollCloseCash>[0]["events"],
     lineageEvents: [],
     operations: externalPayments.map((row) => ({
       tenantId,
@@ -373,6 +496,8 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
   return {
     earningsActive: false as const,
     ordinary,
+    noCashReversals,
+    noCashSaleVoid,
     creditPaymentIds: creditPayments.map((row) => row.id),
     cash: cash.cash,
     evidence: {
@@ -384,6 +509,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       histories,
       rules,
       cashAttributions,
+      cashConfirmation,
     },
   };
 }

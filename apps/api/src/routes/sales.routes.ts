@@ -476,8 +476,8 @@ salesRouter.post(
     try {
       if (!req.user) throw unauthorized();
       const { id } = validated<{ id: string }>(req, "params");
-      const { reason } = validated<VoidSaleInput>(req, "body");
-      res.status(200).json({ data: await voidSale(id, { reason }, req.user.id) });
+      const input = validated<VoidSaleInput>(req, "body");
+      res.status(200).json({ data: await voidSale(id, input, req.user.id) });
     } catch (error) {
       next(error);
     }

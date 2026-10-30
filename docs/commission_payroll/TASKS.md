@@ -2,6 +2,62 @@
 
 ## Workflow
 
+Latest M1 continuation: partial upfront external funding now loads purchase
+NO_MOVEMENT voids after exact checkout total/paid/status, tender/collection,
+captured package deposit and reversal reconciliation. Later outstanding-payment
+collections stay gated; the writer already refuses voids after such payments.
+Selected existing API 87/87, types/lint/API/shared builds and full/30%-upfront
+session/credit monthly plus cross-month helper smoke pass. New repository coverage
+and real-writer acceptance remain deferred. CP-005-M1 stays IN PROGRESS; M2 untouched.
+Older partial-funding refusals below are superseded only for this narrow path.
+
+Latest M1 continuation: mixed service/product/FOC plus purchase NO_MOVEMENT voids
+now reconcile both ordinary line and package collection originals/reversals, reuse
+historical ordinary economics verification and retain independent cash sellers.
+First package deposit threshold also verifies in the purchase-void helper.
+Existing API 103/103, API types/lint and API/shared builds pass; in-memory same/cross-
+month monthly and package fixed/excluded smoke pass. M1 stays IN PROGRESS; no M2.
+Real-writer acceptance and remaining partial funding/prepaid lifecycle work are open.
+Older mixed-purchase refusals below are superseded only for this supported path.
+
+Latest M1 continuation: narrow purchase-only unused/untransferred/unexpired fully
+upfront NO_MOVEMENT voids now reconcile preserved holdings to independent credit
+GRANT/REMOVAL or session valuation purchase/GRANT/PURCHASE_VOID evidence, complete
+collections and exact reversals, and feed monthly purchase/cash/source verification.
+Selected existing API 103/103, types/lint/builds and same-month monthly/cross-month
+helper smoke pass. M1 remains IN PROGRESS; M2 not started. Mixed/used/transferred/
+expired, outstanding-funded and returned-money voids plus remaining M1 lifecycle
+work and real-writer DB/browser acceptance stay open. See latest PROGRESS entry.
+
+Latest M1 continuation: prospective confirmed purchase voids preserve pre-deletion
+package/value-package holdings and bind the snapshot hash into cash confirmation.
+Snapshot verification, scope checks and package/value round-trip smoke implemented;
+existing API 173/173, types/lint and API/shared builds pass. This is a prerequisite,
+NOT monthly purchase-void support or milestone acceptance. Next reconcile independent
+grant/removal or valuation/PURCHASE_VOID journals, collection captures and reversals,
+then integrate monthly purchase verifiers. Real-writer acceptance remains deferred.
+
+Latest M1 continuation: ordinary service/product-only NO_MOVEMENT void loading is
+connected to monthly inventory/cash/close evidence with explicit audited confirmation.
+Selected API regressions 173/173, types/lint and same/cross-month in-memory smoke pass.
+No new tests written. Purchase/prepaid/mixed/returned-money voids and transactional
+acceptance remain open; old blanket ordinary-void TODOs now mean these remaining gaps.
+
+Latest M1 continuation: authoritative full upfront money-only ordinary refund loading
+is connected to inventory/cash/close evidence. API selected regressions 173/173,
+typecheck/lint and in-memory same/cross-month smoke pass. No new tests written.
+Independent cash/commission attribution now supports differing sellers/performers
+with per-collection residuals. Selected regressions remain 173/173; helper/cash smoke
+passes. FOC, prepaid/instalment-funded refunds and real-writer acceptance remain open;
+generic refund TODOs below now refer to these remaining paths. M1 stays IN PROGRESS.
+
+Latest M1 continuation (October 30, 2026): explicit expiry journal replay is implemented
+through holding loading with historical spend/restore expiry and strict ordering.
+Selected existing API regressions 150/150, API typecheck and targeted lint pass.
+Expiry-specific coverage and transactional acceptance remain deferred. CP-005-M1
+stays IN PROGRESS; refunds/other voids, mixed usage and instalments are unfinished.
+Earlier expiry TODOs below now mean remaining acceptance, not absent replay code.
+
 First-priority queue approved October 27, 2026. Use this queue rather than the
 superseded SC tracker or unrelated root backlog. Read PROJECT, DECISIONS,
 REQUIREMENTS and PROGRESS before resuming. Start the first unblocked TODO task,
@@ -345,11 +401,12 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ### Delivery milestones — execution baseline October 30, 2026
 
-Latest M1 pass: historical sharing/membership/consent now loads through monthly
-calculate/approve; consent-only stale approval, six corruption refusals, failed
-spend rollback and immutable approved history verified. Selected close API 316/316,
-shared 302/302; API build/typecheck/lint pass. Session limit interrupted the pass;
-resume restoration/refund/void reconciliation, not M2. See PROGRESS.md for remainder.
+Latest M1 pass: prospective confirmed credit voids and full-credit funding have
+sale/month implementation, not transactional acceptance. Existing API 150/150,
+shared sales 45/45, web Sale 56/56; API/web builds/types and targeted lint pass.
+New test writing deferred by user; in-memory new-seam smoke passes. Continue M1
+refunds/other voids, expiry, mixed usage, instalments and verification, not M2.
+See PROGRESS.md for exact remainder; no milestone completion is claimed.
 
 These are delivery boundaries within CP-005, not new top-level tasks or proof of
 completion. **None of the five milestones is complete.** On “Next” or “Continue”,
@@ -377,6 +434,32 @@ delivery or interruption, not once per helper. Report “completed slice; M1 ope
 for partial work, never “lifecycle loading done”.
 
 ### Implementation evidence and earlier checkpoints
+
+- Prospective cash/full-credit continuation (October 30): M1 IN PROGRESS. Optional
+  unchecked-by-default void confirmation is saved transactionally in the existing
+  audit journal; exact operational hash/actor/time and holding reversals reconcile
+  through credit sale/month loading. New full-credit checkout snapshots independently
+  prove zero external bases; legacy missing evidence refuses. Existing API 150/150,
+  shared sales 45/45, web Sale 56/56, API/web types, API build and targeted lint pass.
+  New test writing and DB/browser acceptance deferred; old refusal assertions need
+  revision. Refunds/other voids, expiry, mixed usage, instalments and acceptance remain.
+  No DB/schema/activation/deployment changes. Exact remainder in PROGRESS.md.
+
+- Implementation-first continuation (October 30): user deferred new test writing.
+  Existing restoration verifier now runs in full holding loading; independent
+  balance/ownership replay supports RESTORE and repeated spentBefore on later
+  spends. API typecheck, targeted lint/format/whitespace and 62 existing non-DB
+  tests pass. Real-writer/new coverage deferred; old blanket-restoration-refusal
+  acceptance assertions need updating. Sale/month void gates stay closed because
+  existing writers lack independent cash-disposition evidence required by the
+  adopted contract. M1 IN PROGRESS; no DB/schema/activation/deployment changes.
+
+- Restoration verification continuation (October 30): supplied-record seam checks
+  operational void/reverted redemption, RESTORE balance and exact original payroll
+  reversal with historical rates. Focused regression 30/30; API types/lint/build
+  pass. No DB acceptance or authoritative-loader integration yet; chronological
+  balance/ownership replay, sale/month integration and remaining lifecycle scope
+  are still required. Session interruption, not M1 completion; gates unchanged.
 
 - Private credit ownership transfers (October 30): replay complete balance chain
   against independent transfer audits; verify spend-time owner rather than current

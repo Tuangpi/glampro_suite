@@ -5,21 +5,329 @@
 - **CP-005 IN PROGRESS; latest completed task CP-004.** Active delivery:
   **CP-005-M1 authoritative lifecycle loading**, not another transfer/helper slice.
   None of the five delivery milestones is complete; see TASKS.md for their gates.
-- Implemented/tested subset: private-credit holding/sale reconciliation, supported
-  monthly integration, private transfers, historical sharing/membership/consent,
-  frozen evidence and lock order. Still required for M1: restorations,
-  refunds/voids, expiry edits, mixed session-package usage, spend-sale instalments
-  and full-credit paid lines lacking allocation evidence. These remain fail-closed.
-- Next session: resume restoration/refund/void reconciliation and continue the M1
-  lifecycle pass through monthly integration and acceptance. Do not hand off after
-  each helper/subtype. Stop at verified M1 completion, a genuine blocker, user
-  instruction or session limit; record the exact remainder if interrupted.
-- Latest verification: selected close API 316/316, zero failures/skips, including
-  five isolated DB suites; shared 302/302; API build/typecheck/lint pass.
-  Disposable PostgreSQL was stopped; synthetic fixtures retained. UI/router remain
-  unmounted. No activation/deployment/commit/push. CP-003A/CP-006 untouched.
+  User approved implementation-first work with new test writing deferred.
+- Existing baseline: credit history/monthly integration, private transfers and
+  historical sharing. Latest implementation adds prospective cash confirmation,
+  credit restoration/void sale/month loading and full-credit funding snapshots.
+  New paths need transactional acceptance; they are not verified milestone completion.
+- Resume M1: prepaid purchase/spend refunds, returned-money and unsupported purchase voids,
+  mixed session/credit usage and spend-sale instalments remain unsupported.
+  Ordinary service/product no-movement voids now load with explicit cash confirmation;
+  missing confirmation and mixed/spend voids outside verified paths remain gated.
+  Prospective confirmed purchase voids now preserve pre-deletion holding snapshots;
+  purchase/ordinary mixed NO_MOVEMENT monthly loading now reconciles independent journals,
+  full upfront collections and exact reversals. Used/transferred/expired or
+  later outstanding-payment-funded purchase voids remain gated. Partial upfront
+  external funding now reconciles checkout paid/total/status with surviving tenders,
+  all collections, captured package deposit policy and exact reversals.
+  Explicit expiry journal replay is implemented; expiry-specific acceptance is deferred.
+  Full upfront money-only ordinary refunds now load with independent commission/
+  cash attribution, including differing service sellers/performers. FOC and
+  instalment-funded refunds remain blocked.
+  Add deferred coverage and real-writer approval/history acceptance before M1 DONE.
+- Latest checks: selected existing API 87/87, API typecheck, targeted lint and
+  API/shared builds pass. Mixed service/product/FOC same/cross-month monthly smoke and fixed/excluded policy checks pass.
+  Earlier shared sale contracts 45/45, web Sale 56/56;
+  API/web typechecks/builds and targeted API/web/shared lint pass. In-memory new-seam
+  smoke passes. No DB access,
+  schema change, activation, deployment, commit or push. Close router stays unmounted.
 - After M1: M2 source corrections, M3 carry/plan-switch, M4 application integration,
   M5 final acceptance, in order. Do not automatically start the next milestone.
+
+## Partial upfront purchase no-movement voids — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS; M2 not started. Extended the existing loader to
+  allow partial upfront external funding with no later payments. Independently
+  reconcile checkout paidAmount/totalAmount/paymentStatus, every surviving tender
+  and collection allocation, original captures, captured package deposit policy and
+  exact reversals. Uncollected debt is not cash or a commission base.
+- Writer inspection: assertVoidable refuses outstanding balances with payments;
+  reverseForVoid deletes the outstanding and cascades its payments. Sale checkout
+  totals/tenders and collections survive. OUTSTANDING_PAYMENT collections therefore
+  remain blocked, even if their captures survive. No writer restriction was changed.
+- Checks: selected existing API 87/87; API types, targeted lint, API/shared builds
+  pass. Temporary /tmp/cp005-partial-void-smoke.mts covers full/30%-upfront session
+  and credit purchase monthly loading, cross-month helper reversals, altered
+  checkout totals/status, later-payment sources, below-minimum deposit and corrupt
+  journals. Imported existing loader tests also pass 37/37. This is in-memory
+  verification, not real-writer database/browser acceptance or repository coverage.
+- Next: broader independently evidenced purchase histories, prepaid purchase/spend
+  refunds and returned-money voids, mixed session/credit usage and spend instalments.
+  Preserve transfer/later-payment writer restrictions. New repository tests and
+  transactional acceptance remain deferred; no M1 completion claim.
+
+## Mixed ordinary/purchase no-movement voids — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS; M2 not started. Extended the purchase-void loader
+  to accept SERVICE/PRODUCT lines alongside PACKAGE/VALUE_PACKAGE purchases, with
+  independently evidenced service FOC economics. Ordinary SALE_LINE originals and
+  package COLLECTION originals retain separate inventories and exact reversals.
+- Extracted `verifyPayrollOrdinaryVoidLine` from the ordinary loader for shared
+  historical economics/type/mode/units/rate verification, including distinct staff
+  shares. Ordinary cash attribution remains tied to collection sellers, not service
+  performers. Added an independent first-package-deposit threshold check to the
+  purchase-void helper, matching the existing monthly verifier.
+- Existing unused/untransferred/unexpired holding journals, complete surviving upfront
+  external tenders, exact-cent collection allocation and explicit NO_MOVEMENT
+  confirmation are still mandatory. FOC adds no cash; incomplete/orphan source
+  inventories refuse. No usage, transfer, expiry or returned-money gate was relaxed.
+- Existing selected API regressions 103/103 pass; API typecheck, targeted lint and
+  API/shared builds pass. Temporary in-memory policy smoke completes 18 same-month
+  and 18 cross-month monthly variants (both package types, service/product/FOC;
+  package FOLLOW_PLAN/EXCLUDE/FIXED). Value-package runs repeat across policy-loop
+  settings; they are not 18 distinct policies. Exact fixed awards reverse without
+  repeat units. Six additional attribution variants cover differing service
+  performers/cash sellers, missing monthly tender/capture, wrong actor, altered
+  base/reversal, orphan source, journal corruption and stale approval refusal.
+  Each smoke import also runs 37 existing passing fixture tests.
+  Logs `/tmp/cp005-mixed-void-*`; no new repository tests/assertion edits.
+- Session handoff, not milestone completion. Real-writer DB/browser, rollback/race/
+  retry, trigger timestamp and frozen persisted history acceptance remain deferred.
+  Cross-month MONTHLY loading now has in-memory smoke (previous pass tested only
+  the helper), but no real-writer acceptance is claimed. No DB/schema/activation,
+  router mount, deployment, commit or push.
+- Exact remaining M1: previously used/restored, transferred/shared or expired
+  purchase histories where operationally permitted; partial/outstanding-funded and
+  returned-money voids; prepaid purchase/spend refunds; mixed session/credit usage,
+  spend-sale instalments and deferred lifecycle/real-writer acceptance. Transfer
+  purchase voids are operationally refused today; do not bypass writer eligibility.
+  Next inspect supported partial upfront purchase voids and their surviving funding
+  evidence, then continue remaining M1 integration. M2 remains untouched.
+
+## Purchase-void journal reconciliation and monthly integration — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS; M2 not started. Added
+  `apps/api/src/services/payroll-close-purchase-void-loader.ts` and connected it to
+  monthly void/source inventory and purchase/collection verification. This is a
+  completed narrow slice, not lifecycle-loading or milestone completion.
+- Only purchase-only, unused, untransferred, unexpired PACKAGE/VALUE_PACKAGE sales
+  with full surviving upfront external tenders and explicit NO_MOVEMENT confirmation
+  qualify. Preserved policy snapshots are checked against credit GRANT/REMOVAL
+  balances or valuation activation/purchase/GRANT/PURCHASE_VOID journals and empty
+  voided state. Credit trigger timestamps are transaction-start timestamps, so exact
+  sale/actor/reason and balance-chain binding is used rather than false application
+  timestamp ordering. No legacy reconstruction or current-catalogue fallback.
+- Complete tender/receipt/allocation inventories, exact-cent tax replay, historical
+  cash sellers, original payroll collections/rate provenance and exact void reversals
+  must reconcile. Monthly tender/collection/capture inventories match independently;
+  prior originals are lineage only. Cash remains in collection month; no void cash
+  is invented. Independent journal evidence is serialized and frozen for reload.
+- Selected existing API regressions 103/103 pass (loader, sources, cash, voids,
+  ordinary refunds and value spend), API typecheck, targeted lint and API/shared
+  builds pass. Temporary in-memory smoke for both package types passes connected
+  same-month monthly loading (+100/-100 bases/units with 100 cash retained), cross-month
+  helper reconciliation and altered removal/valuation refusal. Importing loader
+  fixture runs 37 passing existing tests. Logs `/tmp/cp005-purchase-reconcile-*`.
+- No repository tests/assertions changed; new automated coverage remains deferred.
+  No DB access, migrations, activation, router mount, deployment, commit or push.
+  Real-writer rollback/race/retry, trigger timestamp acceptance, cross-month monthly
+  acceptance, stale approval/history and browser acceptance remain deferred.
+- Exact remaining M1 work: mixed ordinary/purchase voids; previously used/restored,
+  transferred, shared or expired purchase histories; partial/outstanding-funded and
+  returned-money voids; prepaid purchase/spend refunds; mixed session/credit spend
+  and spend-sale instalments; deferred lifecycle coverage and real-writer acceptance.
+  Resume M1, not M2. Earlier blanket purchase-void refusals below describe the previous
+  checkpoint, not this narrow supported path.
+
+## Purchase-void pre-deletion evidence — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS. Added `sale-void-purchase-evidence.ts` and wired
+  confirmed NO_MOVEMENT voids to preserve package/value-package holding records
+  before `reverseForVoid` deletes them. The successful transaction writes a separate
+  `sale.void.purchase-holdings` audit record; cash confirmation binds its SHA-256 hash.
+  Retries still return without creating or backfilling evidence. Ordinary voids write
+  no purchase snapshot. Legacy holdings may be recorded but are not made eligible.
+- Snapshot verifier requires matching sale/tenant/actor/reason/times/hash, one deleted
+  original holding per purchase line, full unused balance and original customer,
+  valid purchase snapshots and no current surviving holdings. Existing package/value
+  purchase verifiers validate original economics/policy. Foreign/missing/changed
+  evidence refuses. This verifier does NOT authorize monthly purchase-void loading.
+- Existing selected API regressions 173/173, API typecheck, targeted lint and API/shared
+  builds pass. In-memory package and value-package capture→delete→cash-confirm→load
+  smoke passes, including missing hash binding and altered snapshot refusal; importing
+  the existing loader fixture also runs 37 passing tests. Logs
+  `/tmp/cp005-purchase-void-{tests,types,lint,build,format,smoke}.log`.
+- No new tests/assertion edits, migrations, database access, deployment, activation,
+  commit or push. Audit evidence remains in the application journal, not a DB-enforced
+  immutable settlement table. New transactional rollback/race/retry/browser acceptance
+  and automated snapshot corruption/legacy coverage remain deferred.
+- Exact unfinished integration: reconcile preserved credit snapshots to independent
+  GRANT/REMOVAL balance journals and session packages to valuation purchase/PURCHASE_VOID
+  movement evidence; verify complete original tender/collection captures and exact
+  reversals; feed monthly purchase/collection verifiers without treating deleted
+  holdings or VOID status as valid by default. Session valuation evidence survives
+  deletion but does not contain the complete payroll policy snapshot. No historical
+  missing-evidence fallback is permitted. Purchase voids, other M1 lifecycle gaps and
+  deferred real-writer acceptance keep M1 open; do not start M2.
+
+## Ordinary no-movement void loading — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS. Added `payroll-close-sale-void-loader.ts` for
+  service/product-only voids, including independently evidenced FOC economics.
+  Requires the existing explicit manager NO_MOVEMENT audit confirmation, binding
+  operational hashes, complete original/reversal inventories, historical attribution/
+  economics/rate provenance, exact source reversals and matching actor/reason/key.
+- Monthly loading now consumes verified ordinary voids, independently matches current
+  captures, adds prior originals only as reversal lineage and freezes void evidence.
+  Original external collection remains in its collection month; void creates no cash.
+  Rejects missing/changed confirmations, unsupported prepaid/mixed/purchase lines,
+  redemptions, gateway tenders, invalid chronology and month-straddling reversals.
+- Existing selected API regressions 173/173, API typecheck, targeted lint, API/shared
+  builds, formatting and whitespace checks pass.
+  In-memory connected-monthly smoke: 100 cash retained, +100/-100 commission bases,
+  changed tender/missing confirmation refused. Cross-month helper/cash smoke: zero
+  cash in void month with prior original lineage; wrong actor and month-straddling
+  reversal refuse. Each smoke imports the loader fixture and runs 37 existing tests.
+  Logs `/tmp/cp005-ordinary-void-{types,lint,tests,smoke,cross-month-smoke}.log`.
+- No new tests/assertion edits, DB access, migration, deployment, activation, commit
+  or push. Existing audit journal is not a DB-enforced immutable cash evidence table.
+  Deferred: automated ordinary/FOC void coverage, races/rollback, stale drafts/frozen
+  approved history, actual writer/database/browser acceptance.
+- Partial session handoff: next resume package/value-package purchase voids, whose
+  operational writer deletes holdings; establish preserved purchase/holding evidence
+  before loading them. Prepaid settled-payout evidence, mixed usage/instalments and
+  other M1 acceptance remain unfinished. Do not advance to M2.
+
+## Independent refund cash attribution — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS. Ordinary refund source shares still verify original
+  service performers/product sellers. Optional evidence-backed cash attribution now
+  carries each original collection allocation's ID, net cents and seller shares;
+  the authoritative loader always provides it from independently verified receipts.
+- Refunded cash is split per original collection allocation, then summed by seller,
+  preserving four-decimal residuals. Source bases still reverse original performers.
+  Duplicate cash allocation IDs, wrong net totals and mismatches against same-month
+  collection identities/sellers/outlets refuse. Legacy supplied-record fixtures keep
+  their existing same-share behavior; no new inference in authoritative loading.
+- Existing selected regressions 173/173, API typecheck and targeted lint pass.
+  First validation caught a misplaced edit syntax error; corrected before passing
+  rerun. In-memory helper/cash smoke confirms differing performers and split sellers,
+  same-month cash zero and changed collection sellers/cash totals refusal; importing
+  the existing fixture also runs 37 passing existing tests. Logs
+  `/tmp/cp005-refund-attribution-{types,lint,tests,smoke}.log`.
+- No new tests or existing assertion edits. Deferred: automated differing-attribution,
+  multi-collection residual and stale-draft coverage, plus real-writer DB/browser
+  acceptance. Next resume unsupported ordinary/purchase void loading and independent
+  prepaid refund payout evidence; mixed usage/instalments remain unfinished.
+  Partial session handoff, not M1 completion or advancement to M2.
+
+## Ordinary-sale refund loading — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS. Connected full upfront money-funded service/product
+  SaleRefund records to monthly reversal inventory, lineage, net cash, metrics and
+  frozen close evidence through `payroll-close-sale-refund-loader.ts`.
+- Requires exact recorded payouts, original tenders, complete collection allocations
+  with cumulative tax replay, original line economics/units/historical rates, and
+  one actor/reason/key-matched exact reversal per original line. Independent monthly
+  capture inventory must match. Original collection stays in its original month;
+  refund-month cash subtracts net once. Month-straddling reversals refuse.
+- Preserves the existing generic unsupported-workflow error code on refusal and adds
+  a specific refund-history reason. First regression run: 172/173, failing only the
+  existing generic-code assertion; compatibility fix rerun: 173/173. API typecheck,
+  targeted lint, API/shared build, formatting and whitespace checks pass.
+  Logs `/tmp/cp005-refund-{types,lint,tests,build,format}.log`.
+- In-memory smoke: same-month cash and positive/negative bases net to zero; wrong
+  payout/actor refuse. Cross-month helper/cash smoke: -100 net cash in refund month,
+  prior collection not re-added, corrupt tax allocation refuses. Smoke imports the
+  existing loader fixture and also runs its 37 passing tests. Logs
+  `/tmp/cp005-refund-{smoke,cross-month-smoke}.log`. No new test files/assertion edits.
+- Remaining: independent settled payout evidence for prepaid refunds; ordinary
+  refunds with differing seller/performer attribution, FOC or instalment funding;
+  unsupported voids, mixed usage, spend-sale instalments and deferred transactional/
+  database/browser acceptance. The existing refund contract couples cash shares to
+  base shares, so differing splits explicitly refuse rather than misattribute cash.
+- Partial session handoff: next resume M1 unsupported void loading and refund
+  attribution separation/payout evidence. No M2 advancement, DB access, migration,
+  activation, deployment, commit or push. Close router remains unmounted.
+
+## Expiry journal replay — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS. Replay starts at GRANT expiry; only explicit
+  actor/reason-backed, sale-free EXPIRY_CHANGE rows may change it. These rows must
+  preserve balance, owner and sharing; every other row must retain effective expiry.
+  Final expiry must match the holding. No endpoint/UI, migration or inferred history.
+- Holding loading passes spend-time expiry to spend validation and independently
+  passes restore-time expiry to restoration validation. Transfers and sharing use
+  effective expiry. Global earliest ledger ordering rejects ties and contradictory
+  chronology; spend timestamps fence later operations so extensions cannot rescue
+  an earlier expired spend.
+- Existing selected API regressions 150/150, API typecheck and targeted lint pass.
+  Logs `/tmp/cp005-expiry-{tests,types,lint}.log`. No new tests in this continuation.
+  Deferred: extension/shortening/null boundaries, spend/restore/transfer/sharing
+  interleavings, tampered/missing expiry evidence, and DB/browser acceptance.
+- Partial session handoff: remaining lifecycle work and acceptance are unfinished.
+  Next resume purchase/spend refunds and unsupported void loading, then mixed usage,
+  instalments and real-writer transactional acceptance. Do not advance to M2.
+
+## Prospective cash confirmation and full-credit integration — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS; session continuation, not milestone acceptance.
+  UI checkbox is unchecked by default; optional explicit manager confirmation flows
+  through shared schema/API into the successful void transaction's audit record.
+  Operational record hash, historical actor/role/reason and void time are checked
+  on loading; retries never backfill and mutable retry updatedAt is excluded.
+- Credit sale allocation verifies complete exact original/reversal inventories and
+  holding restorations; monthly loading consumes independent used/reverted/sale/void
+  inventories and no-cash evidence. Original collected cash remains unchanged.
+  Month-straddling void transactions and other unsupported voids still refuse.
+- Full-credit ordinary checkout now freezes complete tender identity/total evidence
+  into immutable line economics. Loading admits zero external bases only when that
+  prospective snapshot independently matches all tenders. No legacy zero inference.
+- No new tests written or existing assertions changed. Existing non-DB API 150/150,
+  shared sales contracts 45/45, web Sale 56/56 pass; API/web types/builds and
+  targeted API/web/shared lint pass. In-memory smoke confirms audit round-trip,
+  JSON hashing, retry timestamp stability, changed-tender refusal and exact full-credit
+  funding. First smoke failed due to an incorrect relative import, corrected rerun
+  passes. Logs `/tmp/cp005-void-*`. No DB/browser acceptance.
+- Deferred: transaction rollback/races, authenticated confirmation route and checkbox,
+  spend→void→re-spend and shared/transfer histories, exact monthly cash/approval/stale
+  drafts/frozen history, full-credit new-writer and corruption acceptance. Old blanket
+  refusal acceptance assertions require revision in the deferred test pass. Existing
+  audit journal is application-controlled, not DB-enforced append-only evidence.
+- Remaining M1 implementation is listed in Current State. No schema/application DB,
+  deployment, activation, commit or push; CP-003A/CP-006 not started.
+
+## Implementation-first restoration integration — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS. Preserved existing restoration verifier/tests and
+  connected the verifier to authoritative holding loading. Ownership replay admits
+  evidenced RESTORE transitions and retains operational SPEND/RESTORE order, rather
+  than relying on captured spentBefore uniqueness. Exact cents, final balances,
+  reversal completeness, ownership and chronological boundaries remain checked.
+- No new tests written. Existing focused regression: 62/62, zero failures/skips;
+  API typecheck, targeted ESLint, formatting and whitespace pass. Logs
+  `/tmp/cp005-fast-{regression,types,lint}.log`. No DB/browser/full-suite acceptance.
+- Integration blocker: the existing sale void writer records no independent cash
+  disposition. DECISIONS.md requires explicit operational NO_MOVEMENT or reconciled
+  returned-money evidence; status/reversal alone is insufficient. Do not infer it
+  or relax the monthly gate. Next resolve the cash-disposition persistence contract
+  before sale/month void approval; purchase/spend refunds and remaining M1 paths
+  are still open. No schema/application DB/activation/deployment changes.
+- Deferred verification: real-writer spend→void→re-spend, shared/transferred
+  restorations, missing/duplicate/orphan balance/reversal evidence, monthly stale
+  approval and frozen-history coverage. Existing value-loader acceptance lines
+  590–592 still expect the old holding-level blanket refusal and need revision in
+  the deferred test pass; do not claim that suite passes. No test assertions removed.
+
+## Restoration verification continuation — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS; session interruption, not milestone completion.
+  Added `payroll-close-value-restoration.ts` under the API services directory.
+  Reconciles reverted redemption, operational VOID actor/reason/time, database
+  RESTORE amount and exact original payroll reversal, retaining historical rates.
+  Transaction-start balance timestamps may precede the wall-clock void timestamp.
+  Refunds cannot masquerade as restorations. Active-spend verification is unchanged.
+- Supplied-record tests exercise a cross-month reversal and corrupted/missing/
+  duplicate/foreign evidence. Focused sources/value/ownership/sharing tests pass
+  30/30, zero skips. API typecheck, lint, build and changed-code formatting pass.
+  Logs `/tmp/cp005-restoration-{tests,checks}.log`. No DB or web acceptance run.
+- Exact remainder: integrate complete restoration inventories into ownership and
+  spend/balance chronological replay (including later re-spends with repeated
+  spentBefore values), then sale/month allocation and real-writer acceptance.
+  Purchase/spend refunds and voids, expiry edits, mixed session/credit receipts,
+  spend-sale instalments and full-credit paid-line allocation remain unsupported.
+  The new seam is not called by authoritative loaders; no readiness/activation claim.
+  No application DB/schema changes, deployment, commit or push.
 
 ## Historical sharing lifecycle pass — October 30, 2026
 

@@ -23,6 +23,55 @@ tenant isolation, exact-money handling, historical integrity, or transaction saf
 
 ## Delivery cadence — October 30, 2026
 
+Partial upfront external funding is now supported for the same unused/untransferred/
+unexpired NO_MOVEMENT purchase-void path. Checkout paid/total/status must match
+surviving tenders and exact collection allocations; captured package minimum deposit
+and all original/reversal inventories still verify. No later-payment reconstruction:
+OUTSTANDING_PAYMENT collections remain gated and writer restrictions are unchanged.
+This supersedes full-upfront-only limitations below, not M1 acceptance gates.
+
+Mixed ordinary service/product/FOC plus purchase NO_MOVEMENT voids now use shared
+historical ordinary economics and independent package journals, complete upfront
+cash collections and exact reversals. Both source inventories reconcile without
+using commission performers as cash sellers. Same/cross-month monthly in-memory
+smoke passes, including fixed/excluded package policies; real-writer acceptance and
+other M1 lifecycle gaps remain open. Supersedes the purchase-only limitation below.
+
+Narrow purchase-only, unused/untransferred/unexpired, full upfront NO_MOVEMENT voids
+now load monthly only after independent credit GRANT/REMOVAL or session valuation
+purchase/GRANT/PURCHASE_VOID reconciliation, complete tender/collection capture and
+exact reversal verification. Cash remains in collection month. No deleted-holding
+or VOID-status fallback. Broader purchase histories and real-writer acceptance remain
+open; CP-005-M1 stays IN PROGRESS. Prior checkpoint below is superseded for this path.
+
+Prospective confirmed purchase voids now preserve pre-deletion package/value holding
+snapshots with a hash bound to transactional cash confirmation. Snapshot verification
+is implemented, but independent journal/collection/reversal reconciliation and monthly
+purchase-void loading remain unfinished. No historical backfill or eligibility fallback.
+
+Ordinary service/product-only voids now load with explicit manager NO_MOVEMENT
+confirmation, independent operational hashes and exact original/reversal evidence.
+They retain collection-month cash without creating void-month cash. Prepaid/mixed/
+purchase and returned-money voids remain gated; real-writer acceptance is deferred.
+
+Ordinary full upfront money-funded refunds now load through monthly reconciliation
+with complete payout, collection, line and reversal evidence. Cash follows verified
+collection sellers independently of original service-performer commission shares,
+preserving each collection allocation's split residual. FOC, prepaid and
+instalment-funded refunds remain gated.
+New-path transactional acceptance remains deferred; M1 is still IN PROGRESS.
+
+Explicit expiry journal replay is implemented through holding loading, using
+historical expiry for spends/restorations and retaining strict operational ordering.
+No expiry-edit writer/UI or inferred history. Expiry-specific coverage and real-writer
+acceptance remain deferred; this does not complete M1.
+
+User-approved implementation-first pass: defer writing new tests until the connected
+workflow is implemented. Use typecheck, lint and focused existing regressions for
+feedback; consolidate broader checks at delivery boundaries. Record deferred test
+coverage explicitly. This changes development order, not reconciliation, acceptance,
+activation or release requirements; preserve existing tests and financial safeguards.
+
 Execute CP-005 by the five milestone boundaries in [TASKS.md](TASKS.md), not by
 individual helpers or test additions. Resume M1 authoritative lifecycle loading;
 monthly private-credit integration and private transfers are completed slices,
@@ -98,14 +147,18 @@ backfill, deployment, commit, or push is authorized by management initialization
 - CP-005 internal monthly private-credit support now reconciles settled service/
   product/FOC receipts against independent month inventories and full holding/sale
   evidence, with external-only cash and frozen purchase-ratio spend bases. This is
-  not earnings activation: unsupported lifecycle, unallocated full-credit paid lines
-  and mixed session-package workflows refuse; application close UI/router stay unmounted.
+  not earnings activation: unsupported lifecycle, legacy full-credit paid lines lacking
+  funding evidence and mixed session-package workflows refuse; close UI/router stay unmounted.
 - Private credit ownership transfers replay independent balance and transfer audits
   to verify spend-time ownership without repricing purchases or creating fresh cash.
   Explicit family sharing now replays balance consent and independent membership
   history, resolving consuming customers without replacing holding ownership.
   Current membership is only a final-state check, not historical authorization.
-  Restorations/refunds/voids and other unsupported M1 lifecycle remain gated.
+  Prospective credit voids now require explicit operational NO_MOVEMENT confirmation
+  and exact restoration/reversal evidence through sale/month loading. New full-credit
+  ordinary checkout freezes funding evidence before accepting zero external bases.
+  These new paths need transactional acceptance; refunds, other voids and remaining
+  unsupported M1 lifecycle stay gated. No deployment or earnings activation.
 
 ## Delivery and completion
 

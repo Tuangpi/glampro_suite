@@ -498,15 +498,19 @@ export default function Sale() {
   /**
    * Voids the receipt on screen (ADR 0016).
    *
-   * The reason is the only thing to send: the actor is the token's, so nothing here can
+   * The reason and optional cash confirmation are sent; the actor is the token's, so nothing here can
    * name somebody else. The server answers with the voided receipt, which replaces the
    * one on screen — the same sale, with a status the receipt now says out loud.
    */
-  async function voidReceipt(reason: string) {
+  async function voidReceipt(reason: string, cashDisposition?: "NO_MOVEMENT") {
     if (!receipt) return;
     setVoidError(null);
     try {
-      const voided = await voidSale.mutateAsync({ saleId: receipt.id, reason });
+      const voided = await voidSale.mutateAsync({
+        saleId: receipt.id,
+        reason,
+        ...(cashDisposition ? { cashDisposition } : {}),
+      });
       setVoidOpen(false);
       setReceipt(voided);
       showToast(
@@ -665,7 +669,7 @@ export default function Sale() {
               isPending={voidSale.isPending}
               errorMessage={voidError}
               onClose={() => setVoidOpen(false)}
-              onConfirm={(reason) => void voidReceipt(reason)}
+              onConfirm={(reason, cashDisposition) => void voidReceipt(reason, cashDisposition)}
             />
           ) : null}
 

@@ -41,6 +41,16 @@ const refundSchema = money.extend({
         reversalEventId: id,
         itemType: z.enum(["SERVICE", "PRODUCT"]),
         shares: commissionSharesSchema,
+        /** Source commission shares remain above; cash follows independently
+         * verified collection sellers when they differ from service performers. */
+        cashAttribution: z
+          .object({
+            allocations: z
+              .array(z.object({ id, netCents: cents, shares: commissionSharesSchema, evidence }))
+              .min(1),
+            evidence,
+          })
+          .optional(),
         evidence,
       }),
     )
@@ -59,6 +69,19 @@ const decimal = (value: string) => {
   const amount = BigInt(value);
   return `${amount / 100n}.${(amount % 100n).toString().padStart(2, "0")}00`;
 };
+const cashStaff = (allocation: PayrollSaleRefund["allocations"][number]) => {
+  const totals = new Map<string, bigint>();
+  const parts = allocation.cashAttribution?.allocations ?? [allocation];
+  for (const part of parts)
+    for (const share of allocatePayrollSplit(decimal(part.netCents), part.shares))
+      totals.set(share.staffId, (totals.get(share.staffId) ?? 0n) + ticks(share.amount));
+  return [...totals]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([staffId, amount]) => ({
+      staffId,
+      amount: `${amount / 10000n}.${(amount % 10000n).toString().padStart(4, "0")}`,
+    }));
+};
 
 /** Full ordinary-sale refund validation only. No cash effect is inferred from a
  * reversal alone. Loader must establish completeness, funding and settlement. */
@@ -74,6 +97,7 @@ export function resolvePayrollCloseSaleRefunds(raw: PayrollCloseSaleRefundRecord
     allocations.map((row) => row.id),
     allocations.map((row) => row.originalEventId),
     allocations.map((row) => row.reversalEventId),
+    allocations.flatMap((row) => row.cashAttribution?.allocations.map((part) => part.id) ?? []),
     refunds.flatMap((row) =>
       row.allocations.map((part) => JSON.stringify([row.saleId, part.saleLineId])),
     ),
@@ -93,7 +117,25 @@ export function resolvePayrollCloseSaleRefunds(raw: PayrollCloseSaleRefundRecord
         .map((part) => ({
           ...part,
           shares: [...part.shares].sort((a, b) => a.staffId.localeCompare(b.staffId)),
+          ...(part.cashAttribution
+            ? {
+                cashAttribution: {
+                  ...part.cashAttribution,
+                  allocations: [...part.cashAttribution.allocations]
+                    .sort((a, b) => a.id.localeCompare(b.id))
+                    .map((allocation) => ({
+                      ...allocation,
+                      shares: [...allocation.shares].sort((a, b) =>
+                        a.staffId.localeCompare(b.staffId),
+                      ),
+                    })),
+                },
+              }
+            : {}),
           staff: allocatePayrollSplit(decimal(part.netCents), part.shares),
+          // Preserve each original collection allocation's four-decimal residual.
+          // Splitting a combined line total can move residuals between sellers.
+          cashStaff: cashStaff(part),
         })),
     }));
   payrollInputHash(snapshot);
@@ -121,6 +163,14 @@ export function resolvePayrollCloseSaleRefunds(raw: PayrollCloseSaleRefundRecord
     )
       block("SALE_REFUND_PAYOUT_MISMATCH", refund.id);
     for (const allocation of refund.allocations) {
+      if (
+        allocation.cashAttribution &&
+        allocation.cashAttribution.allocations.reduce(
+          (sum, row) => sum + BigInt(row.netCents),
+          0n,
+        ) !== BigInt(allocation.netCents)
+      )
+        block("SALE_REFUND_CASH_ALLOCATION_MISMATCH", allocation.id);
       const original = all.find((row) => row.id === allocation.originalEventId);
       const reversal = raw.events.find((row) => row.id === allocation.reversalEventId);
       if (

@@ -32,6 +32,9 @@ import {
 } from "./payroll-package-session.js";
 import { appendPayrollSource, reversePayrollSources } from "./payroll-source-event.js";
 import { assertPayrollValuePackageRestorable } from "./payroll-value-package-refund.js";
+import { recordSaleVoidCashConfirmation } from "./sale-void-cash.js";
+import { recordSaleVoidPurchaseHoldings } from "./sale-void-purchase-evidence.js";
+import { payrollFullCreditFunding } from "./payroll-full-credit-funding.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import {
   captureRedemptionCommission,
@@ -2231,6 +2234,14 @@ async function fillLedgers(
   const creditPaid = await tx.customerRedemption.count({
     where: { saleId, itemType: "VALUE_PACKAGE" },
   });
+  const fullCreditFunding =
+    creditPaid > 0
+      ? payrollFullCreditFunding(
+          await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } }),
+          sourceLines,
+          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
+        )
+      : null;
   for (const [position, line] of priced.entries()) {
     if (line.item.itemType !== "SERVICE" && line.item.itemType !== "PRODUCT") continue;
     const stored = sourceLines.find((row) => row.position === position)!;
@@ -2252,7 +2263,7 @@ async function fillLedgers(
       quantity,
       netAmount: net.toFixed(4),
       creditPaid: creditPaid > 0,
-      externalNetCents: externalAllocations.length ? externalNet : null,
+      externalNetCents: externalAllocations.length ? externalNet : fullCreditFunding ? 0n : null,
     });
     // Independent immutable checkout evidence, not a close-time catalogue lookup
     // or a list price inferred from the payroll event being reconciled.
@@ -2271,6 +2282,7 @@ async function fillLedgers(
           originalQuantity: line.input.quantity,
           coveredPackageQuantity: covered.get(stored.id) ?? 0,
           category,
+          ...(fullCreditFunding ? { fullCreditFunding } : {}),
         },
       },
     });
@@ -2300,7 +2312,7 @@ async function fillLedgers(
       missingEvidence:
         foc && !line.item.listUnitPrice
           ? ["FOC_LIST_PRICE"]
-          : !foc && creditPaid && !externalAllocations.length
+          : !foc && creditPaid && !externalAllocations.length && !fullCreditFunding
             ? ["EXTERNAL_TENDER_LINE_ALLOCATION"]
             : [],
     });
@@ -3385,7 +3397,13 @@ export async function voidSale(
       throw conflict("This sale has already been voided.", "SALE_ALREADY_VOID");
     }
 
+    const purchaseHoldingHash =
+      input.cashDisposition === "NO_MOVEMENT"
+        ? await recordSaleVoidPurchaseHoldings(tx, tenantId, sale.id, actorId)
+        : undefined;
     await reverseForVoid(tx, tenantId, current);
+    if (input.cashDisposition === "NO_MOVEMENT")
+      await recordSaleVoidCashConfirmation(tx, tenantId, sale.id, actorId, purchaseHoldingHash);
   });
 
   return getSale(sale.id);

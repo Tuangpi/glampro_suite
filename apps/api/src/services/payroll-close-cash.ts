@@ -124,6 +124,33 @@ export function resolvePayrollCloseCash(
       staff.set(part.staffId, (staff.get(part.staffId) ?? 0n) - ticks(part.amount));
   }
   const saleRefunds = reversals.reconciliation?.saleRefunds?.refunds ?? [];
+  for (const refund of raw.saleRefunds ?? []) {
+    for (const line of refund.allocations) {
+      for (const original of line.cashAttribution?.allocations ?? []) {
+        const current = byId.get(original.id);
+        const attribution = attributions.find((row) => row.allocationId === original.id);
+        const collection = collections.reconciliation?.collections.find((row) =>
+          row.allocations.some((part) => part.id === original.id),
+        );
+        if (
+          current &&
+          (collection?.saleId !== refund.saleId ||
+            current.saleLineId !== line.saleLineId ||
+            current.itemType !== line.itemType ||
+            current.netCents !== original.netCents ||
+            attribution?.outletId !== refund.outletId ||
+            payrollInputHash(attribution?.shares ?? []) !==
+              payrollInputHash(
+                [...original.shares].sort((a, b) => a.staffId.localeCompare(b.staffId)),
+              ))
+        )
+          blockers.push({
+            code: "SALE_REFUND_CURRENT_CASH_ATTRIBUTION_MISMATCH",
+            sourceId: original.id,
+          });
+      }
+    }
+  }
   const voidReturns = reversals.reconciliation?.voids?.returnedCash ?? [];
   for (const returned of raw.returnedCashSaleVoids ?? []) {
     for (const allocation of returned.allocations) {
@@ -169,7 +196,7 @@ export function resolvePayrollCloseCash(
       (outlets.get(refund.outletId) ?? 0n) - BigInt(refund.netCents) * 100n,
     );
     for (const allocation of refund.allocations)
-      for (const part of allocation.staff)
+      for (const part of allocation.cashStaff)
         staff.set(part.staffId, (staff.get(part.staffId) ?? 0n) - ticks(part.amount));
   }
   return structuredClone({

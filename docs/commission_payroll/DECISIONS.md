@@ -1,5 +1,19 @@
 # Commission & Payroll decisions
 
+## Partial upfront purchase void evidence — October 30, 2026
+
+- Relax full funding only for the existing preserved, unused/untransferred/unexpired
+  NO_MOVEMENT path. Checkout paidAmount must equal surviving external tenders;
+  totalAmount must equal original line gross and paymentStatus must agree. Every
+  collection still binds one-to-one to a surviving upfront payment, replays exact
+  allocations and verifies captures/reversals. Enforce captured package deposit
+  thresholds even when a package line has no collection. No debt becomes cash.
+- The writer refuses voids after outstanding payments, then deletes the outstanding
+  and cascades payment children on successful void. Surviving collection/capture
+  evidence alone cannot substitute for deleted payment operations. Continue to
+  reject OUTSTANDING_PAYMENT collections; do not relax writer restrictions or infer
+  historical funding from status. Real-writer acceptance remains outstanding.
+
 ## Status and authority
 
 Adopted for local implementation October 27, 2026 under the user's delegation to
@@ -7,6 +21,111 @@ use recommended decisions. These are policy/design decisions, not claims of
 implemented behavior or production activation. Future conflicts must be recorded.
 
 ## SRS decisions and open points
+
+### CP-005 mixed ordinary/purchase no-movement void loading (October 30, 2026)
+
+- Extend the independently reconciled purchase-void path to ordinary service/product
+  and evidenced FOC lines on the same sale. Verify ordinary SALE_LINE and purchase
+  COLLECTION inventories separately, with exact original/reversal pairing and
+  historical economics/rates. Cash follows collection sellers independently.
+- Retain explicit NO_MOVEMENT confirmation, preserved unused/untransferred/unexpired
+  purchase snapshots and independent journals, complete upfront external funding
+  and original package deposit policy. No historical backfill or VOID-status fallback.
+- Prior purchase-only/mixed-void blanket gates below are superseded only for this
+  narrow path. Real-writer and broader lifecycle acceptance remain deferred; M1 open.
+
+### CP-005 purchase-void evidence preservation (October 30, 2026)
+
+- Confirmed prospective NO_MOVEMENT voids preserve package/value-package holdings,
+  including original payroll purchase policy, in the existing audit journal before
+  deletion. Cash confirmation binds that evidence hash in the same transaction.
+  No retry backfill, missing-history inference or new schema. Existing void eligibility
+  does not depend on whether legacy holdings have usable payroll snapshots.
+- Snapshot validation is only a prerequisite: require matching tenant/sale/actor/
+  reason/times, exact hash, complete original purchase-line identity, deleted holdings,
+  full remaining balances and original purchase verifiers. It is not independent
+  grant/removal, settlement, collection or reversal reconciliation.
+- Purchase monthly loading remains gated until credit GRANT/REMOVAL and session
+  valuation purchase/PURCHASE_VOID records independently agree with preserved
+  snapshots and complete collection/reversal inventories. Application audit records
+  are not a DB-enforced immutable evidence store. Real-writer acceptance is deferred.
+
+### CP-005 ordinary no-movement void loading (October 30, 2026)
+
+- Supersedes the ordinary-void blanket gate only for service/product-only sales with
+  prospective explicit manager NO_MOVEMENT confirmation, unchanged operational hash,
+  verified original line economics/rates and exact actor/reason/key-backed reversals.
+  Existing independently evidenced FOC economics may verify FOC originals too.
+- Retain original collection cash in its original month. No void cash movement is
+  inferred from status or negative bases. Prior originals are lineage only; current
+  captures must match independent monthly inventory. Month-straddling voids refuse.
+- Purchase/prepaid/mixed voids remain gated. Operational purchase void deletes
+  holdings, so existing holding-dependent verifiers cannot simply accept VOID status.
+  No historical attestation backfill, returned-money writer or migration introduced.
+  Audit journal remains application evidence, not DB-enforced immutable settlement.
+
+### CP-005 independent ordinary refund cash attribution (October 30, 2026)
+
+- Supersedes the differing seller/performer refusal below: original source shares
+  verify commission reversal; independently evidenced collection sellers allocate
+  cash. The authoritative refund loader emits both, never derives sellers from bases.
+- Preserve each collection allocation's ID/net/shares and split separately before
+  summing cash by seller, avoiding residual movement when receipts are combined.
+  Require unique IDs and exact net totals; reconcile overlapping current-month
+  collections, sellers, line and outlet identities. Snapshots freeze both dimensions.
+- Optional cash attribution preserves existing supplied-record same-share fixtures;
+  the authoritative loader always supplies explicit verified allocation evidence.
+  No DB schema/writer changes. Transactional acceptance remains deferred; M1 is open.
+
+### CP-005 ordinary refund authoritative loading (October 30, 2026)
+
+- Admit only fully paid upfront money-funded ordinary service/product refunds with
+  independent SaleRefund payouts, complete tenders/collections/line inventory,
+  original economics/rate provenance and exact actor/reason/key-backed reversals.
+  No cash inferred from negative bases. Preserve collection-month cash; subtract
+  refund net in its own month. Refuse month-straddling reversal transactions.
+- Current refund contract uses the same shares for source bases and cash. Until
+  separate source/cash attribution is represented and verified, refuse service
+  refunds whose sellers and performers differ. Also refuse FOC, prepaid funding,
+  outstanding balances and missing historical payout evidence; do not normalize them.
+- Prepaid refund helper payroll captures are not independent settled-payout evidence.
+  Their existence does not authorize monthly cash loading or M1 acceptance.
+
+### CP-005 explicit expiry journal replay (October 30, 2026)
+
+- Supersedes unchanged-expiry restrictions only for explicit EXPIRY_CHANGE evidence.
+  Replay starts at GRANT expiry, requires actor/reason, unchanged owner/sharing/
+  balance and no sale, and reconciles final holding expiry. Other event kinds cannot
+  silently change expiry. Missing/ambiguous evidence refuses.
+- Spends use historical effective expiry; restorations use their own replayed expiry
+  without retroactively validating the original spend. Transaction-start ledger
+  timestamps cannot cross recorded spend/restore/transfer appends.
+- No expiry writer/UI or inferred history. Expiry-specific tests and transactional
+  acceptance remain deferred under implementation-first approval; M1 stays open.
+
+### CP-005 prospective credit void cash and full-credit funding (October 30, 2026)
+
+- Extend void requests compatibly with optional `cashDisposition: NO_MOVEMENT`.
+  The checkbox starts unchecked. Only an explicitly authenticated manager/owner
+  attestation creates a cash-disposition audit in the successful void transaction.
+  No confirmation on retries, no legacy backfill, no assertion of returned money.
+- Bind the audit to post-void sale/lines, tenders, collections, redemptions and empty
+  refund/later-payment inventories via an exact JSON hash. Exclude sale.updatedAt,
+  which retry serialization can touch without changing money. Historical actor role,
+  reason and operational timestamp are retained. Audit records use the existing
+  application journal, not a new DB-enforced immutable table; no independent physical
+  cash or provider settlement verification is claimed.
+- Credit service/product sale void loading reconciles every original and exact
+  reversal, independently verified holding restorations and explicit cash confirmation.
+  Original external cash stays in its collection month; restored credit adds none.
+  Freeze confirmation with monthly inputs. Unconfirmed/returned/uncertain cash,
+  unsupported ordinary/purchase/mixed-session voids and month-boundary-straddling
+  void transactions still refuse. This is implementation, not real-writer acceptance.
+- Prospectively freeze full-credit funding inside immutable sale-line economics:
+  complete distinct positive non-gateway PREPAID_CREDIT tenders must equal the
+  settled SGD service/product receipt total. Match the snapshot independently on
+  loading before assigning zero ordinary external base. VP_SPEND keeps original
+  purchase-ratio economics. No mixed-tender inference or repair of missing history.
 
 ### CP-005 historical shared-credit access (October 30, 2026)
 

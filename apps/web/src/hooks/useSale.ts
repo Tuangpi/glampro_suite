@@ -41,6 +41,7 @@ import {
   type SaleReceiptEmailResult,
   type VoucherPreview,
   type VoucherPreviewInput,
+  type VoidSaleInput,
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
@@ -599,7 +600,7 @@ export function useDiscardHold() {
 /**
  * Voids a rung-up sale: `POST /api/sales/:id/void` (ADR 0016).
  *
- * The **reason** is the whole request; the actor is the token's, not the browser's, which
+ * The reason and optional cash attestation are the request; the actor is the token's, which
  * is why it cannot be passed in from here. The server answers with the *voided* receipt,
  * so the screen redraws from the server's own row rather than guessing at the new state.
  *
@@ -611,8 +612,8 @@ export function useVoidSale() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ saleId, reason }: { saleId: string; reason: string }) =>
-      post<SaleDetail>(`/sales/${saleId}/void`, { reason }),
+    mutationFn: ({ saleId, ...input }: { saleId: string } & VoidSaleInput) =>
+      post<SaleDetail>(`/sales/${saleId}/void`, input),
     onSuccess: () => {
       invalidateSaleViews(queryClient);
     },

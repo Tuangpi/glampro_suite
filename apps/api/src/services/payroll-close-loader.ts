@@ -29,6 +29,9 @@ import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js";
 import { verifyPayrollPackageTenders } from "./payroll-close-package-tender.js";
 import { loadPayrollValueSaleAllocation } from "./payroll-close-value-sale.js";
+import { loadPayrollSaleRefund } from "./payroll-close-sale-refund-loader.js";
+import { loadPayrollPurchaseSaleVoid } from "./payroll-close-purchase-void-loader.js";
+import { loadPayrollOrdinarySaleVoid } from "./payroll-close-sale-void-loader.js";
 import {
   verifyPayrollPackagePurchase,
   verifyPayrollPackageCollection,
@@ -151,11 +154,6 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   if (redemptions.some((row) => !["PACKAGE", "VALUE_PACKAGE"].includes(row.itemType)))
     unavailable("REDEMPTION_WORKFLOW_NOT_LOADED");
   if (
-    refunds.length ||
-    sales.some((sale) => sale.voidedAt && sale.voidedAt >= from && sale.voidedAt < to)
-  )
-    unavailable("REFUND_OR_VOID_WORKFLOW_NOT_LOADED");
-  if (
     events.some(
       (event) =>
         ![
@@ -227,7 +225,10 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         unavailable("VALUE_REDEMPTION_MONTH_INVENTORY_UNCONFIRMED");
       sameInventory(
         sales.filter((row) => row.id === saleId),
-        inMonth(value.evidence.sale.soldAt) ? [value.evidence.sale] : [],
+        inMonth(value.evidence.sale.soldAt) ||
+          (value.evidence.sale.voidedAt !== null && inMonth(value.evidence.sale.voidedAt))
+          ? [value.evidence.sale]
+          : [],
         "VALUE_SALE_MONTH_INVENTORY_UNCONFIRMED",
       );
       sameInventory(
@@ -237,7 +238,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       );
       sameInventory(
         redemptions.filter((row) => row.saleId === saleId),
-        value.evidence.redemptions.filter((row) => inMonth(row.usedAt)),
+        value.evidence.redemptions.filter(
+          (row) => inMonth(row.usedAt) || (row.revertedAt !== null && inMonth(row.revertedAt)),
+        ),
         "VALUE_REDEMPTION_MONTH_INVENTORY_UNCONFIRMED",
       );
       sameInventory(
@@ -307,6 +310,41 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   }
   if (redemptions.some((row) => !saleCoverage.has(row.saleId) && !valueSales.has(row.saleId)))
     unavailable("REDEMPTION_MONTH_INVENTORY_UNCONFIRMED");
+  const purchaseVoids = new Map<string, Awaited<ReturnType<typeof loadPayrollPurchaseSaleVoid>>>();
+  const ordinaryVoids = new Map<
+    string,
+    | Awaited<ReturnType<typeof loadPayrollOrdinarySaleVoid>>
+    | Awaited<ReturnType<typeof loadPayrollPurchaseSaleVoid>>
+  >();
+  for (const sale of sales.filter((row) => row.status === "VOID" && !valueSales.has(row.id))) {
+    const purchase = sale.lines.some((line) =>
+      ["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType),
+    );
+    const loaded = purchase
+      ? await loadPayrollPurchaseSaleVoid(tx, tenantId, sale.id, tenant.timeZone)
+      : await loadPayrollOrdinarySaleVoid(tx, tenantId, sale.id, tenant.timeZone);
+    if ("packagePurchases" in loaded) {
+      sameInventory(
+        payments.filter((row) => row.saleId === sale.id).map(({ sale: _sale, ...row }) => row),
+        loaded.payments.filter((row) => inMonth(row.createdAt)),
+        "PURCHASE_VOID_TENDER_MONTH_INVENTORY_UNCONFIRMED",
+      );
+      sameInventory(
+        collections.filter((row) => row.saleId === sale.id),
+        loaded.receipts.filter((row) => inMonth(row.occurredAt)),
+        "PURCHASE_VOID_COLLECTION_MONTH_INVENTORY_UNCONFIRMED",
+      );
+      purchaseVoids.set(sale.id, loaded);
+    }
+    if (
+      payrollInputHash(snapshot(loaded.sale)) !==
+      payrollInputHash(
+        snapshot({ ...sale, lines: [...sale.lines].sort((a, b) => a.id.localeCompare(b.id)) }),
+      )
+    )
+      unavailable("ORDINARY_VOID_SALE_INVENTORY_UNCONFIRMED");
+    ordinaryVoids.set(sale.id, loaded);
+  }
   const {
     carry,
     resolved: carryResult,
@@ -315,9 +353,88 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
 
   const operations: PayrollCloseInputRecords["inventoryOperations"] = [];
   const noCashReversals: NonNullable<PayrollCloseInputRecords["noCashReversals"]> = [];
+  const noCashSaleVoids: NonNullable<PayrollCloseInputRecords["noCashSaleVoids"]> = [];
   const lineage = new Map<string, (typeof events)[number]>();
   const reconciledCorrections = new Set<string>();
   const correctionEvidence = [];
+  const saleRefunds: NonNullable<PayrollCloseInputRecords["saleRefunds"]> = [];
+  for (const loaded of ordinaryVoids.values()) {
+    if (inMonth(loaded.noCashSaleVoid.occurredAt)) noCashSaleVoids.push(loaded.noCashSaleVoid);
+    for (const event of loaded.events) {
+      if (!inMonth(event.occurredAt)) {
+        if (event.occurredAt < from && inMonth(loaded.noCashSaleVoid.occurredAt))
+          lineage.set(event.id, event);
+        continue;
+      }
+      const monthly = events.filter((row) => row.id === event.id);
+      if (
+        monthly.length !== 1 ||
+        payrollInputHash(snapshot(monthly[0])) !== payrollInputHash(snapshot(event))
+      )
+        unavailable("ORDINARY_VOID_MONTH_CAPTURE_UNCONFIRMED");
+      if (event.sourceType === "REVERSAL")
+        operations.push({
+          tenantId,
+          sourceType: "REVERSAL",
+          sourceId: event.sourceId,
+          sourceKey: event.sourceKey,
+          saleId: event.saleId,
+          outletId: event.outletId,
+          occurredAt: event.occurredAt,
+          evidence: loaded.evidence,
+        });
+    }
+  }
+  for (const refund of refunds) {
+    const loaded = await loadPayrollSaleRefund(tx, { ...common, from, to, refund });
+    saleRefunds.push(loaded.refund);
+    for (const event of loaded.events) {
+      if (event.occurredAt < from) {
+        lineage.set(event.id, event);
+        continue;
+      }
+      const monthly = events.filter((row) => row.id === event.id);
+      if (
+        monthly.length !== 1 ||
+        payrollInputHash(snapshot(monthly[0])) !== payrollInputHash(snapshot(event))
+      )
+        unavailable("SALE_REFUND_MONTH_CAPTURE_UNCONFIRMED");
+      if (event.sourceType === "REVERSAL")
+        operations.push({
+          tenantId,
+          sourceType: "REVERSAL",
+          sourceId: event.sourceId,
+          sourceKey: event.sourceKey,
+          saleId: event.saleId,
+          outletId: event.outletId,
+          occurredAt: event.occurredAt,
+          evidence: loaded.evidence,
+        });
+    }
+  }
+  for (const value of valueSales.values()) {
+    const all = value.evidence.events;
+    for (const reversal of all.filter(
+      (row) => row.sourceType === "REVERSAL" && inMonth(row.occurredAt),
+    )) {
+      const original = all.find((row) => row.id === reversal.sourceId);
+      if (!original) unavailable("VALUE_VOID_ORIGINAL_UNCONFIRMED");
+      operations.push({
+        tenantId,
+        sourceType: "REVERSAL",
+        sourceId: reversal.sourceId,
+        sourceKey: reversal.sourceKey,
+        saleId: reversal.saleId,
+        outletId: reversal.outletId,
+        occurredAt: reversal.occurredAt,
+        evidence: snapshot({ cashConfirmation: value.evidence.cashConfirmation, original }),
+      });
+      if (!events.some((row) => row.id === original.id)) lineage.set(original.id, original);
+    }
+    noCashReversals.push(...value.noCashReversals.filter((row) => inMonth(row.occurredAt)));
+    if (value.noCashSaleVoid && inMonth(value.noCashSaleVoid.occurredAt))
+      noCashSaleVoids.push(value.noCashSaleVoid);
+  }
   for (const covered of saleCoverage.values()) {
     for (const history of covered.evidence.histories) {
       for (const restored of history.voids) {
@@ -478,7 +595,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     line: (typeof sales)[number]["lines"][number],
     sale: (typeof sales)[number],
   ) => {
-    const existing = packagePurchases.get(line.id);
+    const existing =
+      packagePurchases.get(line.id) ?? purchaseVoids.get(sale.id)?.packagePurchases.get(line.id);
     if (existing) return existing;
     if (sale.status !== "COMPLETED") unavailable("PACKAGE_PURCHASE_SALE_UNCONFIRMED");
     const holdings = await tx.customerPackageHolding.findMany({
@@ -491,7 +609,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   };
   const valuePurchases = new Map<string, ReturnType<typeof verifyPayrollValuePurchase>>();
   const loadValuePurchase = async (line: (typeof sales)[number]["lines"][number]) => {
-    const existing = valuePurchases.get(line.id);
+    const existing =
+      valuePurchases.get(line.id) ?? purchaseVoids.get(line.saleId)?.valuePurchases.get(line.id);
     if (existing) return existing;
     const holdings = await tx.customerValuePackageHolding.findMany({
       where: { tenantId, saleLineId: line.id },
@@ -519,7 +638,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         continue;
       }
       if (line.itemType === "VALUE_PACKAGE") {
-        if (sale.status !== "COMPLETED") unavailable("VALUE_PURCHASE_SALE_UNCONFIRMED");
+        if (sale.status !== "COMPLETED" && !purchaseVoids.has(sale.id))
+          unavailable("VALUE_PURCHASE_SALE_UNCONFIRMED");
         await loadValuePurchase(line);
         continue;
       }
@@ -914,7 +1034,10 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         continue;
       }
       if (line?.itemType !== "VALUE_PACKAGE") continue;
-      if (sale.status !== "COMPLETED" || collection.occurredAt < sale.soldAt)
+      if (
+        (sale.status !== "COMPLETED" && !purchaseVoids.has(sale.id)) ||
+        collection.occurredAt < sale.soldAt
+      )
         unavailable("VALUE_PURCHASE_SALE_UNCONFIRMED");
       const purchase = await loadValuePurchase(line);
       const receipts = history.filter((row) =>
@@ -1036,7 +1159,13 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       hash: payrollInputHash(verified.state),
     });
   }
-  const cash = resolvePayrollCloseCash({ ...sources, cashAttributions, noCashReversals });
+  const cash = resolvePayrollCloseCash({
+    ...sources,
+    cashAttributions,
+    noCashReversals,
+    noCashSaleVoids,
+    saleRefunds,
+  });
   if (!cash.cash) unavailable("CASH_RECONCILIATION_UNAVAILABLE");
   const requiredStaffIds = [
     ...new Set([
@@ -1124,19 +1253,27 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     inventoryOperations: operations,
     cashAttributions,
     noCashReversals,
+    noCashSaleVoids,
+    saleRefunds,
   });
   if (!result.inputs) unavailable(result.blockers.map((blocker) => blocker.code).join(","));
   result.inputs.evidence = {
     resolved: result.inputs.evidence,
     authoritative: {
       version: 1,
-      operations: snapshot({ sales, payments, outstanding }),
+      operations: snapshot({ sales, payments, outstanding, refunds }),
       valuePurchases: snapshot([...valuePurchases].sort(([a], [b]) => a.localeCompare(b))),
       packageHistory: snapshot([...packageHistory].sort(([a], [b]) => a.localeCompare(b))),
       packagePurchases: snapshot([...packagePurchases].sort(([a], [b]) => a.localeCompare(b))),
       saleCoverage: snapshot([...saleCoverage].sort(([a], [b]) => a.localeCompare(b))),
       packageTenders: snapshot([...packageTenders].sort(([a], [b]) => a.localeCompare(b))),
       valueSales: snapshot([...valueSales].sort(([a], [b]) => a.localeCompare(b))),
+      purchaseVoids: snapshot(
+        [...purchaseVoids]
+          .map(([id, value]) => [id, value.evidence])
+          .sort(([a], [b]) => String(a).localeCompare(String(b))),
+      ),
+      ordinaryVoids: snapshot([...ordinaryVoids].sort(([a], [b]) => a.localeCompare(b))),
       corrections: correctionEvidence,
       priorCloses: priorEvidence,
     },

@@ -732,6 +732,9 @@ export type SaleDetail = z.infer<typeof saleDetailSchema>;
  */
 export const voidSaleSchema = z.object({
   reason: z.string().trim().min(3).max(500),
+  /** Explicit manager attestation, never inferred from VOID status. Omitted legacy
+   * requests may still void, but cannot establish payroll cash reconciliation. */
+  cashDisposition: z.literal("NO_MOVEMENT").optional(),
 });
 
 export type VoidSaleInput = z.infer<typeof voidSaleSchema>;

@@ -1,5 +1,5 @@
 /**
- * The void step — a manager's reason, and nothing else.
+ * The void step — a manager's reason and optional explicit cash attestation.
  *
  * A void is the one till action that takes a receipt off the books, so the dialog asks
  * for the thing that makes it auditable and then gets out of the way. The reason is
@@ -12,6 +12,7 @@
  * void cannot be undone, and the customer has to be refunded outside the till.
  */
 import { useState } from "react";
+import type { VoidSaleInput } from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
 import { CONTROL_CLASS } from "@/components/ui/Field";
@@ -29,7 +30,7 @@ export interface VoidSaleDialogProps {
   /** The server's refusal, shown above the reason. */
   errorMessage: string | null;
   onClose: () => void;
-  onConfirm: (reason: string) => void;
+  onConfirm: (reason: string, cashDisposition?: VoidSaleInput["cashDisposition"]) => void;
 }
 
 export default function VoidSaleDialog({
@@ -40,6 +41,7 @@ export default function VoidSaleDialog({
   onConfirm,
 }: VoidSaleDialogProps) {
   const [reason, setReason] = useState("");
+  const [noMoneyMoved, setNoMoneyMoved] = useState(false);
   const trimmed = reason.trim();
 
   return (
@@ -58,7 +60,7 @@ export default function VoidSaleDialog({
             variant="danger"
             loading={isPending}
             disabled={trimmed.length < MIN_REASON}
-            onClick={() => onConfirm(trimmed)}
+            onClick={() => onConfirm(trimmed, noMoneyMoved ? "NO_MOVEMENT" : undefined)}
           >
             Void it
           </Button>
@@ -86,8 +88,21 @@ export default function VoidSaleDialog({
             className={cn(CONTROL_CLASS, "min-h-20 px-3 py-2")}
           />
           <span className="text-xs text-ink-muted">
-            Recorded against the sale with your name. A void cannot be undone, and the customer’s
-            money has to be given back outside the till.
+            Recorded against the sale with your name. A void cannot be undone and does not return
+            customer money. Any separate return must be reconciled before payroll.
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm text-ink-body">
+          <input
+            type="checkbox"
+            checked={noMoneyMoved}
+            disabled={isPending}
+            onChange={(event) => setNoMoneyMoved(event.target.checked)}
+          />
+          <span>
+            I confirm no customer money was returned or moved outside the till for this void. Leave
+            unchecked if money was returned, settlement was cancelled, or you are unsure.
+            Unconfirmed cash treatment will block payroll reconciliation for this sale.
           </span>
         </label>
       </div>

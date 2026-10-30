@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Prisma } from "../../generated/prisma/client.js";
 import { verifyPayrollValueSpend } from "./payroll-close-value-spend.js";
+import { verifyPayrollValueRestoration } from "./payroll-close-value-restoration.js";
 
 function fixture(): Parameters<typeof verifyPayrollValueSpend>[0] {
   const at = new Date("2026-09-15T00:00:00Z");
@@ -123,6 +124,195 @@ function fixture(): Parameters<typeof verifyPayrollValueSpend>[0] {
     ],
   };
 }
+
+function restorationFixture(): Parameters<typeof verifyPayrollValueRestoration>[0] {
+  const original = fixture();
+  const at = new Date("2026-10-02T00:00:00Z");
+  const spend = {
+    ...original,
+    sale: {
+      ...original.sale,
+      status: "VOID",
+      voidedAt: at,
+      voidedById: "manager",
+      voidReason: "Customer cancelled",
+    },
+    redemption: {
+      ...original.redemption,
+      revertedAt: new Date(at.getTime() + 5),
+    },
+  };
+  const evidence = original.event.evidence as { lines: Record<string, unknown>[] };
+  return {
+    spend,
+    refundIds: [],
+    balances: [
+      {
+        id: "restore",
+        tenantId: "salon",
+        holdingId: "holding",
+        customerId: "buyer",
+        previousCustomerId: "buyer",
+        sharedFamilyId: null,
+        previousSharedFamilyId: null,
+        actorId: "manager",
+        saleId: "usage",
+        kind: "RESTORE",
+        amountBefore: new Prisma.Decimal("500"),
+        amountAfter: new Prisma.Decimal("600"),
+        delta: new Prisma.Decimal("100"),
+        expiresAt: null,
+        reason: "Customer cancelled",
+        createdAt: new Date(at.getTime() - 10),
+      },
+    ],
+    reversals: [
+      {
+        ...original.event,
+        id: "reversal",
+        sourceKey: "void:usage:event",
+        sourceType: "REVERSAL",
+        sourceId: "event",
+        actorId: "manager",
+        reason: "Source sale voided",
+        occurredAt: new Date(at.getTime() + 1),
+        createdAt: new Date(at.getTime() + 2),
+        evidence: {
+          ...(original.event.evidence as object),
+          originalEventId: "event",
+          lines: evidence.lines.map((line) => ({
+            ...line,
+            id: "void:usage:event:performer",
+            businessDate: "2026-10-02",
+            baseAmount: "-83.3333",
+            units: "-1.0000",
+          })),
+        } as Prisma.JsonValue,
+      },
+    ],
+  };
+}
+
+test("credit restoration reconciles operational void, balance and exact historical reversal across months", () => {
+  const f = restorationFixture();
+  assert.deepEqual(verifyPayrollValueRestoration(f), {
+    redemptionId: "draw",
+    eventId: "event",
+    baseAmount: "83.3333",
+    spentBefore: "0.00",
+    spentNow: "100.00",
+    performers: [{ staffId: "performer", share: 10000 }],
+    restorationBalanceId: "restore",
+    reversalEventId: "reversal",
+  });
+  assert.throws(() => verifyPayrollValueSpend(f.spend));
+});
+
+test("credit restoration refuses absent, duplicate, foreign and contradictory independent evidence", () => {
+  const mutations: ((f: ReturnType<typeof restorationFixture>) => void)[] = [
+    (f) => {
+      f.balances = [];
+    },
+    (f) => {
+      f.balances.push(f.balances[0]);
+    },
+    (f) => {
+      f.reversals = [];
+    },
+    (f) => {
+      f.reversals.push(f.reversals[0]);
+    },
+    (f) => {
+      f.refundIds.push("refund");
+    },
+    (f) => {
+      f.spend.redemption.revertedAt = null;
+    },
+    (f) => {
+      f.spend.sale.status = "COMPLETED";
+    },
+    (f) => {
+      f.spend.sale.voidedAt = null;
+    },
+    (f) => {
+      f.spend.sale.voidedAt = new Date("invalid");
+    },
+    (f) => {
+      f.spend.redemption.revertedAt = new Date("2026-09-01");
+    },
+    (f) => {
+      f.spend.sale.voidedById = "other";
+    },
+    (f) => {
+      f.spend.sale.voidReason = "other";
+    },
+    (f) => {
+      f.balances[0].tenantId = "foreign";
+    },
+    (f) => {
+      f.balances[0].holdingId = "foreign";
+    },
+    (f) => {
+      f.balances[0].saleId = "other";
+    },
+    (f) => {
+      f.balances[0].kind = "SPEND";
+    },
+    (f) => {
+      f.balances[0].delta = new Prisma.Decimal("99");
+    },
+    (f) => {
+      f.balances[0].amountAfter = new Prisma.Decimal("601");
+    },
+    (f) => {
+      f.balances[0].previousCustomerId = "other";
+    },
+    (f) => {
+      f.balances[0].sharedFamilyId = "other";
+    },
+    (f) => {
+      f.balances[0].createdAt = new Date("2026-10-03");
+    },
+    (f) => {
+      f.reversals[0].actorId = "other";
+    },
+    (f) => {
+      f.reversals[0].tenantId = "foreign";
+    },
+    (f) => {
+      f.reversals[0].outletId = "foreign";
+    },
+    (f) => {
+      f.reversals[0].occurredAt = new Date("invalid");
+    },
+    (f) => {
+      f.reversals[0].sourceKey = "other";
+    },
+    (f) => {
+      f.reversals[0].sourceType = "CORRECTION";
+    },
+    (f) => {
+      f.reversals[0].occurredAt = new Date("2026-10-03");
+    },
+    (f) => {
+      const evidence = f.reversals[0].evidence as { lines: { baseAmount: string }[] };
+      evidence.lines[0].baseAmount = "-1.0000";
+    },
+    (f) => {
+      const evidence = f.reversals[0].evidence as { lines: { units: string }[] };
+      evidence.lines[0].units = "0.0000";
+    },
+    (f) => {
+      const evidence = f.reversals[0].evidence as { lines: { fallbackRatePct: string }[] };
+      evidence.lines[0].fallbackRatePct = "99";
+    },
+  ];
+  for (const [index, mutate] of mutations.entries()) {
+    const f = restorationFixture();
+    mutate(f);
+    assert.throws(() => verifyPayrollValueRestoration(f), /UNCONFIRMED/, `mutation ${index}`);
+  }
+});
 test("value spend replays paid-to-credit ratio and dedicated historical spend rates", () => {
   const f = fixture();
   assert.equal(verifyPayrollValueSpend(f).baseAmount, "83.3333");
