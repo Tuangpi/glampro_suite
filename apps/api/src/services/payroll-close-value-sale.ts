@@ -17,7 +17,10 @@ import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollCloseCash } from "./payroll-close-cash.js";
 import { loadSaleVoidCashConfirmation } from "./sale-void-cash.js";
-import { payrollFullCreditFunding } from "./payroll-full-credit-funding.js";
+import {
+  payrollFullCreditFunding,
+  payrollMixedCreditFunding,
+} from "./payroll-full-credit-funding.js";
 import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
 import type { PayrollNoCashSaleVoid } from "./payroll-close-voids.js";
 import type { PayrollNoCashReversal } from "./payroll-close-reversals.js";
@@ -45,12 +48,14 @@ const economicsSchema = z.object({
   coveredPackageQuantity: z.literal(0),
   category: z.string().nullable(),
   fullCreditFunding: z.unknown().optional(),
+  mixedCreditFunding: z.unknown().optional(),
 });
 
 /** Internal sale-wide evidence, NOT monthly readiness or earnings activation.
  * Supports settled service/product receipts with ownership/consent-reconciled,
  * active credit or fully evidenced no-cash sale voids.
- * No inferred tender-to-line allocation, zero bases, outstanding or package usage. */
+ * Zero external bases require frozen funding evidence. No inferred tender-to-line
+ * allocation, outstanding or package usage. */
 export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction, saleId: string) {
   const scope = currentScope();
   if (scope?.kind !== "tenant" || !scope.actorId || currentOutletId())
@@ -271,6 +276,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       });
     }
   }
+  const mixedFunding = payrollMixedCreditFunding(sale, sale.lines, payments, collections);
   const ordinary = [];
   for (const line of sale.lines) {
     const purchase = purchaseByLine.get(line.id)!;
@@ -287,6 +293,11 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         `${purchase.netCents / 100n}.${(purchase.netCents % 100n).toString().padStart(2, "0")}`
     )
       return fail();
+    if (
+      economics.data.mixedCreditFunding !== undefined &&
+      (!mixedFunding || hash(mixedFunding) !== hash(economics.data.mixedCreditFunding))
+    )
+      return fail();
     const foc =
       line.itemType === "SERVICE" && purchase.grossCents === 0n
         ? resolvePayrollFocEconomics(line, sale.soldAt)
@@ -295,13 +306,16 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     // matched to the complete operational tender inventory. No legacy inference.
     if (!foc && !net.has(line.id)) {
       const funding = payrollFullCreditFunding(sale, sale.lines, payments);
-      if (
-        !funding ||
-        !economics.data.fullCreditFunding ||
-        collections.length ||
-        hash(funding) !== hash(economics.data.fullCreditFunding)
-      )
-        return fail();
+      const fullConfirmed =
+        funding &&
+        economics.data.fullCreditFunding &&
+        !collections.length &&
+        hash(funding) === hash(economics.data.fullCreditFunding);
+      const mixedConfirmed =
+        mixedFunding &&
+        economics.data.mixedCreditFunding &&
+        hash(mixedFunding) === hash(economics.data.mixedCreditFunding);
+      if (!fullConfirmed && !mixedConfirmed) return fail();
       net.set(line.id, 0n);
     }
     const candidates = events.filter(

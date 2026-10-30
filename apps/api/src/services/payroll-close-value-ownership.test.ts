@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Prisma } from "../../generated/prisma/client.js";
-import { resolvePayrollValueOwnership } from "./payroll-close-value-ownership.js";
+import {
+  replayPayrollValueOwnership,
+  resolvePayrollValueOwnership,
+} from "./payroll-close-value-ownership.js";
 
 const D = (value: string) => new Prisma.Decimal(value);
 function fixture(): Parameters<typeof resolvePayrollValueOwnership>[0] {
@@ -86,6 +89,85 @@ test("private transfer replay resolves spend-time owners independently of curren
     ["after", "recipient"],
     ["before", "buyer"],
   ]);
+});
+
+function expiryFixture() {
+  const f = fixture();
+  const grant = f.balances.find((row) => row.kind === "GRANT")!;
+  const spend = f.balances.find((row) => row.id === "before")!;
+  grant.expiresAt = new Date("2026-10-02T12:00:00Z");
+  spend.expiresAt = grant.expiresAt;
+  const expiry = {
+    ...spend,
+    id: "expiry",
+    kind: "EXPIRY_CHANGE",
+    saleId: null as string | null,
+    amountBefore: D("550"),
+    amountAfter: D("550"),
+    delta: D("0"),
+    expiresAt: new Date("2026-11-01"),
+    reason: "Reviewed expiry extension",
+    createdAt: new Date("2026-10-02T06:00:00Z"),
+  };
+  f.balances = [expiry, spend, grant];
+  f.transfers = [];
+  f.customerId = "buyer";
+  f.amountRemaining = D("550");
+  f.expiresAt = expiry.expiresAt;
+  f.redemptions = [{ saleId: spend.saleId!, customerId: "buyer", usedAt: spend.createdAt }];
+  return { f, grant, spend, expiry };
+}
+
+test("expiry replay preserves spend-time expiry instead of using current holding expiry", () => {
+  const { f, grant, spend, expiry } = expiryFixture();
+  const replay = replayPayrollValueOwnership(f);
+  assert.equal(replay.expiresAtByBalanceId.get(spend.id)?.getTime(), grant.expiresAt?.getTime());
+  assert.equal(replay.expiresAtByBalanceId.get(expiry.id)?.getTime(), expiry.expiresAt.getTime());
+  assert.deepEqual([...replay.owners], [[spend.id, "buyer"]]);
+});
+
+test("expiry replay rejects unaudited, ambiguous, balance-changing and retroactive edits", () => {
+  const changes: ((value: ReturnType<typeof expiryFixture>) => void)[] = [
+    ({ expiry }) => {
+      expiry.actorId = "";
+    },
+    ({ expiry }) => {
+      expiry.reason = "";
+    },
+    ({ expiry }) => {
+      expiry.saleId = "unrelated-sale";
+    },
+    ({ expiry }) => {
+      expiry.customerId = "foreign";
+    },
+    ({ expiry }) => {
+      expiry.amountAfter = D("549");
+      expiry.delta = D("-1");
+    },
+    ({ expiry, grant }) => {
+      expiry.expiresAt = grant.expiresAt!;
+    },
+    ({ f, expiry }) => {
+      f.balances.push({ ...expiry, id: "ambiguous" });
+    },
+    ({ f }) => {
+      f.expiresAt = new Date("2027-01-01");
+    },
+    ({ f, expiry }) => {
+      f.redemptions![0].usedAt = new Date(expiry.createdAt.getTime() + 1);
+    },
+    ({ f, grant }) => {
+      f.redemptions![0].usedAt = grant.expiresAt!;
+    },
+  ];
+  for (const mutate of changes) {
+    const value = expiryFixture();
+    mutate(value);
+    assert.throws(
+      () => replayPayrollValueOwnership(value.f),
+      /VALUE_OWNERSHIP_HISTORY_UNCONFIRMED/,
+    );
+  }
 });
 
 test("transfer audit may follow its transaction-start ledger timestamp but cannot cross the next operation", () => {

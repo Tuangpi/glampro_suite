@@ -4,7 +4,7 @@ import { mock, test } from "node:test";
 import { PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
-import { createSale } from "./sale.service.js";
+import { createSale, voidSale } from "./sale.service.js";
 import { transferPrepaid } from "./prepaid.service.js";
 import {
   createPrepaidFamily,
@@ -608,6 +608,18 @@ test(
         assert.equal(await prisma.sale.count(), saleCount);
         await consent(family.id);
         await consent(null);
+        // A prospective confirmed void restores credit without refunding external
+        // cash. Preserve the independently collected money and reverse activity.
+        await voidSale(
+          mixed.id,
+          { reason: "Reviewed mixed-credit void", cashDisposition: "NO_MOVEMENT" },
+          ownerId,
+        );
+        const restoredHistory = await prisma.$transaction((tx) =>
+          loadPayrollValueSpendHistory(tx, holding.id),
+        );
+        assert.equal(restoredHistory.restorations.length, 1);
+        assert.equal(restoredHistory.evidence.holding.amountRemaining.toFixed(2), "525.00");
         // Use a post-month clock only for close approval; operational evidence stays real.
         mock.timers.enable({ apis: ["Date"], now: new Date(Date.UTC(year, number, 2)) });
         await assert.rejects(
@@ -624,7 +636,7 @@ test(
           updated
             .calculation!.inputs.staff.flatMap((row) => row.calculation.lines)
             .filter((row) => row.commissionType === "VP_SPEND").length,
-          8,
+          10,
         );
         const approved = await approveStoredPayrollClose(
           month,

@@ -2,6 +2,64 @@
 
 ## Workflow
 
+Latest M1 verification: SERVICE/PRODUCT plus FOC ordinary refunds with a zero
+tender pass full original-month and reversal-month loading in memory. Sixteen
+month-only capture corruptions refuse; changed historical tender invalidates
+October pure-state approval and frozen pure state stays unchanged. Existing API
+76/76 and API typecheck pass; no production-code fix needed. Repository tests and
+real-writer/persisted approval/browser acceptance remain deferred. CP-005-M1 stays
+IN PROGRESS; M2 untouched. Details in PROGRESS.md.
+
+Latest M1 continuation: mixed-credit zero-external line funding passes full
+September monthly loading and pure approval-state checks in four in-memory
+service/product and same/prior-month purchase variants. Each refuses 15 monthly
+inventory and seven funding/economics/eligibility corruptions; grant and coherently
+changed funding evidence invalidate stale approvals. Existing API 111/111 and 45
+helper checks rerun successfully; API typecheck passes. No production-code fix.
+Real-writer DB/browser, persisted approval acceptance and repository tests remain
+deferred; reversal-month loading not claimed. CP-005-M1 IN PROGRESS; M2 untouched.
+
+Latest M1 continuation: prospective mixed cash/credit receipts freeze complete
+tender/collection/allocation inventory. A paid ordinary line with no external
+allocation may have a zero base only after matching independent frozen evidence;
+legacy missing snapshots still refuse. Existing API 111/111, API types and 45
+temporary helper/source-base checks pass. New-path monthly/approval integration
+is now verified in memory above; real-writer DB/browser acceptance and repository tests remain
+deferred. CP-005-M1 stays IN PROGRESS; M2 untouched. All prior lifecycle blocks remain.
+
+Latest M1 continuation: full upfront money-funded ordinary refunds now reconcile
+FOC services alongside paid lines through frozen checkout list-price economics,
+historical rates, exact commission/activity reversals and explicit zero FOC cash.
+Paid cash attribution and complete payouts still verify independently. Existing
+API 95/95, types/lint/API/shared builds and in-memory service/product plus FOC
+same-month/cross-month smoke pass. Prepaid/later-funded refunds stay gated; real-writer
+DB/browser acceptance and new repository tests remain deferred. M1 IN PROGRESS; no M2.
+
+Latest M1 continuation: unused credit purchase NO_MOVEMENT voids now replay prior
+sharing plus complete owner membership history, requiring withdrawn consent before
+private removal. Membership evidence freezes with close inputs; stale approval
+refuses. Active sharing, expired credit, used/transferred purchases and later funding
+stay blocked. Existing API 77/77, types/lint/API/shared builds and six in-memory
+membership/funding combinations pass. Real-writer DB/browser acceptance and new
+repository tests remain deferred. CP-005-M1 stays IN PROGRESS; M2 untouched.
+
+Latest M1 continuation: unused/untransferred credit purchase NO_MOVEMENT voids now
+replay audited expiry edits before exact removal; unchanged ownership/balance,
+actor/reason, chronology and final preserved expiry must reconcile. Final expired
+credit, uses/transfers and later-payment funding remain gated. Existing API 77/77,
+types/lint/API/shared builds and six in-memory history/funding combinations pass.
+Real-writer DB/browser acceptance and new repository tests remain deferred.
+CP-005-M1 stays IN PROGRESS; M2 untouched. Remaining prepaid lifecycle gaps stay open.
+
+Latest M1 continuation: unused/untransferred expired session purchase NO_MOVEMENT
+voids reconcile exact GRANT/EXPIRE_OUT/EXPIRE_IN/PURCHASE_VOID history, complete
+ordinal values and bucket/state/actor/timestamp evidence. Funding/policy/reversal
+checks remain mandatory. Selected existing API 87/87, types/lint/API/shared builds
+and actual valuation-writer in-memory same/cross-month smoke pass; no DB/browser
+acceptance or new repository coverage. CP-005-M1 stays IN PROGRESS; M2 untouched.
+Expired credit, used/transferred and later-payment purchase histories stay gated.
+Older blanket expired-purchase refusals below are superseded only for this path.
+
 Latest M1 continuation: partial upfront external funding now loads purchase
 NO_MOVEMENT voids after exact checkout total/paid/status, tender/collection,
 captured package deposit and reversal reconciliation. Later outstanding-payment
@@ -61,12 +119,16 @@ Earlier expiry TODOs below now mean remaining acceptance, not absent replay code
 First-priority queue approved October 27, 2026. Use this queue rather than the
 superseded SC tracker or unrelated root backlog. Read PROJECT, DECISIONS,
 REQUIREMENTS and PROGRESS before resuming. Start the first unblocked TODO task,
-mark it IN PROGRESS before implementation, verify it, update handoff, then stop.
+mark it IN PROGRESS before implementation, verify it, and update the tracking records.
 Resume IN PROGRESS work before selecting a TODO. For CP-005, use the delivery
 milestones below: a helper, test group or prerequisite is not a stopping point.
-Complete the selected milestone and its verification before a routine handoff;
-do not automatically start the next milestone. Stop earlier only for a genuine
-blocker, user instruction or session limit, and record the exact unfinished work.
+The user authorized continuous execution on October 30, 2026. Complete each
+milestone and its verification, then automatically resume the next unblocked
+milestone or task in this queue. Use recommended defaults for routine decisions
+and make focused, reviewed commits when appropriate. Stop only when the authorized
+queue is complete, a genuine blocker needs user input, an action needs additional
+approval, the user asks to stop, or a session limit requires a saved handoff.
+Record exact unfinished work. Do not push, deploy or bypass existing safety gates.
 Existing implementation and reference tests need verification, not automatic credit.
 
 ## CP-001 — Establish management and reconcile requirements
@@ -396,10 +458,34 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-005 — Monthly close and frozen payroll statements
 
-- Status: **IN PROGRESS** (October 28, 2026).
+- Status: **IN PROGRESS** (October 30, 2026 approved prepaid settlement extension).
+- Owner authorized isolated continuation after read-only incident review. A new
+  disposable DB was created and identity checked; test guards block application DB
+  clients/endpoints. Application database repair remains unauthorized.
+- Latest verification: durable cross-month refund and expiry corruption coverage;
+  real full-credit and confirmed mixed-credit restoration through persisted monthly
+  approval. Close regression 311/311 without skips, API types and targeted lint pass.
+- Owner approved prospective manager-confirmed append-only prepaid payout and
+  cancellation evidence, including migration on disposable DB only. Implemented
+  journal and both refund writers; actual provider payments are never executed.
+  Combined API/SQL regression 371/371 without skips, shared 302/302, API types/build
+  and workspace-targeted lint pass. No application database migration/repair.
+- Next required work: authoritative settlement/complete holding cancellation history
+  reconciliation and monthly loading. New journal does not by itself open refund
+  gates. Mixed session/credit usage and spend-sale instalments remain unfinished;
+  M2–M5 remain TODO. Keep existing refund writer eligibility outside this approved
+  prepaid workflow unchanged.
 - Dependencies: CP-004.
 
 ### Delivery milestones — execution baseline October 30, 2026
+
+Latest increment: full-upfront ordinary refund loading accepts validated zero
+money tenders without requiring or inventing collection lots. Positive tenders
+still reconcile one-to-one, with explicit sale/line scope and collection chronology.
+Service/product plus FOC monthly, cross-month helper, corruption and pure-state
+stale-approval smoke passes; focused existing API 68/68, types/build/lint pass.
+Prepaid/instalment refund writer eligibility is unchanged. M1 remains IN PROGRESS;
+new repository tests and real-writer DB/browser acceptance remain deferred.
 
 Latest M1 pass: prospective confirmed credit voids and full-credit funding have
 sale/month implementation, not transactional acceptance. Existing API 150/150,

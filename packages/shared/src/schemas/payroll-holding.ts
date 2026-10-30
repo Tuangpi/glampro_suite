@@ -78,6 +78,12 @@ export const refundPayrollPackageSchema = z
     adminFeeNetCents: z.string().regex(/^(0|[1-9]\d{0,11})$/),
     payoutGrossCents: z.string().regex(/^(0|[1-9]\d{0,11})$/),
     payoutMethod: z.enum(["NONE", "CASH", "CARD", "PAYNOW", "NETS", "BANK_TRANSFER"]),
+    settlement: z
+      .strictObject({
+        confirmed: z.literal(true),
+        reference: z.string().trim().min(3).max(128),
+      })
+      .optional(),
   })
   .refine((value) => (value.payoutGrossCents === "0") === (value.payoutMethod === "NONE"), {
     message: "Zero payout requires NONE; a positive payout requires its actual tender.",

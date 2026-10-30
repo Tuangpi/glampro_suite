@@ -1122,6 +1122,229 @@ export function loaderFixture() {
   return { data, tx, load, queries };
 }
 
+for (const paidType of ["SERVICE", "PRODUCT"] as const) {
+  test(`cross-month ${paidType} refund retains FOC lineage, refuses corrupt inventories and invalidates approval`, async () => {
+    const f = loaderFixture();
+    const { data, tx } = f;
+    const sale = Object.assign(data.sales[0], {
+      totalAmount: D("109"),
+      paidAmount: D("109"),
+      taxAmount: D("9"),
+    });
+    const paid = sale.lines[0];
+    paid.itemType = paidType;
+    const original = data.events[0];
+    if (paidType === "PRODUCT") {
+      original.evidence.lines[0].commissionType = "PRD";
+      original.evidence.lines[0].fallbackRatePct = "0";
+      original.evidence.rateProvenance.selections[0].selection = {
+        rate: "0",
+        source: "NONE",
+        ruleId: null,
+      };
+    }
+    sale.lines.push({
+      ...paid,
+      id: "foc",
+      itemType: "SERVICE",
+      itemId: "free-service",
+      quantity: 2,
+      lineTotal: D("0"),
+      taxAmount: D("0"),
+      payrollEconomics: {
+        version: 1,
+        saleId: sale.id,
+        saleLineId: "foc",
+        itemId: "free-service",
+        itemType: "SERVICE",
+        soldAt: sale.soldAt.toISOString(),
+        listUnitPrice: "49.20",
+        netLineAmount: "0.00",
+        originalQuantity: 2,
+        coveredPackageQuantity: 0,
+        category: null,
+      },
+    });
+    const free = {
+      ...original,
+      id: "free-capture",
+      sourceId: "foc",
+      sourceKey: "sale-line:foc",
+      evidence: {
+        ...original.evidence,
+        itemId: "free-service",
+        rateProvenance: {
+          ...original.evidence.rateProvenance,
+          itemId: "free-service",
+          selections: [
+            {
+              staffId: "staff",
+              legacyServiceRate: "10",
+              selection: { rate: "5", source: "FOC_DEFAULT", ruleId: null },
+            },
+          ],
+        },
+        lines: [
+          {
+            ...original.evidence.lines[0],
+            id: "free-base",
+            commissionType: "FOC",
+            fallbackRatePct: "5",
+            baseAmount: "98.4000",
+            units: "2.0000",
+          },
+        ],
+      },
+    };
+    data.events.push(free);
+    const at = new Date("2026-10-02T00:00:00Z");
+    const refund = {
+      id: "refund",
+      tenantId: "salon",
+      saleId: sale.id,
+      amount: D("109"),
+      refundedAt: at,
+      refundedById: "owner",
+      reason: "Full refund",
+      payouts: [{ method: "CASH", amount: "109.00" }],
+    };
+    data.refunds.push(refund);
+    for (const event of [original, free])
+      data.events.push({
+        ...event,
+        id: `reverse-${event.id}`,
+        sourceType: "REVERSAL",
+        sourceId: event.id,
+        sourceKey: `refund:sale:${event.id}`,
+        occurredAt: at,
+        createdAt: at,
+        ...{ actorId: "owner", reason: refund.reason },
+        evidence: {
+          ...event.evidence,
+          ...{ originalEventId: event.id },
+          lines: event.evidence.lines.map((line) => ({
+            ...line,
+            id: `reverse-${line.id}`,
+            businessDate: "2026-10-02",
+            baseAmount: `-${line.baseAmount}`,
+            units: `-${line.units}`,
+          })),
+        },
+      });
+    const zero = { ...data.payments[0], id: "zero-tender", method: "CARD", amount: D("0") };
+    data.payments.push(zero);
+    type Range = { gte: Date; lt: Date };
+    const inRange = (date: Date, range?: Range) => !range || (date >= range.gte && date < range.lt);
+    tx.sale.findMany = (async (args: { where: { OR: { soldAt?: Range; voidedAt?: Range }[] } }) =>
+      data.sales.filter((row) =>
+        args.where.OR.some((part) => (part.soldAt ? inRange(row.soldAt, part.soldAt) : false)),
+      )) as unknown as typeof tx.sale.findMany;
+    tx.salePayment.findMany = (async (args: {
+      where: { createdAt?: Range };
+      include?: { sale?: boolean };
+    }) =>
+      data.payments
+        .filter((row) => inRange(row.createdAt, args.where.createdAt))
+        .map(({ sale: _sale, ...row }) =>
+          args.include?.sale ? { ...row, sale } : row,
+        )) as typeof tx.salePayment.findMany;
+    tx.payrollSourceEvent.findMany = (async (args: { where: { occurredAt?: Range } }) =>
+      data.events.filter((row) =>
+        inRange(row.occurredAt, args.where.occurredAt),
+      )) as unknown as typeof tx.payrollSourceEvent.findMany;
+    tx.commissionCollection.findMany = (async (args: { where: { occurredAt?: Range } }) =>
+      data.collections.filter((row) =>
+        inRange(row.occurredAt, args.where.occurredAt),
+      )) as unknown as typeof tx.commissionCollection.findMany;
+    tx.saleRefund.findMany = (async (args: { where: { refundedAt?: Range } }) =>
+      [refund].filter((row) =>
+        inRange(row.refundedAt, args.where.refundedAt),
+      )) as unknown as typeof tx.saleRefund.findMany;
+    Object.assign(tx, { customerOutstanding: { findMany: async () => [] } });
+    const september = await f.load();
+    assert.equal(september.staff[0].collection, "100.0000");
+    assert.equal(september.staff[0].calculation.lines.length, 2);
+    const approved = approvePayrollClose(
+      calculatePayrollClose(
+        openPayrollClose("2026-09"),
+        0,
+        september,
+        owner,
+        "2026-10-01T00:00:00.000Z",
+      ),
+      1,
+      september,
+      owner,
+      "2026-10-01T00:00:00.000Z",
+      "Reviewed September",
+    );
+    Object.assign(data.prior, {
+      periodKey: "2026-09",
+      revision: approved.revision,
+      state: approved,
+    });
+    const loadOctober = () =>
+      runAsTenant(
+        "salon",
+        () => loadAuthoritativePayrollCloseInputs(tx, openPayrollClose("2026-10")),
+        "owner",
+      );
+    const october = await loadOctober();
+    assert.equal(october.staff[0].collection, "-100.0000");
+    assert.equal(october.staff[0].calculation.lines.length, 2);
+    assert(october.staff[0].calculation.lines.every((row) => row.baseAmount.startsWith("-")));
+    const hash = payrollInputHash(october);
+    const draft = calculatePayrollClose(
+      openPayrollClose("2026-10"),
+      0,
+      october,
+      owner,
+      "2026-11-01T00:00:00.000Z",
+    );
+    const frozen = approvePayrollClose(
+      draft,
+      1,
+      october,
+      owner,
+      "2026-11-01T00:00:00.000Z",
+      "Reviewed October",
+    );
+    const frozenHash = payrollInputHash(frozen);
+    zero.method = "NETS";
+    const changed = await loadOctober();
+    assert.notEqual(payrollInputHash(changed), hash);
+    assert.throws(
+      () => approvePayrollClose(draft, 1, changed, owner, "2026-11-01T00:00:00.000Z", "Review"),
+      /inputs changed/,
+    );
+    assert.equal(payrollInputHash(frozen), frozenHash);
+    zero.method = "CARD";
+    const findEvents = tx.payrollSourceEvent.findMany;
+    type Event = (typeof data.events)[number];
+    const corruptions: ((rows: Event[]) => Event[])[] = [
+      (rows) => rows.slice(1),
+      (rows) => [...rows, rows[0]],
+      (rows) => rows.map((row, i) => (i ? row : { ...row, reason: "Changed month only" })),
+      (rows) => rows.map((row, i) => (i ? row : { ...row, tenantId: "foreign" })),
+      (rows) => rows.map((row, i) => (i ? row : { ...row, outletId: "foreign" })),
+      (rows) => rows.map((row, i) => (i ? row : { ...row, sourceId: "foreign" })),
+      (rows) =>
+        rows.map((row, i) => (i ? row : { ...row, evidence: { ...row.evidence, lines: [] } })),
+      (rows) => [...rows, original],
+    ];
+    for (const corrupt of corruptions) {
+      tx.payrollSourceEvent.findMany = (async (...args: Parameters<typeof findEvents>) => {
+        const rows = await findEvents(...args);
+        return args[0]?.where?.occurredAt ? corrupt(rows as unknown as Event[]) : rows;
+      }) as typeof findEvents;
+      await assert.rejects(loadOctober);
+    }
+    tx.payrollSourceEvent.findMany = findEvents;
+    assert.equal(payrollInputHash(await loadOctober()), hash);
+    assert.equal(payrollInputHash(frozen), frozenHash);
+  });
+}
+
 test("direct authoritative loader takes prepaid before tenant and inventory reads", async () => {
   const f = loaderFixture();
   const calls: string[] = [];

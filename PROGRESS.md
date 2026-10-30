@@ -1,5 +1,137 @@
 # Glampro Suite — progress
 
+## CP-005 current checkpoint — October 30, 2026
+
+CP-005 IN PROGRESS, M1 open. Owner approved prospective manager-confirmed prepaid
+payout/cancellation evidence and a migration on new disposable DB only. Implemented
+append-only tenant-scoped settlement journal, both prepaid refund writers and strict
+retry/authorization verification. Real SQL acceptance covers session/credit payouts,
+partial debt cancellation, concurrent retries, rollback and immutability. Combined
+API/SQL 371/371, shared 302/302, API types/build and targeted workspace lint pass.
+Monthly refund loading still fail-closed pending full settlement/holding-history
+reconciliation; mixed usage/instalments and M2–M5 remain. No provider payment,
+application DB migration/repair, activation, commit/push/deployment. Resume details,
+safe disposable connection/guard and logs in docs/commission_payroll/PROGRESS.md.
+
+## CP-005 isolated continuation — October 30, 2026
+
+Owner approved only new disposable database work following the incident review.
+New identity-verified PostgreSQL cluster on loopback 55485 has all migrations;
+runner blocks application database endpoints and disables dotenv loading. Added
+durable cross-month refund/16 corruption/stale-approval regressions, historical
+expiry/ten corruption cases, and real full-credit and confirmed credit restoration
+through persisted monthly approval. Close regression 311/311, no skips; API types
+and targeted lint/format pass. Broader sale tests passed 57 cases but suite cleanup
+failed on immutable payroll economics; not a clean pass. CP-005 remains BLOCKED:
+required prepaid refunds need an approved independent settled-payout operational
+workflow; mixed usage/instalments remain unfinished. M2–M5 untouched. No application
+DB repair, activation, commit, push or deployment. See commission payroll handoff.
+
+## STOP — CP-005 database test targeting incident — October 30, 2026
+
+Owner-approved read-only review confirms the target was application database
+`glampro_suite` at localhost:5432. Neither review transaction could write; both
+verified READ ONLY and rolled back. None of 41 statically identified candidate
+fixture tenant IDs remain; total tenants: three. Shared module upserts are retained
+by test design; no pre-run baseline exists to establish actual catalogue changes
+or rule out other effects. No cleanup, migration or recovery performed. CP-005
+remains BLOCKED pending safe continuation approval. Read-only review logs are in
+`/tmp/cp005-incident-{readonly,fixtures-readonly}.log`.
+
+CP-005 is BLOCKED pending owner review. The broad API suite reloaded configured
+DATABASE_URL via dotenv despite launching with that variable unset. Real database
+fixture writes/cleanup ran; target identity and full effects are unverified. No
+runner remains active. No migration/reset/seed/recovery was run; do not run them
+to address the missing `sale_lines.payrollEconomics` failure. Actual suite result:
+1013 passed, 59 failed, seven cancelled, 45 skipped (1124 tests), exit 1. Log:
+`/tmp/cp005-completion-api.log`. Further execution paused for an explicit safe
+continuation decision; details in commission payroll PROGRESS.md.
+
+## Commission payroll cross-month refund verification — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. In-memory SERVICE/PRODUCT plus FOC
+refunds with a zero tender pass full September original-month and October
+reversal-month loading, 16 monthly capture corruption refusals, stale approval
+and frozen pure-state checks. Existing API 76/76 and API typecheck pass. No
+production-code fix needed. Real-writer/persisted approval/browser acceptance and
+repository tests remain deferred. No DB/schema/activation/deployment/commit/push.
+See the commission payroll handoff for evidence and remaining M1 lifecycle gaps.
+
+## Commission payroll zero-tender refund loading — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Full-upfront ordinary refunds now
+validate zero money tenders without requiring fabricated collection lots; strictly
+positive tenders still reconcile exactly. Sale/line scope and collection chronology
+also verify. Existing API 68/68, API types/build, shared build and targeted lint/
+formatting pass. Service/product plus FOC monthly, cross-month helper, corruption
+and pure-state stale-approval smoke passes. New repository tests and real-writer
+DB/browser acceptance remain deferred; prepaid/instalment writer gates unchanged.
+No DB/schema/activation/deployment/commit/push. Next: remaining supported M1 gaps.
+
+## Commission payroll mixed-credit monthly verification — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Four in-memory service/product and
+same/prior-month purchase variants pass full September monthly loading and pure
+approval-state checks. External-only cash, zero credit-line bases, FOC and spend
+activity verify. All 88 corruption checks and eight stale approvals refuse.
+Existing API 111/111 and 45 helper checks rerun successfully; API types pass.
+No production-code changes needed. Real-writer DB/browser, persisted approval
+acceptance and new repository tests stay deferred; no reversal-month claim.
+No DB/schema/activation/deployment/commit/push. Next: remaining supported M1 gaps.
+
+## Commission payroll mixed credit line funding — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Prospective mixed cash/credit checkout
+freezes complete funding inventory so paid ordinary lines with no external
+allocation can reconcile zero external bases. No legacy inference or credit cash.
+Existing API 111/111, API types and 45 temporary helper/source-base checks pass.
+New-path monthly/approval integration is now verified in memory above; repository tests and
+real-writer DB/browser acceptance stay deferred. All prior lifecycle blocks remain.
+No DB/schema/activation/deployment/commit/push. See the commission payroll handoff.
+
+## Commission payroll mixed paid/FOC refund history — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Full upfront money-funded ordinary
+refunds now reconcile FOC services alongside paid service/products, verifying
+frozen list-price bases/activity and exact reversals with zero FOC cash. Existing
+API 95/95, types/lint/API/shared builds and in-memory same-month monthly/cross-month
+helper, corruption and stale-approval checks pass. Prepaid/later-funded refunds and
+prior purchase lifecycle blocks remain; new repository tests and real-writer
+DB/browser acceptance stay deferred. No DB/schema/activation/deployment changes.
+See docs/commission_payroll/PROGRESS.md for remaining M1 work.
+
+## Commission payroll withdrawn credit sharing history — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Unused/untransferred credit purchase
+NO_MOVEMENT voids reconcile prior sharing through complete owner membership and
+consent replay, requiring private removal. Frozen membership evidence invalidates
+stale approval. Existing API 77/77, types/lint/API/shared builds, six in-memory
+membership/funding combinations and earlier purchase-void smoke reruns pass.
+Expired credit, uses/transfers and later funding remain blocked; new repository
+tests and real-writer DB/browser acceptance remain deferred. No DB/schema/activation/
+deployment changes. See docs/commission_payroll/PROGRESS.md for remaining M1 work.
+
+## Commission payroll credit purchase expiry-edit history — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Unused/untransferred credit purchase
+NO_MOVEMENT voids replay audited expiry edits before exact removal; final expiry
+must remain valid at void time. Expired credit, uses/transfers and later funding
+stay blocked. Existing API 77/77, types/lint/API/shared builds, six in-memory
+history/funding combinations and prior purchase-void smoke reruns pass. New tests
+and real-writer DB/browser acceptance remain deferred; no DB/schema/activation/
+deployment changes. See docs/commission_payroll/PROGRESS.md for remaining M1 work.
+
+## Commission payroll expired session purchase voids — October 30, 2026
+
+CP-005-M1 stays IN PROGRESS; M2 untouched. Unused/untransferred expired session
+purchase NO_MOVEMENT voids now reconcile the exact expiry bucket-transfer pair,
+original grant/final removal and state before monthly loading. Funding/policy and
+payroll reversals remain independently verified; credit expiry stays gated.
+Selected API 87/87, types/lint/API/shared builds and actual valuation-writer
+in-memory same/cross-month, full/partial funding, corrupt evidence and stale approval
+checks pass. No real-writer DB/browser acceptance or new repository tests; no
+DB/schema/activation/deployment changes. See docs/commission_payroll/PROGRESS.md.
+
 ## Commission payroll partial upfront purchase voids — October 30, 2026
 
 CP-005-M1 stays IN PROGRESS; M2 untouched. Partial upfront external funding now

@@ -138,6 +138,18 @@ test("zero payout requires explicit NONE while positive payout requires actual t
   assert.ok(
     refundPayrollPackageSchema.safeParse({
       ...request,
+      settlement: { confirmed: true, reference: "cash-voucher-001" },
+    }).success,
+  );
+  for (const settlement of [
+    { confirmed: false, reference: "cash-voucher-001" },
+    { confirmed: true, reference: " " },
+    { confirmed: true, reference: "cash-voucher-001", executePayment: true },
+  ])
+    assert.equal(refundPayrollPackageSchema.safeParse({ ...request, settlement }).success, false);
+  assert.ok(
+    refundPayrollPackageSchema.safeParse({
+      ...request,
       payoutGrossCents: "1",
       payoutMethod: "CASH",
     }).success,

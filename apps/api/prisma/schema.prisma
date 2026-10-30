@@ -2423,6 +2423,38 @@ model CustomerOutstandingPayment {
 /// It points at the **catalogue item**, not at the holding row. The balance lives
 /// on the holding, and reporting asks "how many of this package were spent", not
 /// "which of the four rows a customer bought it through".
+/// Manager-confirmed actual payout/cancellation, independent of payroll captures.
+/// Append-only; never executes a payment or backfills legacy refund evidence.
+model PrepaidRefundSettlement {
+  id String @id @default(cuid())
+  tenantId String
+  sourceKey String
+  holdingId String
+  itemType String
+  saleId String
+  saleLineId String
+  actorId String
+  actorRole String
+  reason String
+  reference String
+  requestHash String
+  currency String
+  payoutMethod String
+  netCents BigInt
+  taxCents BigInt
+  grossCents BigInt
+  cancelledGrossCents BigInt
+  occurredAt DateTime
+  evidence Json
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, sourceKey])
+  @@unique([tenantId, itemType, holdingId])
+  @@index([tenantId, occurredAt, id])
+  @@index([tenantId, saleId])
+  @@map("prepaid_refund_settlements")
+}
+
 model PayrollSourceEvent {
   id String @id @default(cuid())
   tenantId String

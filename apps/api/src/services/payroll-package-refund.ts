@@ -16,6 +16,10 @@ import { conflict, forbidden, notFound } from "../lib/http-error.js";
 import { payrollOrdinalSchema } from "./payroll-package-session.js";
 import { payrollBusinessDate } from "./payroll-source-event.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import {
+  recordPrepaidRefundSettlement,
+  verifyPrepaidRefundSettlementRetry,
+} from "./prepaid-refund-settlement.js";
 
 export { refundPayrollPackageSchema };
 
@@ -41,6 +45,7 @@ export async function refundPayrollPackage(
     if (existing) {
       if (z.object({ requestHash: z.string() }).parse(existing.evidence).requestHash !== hash)
         throw conflict("Refund retry has different evidence.");
+      await verifyPrepaidRefundSettlementRetry(tx, input, key, hash);
       return existing;
     }
     const holding = await tx.customerPackageHolding.findFirst({ where: { id: holdingId } });
@@ -210,6 +215,23 @@ export async function refundPayrollPackage(
           ? { fixedCommission: fixed.find((row) => row.staffId === base.staffId)!.amount }
           : {}),
       });
+    });
+    if (input.settlement && purchase.currency !== "SGD")
+      throw conflict("Prepaid refund settlement requires original SGD consideration.");
+    await recordPrepaidRefundSettlement(tx, input, {
+      sourceKey: key,
+      requestHash: hash,
+      holdingId,
+      itemType: "PACKAGE",
+      saleId: sale.id,
+      saleLineId: saleLine.id,
+      actorId: actor.id,
+      actorRole: actor.globalRole,
+      occurredAt: at,
+      netCents: refundNet,
+      taxCents: tax,
+      cancelledGrossCents: cancelledGross,
+      evidence: { holding, sale, line: saleLine, allocations, sources, outstanding, amounts },
     });
     const event = await tx.payrollSourceEvent.create({
       data: {

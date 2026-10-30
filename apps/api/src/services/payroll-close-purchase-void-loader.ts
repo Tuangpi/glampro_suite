@@ -16,6 +16,8 @@ import {
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { payrollInputHash } from "./payroll-close-state.js";
 import { verifyPayrollOrdinaryVoidLine } from "./payroll-close-sale-void-loader.js";
+import { replayPayrollValueOwnership } from "./payroll-close-value-ownership.js";
+import type { PayrollValueSharing } from "./payroll-close-value-sharing.js";
 import { resolvePayrollCloseVoids, type PayrollNoCashSaleVoid } from "./payroll-close-voids.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
@@ -31,7 +33,8 @@ const month = (at: Date, timeZone: string) => {
   return ["year", "month"].map((type) => parts.find((part) => part.type === type)!.value).join("-");
 };
 
-/** Prospective purchase/ordinary mixed path: unused, untransferred, unexpired,
+/** Prospective purchase/ordinary mixed path: unused, untransferred; session expiry
+ * requires an exact independent bucket-transfer pair, credit expiry stays gated.
  * full or partial upfront external funding and explicitly attested NO_MOVEMENT. Deleted
  * holdings alone never establish eligibility. Every independent journal is frozen. */
 export async function loadPayrollPurchaseSaleVoid(
@@ -108,6 +111,12 @@ export async function loadPayrollPurchaseSaleVoid(
     if (uses.length || transfers.length) return fail();
     if (line.itemType === "VALUE_PACKAGE") {
       const credit = preserved.snapshot.credits.find((row) => row.id === holding.id)!;
+      const expiresAt = credit.expiresAt;
+      if (
+        expiresAt !== null &&
+        (typeof expiresAt !== "string" || !Number.isFinite(new Date(expiresAt).getTime()))
+      )
+        return fail();
       const amount = new Prisma.Decimal(credit.amount);
       valuePurchases.set(
         line.id,
@@ -119,23 +128,77 @@ export async function loadPayrollPurchaseSaleVoid(
       });
       const grant = balances.filter((row) => row.kind === "GRANT");
       const removal = balances.filter((row) => row.kind === "REMOVAL");
-      if (balances.length !== 2 || grant.length !== 1 || removal.length !== 1) return fail();
+      if (
+        grant.length !== 1 ||
+        removal.length !== 1 ||
+        new Set(balances.map((row) => row.id)).size !== balances.length ||
+        balances.some((row) => !["GRANT", "EXPIRY_CHANGE", "SHARING", "REMOVAL"].includes(row.kind))
+      )
+        return fail();
       const g = grant[0],
         r = removal[0];
+      // Expiry/consent edits do not consume or transfer credit. Replay their
+      // independent journals rather than substituting today's holding state.
+      // Removal is verified separately because ownership replay retains balances.
+      const history = balances.filter((row) => row.kind !== "REMOVAL");
+      if (history.some((row) => row.createdAt > r.createdAt || row.createdAt > sale.voidedAt!))
+        return fail();
+      let sharing: PayrollValueSharing | undefined;
+      if (history.some((row) => row.kind === "SHARING")) {
+        const customerIds = [sale.customerId];
+        const [members, membershipEvents] = await Promise.all([
+          tx.prepaidFamilyMember.findMany({
+            where: { tenantId, customerId: { in: customerIds } },
+            orderBy: { id: "asc" },
+          }),
+          tx.prepaidFamilyEvent.findMany({
+            where: { tenantId, customerId: { in: customerIds } },
+            orderBy: { id: "asc" },
+          }),
+        ]);
+        const familyIds = [
+          ...new Set(
+            [
+              ...members.map((row) => row.familyId),
+              ...membershipEvents.flatMap((row) => [row.fromFamilyId, row.toFamilyId]),
+              ...history.flatMap((row) => [row.sharedFamilyId, row.previousSharedFamilyId]),
+            ].filter((id): id is string => id !== null),
+          ),
+        ].sort();
+        const families = await tx.prepaidFamily.findMany({
+          where: { tenantId, id: { in: familyIds } },
+          orderBy: { id: "asc" },
+        });
+        sharing = { customerIds, members, events: membershipEvents, families };
+      }
+      try {
+        replayPayrollValueOwnership({
+          tenantId,
+          holdingId: holding.id,
+          originalCustomerId: sale.customerId,
+          customerId: credit.customerId,
+          amount,
+          amountRemaining: amount,
+          expiresAt: expiresAt === null ? null : new Date(expiresAt),
+          balances: history,
+          transfers: [],
+          sharedFamilyId: null,
+          sharing,
+        });
+      } catch {
+        return fail();
+      }
       if (
         balances.some(
           (row) =>
             row.tenantId !== tenantId ||
             row.holdingId !== holding.id ||
             row.customerId !== sale.customerId ||
-            row.sharedFamilyId !== null ||
-            row.previousSharedFamilyId !== null ||
             // Trigger timestamps use transaction-start time, not the later
             // application void timestamp. Bind removal by sale/actor/reason and
-            // the exact two-entry chain instead of inventing wall-clock order.
+            // the exact replayed chain instead of inventing wall-clock order.
             !Number.isFinite(row.createdAt.getTime()) ||
-            row.createdAt > until ||
-            (row.expiresAt?.toISOString() ?? null) !== (credit.expiresAt ?? null),
+            row.createdAt > until,
         ) ||
         !g.actorId ||
         g.saleId !== saleId ||
@@ -148,14 +211,23 @@ export async function loadPayrollPurchaseSaleVoid(
         r.actorId !== sale.voidedById ||
         r.reason !== sale.voidReason ||
         r.saleId !== saleId ||
+        r.sharedFamilyId !== null ||
+        r.previousSharedFamilyId !== null ||
+        (r.expiresAt?.toISOString() ?? null) !== (credit.expiresAt ?? null) ||
         r.previousCustomerId !== sale.customerId ||
         !r.amountBefore.equals(amount) ||
         !r.amountAfter.isZero() ||
         !r.delta.equals(amount.negated()) ||
-        (r.expiresAt !== null && r.expiresAt <= r.createdAt)
+        (r.expiresAt !== null && (r.expiresAt <= r.createdAt || r.expiresAt <= sale.voidedAt))
       )
         return fail();
-      journals.push({ holdingId: holding.id, balances, uses, transfers });
+      journals.push({
+        holdingId: holding.id,
+        balances,
+        uses,
+        transfers,
+        ...(sharing && { sharing }),
+      });
     } else {
       const pkg = preserved.snapshot.packages.find((row) => row.id === holding.id)!;
       packagePurchases.set(line.id, verifyPayrollPackagePurchase([pkg], line, sale, tenantId));
@@ -172,6 +244,14 @@ export async function loadPayrollPurchaseSaleVoid(
         tx.packageValuationState.findMany({ where: { tenantId, purchaseId: p.id } }),
         tx.packageValuationActivation.findFirst({ where: { tenantId, id: p.activationId } }),
       ]);
+      const grants = movements.filter((row) => row.kind === "GRANT"),
+        removals = movements.filter((row) => row.kind === "PURCHASE_VOID"),
+        expiryOut = movements.filter((row) => row.kind === "EXPIRE_OUT"),
+        expiryIn = movements.filter((row) => row.kind === "EXPIRE_IN");
+      if (grants.length !== 1 || removals.length !== 1) return fail();
+      const grant = grants[0],
+        removal = removals[0];
+      const expired = p.originalExpiresAt !== null && p.originalExpiresAt <= removal.effectiveAt;
       if (
         !activation ||
         activation.tenantId !== tenantId ||
@@ -197,25 +277,49 @@ export async function loadPayrollPurchaseSaleVoid(
         states[0].purchaseId !== p.id ||
         states[0].customerId !== sale.customerId ||
         !states[0].voided ||
-        states[0].expired ||
+        states[0].expired !== expired ||
         payrollInputHash(states[0].availableOrdinals) !== payrollInputHash([]) ||
-        movements.length !== 2
+        movements.length !== (expired ? 4 : 2) ||
+        new Set(movements.map((row) => row.id)).size !== movements.length ||
+        expiryOut.length !== (expired ? 1 : 0) ||
+        expiryIn.length !== (expired ? 1 : 0)
       )
         return fail();
-      const grants = movements.filter((row) => row.kind === "GRANT"),
-        removals = movements.filter((row) => row.kind === "PURCHASE_VOID");
-      if (grants.length !== 1 || removals.length !== 1 || grants[0].id === removals[0].id)
-        return fail();
+      // The real writer moves all still-available ordinals into EXPIRED before
+      // removing an expired purchase. Never infer that pair from today's expiry.
+      if (expired) {
+        const out = expiryOut[0],
+          into = expiryIn[0];
+        if (
+          p.originalExpiresAt! <= grant.effectiveAt ||
+          out.recordedAt < grant.recordedAt ||
+          into.recordedAt < out.recordedAt ||
+          removal.recordedAt < into.recordedAt
+        )
+          return fail();
+      }
       for (const row of movements) {
-        const sign = row.kind === "GRANT" ? 1 : -1;
+        const expiry = row.kind === "EXPIRE_OUT" || row.kind === "EXPIRE_IN";
+        const sign = row.kind === "GRANT" || row.kind === "EXPIRE_IN" ? 1 : -1;
+        const sourceKey =
+          row.kind === "GRANT"
+            ? "grant"
+            : row.kind === "PURCHASE_VOID"
+              ? `void:${saleId}`
+              : row.kind === "EXPIRE_OUT"
+                ? "expiry:out"
+                : "expiry:in";
         if (
           row.tenantId !== tenantId ||
           row.purchaseId !== p.id ||
           row.customerId !== sale.customerId ||
-          row.bucket !== "ACTIVE" ||
-          row.sourceKey !== (sign === 1 ? "grant" : `void:${saleId}`) ||
-          !row.actorId ||
-          (sign === -1 && row.actorId !== sale.voidedById) ||
+          row.bucket !==
+            (row.kind === "EXPIRE_IN" || (row.kind === "PURCHASE_VOID" && expired)
+              ? "EXPIRED"
+              : "ACTIVE") ||
+          row.sourceKey !== sourceKey ||
+          (expiry ? row.actorId !== null : !row.actorId) ||
+          (row.kind === "PURCHASE_VOID" && row.actorId !== sale.voidedById) ||
           row.quantity !== sign * pkg.quantity ||
           row.netCents !== BigInt(sign) * p.netCents ||
           row.taxCents !== BigInt(sign) * p.taxCents ||
@@ -224,10 +328,15 @@ export async function loadPayrollPurchaseSaleVoid(
           !during(row.effectiveAt) ||
           !during(row.recordedAt) ||
           row.recordedAt < row.effectiveAt ||
-          (sign === 1
+          (row.kind === "GRANT"
             ? row.effectiveAt < p.recordedAt || row.recordedAt > sale.voidedAt
-            : row.effectiveAt < sale.voidedAt) ||
-          (p.originalExpiresAt !== null && p.originalExpiresAt <= row.effectiveAt)
+            : row.kind === "PURCHASE_VOID"
+              ? row.effectiveAt < sale.voidedAt || row.recordedAt < grant.recordedAt
+              : row.effectiveAt.getTime() !== p.originalExpiresAt?.getTime() ||
+                row.effectiveAt > removal.effectiveAt) ||
+          (row.kind === "GRANT" &&
+            p.originalExpiresAt !== null &&
+            p.originalExpiresAt <= row.effectiveAt)
         )
           return fail();
       }

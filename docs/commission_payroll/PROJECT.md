@@ -1,5 +1,25 @@
 # Commission & Payroll
 
+## Approved prepaid refund settlement extension — October 30, 2026
+
+Owner approved a prospective manager-confirmed actual payout/cancellation workflow,
+with a new append-only tenant-scoped settlement journal and migration applied only
+to a newly created disposable database. The operation records actual external
+payout reference and exact net/GST/debt cancellation; it never sends funds. No
+application database migration/repair, provider payments, legacy evidence backfill
+or earnings activation authorized. Monthly refund loading still requires complete
+independent reconciliation and persisted calculate/approve acceptance. Legacy
+helper captures without settlement stay unavailable to authoritative cash loading.
+
+Latest M1 increment (October 30, 2026): prospective mixed cash/credit ordinary
+checkout freezes complete funding inventory, allowing independently reconciled
+zero external bases for fully credit-funded lines without legacy inference.
+Credit is never new cash. Existing lifecycle eligibility blocks remain unchanged.
+Helper/source-base and four full September monthly/pure approval-state in-memory
+variants pass, including prior-month purchase/current-month spend. Repository tests
+plus persisted approval and real-writer DB/browser acceptance remain
+deferred. CP-005-M1 IN PROGRESS; M2 untouched.
+
 ## Authority and priority
 
 Approved October 27, 2026. This is the active, first-priority feature project.
@@ -22,6 +42,34 @@ New requirements outrank incompatible old commission policy, not authentication,
 tenant isolation, exact-money handling, historical integrity, or transaction safety.
 
 ## Delivery cadence — October 30, 2026
+
+Full upfront money-funded ordinary refunds now support free-of-charge service lines
+alongside paid service/products. Frozen checkout list-price economics independently
+verify original FOC bases/units and exact reversals; free lines carry zero cash and
+paid lines retain complete original collection attribution. This supersedes blanket
+FOC refund gates below, not prepaid/instalment funding restrictions or zero-total
+refund eligibility. M1 acceptance and new repository tests remain deferred.
+
+Previously shared unused credit purchase NO_MOVEMENT voids now reconcile independent
+consent and complete owner family-membership history, requiring private ownership
+again before removal. Membership evidence is frozen for stale-approval detection.
+Active sharing, expired credit, used/transferred purchases and later-payment funding
+stay gated. This broadens verified history only; writer eligibility is unchanged.
+M1 remains open; new repository tests and real-writer DB/browser acceptance are deferred.
+
+Unused/untransferred credit purchase NO_MOVEMENT voids now reconcile independent
+GRANT/EXPIRY_CHANGE histories before exact REMOVAL. Final expiry must match the
+preserved holding and remain valid at void time; no expiry edit creates cash or
+changes purchase economics. Expired credit, used/transferred purchases and later
+payments stay gated. This broadens journal history only, not writer eligibility or
+M1 acceptance. Real-writer acceptance and new repository tests remain deferred.
+
+Expired unused/untransferred session purchase NO_MOVEMENT voids now load only with
+an exact independently valued expiry bucket-transfer pair between grant and void.
+Original expiry, complete session ordinals/values, actors, chronology and final
+expired/voided state reconcile; no cash is created. Upfront funding/policy and
+payroll reversal checks remain. This supersedes unexpired-only session limitations
+below, not expired credit gates, writer restrictions or M1 acceptance requirements.
 
 Partial upfront external funding is now supported for the same unused/untransferred/
 unexpired NO_MOVEMENT purchase-void path. Checkout paid/total/status must match
@@ -75,10 +123,14 @@ activation or release requirements; preserve existing tests and financial safegu
 Execute CP-005 by the five milestone boundaries in [TASKS.md](TASKS.md), not by
 individual helpers or test additions. Resume M1 authoritative lifecycle loading;
 monthly private-credit integration and private transfers are completed slices,
-not completion of M1. Continue through the selected milestone's related code,
-integration and acceptance work without routine permission or per-slice handoffs.
-Stop at its verified completion, a genuine blocker, user instruction or session
-limit; record partial results honestly. Do not automatically start the next milestone.
+not completion of M1. The user authorized continuous execution on October 30, 2026:
+continue through related code, integration and acceptance work, then automatically
+start the next unblocked milestone or task in this queue without routine permission
+or per-slice handoffs. Use recommended defaults for routine decisions and make
+focused, reviewed commits when appropriate. Stop only when the authorized queue is
+complete, a genuine blocker needs user input, an action needs additional approval,
+the user asks to stop, or a session limit requires a saved handoff. Record partial
+results honestly. This authorization does not permit pushing or deployment.
 
 Keep safety gates unchanged: independent evidence, exact money, fail-closed
 unsupported paths, frozen approvals and no unauthorized activation/deployment.

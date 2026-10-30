@@ -18,6 +18,10 @@ import { packageMoneyToCents, packagePurchaseValue } from "../lib/package-valuat
 import { lockCommissionConfiguration } from "./commission.service.js";
 import { validateValuePackageCollectionSources } from "./payroll-value-collection-sources.js";
 import { payrollBusinessDate } from "./payroll-source-event.js";
+import {
+  recordPrepaidRefundSettlement,
+  verifyPrepaidRefundSettlementRetry,
+} from "./prepaid-refund-settlement.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 const negativeBase = (net: bigint) =>
@@ -45,6 +49,7 @@ export async function refundPayrollValuePackageInTransaction(
   if (existing) {
     if (z.object({ requestHash: z.string() }).parse(existing.evidence).requestHash !== hash)
       throw conflict("Refund retry has different evidence.");
+    await verifyPrepaidRefundSettlementRetry(tx, input, key, hash);
     return existing;
   }
   const holding = await tx.customerValuePackageHolding.findFirst({ where: { id: holdingId } });
@@ -162,6 +167,23 @@ export async function refundPayrollValuePackageInTransaction(
   });
   const at = new Date();
   await prepaidSaleContext(tx, sale.id);
+  if (input.settlement && sale.collectionCurrency !== "SGD")
+    throw conflict("Prepaid refund settlement requires original SGD consideration.");
+  await recordPrepaidRefundSettlement(tx, input, {
+    sourceKey: key,
+    requestHash: hash,
+    holdingId,
+    itemType: "VALUE_PACKAGE",
+    saleId: sale.id,
+    saleLineId: line.id,
+    actorId: actor.id,
+    actorRole: actor.globalRole,
+    occurredAt: at,
+    netCents: amounts.net,
+    taxCents: amounts.tax,
+    cancelledGrossCents: amounts.cancelledGross,
+    evidence: { holding, sale, line, redemptions, allocations, sources, outstanding, amounts },
+  });
   const lines =
     amounts.net > 0n
       ? allocatePayrollSplit(negativeBase(amounts.net), purchase.sellers!).map((part) =>

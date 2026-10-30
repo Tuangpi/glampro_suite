@@ -8,6 +8,7 @@ import { conflict } from "../lib/http-error.js";
 import { packagePurchaseValue } from "../lib/package-valuation.js";
 import { allocateCollection } from "../lib/commission-collection.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
+import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 import {
   resolvePayrollCloseSaleRefunds,
   type PayrollSaleRefund,
@@ -27,8 +28,10 @@ const payoutsSchema = z
 const cents = (value: string) => BigInt(value.replace(".", ""));
 const hash = (value: unknown) => payrollInputHash(JSON.parse(JSON.stringify(value)));
 
-/** Full upfront money-only ordinary refunds. No inferred payout, prepaid funding,
- * instalments or FOC economics. Source performers and cash sellers are independent. */
+/** Full upfront money-only ordinary refunds, including independently valued FOC
+ * service lines and audited zero tenders (which never create collections).
+ * No inferred payout, prepaid funding or instalments.
+ * Source performers and cash sellers are independent. */
 export async function loadPayrollSaleRefund(
   tx: PayrollCloseTransaction,
   input: {
@@ -47,6 +50,8 @@ export async function loadPayrollSaleRefund(
   });
   if (
     !sale ||
+    sale.id !== refund.saleId ||
+    sale.tenantId !== tenantId ||
     sale.status !== "COMPLETED" ||
     !sale.outletId ||
     sale.collectionCurrency !== "SGD" ||
@@ -56,12 +61,19 @@ export async function loadPayrollSaleRefund(
     !Number.isFinite(refund.refundedAt.getTime()) ||
     refund.refundedAt < from ||
     refund.refundedAt >= to ||
+    !Number.isFinite(sale.soldAt.getTime()) ||
     sale.soldAt > refund.refundedAt ||
     !refund.amount.isPositive() ||
     !refund.amount.equals(sale.totalAmount) ||
     !sale.paidAmount.equals(sale.totalAmount) ||
     !sale.lines.length ||
-    sale.lines.some((line) => !["SERVICE", "PRODUCT"].includes(line.itemType))
+    new Set(sale.lines.map((line) => line.id)).size !== sale.lines.length ||
+    sale.lines.some(
+      (line) =>
+        line.tenantId !== tenantId ||
+        line.saleId !== sale.id ||
+        !["SERVICE", "PRODUCT"].includes(line.itemType),
+    )
   )
     return fail();
   const [payments, outstanding, redemptions, receipts, events, rules, refunds] = await Promise.all([
@@ -80,6 +92,7 @@ export async function loadPayrollSaleRefund(
     tx.commissionRule.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
     tx.saleRefund.findMany({ where: { tenantId, saleId: sale.id } }),
   ]);
+  const collectedPayments = payments.filter((row) => row.amount.greaterThan(0));
   const parsedPayouts = payoutsSchema.safeParse(refund.payouts);
   if (
     outstanding.length ||
@@ -87,7 +100,7 @@ export async function loadPayrollSaleRefund(
     refunds.length !== 1 ||
     hash(refunds[0]) !== hash(refund) ||
     !parsedPayouts.success ||
-    !payments.length ||
+    !collectedPayments.length ||
     parsedPayouts.data.some((row) => cents(row.amount) <= 0n) ||
     parsedPayouts.data.reduce((sum, row) => sum + cents(row.amount), 0n) !==
       cents(refund.amount.toFixed(2)) ||
@@ -97,29 +110,35 @@ export async function loadPayrollSaleRefund(
         row.saleId !== sale.id ||
         row.sessionId !== null ||
         !methods.safeParse(row.method).success ||
-        !row.amount.isPositive() ||
+        row.amount.isNegative() ||
         !row.amount.mul(100).isInteger() ||
+        !Number.isFinite(row.createdAt.getTime()) ||
         row.createdAt < sale.soldAt ||
         row.createdAt > refund.refundedAt,
     ) ||
     !payments
       .reduce((sum, row) => sum.plus(row.amount), refund.amount.minus(refund.amount))
       .equals(refund.amount) ||
-    receipts.length !== payments.length ||
+    receipts.length !== collectedPayments.length ||
     receipts.some(
       (row) =>
         row.tenantId !== tenantId ||
         row.saleId !== sale.id ||
         row.currency !== "SGD" ||
         row.sourceType !== "SALE_PAYMENT" ||
-        payments.filter(
+        !Number.isFinite(row.occurredAt.getTime()) ||
+        !Number.isFinite(row.createdAt.getTime()) ||
+        row.createdAt < row.occurredAt ||
+        row.createdAt > refund.refundedAt ||
+        collectedPayments.filter(
           (payment) =>
             payment.id === row.sourceId &&
             payment.createdAt.getTime() === row.occurredAt.getTime() &&
             payment.amount.mul(100).toFixed(0) === row.grossCents.toString(),
         ).length !== 1,
     ) ||
-    new Set(receipts.map((row) => row.sourceId)).size !== payments.length ||
+    new Set(receipts.map((row) => row.id)).size !== receipts.length ||
+    new Set(receipts.map((row) => row.sourceId)).size !== collectedPayments.length ||
     events.some(
       (row) =>
         row.tenantId !== tenantId ||
@@ -189,7 +208,17 @@ export async function loadPayrollSaleRefund(
       line.voucherDiscountAmount.toFixed(2),
       line.taxAmount.toFixed(2),
     );
-    if (money.netCents <= 0n || money.taxCents < 0n || line.quantity <= 0) return fail();
+    const foc =
+      line.itemType === "SERVICE" && money.grossCents === 0n
+        ? resolvePayrollFocEconomics(line, sale.soldAt, 0)
+        : null;
+    if (
+      (foc ? money.netCents !== 0n || money.taxCents !== 0n : money.netCents <= 0n) ||
+      money.taxCents < 0n ||
+      !Number.isSafeInteger(line.quantity) ||
+      line.quantity <= 0
+    )
+      return fail();
     const attribution = commissionAttributionSchema.safeParse(line.attribution);
     if (!attribution.success || !attribution.data.sellers) return fail();
     const shares =
@@ -197,7 +226,7 @@ export async function loadPayrollSaleRefund(
     if (!shares) return fail();
     const parts = operationalAllocations.filter((row) => row.saleLineId === line.id);
     if (
-      !parts.length ||
+      (foc ? parts.length !== 0 : !parts.length) ||
       parts.reduce((sum, row) => sum + row.netCents, 0n) !== money.netCents ||
       parts.reduce((sum, row) => sum + row.taxCents, 0n) !== money.taxCents ||
       parts.reduce((sum, row) => sum + row.grossCents, 0n) !== money.grossCents ||
@@ -239,16 +268,18 @@ export async function loadPayrollSaleRefund(
       .object({ lines: z.array(payrollBaseLineSchema) })
       .safeParse(original.evidence);
     const expected = allocatePayrollSplit(
-      `${money.netCents / 100n}.${(money.netCents % 100n).toString().padStart(2, "0")}00`,
+      foc?.baseAmount ??
+        `${money.netCents / 100n}.${(money.netCents % 100n).toString().padStart(2, "0")}00`,
       shares,
     );
     const units = allocatePayrollSplit(`${line.quantity}.0000`, shares);
     if (
       !captured.success ||
       captured.data.lines.length !== expected.length ||
+      new Set(captured.data.lines.map((row) => row.staffId)).size !== expected.length ||
       captured.data.lines.some(
         (row) =>
-          row.commissionType !== (line.itemType === "PRODUCT" ? "PRD" : "SVC") ||
+          row.commissionType !== (foc ? "FOC" : line.itemType === "PRODUCT" ? "PRD" : "SVC") ||
           row.mode !== "FOLLOW_PLAN" ||
           row.fixedCommission !== undefined ||
           row.baseAmount !== expected.find((part) => part.staffId === row.staffId)?.amount ||
@@ -256,14 +287,15 @@ export async function loadPayrollSaleRefund(
       )
     )
       return fail();
-    verifyOrdinaryPayrollRateProvenance(
+    const provenance = verifyOrdinaryPayrollRateProvenance(
       original.evidence,
-      line,
+      { ...line, foc: !!foc },
       original.occurredAt,
       original.createdAt,
       rules,
       tenantId,
     );
+    if (foc && provenance.category !== foc.economics.category) return fail();
     allocations.push({
       id: `sale-refund:${refund.id}:${line.id}`,
       saleLineId: line.id,
@@ -274,6 +306,19 @@ export async function loadPayrollSaleRefund(
       taxCents: money.taxCents.toString(),
       grossCents: money.grossCents.toString(),
       shares,
+      ...(foc && {
+        foc: {
+          soldAt: sale.soldAt.toISOString(),
+          line: {
+            id: line.id,
+            saleId: line.saleId,
+            itemId: line.itemId,
+            itemType: "SERVICE" as const,
+            quantity: line.quantity,
+            payrollEconomics: line.payrollEconomics,
+          },
+        },
+      }),
       cashAttribution: {
         allocations: parts.map((row) => ({
           id: row.id,

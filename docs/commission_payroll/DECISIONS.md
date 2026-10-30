@@ -1,5 +1,100 @@
 # Commission & Payroll decisions
 
+## Approved prepaid settlement workflow — October 30, 2026
+
+- Owner approved extending prepaid refund operations with manager-confirmed,
+  append-only actual payout/cancellation evidence, including a new migration applied
+  only to the newly created disposable database. No provider payment execution,
+  application database migration/repair, legacy settlement backfill or activation.
+- New optional settlement confirmation/reference preserves legacy helper behavior.
+  Confirmed operations freeze independent pre-cancellation holding, sale, line,
+  collections, sources, debt and computed money evidence in a tenant-scoped journal
+  in the same transaction as refund capture and cancellation. Retry must find the
+  same journal, not invent missing historical evidence. Positive payout uses an
+  actual tender; zero payout uses NONE. Independent payout net/tax/cancelled debt
+  remain separate from commission bases and credit/session cancellation.
+- Implementation of this journal alone does not open monthly refund gates or finish
+  M1. Authoritative complete history/ledger/payout reconciliation and monthly
+  calculate/approve acceptance remain required before admitting refunded holdings.
+
+## Zero-tender ordinary refund inventory — October 30, 2026
+
+- Mirror the existing checkout writer: zero external tenders remain audited payment
+  rows but never require collection lots or create cash. Reconcile strictly positive
+  tenders only to complete collections, while validating and freezing all tenders.
+  Reject negative/fractional, foreign, gateway, unsupported or misdated zero rows.
+- Require independent sale/line scope, unique inventories and finite collection
+  chronology. No inferred payout, backfill, prepaid refund or instalment refund
+  eligibility change. Original checkout paidAmount and outstanding-row restrictions
+  remain operational writer gates. M1 and deferred acceptance remain open.
+
+## Prospective mixed credit line funding — October 30, 2026
+
+- A settled mixed money/credit ordinary receipt may contain paid lines with zero
+  external allocations. Freeze the complete credit tender and explicit external
+  collection/allocation inventory at checkout and independently reconcile it at
+  close before accepting zero ordinary bases. Never allocate credit into cash,
+  infer missing historical snapshots or backfill unavailable captures.
+- Validate exact receipt/line totals and cumulative allocation net/tax residuals;
+  retain independent holding, ownership/consent, attribution and historical-rate
+  checks. Preserve FOC list-price activity and all existing eligibility blocks.
+  New-path full September monthly/pure approval-state integration now passes four
+  in-memory service/product and same/prior-month purchase variants, including
+  changed funding evidence invalidating approval. No reversal-month or real-writer
+  claim; DB/browser, persisted approval acceptance and repository tests remain
+  deferred. M1 stays IN PROGRESS.
+
+## Mixed paid/FOC ordinary refund evidence — October 30, 2026
+
+- Match existing full upfront money-funded ordinary refund eligibility when a
+  receipt includes zero-price services. FOC commission/activity reverses exactly
+  using original frozen checkout list price, quantity, no package coverage and
+  historical rate/category evidence; zero cash/gross/tax is not a zero FOC base.
+- Require explicit operational FOC evidence plus an empty cash allocation inventory
+  for each free line. Paid lines retain complete collection cash attribution; the
+  full refund payout still equals actual receipt money. Do not infer FOC from a
+  capture alone, pay back list-price value, or relax prepaid/later-payment funding
+  gates. No writer or zero-total refund eligibility change. M1 remains open with
+  new repository tests and real-writer DB/browser acceptance deferred.
+
+## Withdrawn credit purchase sharing evidence — October 30, 2026
+
+- Permit prior sharing on otherwise eligible unused/untransferred credit purchase
+  NO_MOVEMENT voids only after independent complete owner membership and consent
+  replay. Current membership is a final-state check, never historical authorization.
+  Require unchanged owner/full credit, withdrawn consent and private exact removal.
+  Freeze membership events, members and referenced families alongside balance evidence.
+- Rejoining a family cannot restore withdrawn consent; departure inside an active
+  consent interval refuses. Active sharing, expired credit, used/transferred purchases
+  and later-payment funding remain blocked. No writer eligibility change, inferred
+  cash, migration or backfill. M1 acceptance/new repository tests remain deferred.
+
+## Unused credit purchase expiry-edit evidence — October 30, 2026
+
+- Allow audited expiry edits in otherwise eligible unused/untransferred credit
+  purchase NO_MOVEMENT void histories. Reuse independent ownership replay on
+  GRANT/EXPIRY_CHANGE entries, then separately verify exact removal. Require private
+  unchanged ownership/balance, actor/reason, chronology and final preserved expiry.
+  Reject edits after removal/void and credit expired at removal or void time.
+- No current-expiry substitution on the original grant, journal backfill, fresh
+  cash or changed purchase economics. Expired credit, used/transferred purchases
+  and later-payment funding remain blocked. No writer eligibility change; real-writer
+  DB/browser acceptance and new repository tests remain deferred. M1 remains open.
+
+## Expired unused session purchase void evidence — October 30, 2026
+
+- Accept expired session purchase voids only with the real valuation writer's exact
+  four-entry GRANT/EXPIRE_OUT/EXPIRE_IN/PURCHASE_VOID chain. All original ordinals and
+  values move ACTIVE to EXPIRED, then leave EXPIRED; expiry entries are system-owned,
+  removal matches the void manager, and original expiry plus effective/recorded
+  chronology and final state agree. Preserve funding, deposit and payroll reversal
+  reconciliation. Expiry changes buckets, never creates new collection cash.
+- No current-catalogue/expiry inference or deleted-holding reconstruction. Expired
+  credit, used/transferred purchases and later-payment funding remain gated. Current
+  refund writer explicitly refuses prepaid sales; those refunds need an authorized
+  complete operational workflow, not inferred loader evidence. No writer eligibility
+  changes or M1 acceptance claim. Database/browser acceptance remains outstanding.
+
 ## Partial upfront purchase void evidence — October 30, 2026
 
 - Relax full funding only for the existing preserved, unused/untransferred/unexpired

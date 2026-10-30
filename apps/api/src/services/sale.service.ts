@@ -34,7 +34,10 @@ import { appendPayrollSource, reversePayrollSources } from "./payroll-source-eve
 import { assertPayrollValuePackageRestorable } from "./payroll-value-package-refund.js";
 import { recordSaleVoidCashConfirmation } from "./sale-void-cash.js";
 import { recordSaleVoidPurchaseHoldings } from "./sale-void-purchase-evidence.js";
-import { payrollFullCreditFunding } from "./payroll-full-credit-funding.js";
+import {
+  payrollFullCreditFunding,
+  payrollMixedCreditFunding,
+} from "./payroll-full-credit-funding.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import {
   captureRedemptionCommission,
@@ -2242,6 +2245,19 @@ async function fillLedgers(
           await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
         )
       : null;
+  const mixedCreditFunding =
+    creditPaid > 0 && !fullCreditFunding
+      ? payrollMixedCreditFunding(
+          await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } }),
+          sourceLines,
+          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
+          await tx.commissionCollection.findMany({
+            where: { tenantId, saleId },
+            include: { allocations: { orderBy: { id: "asc" } } },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          }),
+        )
+      : null;
   for (const [position, line] of priced.entries()) {
     if (line.item.itemType !== "SERVICE" && line.item.itemType !== "PRODUCT") continue;
     const stored = sourceLines.find((row) => row.position === position)!;
@@ -2263,7 +2279,11 @@ async function fillLedgers(
       quantity,
       netAmount: net.toFixed(4),
       creditPaid: creditPaid > 0,
-      externalNetCents: externalAllocations.length ? externalNet : fullCreditFunding ? 0n : null,
+      externalNetCents: externalAllocations.length
+        ? externalNet
+        : fullCreditFunding || mixedCreditFunding
+          ? 0n
+          : null,
     });
     // Independent immutable checkout evidence, not a close-time catalogue lookup
     // or a list price inferred from the payroll event being reconciled.
@@ -2283,6 +2303,7 @@ async function fillLedgers(
           coveredPackageQuantity: covered.get(stored.id) ?? 0,
           category,
           ...(fullCreditFunding ? { fullCreditFunding } : {}),
+          ...(mixedCreditFunding ? { mixedCreditFunding } : {}),
         },
       },
     });

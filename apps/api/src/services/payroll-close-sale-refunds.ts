@@ -9,6 +9,7 @@ import {
   type PayrollCloseSourceRecords,
 } from "./payroll-close-sources.js";
 import { payrollInputHash } from "./payroll-close-state.js";
+import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 
 const id = z.string().trim().min(1).max(128);
 const cents = z.string().regex(/^(0|[1-9]\d*)$/);
@@ -41,13 +42,27 @@ const refundSchema = money.extend({
         reversalEventId: id,
         itemType: z.enum(["SERVICE", "PRODUCT"]),
         shares: commissionSharesSchema,
+        /** Frozen operational checkout evidence, not a captured commission base. */
+        foc: z
+          .object({
+            soldAt: z.iso.datetime(),
+            line: z.object({
+              id,
+              saleId: id,
+              itemId: id,
+              itemType: z.literal("SERVICE"),
+              quantity: z.number().int().safe().positive(),
+              payrollEconomics: evidence,
+            }),
+          })
+          .optional(),
         /** Source commission shares remain above; cash follows independently
          * verified collection sellers when they differ from service performers. */
         cashAttribution: z
           .object({
-            allocations: z
-              .array(z.object({ id, netCents: cents, shares: commissionSharesSchema, evidence }))
-              .min(1),
+            allocations: z.array(
+              z.object({ id, netCents: cents, shares: commissionSharesSchema, evidence }),
+            ),
             evidence,
           })
           .optional(),
@@ -193,8 +208,36 @@ export function resolvePayrollCloseSaleRefunds(raw: PayrollCloseSaleRefundRecord
       const parsed = z
         .object({ lines: z.array(payrollBaseLineSchema).min(1) })
         .safeParse(original.evidence);
-      const expected = allocatePayrollSplit(decimal(allocation.netCents), allocation.shares);
-      const type = allocation.itemType === "SERVICE" ? "SVC" : "PRD";
+      let baseAmount = decimal(allocation.netCents);
+      if (allocation.foc) {
+        if (
+          allocation.itemType !== "SERVICE" ||
+          allocation.foc.line.id !== allocation.saleLineId ||
+          allocation.foc.line.saleId !== refund.saleId ||
+          allocation.foc.soldAt !== original.occurredAt.toISOString() ||
+          allocation.netCents !== "0" ||
+          allocation.taxCents !== "0" ||
+          allocation.grossCents !== "0" ||
+          !allocation.cashAttribution ||
+          allocation.cashAttribution.allocations.length
+        )
+          block("SALE_REFUND_FOC_ECONOMICS_MISMATCH", allocation.id);
+        try {
+          baseAmount = resolvePayrollFocEconomics(
+            allocation.foc.line,
+            new Date(allocation.foc.soldAt),
+            0,
+          ).baseAmount;
+        } catch {
+          block("SALE_REFUND_FOC_ECONOMICS_MISMATCH", allocation.id);
+        }
+      } else if (allocation.cashAttribution?.allocations.length === 0)
+        block("SALE_REFUND_CASH_ALLOCATION_MISMATCH", allocation.id);
+      const expected = allocatePayrollSplit(baseAmount, allocation.shares);
+      const type = allocation.foc ? "FOC" : allocation.itemType === "SERVICE" ? "SVC" : "PRD";
+      const focUnits = allocation.foc
+        ? allocatePayrollSplit(`${allocation.foc.line.quantity}.0000`, allocation.shares)
+        : null;
       if (
         BigInt(allocation.netCents) + BigInt(allocation.taxCents) !==
           BigInt(allocation.grossCents) ||
@@ -205,7 +248,13 @@ export function resolvePayrollCloseSaleRefunds(raw: PayrollCloseSaleRefundRecord
             ? parsed.data.lines.find((row) => row.staffId === part.staffId)
             : null;
           return (
-            !line || line.commissionType !== type || ticks(line.baseAmount) !== ticks(part.amount)
+            !line ||
+            line.commissionType !== type ||
+            ticks(line.baseAmount) !== ticks(part.amount) ||
+            (focUnits &&
+              (line.mode !== "FOLLOW_PLAN" ||
+                line.fixedCommission !== undefined ||
+                line.units !== focUnits.find((row) => row.staffId === part.staffId)?.amount))
           );
         })
       )

@@ -261,13 +261,17 @@ test(
           );
           assert.equal(hash(await load()), hash(three));
         }
-        // A holding-level capture is not enough for a full-credit paid service:
-        // checkout intentionally leaves ordinary economics unavailable without
-        // explicit external allocation. Do not infer a zero ordinary base.
-        await assert.rejects(
-          prisma.$transaction((tx) => loadPayrollValueSaleAllocation(tx, usage.id)),
-          /VALUE_SALE_ALLOCATION_UNCONFIRMED/,
+        // Prospective checkout independently freezes full-credit funding. The
+        // ordinary line has zero external base; spending retains purchase value.
+        const fullCredit = await prisma.$transaction((tx) =>
+          loadPayrollValueSaleAllocation(tx, usage.id),
         );
+        assert.deepEqual(
+          fullCredit.ordinary.map((row) => row.baseAmount),
+          ["0.0000"],
+        );
+        assert.equal(fullCredit.cash.salonCash, "0.0000");
+        assert.equal(fullCredit.creditPaymentIds.length, 1);
         const product = await prisma.product.create({
           data: {
             tenantId,
@@ -569,8 +573,8 @@ test(
           (await load()).verified.slice(0, -1),
           allocated.evidence.histories[0].verified,
         );
-        // A month containing full-credit paid lines without ordinary allocation
-        // evidence still refuses even when its holding histories reconcile.
+        // Complete source funding is now available; this isolated holding suite
+        // still has no authorized opening carry or historical payroll configuration.
         const parts = new Intl.DateTimeFormat("en", {
           timeZone: "Asia/Singapore",
           year: "numeric",
@@ -583,13 +587,25 @@ test(
           prisma.$transaction((tx) =>
             loadAuthoritativePayrollCloseInputs(tx, openPayrollClose(month)),
           ),
-          /VALUE_SALE_ALLOCATION_UNCONFIRMED/,
+          /APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED/,
         );
         assert.equal(await prisma.payrollClose.count(), 0);
         assert.equal(await prisma.payrollCloseEvent.count(), 0);
-        await voidSale(usage.id, { reason: "Synthetic unsupported restoration" }, ownerId);
-        await assert.rejects(load(), /VALUE_SPEND_HISTORY_UNCONFIRMED/);
-        await assert.rejects(() => loadSale(), /VALUE_SPEND_HISTORY_UNCONFIRMED/);
+        await voidSale(
+          usage.id,
+          { reason: "Synthetic confirmed restoration", cashDisposition: "NO_MOVEMENT" },
+          ownerId,
+        );
+        const restored = await load();
+        assert.equal(restored.restorations.length, 1);
+        assert.equal(restored.restorations[0].redemptionId, first.verified[0].redemptionId);
+        const voided = await prisma.$transaction((tx) =>
+          loadPayrollValueSaleAllocation(tx, usage.id),
+        );
+        assert.equal(voided.noCashReversals.length, 1);
+        assert.equal(voided.noCashSaleVoid?.reversals.length, 1);
+        assert.equal(voided.cash.salonCash, "0.0000");
+        assert.deepEqual((await loadSale()).ordinary, allocated.ordinary);
       });
     } finally {
       await prisma.$disconnect();
