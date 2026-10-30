@@ -58,7 +58,10 @@ export function verifyPayrollPackageOwnership(input: {
       at: row.createdAt.getTime(),
       row,
     })),
-    ...input.redemptions.map((row) => ({ kind: "DRAW" as const, at: row.usedAt.getTime(), row })),
+    ...input.redemptions.flatMap((row) => [
+      { kind: "DRAW" as const, at: row.usedAt.getTime(), row },
+      ...(row.revertedAt ? [{ kind: "RESTORE" as const, at: row.revertedAt.getTime(), row }] : []),
+    ]),
   ].sort((a, b) => a.at - b.at);
   for (const entry of timeline) {
     const { row, at } = entry;
@@ -71,7 +74,7 @@ export function verifyPayrollPackageOwnership(input: {
       row.holdingId !== holding.id ||
       !Number.isSafeInteger(row.quantity) ||
       row.quantity <= 0 ||
-      (holding.expiresAt && at >= holding.expiresAt.getTime())
+      (entry.kind !== "RESTORE" && holding.expiresAt && at >= holding.expiresAt.getTime())
     )
       return fail();
     previousAt = at;
@@ -88,13 +91,12 @@ export function verifyPayrollPackageOwnership(input: {
       )
         return fail();
       owner = transfer.toCustomerId;
-    } else {
-      if (
-        entry.row.customerId !== owner ||
-        entry.row.revertedAt !== null ||
-        row.quantity > remaining
-      )
+    } else if (entry.kind === "RESTORE") {
+      if (at <= entry.row.usedAt.getTime() || remaining + row.quantity > purchase.grantedSessions)
         return fail();
+      remaining += row.quantity;
+    } else {
+      if (entry.row.customerId !== owner || row.quantity > remaining) return fail();
       remaining -= row.quantity;
     }
   }

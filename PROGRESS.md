@@ -2,6 +2,47 @@
 
 ## Current State
 
+- **CP-005 private credit holding history, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004. Internal loader independently reconciles private credit
+  purchases/collections, balance ledger, spend operations/tenders, ratio/splits and
+  historical STORED_CREDIT_SPEND rates. Real checkout residual/reload/refusal checks
+  pass. Monthly prepaid allocation, transfers/sharing/refunds/voids remain gated;
+  close screen/router still unmounted. Selected API 377 passed, one opt-in CP-004
+  SQL lifecycle suite skipped; shared 302/302; API types/lint/build pass. Disposable
+  PostgreSQL stopped, fixtures retained. No web changes/checks this continuation,
+  application DB/schema changes, activation, deployment, commit or push.
+  Logs `/tmp/cp005-value-*`; next sale-level ordinary/prepaid/no-cash reconciliation.
+
+## Previous checkpoint — owner carry authorization and repair
+
+- **CP-005 owner carry authorization/repair, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004. Owner controls now support reviewed opening inventory,
+  exact component disposition/fallback debt and stale authorization repair. Read API
+  exposes staff inventory/revisions/balance hashes while calculation remains
+  fail-closed. Selected API 306/306 plus expanded real HTTP/DB carry acceptance 1/1,
+  selected web 40/40, shared 302/302; API/web types/lint/build pass. Close screen and
+  router remain unmounted pending prepaid-credit/refund/void loading and full
+  application/browser/reconciliation/performance acceptance. CP-003A/CP-006 untouched;
+  no application DB/schema, activation, deployment, commit or push. Logs
+  `/tmp/cp005-carry-*`; see authoritative commission-payroll handoff.
+
+## Previous checkpoint — restored sessions, partial FOC and close groundwork
+
+- **CP-005 restored sessions/partial FOC/close groundwork, October 30, 2026:**
+  IN PROGRESS; latest completed CP-004, CP-003A/CP-006 untouched. Audited restoration,
+  original ordinal reuse, exact latest-source monthly reversal with zero cash and
+  uncovered-unit FOC reconciliation pass isolated writer/reload/refusal/frozen-history
+  checks. Added close router and management screen, **both deliberately unmounted**.
+  Prepaid-credit spending/refund/void loaders, opening/settlement UI, mounting and full
+  HTTP/browser/reconciliation/race/performance acceptance remain. Selected API 306/306
+  (three isolated DB suites, seven mocked-persistence HTTP tests, zero skips), shared
+  302/302, selected web 40/40; API/web types/lint/build pass. No application DB/schema,
+  production activation/deployment/commit/push. Logs `/tmp/cp005-complete-*`.
+  Formatting/whitespace pass; disposable PostgreSQL stopped cleanly, fixtures retained.
+  See `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/PROGRESS.md`.
+
+## Previous checkpoint — monthly correction reconciliation
+
 - **CP-005 monthly correction reconciliation, October 30, 2026:** IN PROGRESS;
   latest completed CP-004. Complete operational correction inventory and verified
   chains now feed monthly revision-key matching, exact prior-source lineage and

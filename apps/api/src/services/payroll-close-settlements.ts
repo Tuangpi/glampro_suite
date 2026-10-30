@@ -3,7 +3,7 @@ import { payrollPeriodKeySchema, type PayrollCarryBalance } from "@glampro_suite
 import { payrollInputHash } from "./payroll-close-state.js";
 
 const id = z.string().trim().min(1).max(128);
-const schema = z.object({
+export const payrollCarrySettlementSchema = z.object({
   id,
   tenantId: id,
   periodKey: payrollPeriodKeySchema,
@@ -26,7 +26,7 @@ const schema = z.object({
     .object({ amount: z.string().regex(/^-(0|[1-9]\d{0,23})\.\d{10}$/) })
     .nullable(),
 });
-export type PayrollCarrySettlement = z.input<typeof schema>;
+export type PayrollCarrySettlement = z.input<typeof payrollCarrySettlementSchema>;
 interface CarryStaff {
   staffId: string;
   carryForward: PayrollCarryBalance[];
@@ -42,7 +42,7 @@ export function resolvePayrollCarrySettlements(
   staff: CarryStaff[],
 ) {
   const records = z
-    .array(schema)
+    .array(payrollCarrySettlementSchema)
     .parse(raw)
     .sort((a, b) => a.staffId.localeCompare(b.staffId));
   if (

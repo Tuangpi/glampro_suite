@@ -13,6 +13,7 @@ import {
   verifyPayrollPackageRedemption,
   verifyPayrollPackageRedemptionInventory,
   verifyPayrollRedemptionCorrections,
+  verifyPayrollRedemptionVoid,
 } from "./payroll-close-package-redemption.js";
 
 function fixture(mode: "FOLLOW_PLAN" | "EXCLUDE" | "FIXED" = "FOLLOW_PLAN") {
@@ -475,6 +476,106 @@ function correctionFixture() {
   };
 }
 
+function voidFixture() {
+  const input = correctionFixture();
+  const previous = input.snapshots[1];
+  const prior = input.events[1];
+  const at = new Date("2026-10-06T00:00:00Z");
+  input.original.redemption.revertedAt = at;
+  const evidence = redemptionCommissionEvidenceSchema.parse({
+    ...previous.evidence,
+    previousSnapshotId: previous.id,
+  });
+  const terminal = {
+    ...previous,
+    id: "void-snapshot",
+    revision: 2,
+    eventType: "VOID",
+    eventKey: "void:redemption",
+    reason: "Source redemption voided; original attribution retained",
+    evidence,
+    eventHash: createHash("sha256").update(JSON.stringify(evidence)).digest("hex"),
+  };
+  const reversal = {
+    ...prior,
+    id: "void-reversal",
+    sourceType: "REVERSAL",
+    sourceId: prior.id,
+    sourceKey: `session-void:redemption:${prior.id}`,
+    occurredAt: at,
+    createdAt: at,
+    reason: "Manager voided source session",
+    evidence: {
+      ...prior.evidence,
+      originalEventId: prior.id,
+      lines: prior.evidence.lines.map((row) => ({
+        ...row,
+        id: `void-${row.id}`,
+        baseAmount: `-${row.baseAmount}`,
+        units: `-${row.units}`,
+        businessDate: "2026-10-06",
+      })),
+    },
+  };
+  return {
+    original: input.original,
+    snapshots: [...input.snapshots, terminal],
+    events: [...input.events, reversal],
+  };
+}
+
+test("void retains correction history and reverses the latest source exactly once", () => {
+  const input = voidFixture();
+  const result = verifyPayrollRedemptionVoid(input);
+  assert.equal(result.previousRevision, 1);
+  assert.equal(result.corrections.length, 1);
+  assert.equal(result.originalEventId, "corrected-event");
+  assert.equal(result.session.baseAmount, "66.6667");
+});
+
+test("void rejects missing, duplicate, foreign, altered and non-exact evidence", () => {
+  const mutations: ((f: ReturnType<typeof voidFixture>) => void)[] = [
+    (f) => {
+      f.original.redemption.revertedAt = null;
+    },
+    (f) => {
+      f.snapshots.pop();
+    },
+    (f) => {
+      f.events.pop();
+    },
+    (f) => {
+      f.events.push(structuredClone(f.events.at(-1)!));
+    },
+    (f) => {
+      f.snapshots.at(-1)!.tenantId = "foreign";
+    },
+    (f) => {
+      f.snapshots.at(-1)!.actorId = "other";
+    },
+    (f) => {
+      f.snapshots.at(-1)!.eventHash = "0".repeat(64);
+    },
+    (f) => {
+      f.snapshots.at(-1)!.revision = 3;
+    },
+    (f) => {
+      f.events.at(-1)!.sourceId = "event";
+    },
+    (f) => {
+      f.events.at(-1)!.evidence.lines[0].baseAmount = "-1.0000";
+    },
+    (f) => {
+      f.events.at(-1)!.occurredAt = new Date("2026-10-07T00:00:00Z");
+    },
+  ];
+  for (const mutate of mutations) {
+    const input = voidFixture();
+    mutate(input);
+    assert.throws(() => verifyPayrollRedemptionVoid(input), /EVIDENCE_UNCONFIRMED/);
+  }
+});
+
 test("correction chain verifies original economics, request-order hash, new attribution and exact prior reversal", () => {
   const input = correctionFixture();
   const result = verifyPayrollRedemptionCorrections(input);
@@ -705,6 +806,51 @@ test("supplied holding inventory reconciles paid sessions and remaining original
     { first: 3, last: 3 },
   ]);
   input.collections[0].netCents = 6666n;
+  assert.throws(() => verifyPayrollPackageRedemptionInventory(input), /EVIDENCE_UNCONFIRMED/);
+});
+
+test("holding replay restores original ordinals and reuses them with unchanged residuals", () => {
+  const input = inventoryFixture();
+  const original = input.redemptions[0];
+  original.redemption.revertedAt = new Date("2026-09-16T00:00:00Z");
+  input.holding.quantityRemaining = 3;
+  input.holding.payrollAvailableOrdinals = [{ first: 1, last: 3 }];
+  const restored = verifyPayrollPackageRedemptionInventory(input);
+  assert.deepEqual(restored.remaining, [{ first: 1, last: 3 }]);
+  assert.equal(restored.redemptions[0].session.baseAmount, "66.6667");
+  const next = structuredClone(original);
+  next.redemption.id = "redraw";
+  next.redemption.saleId = "redraw-sale";
+  next.redemption.usedAt = new Date("2026-09-17T00:00:00Z");
+  next.redemption.revertedAt = null;
+  next.sale.id = "redraw-sale";
+  next.sale.soldAt = next.redemption.usedAt;
+  next.snapshot.id = "redraw-snapshot";
+  next.snapshot.redemptionId = "redraw";
+  next.snapshot.eventKey = "capture:redraw";
+  next.snapshot.evidence.evaluatedAt = next.redemption.usedAt.toISOString();
+  next.snapshot.eventHash = createHash("sha256")
+    .update(JSON.stringify(next.snapshot.evidence))
+    .digest("hex");
+  next.coverageLines[0].saleId = "redraw-sale";
+  next.event.id = "redraw-event";
+  next.event.sourceKey = "redemption:redraw:0";
+  next.event.sourceId = "redraw";
+  next.event.saleId = "redraw-sale";
+  next.event.occurredAt = next.redemption.usedAt;
+  next.event.createdAt = next.redemption.usedAt;
+  next.event.evidence.rateProvenance.rateAt = next.redemption.usedAt.toISOString();
+  for (const line of next.event.evidence.lines) {
+    line.id = `redraw-${line.id}`;
+    line.businessDate = "2026-09-17";
+  }
+  input.redemptions.push(next);
+  input.holding.quantityRemaining = 1;
+  input.holding.payrollAvailableOrdinals = [{ first: 3, last: 3 }];
+  assert.deepEqual(verifyPayrollPackageRedemptionInventory(input).remaining, [
+    { first: 3, last: 3 },
+  ]);
+  original.redemption.revertedAt = next.redemption.usedAt;
   assert.throws(() => verifyPayrollPackageRedemptionInventory(input), /EVIDENCE_UNCONFIRMED/);
 });
 

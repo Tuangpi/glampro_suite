@@ -15,7 +15,8 @@ const recordHash = (value: unknown) => payrollInputHash(JSON.parse(JSON.stringif
 /** Server-owned cross-holding coverage, not a public request-record verifier.
  * Complete sale inventory and every involved holding's history share the tenant
  * source lock. No current catalogue, inferred tender coverage or silent deduping.
- * Supports verified correction chains; value spending and voids remain blocked.
+ * Original coverage survives audited session voids; restoration does not reprice
+ * the completed receipt's ordinary units. Value spending and sale voids still block.
  */
 export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction, saleId: string) {
   const scope = currentScope();
@@ -63,8 +64,7 @@ export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction
         row.saleId !== saleId ||
         row.customerId !== sale.customerId ||
         row.itemType !== "PACKAGE" ||
-        !row.holdingId ||
-        row.revertedAt !== null,
+        !row.holdingId,
     ) ||
     events.some(
       (row) =>

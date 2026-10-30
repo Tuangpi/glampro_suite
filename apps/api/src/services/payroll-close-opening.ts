@@ -7,7 +7,7 @@ const id = z.string().trim().min(1).max(128);
 const nonpositive = payrollDecimalSchema.refine(
   (value) => !/[1-9]/.test(value) || value.startsWith("-"),
 );
-const openingSchema = z.object({
+export const payrollOpeningCarrySchema = z.object({
   id,
   tenantId: id,
   periodKey: payrollPeriodKeySchema,
@@ -35,7 +35,7 @@ const openingSchema = z.object({
     }),
   ),
 });
-export type PayrollOpeningCarry = z.input<typeof openingSchema>;
+export type PayrollOpeningCarry = z.input<typeof payrollOpeningCarrySchema>;
 
 /** Supplied cutover evidence only. Never creates balances or authorizes cutover.
  * Approval must precede the first month's boundary; later changes need revisions. */
@@ -44,7 +44,7 @@ export function resolvePayrollOpeningCarry(
   tenantId: string,
   periodKey: string,
 ) {
-  const opening = openingSchema.parse(raw);
+  const opening = payrollOpeningCarrySchema.parse(raw);
   if (opening.tenantId !== tenantId)
     throw new Error("Payroll opening carry contains another salon's records.");
   if (opening.periodKey !== periodKey) throw new Error("Payroll opening carry month mismatch.");

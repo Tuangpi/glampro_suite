@@ -57,6 +57,7 @@ export async function loadStoredPayrollCarry(
   tenantId: string,
   periodKey: string,
   replacingSettlementStaffId?: string,
+  validateSettlements = true,
 ) {
   const [year, month] = periodKey.split("-").map(Number);
   const previousKey = new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
@@ -86,15 +87,16 @@ export async function loadStoredPayrollCarry(
   if (!resolved.carry)
     throw conflict(
       "Authoritative payroll inputs unavailable: APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED.",
+      "PAYROLL_CARRY_UNAVAILABLE",
     );
-  const settlements = resolvePayrollCarrySettlements(
-    rows
-      .filter((row) => row.kind === "SETTLEMENT" && row.targetId !== replacingSettlementStaffId)
-      .map((row) => row.payload as unknown as PayrollCarrySettlement),
-    tenantId,
-    periodKey,
-    resolved.carry.staff,
-  );
+  const settlementPayloads = rows
+    .filter((row) => row.kind === "SETTLEMENT" && row.targetId !== replacingSettlementStaffId)
+    .map((row) => row.payload as unknown as PayrollCarrySettlement);
+  // Owner repair reads expose stale authorizations without making them valid
+  // calculation inputs. All calculation/approval callers retain full validation.
+  const settlements = validateSettlements
+    ? resolvePayrollCarrySettlements(settlementPayloads, tenantId, periodKey, resolved.carry.staff)
+    : settlementPayloads;
   return { carry, resolved: resolved.carry, settlements };
 }
 

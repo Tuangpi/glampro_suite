@@ -2,6 +2,67 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — private credit holding history (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Added internal locked loader
+  for complete private, untransferred, unreversed value-credit history. Reconciles
+  original paid/face-credit purchase, external collection/payment allocations,
+  independent GRANT/SPEND balance ledger, operational redemptions, receipt credit
+  tender totals, performers, cumulative four-decimal ratio and historical spend rates.
+- Real checkout purchase/three-spend/reload/residual and corrupted/missing evidence,
+  role/outlet/tenant refusal pass. Catalogue changes do not rewrite purchase value.
+  Voided/restored credit refuses; monthly prepaid close gate explicitly stays blocked.
+  Dedicated rate replay now uses STORED_CREDIT_SPEND rather than SERVICE.
+- Verified selected API 377 passed, zero failures, one opt-in CP-004 SQL lifecycle
+  suite skipped; four CP-005 isolated DB suites ran. Shared 302/302; API typecheck,
+  lint/build pass. Logs `/tmp/cp005-value-*` and exit markers. No web changes/checks
+  this continuation. Disposable PostgreSQL stopped; synthetic fixtures retained.
+- Next: sale-level ordinary/prepaid allocation and no-cash monthly reconciliation,
+  transfer/sharing and refund/void history, then plan-switch/performance, application
+  mounting and full HTTP/browser acceptance. Close screen/router still unmounted.
+  No application DB/schema changes, earnings activation, deployment, commit or push.
+
+## Previous checkpoint — owner carry authorization and repair
+
+- **CP-005 IN PROGRESS — owner carry authorization/repair (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Added owner-only opening
+  inventory and exact component mapping/write-off/fallback debt controls within the
+  still-unmounted close screen. Explicit reviewed inventory/reference/reason required;
+  no inferred zero balances, client actors, cash movement or earnings activation.
+- Owner carry reads now expose complete staff inventory, independent authorization
+  revisions, exact balance hashes and stale settlement flags. Missing opening or stale
+  disposition no longer prevents repair; default calculation/approval still validates
+  all evidence and refuses unresolved debt. Audit corruption still throws.
+- Verified selected API 306/306, including three isolated DB suites; expanded real
+  HTTP/DB carry authorization passes separately and in the final 306/306 rerun.
+  Selected web 40/40 and shared 302/302 pass. API/web types, lint and builds pass;
+  formatting and whitespace checks pass. Disposable PostgreSQL stopped cleanly,
+  synthetic fixtures retained. Logs `/tmp/cp005-carry-*` and matching exit markers.
+- Remaining: authoritative prepaid-credit spending/refund/void loading, application
+  mounting, full HTTP/browser/reconciliation/plan-switch/performance acceptance.
+  **Not DONE.** No application DB/schema changes, deployment, commit or push.
+
+## Previous checkpoint — restored sessions, partial FOC and close groundwork
+
+- **CP-005 IN PROGRESS — restored sessions, partial FOC and close groundwork
+  (October 30, 2026).** Latest completed CP-004; CP-003A/CP-006 untouched.
+- Implemented audited session-restoration inventory/ownership replay, original ordinal
+  reuse and monthly zero-cash reversal of the latest corrected source. Partial FOC
+  uses frozen checkout list price for independently verified uncovered units only.
+- Added close router and management screen, **both unmounted**: strict server-owned
+  inputs/actors, own frozen reads, opening/settlement actions, revision-bound calculation,
+  adjustments, owner approval and separate payout confirmation. Opening/settlement UI
+  and live persistence-through-HTTP/browser acceptance are not complete.
+- Verified selected API **306/306**, three isolated PostgreSQL suites, seven HTTP tests
+  with mocked persistence, zero skips; shared **302/302**; selected web **40/40**;
+  API/web types, lint and build pass. Logs `/tmp/cp005-complete-*` with exit markers.
+- Next: authoritative prepaid-credit spending/refund/void reconciliation, then remaining
+  opening/settlement UI, app integration and full close/race/frozen-history/performance/
+  browser acceptance. **CP-005 not DONE.** No application DB/schema changes, deployment,
+  earnings activation, commit or push. Existing disposable CP-005 DB only; stopped
+  cleanly after checks, synthetic fixtures retained. Formatting/whitespace pass.
+
+## Previous checkpoint — monthly correction reconciliation
+
 - **CP-005 IN PROGRESS — monthly correction reconciliation (October 30, 2026).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Complete operational snapshot
   inventory loads independently of payroll captures; verified chains feed monthly

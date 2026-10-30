@@ -64,11 +64,15 @@ export async function voidPayrollSession(
         action: "package.session.void",
         targetType: "CustomerRedemption",
         targetId: `session-void:${input.idempotencyKey}`,
+        // PostgreSQL now() is transaction-start time and can predate restoration.
+        createdAt: at,
         metadata: {
           requestHash: hash,
           redemptionId,
           saleId,
           actorId: actor.id,
+          actorRole: actor.globalRole,
+          request: input,
           reason: input.reason,
         },
       },

@@ -337,6 +337,40 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Private value-credit holding history continuation (October 30): internal loader
+  takes prepaid then tenant locks; verifies original purchase/external collections,
+  complete GRANT/SPEND balance ledger and operational usage/tender/split/ratio/rate
+  evidence. Dedicated STORED_CREDIT_SPEND rate replay and real checkout three-spend
+  residual/reload/corruption/refusal acceptance pass. Monthly prepaid gate remains
+  blocked: sale-level ordinary/prepaid allocation/no-cash integration, transfers/
+  sharing and refund/void restoration still need independent evidence. Selected API
+  377 passed, one opt-in CP-004 SQL lifecycle suite skipped, four CP-005 isolated DB
+  suites ran; shared 302/302; API types/lint/build pass. Logs `/tmp/cp005-value-*`.
+  No activation/mounting/application DB/schema changes. CP-005 is **not DONE**.
+- Owner carry authorization/repair continuation (October 30): added owner-only
+  explicit reviewed opening inventory, component mapping/write-off and exact fallback
+  debt write-off controls to the unmounted close screen. Read API returns complete
+  staff inventory, independent opening/settlement revisions, exact balance hashes and
+  stale flags without allowing missing/stale evidence into calculation or approval.
+  Real HTTP/DB acceptance verifies owner/manager refusal, revision conflicts, injected
+  actor refusal, server-stamped approval, repair and retry. Selected API 306/306,
+  expanded carry acceptance 1/1, selected web 40/40, shared 302/302; API/web types,
+  lint and builds pass. Logs `/tmp/cp005-carry-*`. Remaining lifecycle loaders,
+  mounting/full browser/reconciliation/performance acceptance still block DONE.
+- Restored-session/partial-FOC continuation (October 30): complete original ordinal,
+  quantity and ownership replay includes audited void restorations and subsequent
+  redraws. Monthly exact latest-source reversal contributes zero cash; request/hash/
+  revision/role corruption refuses without changing saved draft/audit. Partial FOC
+  separately values uncovered units from immutable checkout list price. Real writer
+  retry/reload, restored ordinal reuse, partial FOC and frozen prior-month checks pass.
+  Added unmounted close router (strict authenticated actions, carry authorizations,
+  own frozen reads) and unmounted management screen (calculation, adjustments, approval,
+  separate payout). Selected API **306/306**, including three isolated DB suites and
+  seven mocked-persistence real HTTP tests, zero skips; shared **302/302**, selected
+  web **40/40**; API/web typecheck, lint and build pass. Logs `/tmp/cp005-complete-*`.
+  **Not DONE:** authoritative prepaid-credit spending/refund/void loading, opening/
+  settlement UI, app mounting, live HTTP/browser workflows and final reconciliation/
+  race/performance acceptance remain. CP-003A/CP-006 untouched. No production activation.
 - Monthly correction reconciliation (October 30): complete operational inventory,
   revision-key matching, exact original/replacement lineage and independent zero-money
   reconciliation now support verified corrections internally. Two same-month revisions,

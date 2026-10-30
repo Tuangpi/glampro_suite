@@ -8,6 +8,22 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 restored sessions and partial FOC (October 30, 2026)
+
+- Replay draw, restoration and transfer timestamps against original grants. Restored
+  ordinals become available for subsequent draws without changing original per-session
+  residuals. Ambiguous ordering, duplicate restoration or inconsistent counters refuse.
+- A session void is not a sale void or cash refund. Retain original receipt coverage
+  and reverse only the latest attributed session source in the reversal month, with
+  independent operational void snapshot and authenticated request audit. New audits
+  retain request/revision and historical role for replay; legacy-unbound voids refuse.
+- Partial package FOC uses the original immutable checkout list price multiplied by
+  uncovered units only. Independently verified package coverage must exactly match
+  the checkout snapshot; do not infer covered units from a captured payroll base.
+- The close router and management component are implementation groundwork, deliberately
+  unmounted. Credit lifecycle, opening/settlement UI, live HTTP workflow acceptance
+  and full CP-005 performance/browser checks remain required before activation/DONE.
+
 ### CP-005 monthly correction reconciliation (October 30, 2026)
 
 - Complete correction snapshot inventory is independent of captured source IDs/dates.

@@ -144,3 +144,24 @@ test("untransferred holdings and no-draw transfers reconcile without invented us
   f.input.holding.customerId = "buyer";
   assert.equal(f.verify().customerId, "buyer");
 });
+
+test("ownership restores voided draws in timestamp order, including after expiry", () => {
+  const f = fixture();
+  f.input.redemptions[1].revertedAt = new Date("2026-09-05T00:00:00Z");
+  f.input.holding.expiresAt = new Date("2026-09-04T00:00:00Z");
+  f.input.transfers[0].expiresAt = f.input.holding.expiresAt;
+  f.input.holding.quantityRemaining = 2;
+  assert.deepEqual(f.verify(), { customerId: "recipient", quantityRemaining: 2 });
+  f.input.redemptions[1].revertedAt = new Date("2026-09-02T12:00:00Z");
+  assert.throws(f.verify, /PACKAGE_OWNERSHIP_UNCONFIRMED/);
+});
+
+test("restored sessions can be transferred without reassigning the original draw", () => {
+  const f = fixture();
+  f.input.redemptions[0].revertedAt = new Date("2026-09-01T12:00:00Z");
+  f.input.transfers[0].quantity = 3;
+  f.input.holding.quantityRemaining = 2;
+  assert.equal(f.verify().quantityRemaining, 2);
+  f.input.redemptions[0].revertedAt = f.input.transfers[0].createdAt;
+  assert.throws(f.verify, /PACKAGE_OWNERSHIP_UNCONFIRMED/);
+});

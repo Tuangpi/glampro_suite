@@ -13,12 +13,12 @@ const schema = z.object({
   listUnitPrice: z.string().regex(/^(0|[1-9]\d{0,9})\.\d{2}$/),
   netLineAmount: z.literal("0.00"),
   originalQuantity: z.number().int().safe().positive(),
-  coveredPackageQuantity: z.literal(0),
+  coveredPackageQuantity: z.number().int().safe().nonnegative(),
   category: id.nullable(),
 });
 
-/** Only wholly complimentary services with independently frozen checkout list
- * price are supported. Never use current catalogue or capture-asserted list price. */
+/** Reconcile frozen checkout economics against independently verified coverage.
+ * Only uncovered units earn FOC base; never use today's catalogue list price. */
 export function resolvePayrollFocEconomics(
   line: {
     id: string;
@@ -29,6 +29,7 @@ export function resolvePayrollFocEconomics(
     payrollEconomics: unknown;
   },
   soldAt: Date,
+  coveredPackageQuantity = 0,
 ) {
   const parsed = schema.safeParse(line.payrollEconomics);
   if (
@@ -38,6 +39,8 @@ export function resolvePayrollFocEconomics(
     parsed.data.itemId !== line.itemId ||
     line.itemType !== "SERVICE" ||
     parsed.data.originalQuantity !== line.quantity ||
+    parsed.data.coveredPackageQuantity !== coveredPackageQuantity ||
+    coveredPackageQuantity >= line.quantity ||
     parsed.data.soldAt !== soldAt.toISOString()
   )
     throw conflict(
@@ -47,7 +50,7 @@ export function resolvePayrollFocEconomics(
   const baseAmount = payrollSaleLineBase({
     foc: true,
     listUnitPrice: economics.listUnitPrice,
-    quantity: economics.originalQuantity,
+    quantity: economics.originalQuantity - economics.coveredPackageQuantity,
     netAmount: "0.0000",
     creditPaid: false,
     externalNetCents: null,

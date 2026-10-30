@@ -10,7 +10,11 @@ import {
 } from "@glampro_suite/shared";
 import { Prisma } from "../../generated/prisma/client.js";
 import { conflict } from "../lib/http-error.js";
-import { normalizeSessionRanges, takePackageSessions } from "../lib/package-valuation.js";
+import {
+  normalizeSessionRanges,
+  takePackageSessions,
+  restorePackageSessions,
+} from "../lib/package-valuation.js";
 import { holdingPackageRules } from "../lib/package-rules.js";
 import {
   redemptionCommissionEvidenceSchema,
@@ -446,11 +450,110 @@ export function verifyPayrollRedemptionCorrections(input: {
   }
 }
 
-/** Reconcile supplied, unreversed holding history. Callers must independently
+/** Verify the final VOID snapshot and exact reversal of the latest attribution.
+ * Restoration inventory and manager request authorization are separate prerequisites. */
+export function verifyPayrollRedemptionVoid(
+  input: Parameters<typeof verifyPayrollRedemptionCorrections>[0],
+) {
+  try {
+    const { original } = input;
+    const revertedAt = original.redemption.revertedAt;
+    if (!revertedAt || !Number.isFinite(revertedAt.getTime())) return fail();
+    const active = { ...original, redemption: { ...original.redemption, revertedAt: null } };
+    const snapshots = [...input.snapshots].sort((a, b) => a.revision - b.revision);
+    const terminal = snapshots.at(-1);
+    const previous = snapshots.at(-2);
+    if (
+      !terminal ||
+      !previous ||
+      terminal.eventType !== "VOID" ||
+      terminal.revision !== previous.revision + 1 ||
+      terminal.eventKey !== `void:${original.redemption.id}` ||
+      terminal.redemptionId !== original.redemption.id ||
+      terminal.tenantId !== original.tenantId ||
+      !terminal.actorId ||
+      !terminal.id ||
+      new Set(snapshots.map((row) => row.id)).size !== snapshots.length ||
+      new Set(snapshots.map((row) => row.eventKey)).size !== snapshots.length ||
+      terminal.reason !== "Source redemption voided; original attribution retained"
+    )
+      return fail();
+    const prior = input.events.find(
+      (row) => row.sourceKey === `redemption:${original.redemption.id}:${previous.revision}`,
+    );
+    if (!prior) return fail();
+    const reversals = input.events.filter(
+      (row) => row.sourceType === "REVERSAL" && row.sourceId === prior.id,
+    );
+    if (reversals.length !== 1) return fail();
+    const reversal = reversals[0];
+    const corrections = verifyPayrollRedemptionCorrections({
+      original: active,
+      snapshots: snapshots.slice(0, -1),
+      events: input.events.filter((row) => row.id !== reversal.id),
+    });
+    const evidence = redemptionCommissionEvidenceSchema.parse(terminal.evidence);
+    const expected = redemptionCommissionEvidenceSchema.parse({
+      ...redemptionCommissionEvidenceSchema.parse(previous.evidence),
+      previousSnapshotId: previous.id,
+    });
+    // Reconstruct schema ordering before replaying the writer's SHA-256 hash.
+    const restoredEvidence = structuredClone(evidence);
+    if (restoredEvidence.payrollSession?.purchase)
+      restoredEvidence.payrollSession.purchase = readPayrollPackagePurchase(
+        restoredEvidence.payrollSession.purchase,
+      );
+    if (
+      payrollInputHash(evidence) !== payrollInputHash(expected) ||
+      ![evidence, restoredEvidence].some(
+        (value) =>
+          terminal.eventHash === createHash("sha256").update(JSON.stringify(value)).digest("hex"),
+      ) ||
+      reversal.sourceKey !== `session-void:${original.redemption.id}:${prior.id}` ||
+      reversal.actorId !== terminal.actorId ||
+      reversal.reason !== "Manager voided source session" ||
+      reversal.occurredAt < prior.occurredAt ||
+      reversal.createdAt < reversal.occurredAt ||
+      reversal.occurredAt > revertedAt
+    )
+      return fail();
+    const parts = new Intl.DateTimeFormat("en", {
+      timeZone: original.timeZone,
+      year: "numeric",
+      month: "2-digit",
+    }).formatToParts(reversal.occurredAt);
+    const periodKey = ["year", "month"]
+      .map((type) => parts.find((row) => row.type === type)!.value)
+      .join("-");
+    if (
+      !resolvePayrollCloseSources({
+        tenantId: original.tenantId,
+        timeZone: original.timeZone,
+        periodKey,
+        events: [{ ...reversal, sourceType: "REVERSAL" }],
+        lineageEvents: [{ ...prior, sourceType: previous.revision ? "CORRECTION" : "REDEMPTION" }],
+      }).sources
+    )
+      return fail();
+    return {
+      corrections,
+      snapshotId: terminal.id,
+      reversalEventId: reversal.id,
+      originalEventId: prior.id,
+      actorId: terminal.actorId,
+      previousRevision: previous.revision,
+      ...verifyPayrollPackageRedemption(active),
+    };
+  } catch {
+    return fail();
+  }
+}
+
+/** Replay supplied draws and restorations. Callers must independently
  * inventory ALL redemptions/collections and reconcile each receipt's operational
  * payment and tax evidence first. This is not an authoritative loader, transfer
  * verifier or manager-PIN verifier. Unpaid draws require sale-bound writer audits;
- * ownership/transfer authorization remains an independent caller prerequisite.
+ * ownership/transfer and void authorization remain independent caller prerequisites.
  */
 export function verifyPayrollPackageRedemptionInventory(input: {
   tenantId: string;
@@ -558,18 +661,53 @@ export function verifyPayrollPackageRedemptionInventory(input: {
     const redemptions = [...input.redemptions].sort(
       (a, b) => a.redemption.usedAt.getTime() - b.redemption.usedAt.getTime(),
     );
+    const restorations = redemptions
+      .filter((row) => row.redemption.revertedAt !== null)
+      .map((row) => ({
+        at: row.redemption.revertedAt!.getTime(),
+        row,
+        result: verifyPayrollPackageRedemption({
+          ...row,
+          redemption: { ...row.redemption, revertedAt: null },
+        }),
+      }))
+      .sort((a, b) => a.at - b.at);
+    let restored = 0;
+    const restore = (before: number) => {
+      while (restored < restorations.length && restorations[restored].at < before) {
+        const entry = restorations[restored++];
+        if (
+          !Number.isFinite(entry.at) ||
+          entry.at <= entry.row.redemption.usedAt.getTime() ||
+          (previousAt !== null && entry.at <= previousAt)
+        )
+          return fail();
+        remaining = restorePackageSessions(
+          purchase.grantedSessions,
+          remaining,
+          entry.result.session.ordinals!,
+        );
+        used -= entry.row.redemption.quantity;
+        previousAt = entry.at;
+      }
+    };
     for (const row of redemptions) {
       const at = row.redemption.usedAt.getTime();
+      restore(at);
       if (
         !Number.isFinite(at) ||
         previousAt === at ||
+        restorations.some((entry) => entry.at === at) ||
         row.tenantId !== tenantId ||
         row.redemption.holdingId !== holding.id ||
         payrollInputHash(row.purchase) !== payrollInputHash(purchase) ||
         payrollInputHash(row.redemptionRules) !== payrollInputHash(holding.redemptionRules)
       )
         return fail();
-      const result = verifyPayrollPackageRedemption(row);
+      const result = verifyPayrollPackageRedemption({
+        ...row,
+        redemption: { ...row.redemption, revertedAt: null },
+      });
       // Equal timestamps cannot establish whether a receipt preceded the draw.
       if (input.collections.some((receipt) => receipt.occurredAt.getTime() === at)) return fail();
       const collected = input.collections
@@ -616,6 +754,7 @@ export function verifyPayrollPackageRedemptionInventory(input: {
       verified.push({ redemptionId: row.redemption.id, ...result });
       previousAt = at;
     }
+    restore(Infinity);
     if (
       consumedOverrides.size !== overrides.length ||
       used !== holding.quantity - holding.quantityRemaining ||

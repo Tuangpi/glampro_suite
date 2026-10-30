@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
+import type { AddressInfo } from "node:net";
+import express from "express";
 import { PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
@@ -9,7 +11,10 @@ import {
   loadStoredPayrollCarry,
 } from "./payroll-close-authorizations.js";
 import { payrollInputHash } from "./payroll-close-state.js";
-import { calculateStoredPayrollClose } from "./payroll-close-store.js";
+import { calculateStoredPayrollClose, readStoredPayrollCarry } from "./payroll-close-store.js";
+import { payrollCloseRouter } from "../routes/payroll-close.routes.js";
+import { errorHandler } from "../middleware/errorHandler.js";
+import { signAccessToken } from "../lib/tokens.js";
 
 test(
   "CP-005 isolated owner opening/settlement authorization, revisions, isolation and immutable evidence",
@@ -48,6 +53,7 @@ test(
         request,
         "Reviewed complete opening inventory",
       );
+    let server: ReturnType<ReturnType<typeof express>["listen"]> | undefined;
     try {
       await runAsPlatform(async () => {
         for (const id of [tenantId, otherTenant])
@@ -102,6 +108,20 @@ test(
           /every salon staff/,
         );
         assert.equal(await prisma.payrollCarryAuthorization.count(), 0);
+        const missingCarry = await readStoredPayrollCarry(period);
+        assert.equal(missingCarry.availability, "UNAVAILABLE");
+        assert.equal(missingCarry.openingEligible, true);
+        assert.equal(missingCarry.openingRevision, 0);
+        assert.equal(missingCarry.staffInventory.length, 4);
+        assert.equal(missingCarry.staffInventory.find((row) => row.id === staffId)!.disabled, true);
+        await assert.rejects(
+          scope(() => readStoredPayrollCarry(period), managerId),
+          /not permitted/,
+        );
+        await assert.rejects(
+          runAtOutlet("branch", () => readStoredPayrollCarry(period)),
+          /salon-wide/,
+        );
         const race = await Promise.allSettled([save(), save()]);
         assert.equal(race.filter((row) => row.status === "fulfilled").length, 1);
         assert.equal(race.filter((row) => row.status === "rejected").length, 1);
@@ -183,6 +203,16 @@ test(
         request.staff.find((row) => row.staffId === staffId)!.fallbackCarryCommission =
           "-13.1234567890";
         await save(1);
+        const repair = await readStoredPayrollCarry(period);
+        assert.equal(repair.availability, "READY");
+        assert.equal(repair.openingRevision, 2);
+        assert.equal(repair.settlements[0].stale, true);
+        assert.equal(repair.settlements[0].revision, 1);
+        const repairedBalance = repair.balances.find((row) => row.staffId === staffId)!;
+        assert.equal(
+          repairedBalance.balanceHash,
+          payrollInputHash(request.staff.find((row) => row.staffId === staffId)!),
+        );
         await assert.rejects(
           prisma.$transaction((tx) => loadStoredPayrollCarry(tx, tenantId, period)),
           /balance changed/,
@@ -205,7 +235,74 @@ test(
           loadStoredPayrollCarry(tx, tenantId, period),
         );
         assert.equal(repaired.settlements[0].revision, 2);
+        assert.equal((await readStoredPayrollCarry(period)).settlements[0].stale, false);
         assert.equal(repaired.settlements[0].fallbackWriteOff!.amount, "-13.1234567890");
+        // Real HTTP authentication, authorization and persistence, not mocked delegates.
+        const staffModule = await prisma.module.upsert({
+          where: { code: "staff" },
+          update: {},
+          create: { code: "staff", name: "Staff", category: "Core", isCore: true },
+        });
+        await prisma.tenantModule.create({ data: { tenantId, moduleId: staffModule.id } });
+        const app = express();
+        app.use(express.json());
+        app.use("/payroll-close", payrollCloseRouter);
+        app.use(errorHandler);
+        server = await new Promise<ReturnType<typeof app.listen>>((resolve) => {
+          const listener = app.listen(0, "127.0.0.1", () => resolve(listener));
+        });
+        const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}/payroll-close/${period}`;
+        const http = (path: string, body?: object, manager = false) =>
+          fetch(`${base}/${path}`, {
+            method: body ? "POST" : "GET",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${
+                signAccessToken({
+                  id: manager ? managerId : ownerId,
+                  email: `${manager ? managerId : ownerId}@example.test`,
+                  tenantId,
+                  globalRole: manager ? "MANAGER" : "SUPER_ADMIN",
+                  realm: "web",
+                  tokenVersion: 0,
+                }).token
+              }`,
+            },
+            ...(body ? { body: JSON.stringify(body) } : {}),
+          });
+        assert.equal((await http("carry", undefined, true)).status, 403);
+        const carryResponse = await http("carry");
+        assert.equal(carryResponse.status, 200);
+        const carryView = (await carryResponse.json()).data;
+        assert.equal(carryView.openingRevision, 2);
+        assert.equal(carryView.settlements[0].revision, 2);
+        assert.equal(
+          carryView.balances.find((row: { staffId: string }) => row.staffId === staffId)
+            .balanceHash,
+          payrollInputHash(changedBalance),
+        );
+        const settlementBody = {
+          expectedRevision: 2,
+          ...settlement,
+          balanceHash: payrollInputHash(changedBalance),
+          fallbackWriteOff: { amount: changedBalance.fallbackCarryCommission },
+          reason: "HTTP reviewed exact changed debt",
+        };
+        assert.equal(
+          (await http("settlements", { ...settlementBody, expectedRevision: 1 })).status,
+          409,
+        );
+        assert.equal(
+          (await http("settlements", { ...settlementBody, actorId: "forged" })).status,
+          422,
+        );
+        const savedSettlement = await http("settlements", settlementBody);
+        assert.equal(savedSettlement.status, 200);
+        const savedPayload = (await savedSettlement.json()).data;
+        assert.equal(savedPayload.revision, 3);
+        assert.equal(savedPayload.approval.actorId, ownerId);
+        assert.equal((await http("settlements", settlementBody)).status, 409);
+        assert.equal((await readStoredPayrollCarry(period)).settlements[0].revision, 3);
         for (const [kind, targetId, payload] of [
           ["SETTINGS", "company", PAYROLL_DEFAULT_SETTINGS],
           ...request.staff.flatMap((row) => [
@@ -260,6 +357,10 @@ test(
         );
       });
     } finally {
+      if (server)
+        await new Promise<void>((resolve, reject) =>
+          server!.close((error) => (error ? reject(error) : resolve())),
+        );
       await prisma.$disconnect();
     }
   },

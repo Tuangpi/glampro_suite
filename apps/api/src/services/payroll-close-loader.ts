@@ -144,7 +144,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       orderBy: { id: "asc" },
     }),
   ]);
-  if (redemptions.some((row) => row.itemType !== "PACKAGE" || row.revertedAt !== null))
+  if (redemptions.some((row) => row.itemType !== "PACKAGE"))
     unavailable("REDEMPTION_WORKFLOW_NOT_LOADED");
   if (
     refunds.length ||
@@ -167,7 +167,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     const redemption = await tx.customerRedemption.findFirst({
       where: { tenantId, id: redemptionId },
     });
-    if (!redemption || redemption.itemType !== "PACKAGE" || redemption.revertedAt !== null)
+    if (!redemption || redemption.itemType !== "PACKAGE")
       unavailable("CORRECTION_OPERATION_UNCONFIRMED");
     correctionRedemptions.push(redemption);
   }
@@ -223,7 +223,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     if (covered.evidence.redemptions.length !== usageCount)
       unavailable("SALE_PACKAGE_COVERAGE_UNCONFIRMED");
     const monthly = covered.evidence.redemptions.filter(
-      (row) => row.usedAt >= from && row.usedAt < to,
+      (row) =>
+        (row.usedAt >= from && row.usedAt < to) ||
+        (row.revertedAt && row.revertedAt >= from && row.revertedAt < to),
     );
     const inventoried = redemptions.filter((row) => row.saleId === saleId);
     if (
@@ -253,6 +255,49 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const correctionEvidence = [];
   for (const covered of saleCoverage.values()) {
     for (const history of covered.evidence.histories) {
+      for (const restored of history.voids) {
+        const reversal = history.evidence.correctionReversals.find(
+          (row) => row.id === restored.reversalEventId,
+        )!;
+        if (reversal.occurredAt < from || reversal.occurredAt >= to) continue;
+        if (operations.some((row) => row.sourceKey === reversal.sourceKey)) continue;
+        const inventoried = events.filter((row) => row.id === reversal.id);
+        if (
+          inventoried.length !== 1 ||
+          payrollInputHash(snapshot(inventoried[0])) !== payrollInputHash(snapshot(reversal))
+        )
+          unavailable("SESSION_VOID_MONTH_CAPTURE_UNCONFIRMED");
+        const original = history.evidence.related.find(
+          (row) => row.id === restored.originalEventId,
+        )!;
+        operations.push({
+          tenantId,
+          sourceType: "REVERSAL",
+          sourceId: reversal.sourceId,
+          sourceKey: reversal.sourceKey,
+          saleId: reversal.saleId,
+          outletId: reversal.outletId,
+          occurredAt: reversal.occurredAt,
+          evidence: snapshot(restored),
+        });
+        if (!events.some((row) => row.id === original.id)) lineage.set(original.id, original);
+        noCashReversals.push({
+          id: restored.snapshotId,
+          tenantId,
+          eventId: reversal.id,
+          originalEventId: original.id,
+          originalSourceId: original.sourceId,
+          originalSourceType: original.sourceType as "REDEMPTION" | "CORRECTION",
+          saleId: original.saleId,
+          outletId: original.outletId,
+          occurredAt: reversal.occurredAt,
+          currency: "SGD",
+          netCents: "0",
+          taxCents: "0",
+          grossCents: "0",
+          evidence: snapshot(restored),
+        });
+      }
       for (const chain of history.corrections) {
         if (!correctionRedemptions.some((row) => row.id === chain.redemptionId)) continue;
         for (const revision of chain.revisions) {
@@ -327,6 +372,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   )
     unavailable("CORRECTION_OPERATION_UNCONFIRMED");
   for (const redemption of redemptions) {
+    if (redemption.usedAt < from || redemption.usedAt >= to) continue;
     const covered = saleCoverage.get(redemption.saleId)!;
     const capture = covered.evidence.captures.find((row) => row.sourceId === redemption.id);
     const monthly = events.filter(
@@ -414,9 +460,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         continue;
       }
       const gross = line.lineTotal.minus(line.voucherDiscountAmount);
-      if (quantity !== line.quantity && gross.isZero())
-        unavailable("PARTIAL_PACKAGE_FOC_NOT_LOADED");
-      const foc = gross.isZero() ? resolvePayrollFocEconomics(line, sale.soldAt) : null;
+      const foc = gross.isZero()
+        ? resolvePayrollFocEconomics(line, sale.soldAt, line.quantity - quantity)
+        : null;
       if (foc && !line.taxAmount.isZero()) unavailable("FOC_OPERATIONAL_TAX_MISMATCH");
       const event = events.find(
         (row) => row.sourceType === "SALE_LINE" && row.sourceId === line.id,

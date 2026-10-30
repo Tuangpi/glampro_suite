@@ -6,7 +6,82 @@
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
-## Latest checkpoint — monthly correction reconciliation
+## Latest checkpoint — private value-credit holding history
+
+- Internal `loadPayrollValueSpendHistory` reads complete tenant-scoped operational
+  purchase/collection/payment/redemption/balance/source/rate inventories under the
+  same prepaid-then-tenant lock order as writers. Private untransferred credit only;
+  legacy OPENING, sharing, transfers, refunds and restorations fail closed.
+- Spend verifier recomputes cumulative paid/credit ratio and performer split/units,
+  matches operational identity/timestamps and frozen purchase, and independently
+  replays STORED_CREDIT_SPEND rates. Independent balance chain must start at GRANT,
+  consume every operational spend exactly once and reach current remaining credit.
+- Real checkout acceptance covers purchase, three spends (83.3333 + 83.3334 +
+  83.3333 = 250.0000), stable reloads, later catalogue edits, missing and corrupted
+  ledgers/captures/collections/redemptions/tenders/rates, orphan usage, role/outlet/
+  tenant refusal and void-restoration refusal. No close/audit records are created;
+  default monthly prepaid loading still refuses. Holding readiness is not proof
+  of sale-wide ordinary/prepaid allocation or no-double-base reconciliation.
+- Selected API: 377 passed, zero failures, one opt-in CP-004 SQL lifecycle suite
+  skipped; four CP-005 isolated database suites ran. Shared 302/302; API types,
+  lint/build pass. Logs `/tmp/cp005-value-*`. No web checks in this continuation.
+- Next: authoritative sale-level allocation and monthly no-cash reconciliation;
+  transfer/sharing and refund/void history; plan-switch/performance and application
+  mounting/full browser acceptance. CP-005 remains IN PROGRESS and non-activating.
+
+## Previous checkpoint — owner carry authorization and repair
+
+- Added owner-only controls in the unmounted close screen for explicit opening
+  inventory, component mapping/write-off and exact fallback debt write-off. All
+  authorizations require evidence reference, reason and explicit review confirmation;
+  edits/conflicts reset confirmation and reload authoritative revisions. Opening
+  inventory is never auto-filled with assumed zero balances. Settlement replacement
+  semantics and no-cash/non-activation behavior are disclosed.
+- Fixed the owner read contract so missing opening and stale settlements can be
+  repaired: complete staff inventory (including departed), opening eligibility,
+  independent authorization revisions, exact balance hashes and stale flags. Only
+  repair reads bypass settlement resolution; default calculation and approval still
+  refuse unresolved evidence. Audit inconsistency continues to throw.
+- Selected API 306/306 (three isolated PostgreSQL suites, zero skips), then expanded
+  carry suite 1/1 with real HTTP/auth/DB persistence. Covers manager/outlet refusal,
+  missing-opening inventory, changed-balance repair, stale revision, injected actor,
+  server-owned approval identity and retry conflict. Selected web 40/40, shared
+  302/302; API/web typecheck/lint/build pass. Logs `/tmp/cp005-carry-*`.
+- CP-005 remains IN PROGRESS. Prepaid-credit spending/refund/void loading,
+  app mounting and full browser/reconciliation/plan-switch/performance acceptance
+  remain outstanding. No application DB/schema changes or earnings activation.
+
+## Previous checkpoint — restored sessions, partial FOC and close groundwork
+
+- Original grant/ordinal/quantity/ownership replay now includes restoration and redraw.
+  Verified VOID snapshots link the latest attribution, exact source reversal and a
+  historical manager/owner request audit (reason, revision, identity and request hash).
+  Legacy-unbound evidence refuses; no backfill. Writer stamps audit time explicitly
+  because PostgreSQL transaction-start time can precede restoration.
+- Isolated real writer verifies a void after three corrections, idempotent retry,
+  restored quantity, exact latest 5/5 reversal, zero collection and stable monthly
+  reload. Five read-only audit corruptions preserve draft/audit. Approved September,
+  October and February calculations remain unchanged. Restored ordinal one is redrawn
+  in April at original 10.0000 value alongside a distinct 492.0000 uncovered FOC unit.
+- Partial package FOC now independently matches checkout covered quantity to verified
+  cross-holding coverage, applying list price only to uncovered units. Full coverage
+  cannot create an ordinary FOC source. Tests reject changed price/identity/coverage.
+- Close router groundwork includes manager reads/calculation/adjustments, owner approval,
+  payout and carry authorization, and own frozen-statement reads. The management screen
+  handles explicit months, stale revision reload, adjustments, frozen status and separate
+  payout. **Neither is mounted into the application.** Opening/settlement UI is absent.
+- Fresh selected API **306/306**, zero skips, including all three isolated PostgreSQL
+  suites and seven real HTTP/auth tests with mocked persistence; shared **302/302**;
+  selected payroll web **40/40**. API/web typecheck, lint and build pass. Logs and exit
+  markers `/tmp/cp005-complete-*`. These are focused regressions, not full-workspace,
+  browser or performance acceptance. No new migration or application database access.
+  Disposable PostgreSQL stopped cleanly after checks; synthetic fixtures retained.
+- Remaining: authoritative prepaid-credit spending/refund/void loading; opening/
+  settlement UI and application mounting; live HTTP/browser permissions and workflows,
+  remaining transactional/reconciliation/plan-switch/performance checks. Existing
+  unsupported refund/sale-void gates remain. CP-005 is **IN PROGRESS, not DONE**.
+
+## Previous checkpoint — monthly correction reconciliation
 
 - Complete operational correction inventory and full verified holding chains now
   reconcile monthly revision-key operations, exact preceding-source reversals and

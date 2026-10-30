@@ -26,6 +26,7 @@ import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import { openPayrollClose } from "./payroll-close-state.js";
 import { transferSessionPackage } from "./session-transfer.service.js";
 import { hashPassword } from "../lib/password.js";
+import { voidPayrollSession } from "./payroll-session-void.js";
 import { z } from "zod";
 
 test(
@@ -1614,6 +1615,258 @@ test(
         assert.equal(
           payrollInputHash((frozenAfterUsage.state as unknown as typeof approved).calculation),
           frozenSeptember,
+        );
+        // Real session void after three attribution revisions: restore exactly
+        // the original ordinal, reverse only the latest source, and add no cash.
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date("2027-03-04T00:00:00Z") });
+        const beforeVoid = await prisma.customerPackageHolding.findFirstOrThrow({
+          where: { id: packageHolding.id },
+        });
+        const voidRequest = {
+          expectedRevision: 3,
+          idempotencyKey: randomUUID(),
+          reason: "Synthetic restored session monthly acceptance",
+        };
+        const voidResult = await voidPayrollSession(
+          correctedRedemption.saleId,
+          correctedRedemption.id,
+          voidRequest,
+        );
+        assert.ok(voidResult.revertedAt);
+        assert.deepEqual(
+          await voidPayrollSession(correctedRedemption.saleId, correctedRedemption.id, voidRequest),
+          voidResult,
+        );
+        const restoredHistory = await prisma.$transaction((tx) =>
+          loadPayrollPackageRedemptionHistory(tx, packageHolding.id),
+        );
+        assert.equal(restoredHistory.voids.length, 1);
+        assert.equal(
+          restoredHistory.evidence.holding.quantityRemaining,
+          beforeVoid.quantityRemaining + 1,
+        );
+        const beforeVoidMonth = await prisma.payrollClose.findFirstOrThrow({
+          where: { periodKey: "2027-03" },
+        });
+        const voidMonth = await calculateStoredPayrollClose("2027-03", beforeVoidMonth.revision);
+        assert.deepEqual(
+          voidMonth
+            .calculation!.inputs.staff.flatMap((row) => {
+              assert.equal(row.collection, "0.0000");
+              return row.calculation.lines.map((line) => line.baseAmount);
+            })
+            .sort(),
+          ["-2.5000", "-7.5000", "5.0000", "5.0000", "-5.0000", "-5.0000"].sort(),
+        );
+        assert.equal(
+          (await calculateStoredPayrollClose("2027-03", voidMonth.revision)).calculation!.inputHash,
+          voidMonth.calculation!.inputHash,
+        );
+        for (const corruption of ["MISSING", "HASH", "ROLE", "REQUEST", "REVISION"] as const) {
+          const before = await prisma.payrollClose.findFirstOrThrow({
+            where: { periodKey: "2027-03" },
+          });
+          const count = await prisma.payrollCloseEvent.count({ where: { periodKey: "2027-03" } });
+          const altered: PayrollCloseLoader = (tx, state) =>
+            loadAuthoritativePayrollCloseInputs(
+              new Proxy(tx, {
+                get(target, property) {
+                  if (property !== "auditLog") return Reflect.get(target, property);
+                  return new Proxy(target.auditLog, {
+                    get(delegate, method) {
+                      if (method !== "findMany") return Reflect.get(delegate, method);
+                      return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                        const rows = await delegate.findMany(args);
+                        if (args?.where?.action !== "package.session.void") return rows;
+                        if (corruption === "MISSING") return [];
+                        return rows.map((row) => {
+                          const metadata = { ...(row.metadata as Record<string, unknown>) };
+                          if (corruption === "HASH") metadata.requestHash = "0".repeat(64);
+                          if (corruption === "ROLE") metadata.actorRole = "STAFF";
+                          if (corruption === "REQUEST") delete metadata.request;
+                          if (corruption === "REVISION")
+                            metadata.request = { ...voidRequest, expectedRevision: 0 };
+                          return { ...row, metadata };
+                        });
+                      };
+                    },
+                  });
+                },
+              }),
+              state,
+            );
+          await assert.rejects(
+            calculateStoredPayrollClose("2027-03", before.revision, altered),
+            /HISTORY_UNCONFIRMED/,
+          );
+          assert.equal(
+            await prisma.payrollCloseEvent.count({ where: { periodKey: "2027-03" } }),
+            count,
+          );
+          assert.equal(
+            payrollInputHash(
+              (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: "2027-03" } }))
+                .state,
+            ),
+            payrollInputHash(before.state),
+          );
+        }
+        for (const [periodKey, expected] of [
+          ["2026-09", frozenSeptember],
+          ["2026-10", frozenOctober],
+          ["2027-02", frozenFebruary],
+        ]) {
+          const stored = await prisma.payrollClose.findFirstOrThrow({ where: { periodKey } });
+          assert.equal(
+            payrollInputHash((stored.state as unknown as typeof approved).calculation),
+            expected,
+          );
+        }
+        // Reuse the restored lowest ordinal in a partially package-covered FOC
+        // line. Original package value and independent checkout list price must
+        // remain separate; neither operation represents current external cash.
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date("2027-04-02T00:00:00Z") });
+        await prisma.$transaction(async (tx) => {
+          const usage = await runAtOutlet(outlet.id, () =>
+            tx.sale.create({
+              data: {
+                tenantId,
+                customerId: recipient.id,
+                outletId: outlet.id,
+                status: "COMPLETED",
+                collectionCurrency: "SGD",
+                totalQuantity: 2,
+                totalAmount: "0",
+                paidAmount: "0",
+                soldAt: new Date(),
+              },
+            }),
+          );
+          const line = await tx.saleLine.create({
+            data: {
+              tenantId,
+              saleId: usage.id,
+              itemType: "SERVICE",
+              itemId: complimentary.id,
+              itemName: "Partially covered FOC",
+              quantity: 2,
+              unitPrice: "492",
+              lineTotal: "0",
+              attribution: { performers: shares },
+            },
+          });
+          await tx.saleLine.update({
+            where: { id: line.id },
+            data: {
+              payrollEconomics: {
+                version: 1,
+                saleId: usage.id,
+                saleLineId: line.id,
+                itemId: complimentary.id,
+                itemType: "SERVICE",
+                soldAt: usage.soldAt.toISOString(),
+                listUnitPrice: "492.00",
+                netLineAmount: "0.00",
+                originalQuantity: 2,
+                coveredPackageQuantity: 1,
+                category: null,
+              },
+            },
+          });
+          const draw = await drawPayrollPackageSessions(tx, packageHolding.id, 1);
+          assert.deepEqual(draw.ordinals, [{ first: 1, last: 1 }]);
+          const redemption = await tx.customerRedemption.create({
+            data: {
+              tenantId,
+              customerId: recipient.id,
+              saleId: usage.id,
+              itemType: "PACKAGE",
+              itemId: sessionPackage.id,
+              holdingId: packageHolding.id,
+              quantity: 1,
+              usedAt: new Date(),
+            },
+          });
+          await tx.customerPackageHolding.update({
+            where: { id: packageHolding.id },
+            data: {
+              quantityRemaining: { decrement: 1 },
+            },
+          });
+          await captureRedemptionCommission(
+            tx,
+            redemption.id,
+            [
+              {
+                saleLineId: line.id,
+                serviceId: complimentary.id,
+                quantity: 1,
+                performers: shares,
+              },
+            ],
+            undefined,
+            draw,
+          );
+          await tx.salePayment.create({
+            data: {
+              tenantId,
+              saleId: usage.id,
+              method: "PACKAGE",
+              amount: "0",
+              createdAt: new Date(),
+            },
+          });
+          await appendPayrollSource(tx, {
+            sourceKey: `sale-line:${line.id}`,
+            sourceType: "SALE_LINE",
+            sourceId: line.id,
+            saleId: usage.id,
+            occurredAt: usage.soldAt,
+            reason: "Uncovered complimentary unit",
+            commissionType: "FOC",
+            baseAmount: "492.0000",
+            units: "1.0000",
+            shares,
+            itemId: complimentary.id,
+            category: null,
+          });
+        });
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date("2027-05-01T00:00:00Z") });
+        const marchStored = await prisma.payrollClose.findFirstOrThrow({
+          where: { periodKey: "2027-03" },
+        });
+        await assert.rejects(
+          approveStoredPayrollClose(
+            "2027-03",
+            marchStored.revision,
+            "Later holding activity invalidates draft",
+          ),
+          /inputs changed/,
+        );
+        const marchRefreshed = await calculateStoredPayrollClose("2027-03", marchStored.revision);
+        await approveStoredPayrollClose(
+          "2027-03",
+          marchRefreshed.revision,
+          "Verified restored session month",
+        );
+        const april = await calculateStoredPayrollClose("2027-04", 0);
+        const aprilStaff = april.calculation!.inputs.staff.find((row) => row.staff.id === staffId)!;
+        assert.equal(aprilStaff.collection, "0.0000");
+        assert.deepEqual(
+          aprilStaff.calculation.lines
+            .map((line) => [line.commissionType, line.baseAmount, line.units])
+            .sort(),
+          [
+            ["FOC", "492.0000", "1.0000"],
+            ["PKG_RED", "10.0000", "1.0000"],
+          ].sort(),
+        );
+        assert.equal(
+          (await calculateStoredPayrollClose("2027-04", april.revision)).calculation!.inputHash,
+          april.calculation!.inputHash,
         );
       });
     } finally {

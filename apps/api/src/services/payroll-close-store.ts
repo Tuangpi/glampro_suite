@@ -2,10 +2,15 @@ import { z } from "zod";
 import { payrollPeriodKeySchema, type PayrollAdjustment } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { currentOutletId, currentScope } from "../lib/tenant-context.js";
-import { conflict, forbidden, notFound } from "../lib/http-error.js";
+import { conflict, forbidden, notFound, HttpError } from "../lib/http-error.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
+import {
+  loadStoredPayrollCarry,
+  verifiedCarryAuthorizations,
+} from "./payroll-close-authorizations.js";
+import { resolvePayrollCarrySettlements } from "./payroll-close-settlements.js";
 import {
   adjustPayrollClose,
   approvePayrollClose,
@@ -262,5 +267,78 @@ export async function readStoredPayrollStatement(period: string, staffId: string
       disabled: user.disabled,
       twoFactorEnabled: user.twoFactorEnabled,
     });
+  });
+}
+
+/** Management read, never an implicit calculation or source reload. */
+export async function readStoredPayrollClose(period: string) {
+  const scope = context();
+  const periodKey = payrollPeriodKeySchema.parse(period);
+  return prisma.$transaction(async (tx) => {
+    await lockCommissionConfiguration(tx, scope.tenantId);
+    await actor(tx, false);
+    return structuredClone(
+      (await verifiedPayrollClose(tx, periodKey))?.state ?? openPayrollClose(periodKey),
+    );
+  });
+}
+
+/** Owner-only carry read in the same transaction as authorization and locking. */
+export async function readStoredPayrollCarry(period: string) {
+  const scope = context();
+  const periodKey = payrollPeriodKeySchema.parse(period);
+  return prisma.$transaction(async (tx) => {
+    await lockCommissionConfiguration(tx, scope.tenantId);
+    await actor(tx, true);
+    const staffInventory = await tx.user.findMany({
+      where: { tenantId: scope.tenantId },
+      select: { id: true, name: true, disabled: true },
+      orderBy: { id: "asc" },
+    });
+    const authorizations = verifiedCarryAuthorizations(
+      await tx.payrollCarryAuthorization.findMany({
+        where: { tenantId: scope.tenantId, kind: "OPENING" },
+      }),
+      scope.tenantId,
+    );
+    const opening = authorizations.find((row) => row.periodKey === periodKey);
+    const openingEligible =
+      !authorizations.some((row) => row.periodKey !== periodKey) &&
+      !(await tx.payrollClose.count({
+        where: { tenantId: scope.tenantId, periodKey: { not: periodKey } },
+      }));
+    const metadata = {
+      periodKey,
+      staffInventory,
+      openingEligible,
+      openingRevision: opening?.revision ?? 0,
+      opening: opening?.payload ?? null,
+    };
+    let loaded;
+    try {
+      loaded = await loadStoredPayrollCarry(tx, scope.tenantId, periodKey, undefined, false);
+    } catch (error) {
+      if (!(error instanceof HttpError) || error.code !== "PAYROLL_CARRY_UNAVAILABLE") throw error;
+      return { ...metadata, availability: "UNAVAILABLE" as const, balances: [], settlements: [] };
+    }
+    const balances = loaded.resolved.staff.map((balance) => ({
+      ...balance,
+      balanceHash: payrollInputHash(balance),
+    }));
+    const settlements = loaded.settlements.map((settlement) => {
+      let stale = false;
+      try {
+        resolvePayrollCarrySettlements(
+          [settlement],
+          scope.tenantId,
+          periodKey,
+          loaded.resolved.staff,
+        );
+      } catch {
+        stale = true;
+      }
+      return { ...settlement, stale };
+    });
+    return { ...metadata, availability: "READY" as const, balances, settlements };
   });
 }

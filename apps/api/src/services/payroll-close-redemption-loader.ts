@@ -1,4 +1,5 @@
-import { minimumPayrollPackageDeposit } from "@glampro_suite/shared";
+import { createHash } from "node:crypto";
+import { minimumPayrollPackageDeposit, voidPayrollSessionSchema } from "@glampro_suite/shared";
 import { conflict, forbidden } from "../lib/http-error.js";
 import { currentOutletId, currentScope } from "../lib/tenant-context.js";
 import { allocateCollection } from "../lib/commission-collection.js";
@@ -11,6 +12,7 @@ import {
 import {
   verifyPayrollPackageRedemptionInventory,
   verifyPayrollRedemptionCorrections,
+  verifyPayrollRedemptionVoid,
 } from "./payroll-close-package-redemption.js";
 import { verifyPayrollPackageOwnership } from "./payroll-close-package-ownership.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
@@ -25,8 +27,9 @@ const unavailable = (): never => {
 
 /** Internal, non-activating complete holding history. No client-supplied records.
  * Holds the same tenant lock as source writes. Supports ownership-reconciled, unreversed,
- * paid-session or sale-bound manager-override history and verified attribution
- * correction chains. Refunds/voids remain blocked. This does not reconcile coverage against OTHER holdings on a sale, and
+ * paid-session or sale-bound manager-override history, attribution correction
+ * chains and audited session restorations. Purchase refunds/voids remain blocked.
+ * This does not reconcile coverage against OTHER holdings on a sale, and
  * must not on its own enable the monthly close's usage-coverage gate.
  */
 export async function loadPayrollPackageRedemptionHistory(
@@ -310,6 +313,11 @@ export async function loadPayrollPackageRedemptionHistory(
   if (!collections.length) return unavailable();
   const inputs = [];
   const corrections = [];
+  const voids = [];
+  const voidAudits = await tx.auditLog.findMany({
+    where: { tenantId, action: "package.session.void" },
+    orderBy: { id: "asc" },
+  });
   for (const redemption of redemptions) {
     const captures = snapshots.filter((row) => row.redemptionId === redemption.id);
     const sources = related.filter((row) => row.sourceId === redemption.id);
@@ -341,16 +349,60 @@ export async function loadPayrollPackageRedemptionHistory(
       rules,
     };
     const sourceIds = new Set(sources.map((row) => row.id));
+    const chain = {
+      original,
+      snapshots: captures,
+      events: [
+        ...sources,
+        ...events.filter((row) => row.sourceType === "REVERSAL" && sourceIds.has(row.sourceId)),
+      ],
+    };
+    const voided = redemption.revertedAt ? verifyPayrollRedemptionVoid(chain) : null;
+    if (voided) {
+      const audits = voidAudits.filter((row) => {
+        const metadata = row.metadata as Record<string, unknown> | null;
+        return metadata?.redemptionId === redemption.id;
+      });
+      if (audits.length !== 1) return unavailable();
+      const audit = audits[0];
+      const metadata = audit.metadata as Record<string, unknown>;
+      const request = voidPayrollSessionSchema.safeParse(metadata.request);
+      if (
+        !request.success ||
+        request.data.expectedRevision !== voided.previousRevision ||
+        !["MANAGER", "SUPER_ADMIN"].includes(String(metadata.actorRole)) ||
+        audit.targetType !== "CustomerRedemption" ||
+        audit.targetId !== `session-void:${request.data.idempotencyKey}` ||
+        metadata.saleId !== redemption.saleId ||
+        metadata.actorId !== voided.actorId ||
+        typeof metadata.reason !== "string" ||
+        !metadata.reason.trim() ||
+        typeof metadata.requestHash !== "string" ||
+        metadata.reason !== request.data.reason ||
+        metadata.requestHash !==
+          createHash("sha256")
+            .update(
+              JSON.stringify({
+                ...request.data,
+                saleId: redemption.saleId,
+                redemptionId: redemption.id,
+                actorId: voided.actorId,
+              }),
+            )
+            .digest("hex") ||
+        audit.createdAt < redemption.revertedAt!
+      )
+        return unavailable();
+      voids.push({ redemptionId: redemption.id, audit, ...voided });
+    } else if (
+      voidAudits.some(
+        (row) => (row.metadata as Record<string, unknown> | null)?.redemptionId === redemption.id,
+      )
+    )
+      return unavailable();
     corrections.push({
       redemptionId: redemption.id,
-      revisions: verifyPayrollRedemptionCorrections({
-        original,
-        snapshots: captures,
-        events: [
-          ...sources,
-          ...events.filter((row) => row.sourceType === "REVERSAL" && sourceIds.has(row.sourceId)),
-        ],
-      }),
+      revisions: voided?.corrections ?? verifyPayrollRedemptionCorrections(chain),
     });
     inputs.push(original);
   }
@@ -365,6 +417,7 @@ export async function loadPayrollPackageRedemptionHistory(
   return {
     verified,
     corrections,
+    voids,
     evidence: {
       holding,
       sale,
