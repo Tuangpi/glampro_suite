@@ -5,6 +5,8 @@ import { PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
 import { createSale } from "./sale.service.js";
+import { transferPrepaid } from "./prepaid.service.js";
+import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import { commissionScopeKey } from "./commission-rules.js";
 import { authorizeStoredPayrollCarry } from "./payroll-close-authorizations.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
@@ -179,10 +181,11 @@ test(
         const holding = await prisma.customerValuePackageHolding.findFirstOrThrow({
           where: { saleLine: { saleId: buy.id } },
         });
+        let spendingCustomerId = customer.id;
         const spend = (secondHoldingId?: string) =>
           runAtOutlet(outlet.id, () =>
             createSale({
-              customerId: customer.id,
+              customerId: spendingCustomerId,
               lines: [
                 {
                   itemType: "SERVICE",
@@ -319,6 +322,100 @@ test(
             assert.equal(await prisma.payrollCloseEvent.count(), 1);
           }
         }
+        const recipient = await prisma.customer.create({
+          data: { tenantId, name: "Private transfer recipient" },
+        });
+        const transfer = async (holdingId: string, from: string, to: string) => {
+          const current = await prisma.customerValuePackageHolding.findFirstOrThrow({
+            where: { id: holdingId },
+          });
+          return transferPrepaid(
+            from,
+            holdingId,
+            {
+              targetCustomerId: to,
+              confirmed: true,
+              expectedUpdatedAt: current.updatedAt.toISOString(),
+              reason: "Reviewed private ownership transfer",
+            },
+            ownerId,
+          );
+        };
+        await transfer(holding.id, customer.id, recipient.id);
+        spendingCustomerId = recipient.id;
+        const transferred = await load();
+        assert.equal(
+          transferred.staff.find((row) => row.staff.id === ownerId)!.collection,
+          "591.7400",
+        );
+        assert.deepEqual(
+          transferred.staff.map((row) => row.calculation.lines),
+          inputs.staff.map((row) => row.calculation.lines),
+        );
+        assert.notEqual(payrollInputHash(transferred), payrollInputHash(inputs));
+        mock.timers.enable({ apis: ["Date"], now: new Date(Date.UTC(year, number, 2)) });
+        await assert.rejects(
+          approveStoredPayrollClose(month, 1, "Transfer invalidates frozen draft evidence"),
+          /inputs changed/,
+        );
+        mock.timers.reset();
+        for (const corruption of [
+          "MISSING_TRANSFER",
+          "MISSING_BALANCE",
+          "AMOUNT",
+          "OWNER",
+          "ACTOR",
+          "REASON",
+          "FOREIGN",
+          "TIME",
+        ] as const) {
+          await assert.rejects(
+            prisma.$transaction((tx) =>
+              load(
+                new Proxy(tx, {
+                  get(target, property) {
+                    if (property === "prepaidTransferEvent")
+                      return new Proxy(target.prepaidTransferEvent, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                            const rows = await delegate.findMany(args);
+                            if (corruption === "MISSING_TRANSFER") return [];
+                            return rows.map((row) => ({
+                              ...row,
+                              ...(corruption === "AMOUNT" ? { amount: row.amount.minus(1) } : {}),
+                              ...(corruption === "OWNER" ? { toCustomerId: customer.id } : {}),
+                              ...(corruption === "ACTOR" ? { actorId: staffId } : {}),
+                              ...(corruption === "REASON" ? { reason: "Changed reason" } : {}),
+                              ...(corruption === "FOREIGN" ? { tenantId: "foreign" } : {}),
+                              ...(corruption === "TIME" ? { createdAt: new Date(0) } : {}),
+                            }));
+                          };
+                        },
+                      });
+                    if (property === "prepaidBalanceEvent" && corruption === "MISSING_BALANCE")
+                      return new Proxy(target.prepaidBalanceEvent, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) =>
+                            (await delegate.findMany(args)).filter(
+                              (row) => row.kind !== "TRANSFER",
+                            );
+                        },
+                      });
+                    return Reflect.get(target, property);
+                  },
+                }) as PayrollCloseTransaction,
+              ),
+            ),
+            /UNCONFIRMED/,
+          );
+          assert.equal(
+            payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state),
+            payrollInputHash(draft),
+          );
+          assert.equal(await prisma.payrollCloseEvent.count(), 1);
+        }
         const secondBuy = await runAtOutlet(outlet.id, () =>
           createSale({
             customerId: customer.id,
@@ -335,7 +432,16 @@ test(
         const secondHolding = await prisma.customerValuePackageHolding.findFirstOrThrow({
           where: { saleLine: { saleId: secondBuy.id } },
         });
+        await transfer(secondHolding.id, customer.id, recipient.id);
         await spend(secondHolding.id);
+        const history = await prisma.$transaction((tx) =>
+          loadPayrollValueSpendHistory(tx, holding.id),
+        );
+        assert.deepEqual(
+          history.verified.map((row) => row.baseAmount),
+          ["41.6667", "20.8333"],
+        );
+        assert.equal(history.evidence.transfers.length, 1);
         // Use a post-month clock only for close approval; operational evidence stays real.
         mock.timers.enable({ apis: ["Date"], now: new Date(Date.UTC(year, number, 2)) });
         await assert.rejects(
@@ -367,7 +473,14 @@ test(
           data: { price: "1", credit: "999" },
         });
         await prisma.service.update({ where: { id: foc.id }, data: { nonmemberPrice: "999" } });
+        await transfer(holding.id, recipient.id, customer.id);
+        spendingCustomerId = customer.id;
         await spend();
+        const returned = await prisma.$transaction((tx) =>
+          loadPayrollValueSpendHistory(tx, holding.id),
+        );
+        assert.equal(returned.evidence.transfers.length, 2);
+        assert.equal(returned.evidence.holding.customerId, customer.id);
         assert.equal(
           payrollInputHash(
             (await prisma.payrollClose.findFirstOrThrow()).state as unknown as typeof approved,

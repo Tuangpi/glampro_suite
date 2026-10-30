@@ -2,6 +2,21 @@
 
 ## Current State
 
+- **CP-005 private credit ownership transfers, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004, CP-003A/CP-006 untouched. Independent grant/spend/transfer
+  replay resolves spend-time owners with exact transfer audits, preserved original
+  purchase ratios/sellers and no fresh cash. Real transfer/recipient-spend/round-trip,
+  stale-approval and eight corruption/refusal checks preserve drafts/frozen history.
+  Selected close API 298/298 (five isolated DB suites), shared 302/302; API types/
+  lint/build/format/whitespace pass. No web checks. Disposable PostgreSQL stopped,
+  fixtures retained. Next shared-credit membership/consent reconciliation, then
+  refund/void loading. Unsupported paths still refuse; UI/router stay unmounted.
+  No application DB/schema, activation, deployment, commit or push. Logs
+  `/tmp/cp005-transfer-*`; authoritative handoff in
+  `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/PROGRESS.md`.
+
+## Previous checkpoint — private credit monthly integration
+
 - **CP-005 private credit monthly integration, October 30, 2026:** IN PROGRESS;
   latest completed CP-004; CP-003A/CP-006 untouched. Monthly private-credit receipts
   now reconcile independent sale/payment/redemption/capture/collection inventories,

@@ -83,6 +83,9 @@ backfill, deployment, commit, or push is authorized by management initialization
   evidence, with external-only cash and frozen purchase-ratio spend bases. This is
   not earnings activation: unsupported lifecycle, unallocated full-credit paid lines
   and mixed session-package workflows refuse; application close UI/router stay unmounted.
+- Private credit ownership transfers replay independent balance and transfer audits
+  to verify spend-time ownership without repricing purchases or creating fresh cash.
+  Family sharing/membership/consent and other unsupported lifecycle remain gated.
 
 ## Delivery and completion
 

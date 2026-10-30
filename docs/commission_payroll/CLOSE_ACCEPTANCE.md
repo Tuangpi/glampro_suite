@@ -6,7 +6,29 @@
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
-## Latest checkpoint — private-credit monthly integration
+## Latest checkpoint — private credit ownership transfers
+
+- Private transfer history now replays complete GRANT/SPEND/TRANSFER states from
+  the original buyer to current owner and remaining balance, independently matching
+  every transfer audit by tenant/holding/from/to/amount/actor/reason/expiry and timing.
+  Each spend uses its verified historical owner; purchase ratio/sellers never change.
+- Transfer adds no commission source or external cash, but complete evidence changes
+  the input hash and invalidates a stale draft. Real monthly acceptance covers original
+  buyer spend, recipient spend, two transferred holdings of one package and return
+  transfer after approval while stored calculation and statement hashes stay frozen.
+- Eight missing/mismatched transfer audit/ledger corruption checks refuse without
+  draft/audit mutation. Unit checks cover round trips, ambiguous chains and audit
+  ordering. Ledger timestamps are transaction-start times; audit append may follow
+  but must precede the next state transition. No timestamp equality assumption.
+- Selected close API 298/298, zero failures/skips, five isolated DB suites; shared
+  302/302; API typecheck/lint/build/format/whitespace pass. Logs
+  `/tmp/cp005-transfer-*`. No web checks. Disposable PostgreSQL stopped; fixtures
+  retained. No application DB/schema changes or earnings activation.
+- Sharing/membership/consent replay, restoration/refund/void and expiry edits remain
+  unavailable. Next sharing reconciliation, then refunds/voids. Close UI/router
+  remain unmounted; performance and mounted app/browser acceptance still required.
+
+## Previous checkpoint — private-credit monthly integration
 
 - Authoritative monthly loader accepts only settled private-credit service/product/
   FOC receipts proven by the complete sale/holding reconciler. Independent month

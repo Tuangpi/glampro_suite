@@ -8,6 +8,20 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 private credit ownership replay (October 30, 2026)
+
+- Original purchase buyer/sellers and paid-to-credit economics remain immutable
+  after transfer. Spend ownership comes from complete independent balance replay,
+  not today's owner. A transfer creates neither fresh cash nor a payroll base.
+- Match every private ownership ledger transition to exactly one immutable transfer
+  audit and consume every audit. Reject changed balances, tenant/holding/owner/actor/
+  reason/expiry, missing evidence and ambiguous ordering. Ledger transaction-start
+  timestamp may precede audit append; audit cannot cross the next ledger operation.
+- Freeze transfer evidence with full holding history. A transfer-only change can
+  invalidate an open draft; approved statements remain immutable. No backfill.
+- This enables only private ownership transfers. Family membership, consent/sharing,
+  restoration/refunds/voids and expiry edits remain gated pending separate replay.
+
 ### CP-005 private-credit monthly boundary (October 30, 2026)
 
 - The internal monthly gate now admits only the already reconciled settled private

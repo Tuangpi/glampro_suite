@@ -337,6 +337,15 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Private credit ownership transfers (October 30): replay complete balance chain
+  against independent transfer audits; verify spend-time owner rather than current
+  holding owner. Real monthly original/recipient spends, same-package multi-holding,
+  transfer-only stale approval, eight corruption refusals and post-approval return
+  transfer pass. Selected close API 298/298, five isolated DB suites, zero skips;
+  shared 302/302; API types/lint/build/format pass. Logs `/tmp/cp005-transfer-*`.
+  No new sources/fresh cash or original purchase repricing. Sharing and other
+  unsupported lifecycle still refuse. Next historical sharing membership/consent,
+  then refund/void loading; remaining acceptance unchanged. Not DONE.
 - Private-credit monthly integration (October 30): independently matches month
   sales/payments/redemptions/captures/collections to complete private sale/holding
   evidence. Verified tenders add no fresh cash; ratio/ordinary/FOC bases and full

@@ -11,6 +11,7 @@ import {
 import { verifyPayrollValueSpend } from "./payroll-close-value-spend.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
+import { resolvePayrollValueOwnership } from "./payroll-close-value-ownership.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
 const unavailable = (): never => {
@@ -18,7 +19,7 @@ const unavailable = (): never => {
 };
 
 /** Internal, non-activating full private holding replay. No caller evidence or
- * paging. Transfers, sharing, restorations and refunds deliberately still refuse.
+ * paging. Private transfers reconcile; sharing, restorations and refunds still refuse.
  * This alone does not reconcile sale-wide ordinary/prepaid commission allocation. */
 export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, holdingId: string) {
   const scope = currentScope();
@@ -62,8 +63,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     sale.status !== "COMPLETED" ||
     sale.collectionCurrency !== "SGD" ||
     !sale.outletId ||
-    !sale.customerId ||
-    sale.customerId !== holding.customerId
+    !sale.customerId
   )
     return unavailable();
   const siblings = await tx.customerValuePackageHolding.findMany({
@@ -112,7 +112,6 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     tx.saleRefund.findMany({ where: { tenantId, saleId: sale.id }, orderBy: { id: "asc" } }),
   ]);
   if (
-    transfers.length ||
     refunds.length ||
     new Set(redemptions.map((row) => row.id)).size !== redemptions.length ||
     redemptions.some(
@@ -296,20 +295,30 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   // prospective GRANT, never legacy OPENING, and consume every SPEND exactly once.
   if (
     new Set(balanceEvents.map((row) => row.id)).size !== balanceEvents.length ||
-    balanceEvents.length !== redemptions.length + 1 ||
+    balanceEvents.length !== redemptions.length + transfers.length + 1 ||
     balanceEvents.some(
       (row) =>
         row.tenantId !== tenantId ||
         row.holdingId !== holdingId ||
-        row.customerId !== sale.customerId ||
         row.sharedFamilyId !== null ||
         row.previousSharedFamilyId !== null ||
         (row.expiresAt?.getTime() ?? null) !== (holding.expiresAt?.getTime() ?? null) ||
         !row.delta.equals(row.amountAfter.minus(row.amountBefore)) ||
-        !["GRANT", "SPEND"].includes(row.kind),
+        !["GRANT", "SPEND", "TRANSFER"].includes(row.kind),
     )
   )
     return unavailable();
+  const spendOwners = resolvePayrollValueOwnership({
+    tenantId,
+    holdingId,
+    originalCustomerId: sale.customerId!,
+    customerId: holding.customerId,
+    amount: holding.amount,
+    amountRemaining: holding.amountRemaining,
+    expiresAt: holding.expiresAt,
+    balances: balanceEvents,
+    transfers,
+  });
   const grants = balanceEvents.filter((row) => row.kind === "GRANT");
   if (
     grants.length !== 1 ||
@@ -347,7 +356,6 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
       sibling.itemType !== "VALUE_PACKAGE" ||
       sibling.holdingId === holdingId ||
       sibling.itemId !== holding.valuePackageId ||
-      sibling.customerId !== sale.customerId ||
       sibling.revertedAt ||
       sibling.usedAt.getTime() !== event.occurredAt.getTime()
     )
@@ -379,7 +387,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
         !usedBalanceIds.has(row.id) &&
         row.kind === "SPEND" &&
         row.saleId === redemption.saleId &&
-        row.previousCustomerId === sale.customerId &&
+        spendOwners.get(row.id) === redemption.customerId &&
         row.amountBefore.equals(remaining) &&
         row.delta.equals(redemption.amount!.negated()) &&
         row.createdAt <= event.createdAt,
@@ -431,7 +439,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
         timeZone: tenant.timeZone,
         purchase,
         spentBefore: holding.amount.minus(remaining).toFixed(2),
-        holding,
+        holding: { ...holding, customerId: spendOwners.get(changes[0].id)! },
         redemption,
         sale: usage,
         event: event as Parameters<typeof verifyPayrollValueSpend>[0]["event"],
@@ -454,7 +462,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   }
   if (
     !remaining.equals(holding.amountRemaining) ||
-    usedBalanceIds.size !== balanceEvents.length ||
+    usedBalanceIds.size + transfers.length !== balanceEvents.length ||
     related.filter((row) => row.sourceType === "VALUE_SPEND").length !== redemptions.length
   )
     return unavailable();

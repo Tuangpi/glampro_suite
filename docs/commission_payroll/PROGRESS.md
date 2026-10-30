@@ -2,6 +2,30 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — private credit ownership transfers (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Complete private holding
+  history now independently replays GRANT/SPEND/TRANSFER balance states against
+  one-to-one transfer audits, resolving each spend's historical owner. Original
+  purchase ratio/sellers stay unchanged; transfers add no cash or payroll sources.
+- Real transfer/checkout/monthly acceptance covers original and recipient spends,
+  same-package two-holding receipt, transfer-only stale approval, eight read-only
+  transfer corruptions preserving draft/audit and return transfer after approval.
+  Unit checks cover missing/duplicate/foreign evidence, balances, identity, timing,
+  round trips and ambiguity. DB ledger transaction-start time may precede audit
+  append time; audit must not cross the next operation. Sharing/restoration/expiry
+  changes/refund/void history still refuse; no current-owner fallback.
+- Verified selected close API 298/298, zero failures/skips, five isolated DB suites;
+  shared 302/302. API typecheck/lint/build and formatting/whitespace pass. Logs
+  `/tmp/cp005-transfer-*`. No web changes/checks. Disposable PostgreSQL stopped,
+  synthetic fixtures retained. No application DB/schema, activation/deployment,
+  commit or push; close UI/router stay unmounted. **Not DONE.**
+- Next: shared-credit membership/consent historical reconciliation, then refund/
+  void loading. Full-credit paid lines lacking ordinary allocation, mixed session
+  usage and spend-sale instalments remain gated; plan-switch/performance and full
+  mounted-app/browser acceptance remain.
+
+## Previous checkpoint — private credit monthly integration
+
 - **CP-005 IN PROGRESS — private credit monthly integration (October 30, 2026).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Authoritative monthly loading
   now accepts reconciled settled private-credit service/product/FOC receipts.
