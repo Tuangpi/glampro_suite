@@ -2,6 +2,30 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — private credit monthly integration (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Authoritative monthly loading
+  now accepts reconciled settled private-credit service/product/FOC receipts.
+  Independent monthly sale/payment/redemption/capture/collection inventories match
+  complete sale evidence; verified credit tenders add no fresh cash. VP_SPEND uses
+  original purchase ratios, ordinary lines use external net, FOC uses frozen list
+  price. Full holding/sale evidence freezes with inputs under prepaid-before-tenant.
+- Same-catalogue multi-holding receipts now distinguish operational sibling spends
+  from orphan sources. New real checkout/monthly acceptance covers both holdings,
+  exact split bases and external cash, 15 omission/duplicate/foreign inventory
+  refusals without draft/audit mutation, reloads, stale approval after new activity,
+  frozen statements after catalogue edits/later spends and empty following month.
+- Verified selected close API 294/294, zero failures/skips, five isolated DB suites;
+  shared 302/302. API typecheck/lint/build pass. Logs `/tmp/cp005-month-*`. No web
+  changes/checks. Disposable PostgreSQL stopped; synthetic fixtures retained.
+- Next: private-credit transfer/sharing lifecycle reconciliation, then refund/void
+  loading. Full-credit paid lines without external allocation evidence, mixed
+  session-package usage, instalments on spend receipts and unsupported lifecycle
+  evidence still fail closed. Plan-switch/performance and mounted app/browser
+  acceptance remain. Close screen/router stay unmounted. No application DB/schema,
+  activation, deployment, commit or push. **Not DONE.**
+
+## Previous checkpoint — monthly prepaid lock prerequisite
+
 - **CP-005 IN PROGRESS — monthly prepaid lock prerequisite (October 30, 2026).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Calculate/approve now acquire
   prepaid before tenant at the outer transaction boundary, before actor/source reads.

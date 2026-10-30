@@ -2,6 +2,22 @@
 
 ## Current State
 
+- **CP-005 private credit monthly integration, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004; CP-003A/CP-006 untouched. Monthly private-credit receipts
+  now reconcile independent sale/payment/redemption/capture/collection inventories,
+  purchase-ratio spend bases, external-net ordinary bases and frozen FOC economics.
+  Verified credit tenders add no fresh cash. Sale/holding evidence freezes with inputs;
+  same-catalogue multi-holding spends reconcile. Real monthly acceptance includes 15
+  inventory refusals, reload/stale approval, frozen history and empty next month.
+  Selected close API 294/294 (five isolated DB suites), shared 302/302; API types/
+  lint/build pass. No web checks. Disposable PostgreSQL stopped, fixtures retained.
+  Next private-credit transfer/sharing lifecycle, then refund/void loading; unsupported
+  paths still refuse. Router/screen unmounted; no application DB/schema, activation,
+  deployment, commit or push. Logs `/tmp/cp005-month-*`; authoritative handoff in
+  `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/PROGRESS.md`.
+
+## Previous checkpoint — monthly prepaid lock prerequisite
+
 - **CP-005 monthly prepaid lock prerequisite, October 30, 2026:** IN PROGRESS;
   latest completed CP-004; CP-003A/CP-006 untouched. Outer calculate/approve and
   direct authoritative loader take prepaid before tenant. Regression tests and

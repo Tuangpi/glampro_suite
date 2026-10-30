@@ -328,16 +328,31 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   const usages = [];
   const verified: ReturnType<typeof verifyPayrollValueSpend>[] = [];
   const usageSaleIds = new Set(redemptions.map((row) => row.saleId));
-  if (
-    events.some(
-      (row) =>
-        row.sourceType === "VALUE_SPEND" &&
-        usageSaleIds.has(row.saleId) &&
-        !redemptionIds.has(row.sourceId) &&
-        (row.evidence as { itemId?: string } | null)?.itemId === holding.valuePackageId,
+  for (const event of events.filter(
+    (row) =>
+      row.sourceType === "VALUE_SPEND" &&
+      usageSaleIds.has(row.saleId) &&
+      !redemptionIds.has(row.sourceId) &&
+      (row.evidence as { itemId?: string } | null)?.itemId === holding.valuePackageId,
+  )) {
+    // A receipt may spend two distinct holdings of the same catalogue package.
+    // Catalogue identity alone cannot classify the sibling spend as an orphan.
+    const sibling = await tx.customerRedemption.findFirst({
+      where: { tenantId, id: event.sourceId, saleId: event.saleId, itemType: "VALUE_PACKAGE" },
+    });
+    if (
+      !sibling?.holdingId ||
+      sibling.tenantId !== tenantId ||
+      sibling.saleId !== event.saleId ||
+      sibling.itemType !== "VALUE_PACKAGE" ||
+      sibling.holdingId === holdingId ||
+      sibling.itemId !== holding.valuePackageId ||
+      sibling.customerId !== sale.customerId ||
+      sibling.revertedAt ||
+      sibling.usedAt.getTime() !== event.occurredAt.getTime()
     )
-  )
-    return unavailable();
+      return unavailable();
+  }
   while (pending.length) {
     const candidates = pending.filter((row) => {
       const event = related.find(

@@ -569,7 +569,8 @@ test(
           (await load()).verified.slice(0, -1),
           allocated.evidence.histories[0].verified,
         );
-        // Holding-level readiness must not accidentally enable monthly prepaid allocation.
+        // A month containing full-credit paid lines without ordinary allocation
+        // evidence still refuses even when its holding histories reconcile.
         const parts = new Intl.DateTimeFormat("en", {
           timeZone: "Asia/Singapore",
           year: "numeric",
@@ -582,7 +583,7 @@ test(
           prisma.$transaction((tx) =>
             loadAuthoritativePayrollCloseInputs(tx, openPayrollClose(month)),
           ),
-          /REDEMPTION_WORKFLOW_NOT_LOADED/,
+          /VALUE_SALE_ALLOCATION_UNCONFIRMED/,
         );
         assert.equal(await prisma.payrollClose.count(), 0);
         assert.equal(await prisma.payrollCloseEvent.count(), 0);

@@ -6,7 +6,34 @@
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
-## Latest checkpoint — monthly prepaid lock prerequisite
+## Latest checkpoint — private-credit monthly integration
+
+- Authoritative monthly loader accepts only settled private-credit service/product/
+  FOC receipts proven by the complete sale/holding reconciler. Independent month
+  sales, payments, redemptions, captures and collections match exactly, including
+  multiplicity and tenant identity. Payment/source-only candidates cannot disappear.
+- Verified credit tenders are excluded from external payment operations. VP_SPEND
+  retains original purchase ratio; ordinary activity matches external-net allocations;
+  FOC retains frozen full list price. Complete sale/holding evidence is frozen with
+  inputs, under the established prepaid-before-tenant transaction boundary.
+- Two holdings of the same catalogue package on one receipt are distinguished by
+  independently matching sibling operational redemptions, not catalogue ID alone.
+  Missing/orphan sources continue to refuse.
+- Real checkout/monthly acceptance verifies mixed lines, same-package two-holding
+  split spends, 591.7400 then 1183.4800 external net cash including original package
+  purchases (never credit tender face value), stable reload and 15 independent month
+  omission/duplicate/foreign-row refusals without draft/audit changes. New activity
+  refuses stale approval; approved history survives later catalogue edits/spends;
+  following empty month has zero activity/cash and retains approved prior evidence.
+- Selected close API 294/294, zero failures/skips, five isolated DB suites; shared
+  302/302; API typecheck/lint/build pass. Logs `/tmp/cp005-month-*`. No web checks.
+  Disposable PostgreSQL stopped; fixtures retained. No application DB/schema changes.
+- This is narrow internal monthly support, not complete CP-005 acceptance or earnings
+  activation. Transfers/sharing, refund/voids, mixed session-package usage, spend-sale
+  instalments and full-credit paid lines lacking ordinary allocation still refuse.
+  Router/screen remain unmounted; performance and full app/browser acceptance remain.
+
+## Previous checkpoint — monthly prepaid lock prerequisite
 
 - Calculate/approve acquire prepaid before tenant at the outer close transaction
   boundary, before actor/source reads. Direct authoritative input loading follows

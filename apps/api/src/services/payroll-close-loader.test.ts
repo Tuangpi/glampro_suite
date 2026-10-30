@@ -1088,7 +1088,8 @@ export function loaderFixture() {
     customerOutstandingPayment: many("customerOutstandingPayment", () => data.outstanding),
     customerRedemption: {
       ...many("customerRedemption", () => data.redemptions),
-      count: async () => data.usageCount,
+      count: async (args: { where?: { itemType?: string } }) =>
+        args.where?.itemType === "VALUE_PACKAGE" ? 0 : data.usageCount,
     },
     saleRefund: many("saleRefund", () => data.refunds),
     commissionRedemptionSnapshot: many("commissionRedemptionSnapshot", () => []),

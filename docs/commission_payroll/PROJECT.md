@@ -78,6 +78,11 @@ backfill, deployment, commit, or push is authorized by management initialization
 - Calendar months use salon timezone, default Asia/Singapore, represented as
   half-open timestamp ranges. Approval freezes all statement inputs and outputs;
   actual payout is separate. New activity invalidates stale drafts before approval.
+- CP-005 internal monthly private-credit support now reconciles settled service/
+  product/FOC receipts against independent month inventories and full holding/sale
+  evidence, with external-only cash and frozen purchase-ratio spend bases. This is
+  not earnings activation: unsupported lifecycle, unallocated full-credit paid lines
+  and mixed session-package workflows refuse; application close UI/router stay unmounted.
 
 ## Delivery and completion
 

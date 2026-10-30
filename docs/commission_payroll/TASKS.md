@@ -337,6 +337,16 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Private-credit monthly integration (October 30): independently matches month
+  sales/payments/redemptions/captures/collections to complete private sale/holding
+  evidence. Verified tenders add no fresh cash; ratio/ordinary/FOC bases and full
+  evidence freeze with inputs. Same-catalogue multi-holding receipts reconcile.
+  Real monthly reload, 15 inventory refusal, stale approval, frozen statement and
+  empty-next-month checks pass. Selected close API 294/294, five isolated DB suites,
+  zero failures/skips; shared 302/302; API types/lint/build pass. Logs
+  `/tmp/cp005-month-*`. Narrow supported monthly path enabled internally only;
+  next transfer/sharing lifecycle and refund/void loading. Unsupported paths refuse;
+  performance/plan-switch/mounting/full app acceptance remain. Not DONE.
 - Monthly prepaid lock prerequisite (October 30): outer calculate/approve acquire
   prepaid BEFORE tenant and input reads; direct authoritative loader follows the
   same order. Real PostgreSQL waiting-lock/NOWAIT barriers for both actions verify

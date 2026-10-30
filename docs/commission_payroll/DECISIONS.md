@@ -8,6 +8,23 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 private-credit monthly boundary (October 30, 2026)
+
+- The internal monthly gate now admits only the already reconciled settled private
+  service/product/FOC credit-sale subset, after exact independent month inventory
+  comparison. Freeze complete sale/holding evidence with inputs so later activity
+  invalidates drafts but cannot rewrite approved statements. No earnings activation.
+- Credit tenders are excluded only by verified payment ID, never by payment method
+  alone. Original purchase external net counts as cash in its collection month;
+  subsequent tender face value creates no cash. Ordinary external allocations,
+  purchase-ratio VP_SPEND and immutable FOC economics remain distinct.
+- Multiple holdings of the same catalogue package may share a spend receipt.
+  An apparent sibling source must match an independent operational redemption on
+  another holding; complete sale reconciliation still validates every holding.
+- Full-credit paid lines with unavailable ordinary allocation and unsupported
+  lifecycle/instalment/package combinations continue to refuse. This supersedes
+  the earlier blanket monthly gate, not the remaining readiness/release constraints.
+
 ### CP-005 private credit sale allocation boundary (October 30, 2026)
 
 - Sale-level reconciliation separately proves original private-credit holding
