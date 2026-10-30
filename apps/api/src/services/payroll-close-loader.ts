@@ -1,3 +1,5 @@
+import { loadPayrollPackageRedemptionHistory } from "./payroll-close-redemption-loader.js";
+import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import { z } from "zod";
 import {
   commissionAttributionSchema,
@@ -101,6 +103,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     closes,
     commissionRules,
     correctionSnapshots,
+    prepaidSettlements,
   ] = await Promise.all([
     tx.sale.findMany({
       where: { tenantId, OR: [{ soldAt: range, status: { not: "HELD" } }, { voidedAt: range }] },
@@ -150,6 +153,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       where: { tenantId, eventType: "CORRECTION" },
       orderBy: { id: "asc" },
     }),
+    tx.prepaidRefundSettlement.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
   ]);
   if (redemptions.some((row) => !["PACKAGE", "VALUE_PACKAGE"].includes(row.itemType)))
     unavailable("REDEMPTION_WORKFLOW_NOT_LOADED");
@@ -163,6 +167,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
           "VALUE_SPEND",
           "CORRECTION",
           "REVERSAL",
+          "PACKAGE_REFUND",
+          "VALUE_PACKAGE_REFUND",
         ].includes(event.sourceType),
     )
   )
@@ -357,6 +363,88 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const lineage = new Map<string, (typeof events)[number]>();
   const reconciledCorrections = new Set<string>();
   const correctionEvidence = [];
+  const refundPayouts: NonNullable<PayrollCloseInputRecords["refundPayouts"]> = [];
+  const prepaidHistories = [];
+  // One append-only settlement per holding and per operation key, else the month is ambiguous.
+  if (
+    new Set(prepaidSettlements.map((row) => row.holdingId)).size !== prepaidSettlements.length ||
+    new Set(prepaidSettlements.map((row) => row.sourceKey)).size !== prepaidSettlements.length
+  )
+    unavailable("PREPAID_SETTLEMENT_DUPLICATE");
+  // Independent complete settlement inventory also catches missing/moved captures.
+  for (const settlement of prepaidSettlements) {
+    const history =
+      settlement.itemType === "PACKAGE"
+        ? await loadPayrollPackageRedemptionHistory(tx, settlement.holdingId)
+        : await loadPayrollValueSpendHistory(tx, settlement.holdingId);
+    const loaded = history.refund;
+    if (
+      !loaded ||
+      payrollInputHash(snapshot(loaded.settlement)) !== payrollInputHash(snapshot(settlement))
+    )
+      unavailable("PREPAID_SETTLEMENT_INVENTORY_UNCONFIRMED");
+    prepaidHistories.push(history);
+    const event = loaded.event;
+    const monthly = events.filter((row) => row.id === event.id);
+    sameInventory(
+      monthly,
+      inMonth(event.occurredAt) ? [event] : [],
+      "PREPAID_REFUND_MONTH_CAPTURE_UNCONFIRMED",
+    );
+    const settledThisMonth = inMonth(event.occurredAt);
+    // Never skip original-capture inventory: a moved/duplicated historical original
+    // would otherwise only be caught while its own refund month is loaded.
+    for (const source of loaded.sources) {
+      sameInventory(
+        events.filter((row) => row.id === source.id),
+        inMonth(source.occurredAt) ? [source] : [],
+        "PREPAID_ORIGINAL_MONTH_CAPTURE_UNCONFIRMED",
+      );
+      if (settledThisMonth && source.occurredAt < from) lineage.set(source.id, source);
+    }
+    if (!settledThisMonth) continue;
+    operations.push({
+      tenantId,
+      sourceType: event.sourceType as "PACKAGE_REFUND" | "VALUE_PACKAGE_REFUND",
+      sourceId: event.sourceId,
+      sourceKey: event.sourceKey,
+      saleId: event.saleId,
+      outletId: event.outletId,
+      occurredAt: event.occurredAt,
+      evidence: snapshot(history),
+    });
+    if (!event.outletId) unavailable("PREPAID_REFUND_OUTLET_UNCONFIRMED");
+    refundPayouts.push({
+      id: settlement.id,
+      tenantId,
+      eventId: event.id,
+      saleId: event.saleId,
+      saleLineId: settlement.saleLineId,
+      outletId: event.outletId,
+      currency: "SGD",
+      occurredAt: event.occurredAt,
+      netCents: settlement.netCents.toString(),
+      taxCents: settlement.taxCents.toString(),
+      grossCents: settlement.grossCents.toString(),
+      payoutMethod: z
+        .enum(["NONE", "CASH", "CARD", "PAYNOW", "NETS", "BANK_TRANSFER"])
+        .parse(settlement.payoutMethod),
+      originalAllocations: loaded.allocations.map((row) => ({
+        allocationId: row.id,
+        saleLineId: row.saleLineId,
+        netCents: row.netCents.toString(),
+      })),
+      evidence: snapshot(history),
+    });
+  }
+  if (
+    events.some(
+      (event) =>
+        ["PACKAGE_REFUND", "VALUE_PACKAGE_REFUND"].includes(event.sourceType) &&
+        !refundPayouts.some((row) => row.eventId === event.id),
+    )
+  )
+    unavailable("PREPAID_SETTLEMENT_MISSING");
   const saleRefunds: NonNullable<PayrollCloseInputRecords["saleRefunds"]> = [];
   for (const loaded of ordinaryVoids.values()) {
     if (inMonth(loaded.noCashSaleVoid.occurredAt)) noCashSaleVoids.push(loaded.noCashSaleVoid);
@@ -1165,6 +1253,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     noCashReversals,
     noCashSaleVoids,
     saleRefunds,
+    refundPayouts,
   });
   if (!cash.cash) unavailable("CASH_RECONCILIATION_UNAVAILABLE");
   const requiredStaffIds = [
@@ -1255,6 +1344,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     noCashReversals,
     noCashSaleVoids,
     saleRefunds,
+    refundPayouts,
   });
   if (!result.inputs) unavailable(result.blockers.map((blocker) => blocker.code).join(","));
   result.inputs.evidence = {
@@ -1274,6 +1364,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
           .sort(([a], [b]) => String(a).localeCompare(String(b))),
       ),
       ordinaryVoids: snapshot([...ordinaryVoids].sort(([a], [b]) => a.localeCompare(b))),
+      prepaidSettlements: snapshot(prepaidSettlements),
+      prepaidHistories: snapshot(prepaidHistories),
       corrections: correctionEvidence,
       priorCloses: priorEvidence,
     },

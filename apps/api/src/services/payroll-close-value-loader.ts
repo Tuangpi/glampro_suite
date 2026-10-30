@@ -1,3 +1,5 @@
+import { loadPayrollPrepaidSettlement } from "./payroll-close-prepaid-settlement.js";
+import { Prisma } from "../../generated/prisma/client.js";
 import { conflict, forbidden } from "../lib/http-error.js";
 import { currentOutletId, currentScope } from "../lib/tenant-context.js";
 import { allocateCollection } from "../lib/commission-collection.js";
@@ -129,6 +131,58 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
       redemptionIds.has(row.sourceId) ||
       allocationIds.has(row.sourceId),
   );
+  const refundEvents = originals.filter((row) => row.sourceType === "VALUE_PACKAGE_REFUND");
+  if (refundEvents.length > 1) return unavailable();
+  const refund = refundEvents.length
+    ? await loadPayrollPrepaidSettlement(tx, {
+        tenantId,
+        holding,
+        event: refundEvents[0],
+        timeZone: tenant.timeZone,
+      })
+    : null;
+  if (
+    refund &&
+    (!holding.amountRemaining.isZero() || holding.updatedBy !== refund.settlement.actorId)
+  )
+    return unavailable();
+  const preRemaining = refund
+    ? new Prisma.Decimal(String(refund.preHolding.amountRemaining))
+    : holding.amountRemaining;
+  const cancellationRows =
+    refund && preRemaining.isPositive()
+      ? balanceEvents.filter(
+          (row) =>
+            row.kind === "SPEND" &&
+            row.saleId === refund.event.saleId &&
+            row.actorId === refund.settlement.actorId &&
+            row.reason === refund.settlement.reason &&
+            row.amountBefore.equals(preRemaining) &&
+            row.amountAfter.isZero() &&
+            row.customerId === holding.customerId &&
+            row.previousCustomerId === holding.customerId &&
+            row.sharedFamilyId === holding.sharedFamilyId &&
+            row.previousSharedFamilyId === holding.sharedFamilyId &&
+            (row.expiresAt?.getTime() ?? null) === (holding.expiresAt?.getTime() ?? null) &&
+            row.createdAt <= refund.event.occurredAt &&
+            row.delta.equals(preRemaining.negated()),
+        )
+      : [];
+  if (refund && cancellationRows.length !== (preRemaining.isPositive() ? 1 : 0))
+    return unavailable();
+  const historyBalances = balanceEvents.filter(
+    (row) => !cancellationRows.some((entry) => entry.id === row.id),
+  );
+  if (
+    refund &&
+    (redemptions.some(
+      (row) =>
+        row.usedAt >= refund.event.occurredAt ||
+        (row.revertedAt !== null && row.revertedAt >= refund.event.occurredAt),
+    ) ||
+      historyBalances.some((row) => row.createdAt > refund.event.occurredAt))
+  )
+    return unavailable();
   const originalIds = new Set(originals.map((row) => row.id));
   const reversals = events.filter(
     (row) => row.sourceType === "REVERSAL" && originalIds.has(row.sourceId),
@@ -136,7 +190,12 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   const related = [...originals, ...reversals];
   const reversalIds = new Set(reversals.map((row) => row.id));
   if (
-    originals.some((row) => !["COLLECTION", "VALUE_SPEND"].includes(row.sourceType)) ||
+    originals.some(
+      (row) =>
+        !["COLLECTION", "VALUE_SPEND", ...(refund ? ["VALUE_PACKAGE_REFUND"] : [])].includes(
+          row.sourceType,
+        ),
+    ) ||
     reversals.some(
       (row) =>
         originals.find((original) => original.id === row.sourceId)?.sourceType !== "VALUE_SPEND",
@@ -300,7 +359,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     ...new Set([
       sale.customerId!,
       holding.customerId,
-      ...balanceEvents.flatMap((row) => [
+      ...historyBalances.flatMap((row) => [
         row.customerId,
         ...(row.previousCustomerId ? [row.previousCustomerId] : []),
       ]),
@@ -322,7 +381,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
       [
         ...members.map((row) => row.familyId),
         ...membershipEvents.flatMap((row) => [row.fromFamilyId, row.toFamilyId]),
-        ...balanceEvents.flatMap((row) => [row.sharedFamilyId, row.previousSharedFamilyId]),
+        ...historyBalances.flatMap((row) => [row.sharedFamilyId, row.previousSharedFamilyId]),
       ].filter((id): id is string => id !== null),
     ),
   ].sort();
@@ -334,15 +393,15 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   // The database balance ledger is independent of captures. Start at an actual
   // prospective GRANT, never legacy OPENING, and consume every SPEND exactly once.
   if (
-    new Set(balanceEvents.map((row) => row.id)).size !== balanceEvents.length ||
-    balanceEvents.length !==
+    new Set(historyBalances.map((row) => row.id)).size !== historyBalances.length ||
+    historyBalances.length !==
       redemptions.length +
         redemptions.filter((row) => row.revertedAt !== null).length +
         transfers.length +
-        balanceEvents.filter((row) => row.kind === "SHARING").length +
-        balanceEvents.filter((row) => row.kind === "EXPIRY_CHANGE").length +
+        historyBalances.filter((row) => row.kind === "SHARING").length +
+        historyBalances.filter((row) => row.kind === "EXPIRY_CHANGE").length +
         1 ||
-    balanceEvents.some(
+    historyBalances.some(
       (row) =>
         row.tenantId !== tenantId ||
         row.holdingId !== holdingId ||
@@ -357,15 +416,15 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     originalCustomerId: sale.customerId!,
     customerId: holding.customerId,
     amount: holding.amount,
-    amountRemaining: holding.amountRemaining,
+    amountRemaining: preRemaining,
     expiresAt: holding.expiresAt,
-    balances: balanceEvents,
+    balances: historyBalances,
     transfers,
     sharedFamilyId: holding.sharedFamilyId,
     sharing,
     redemptions,
   });
-  const grants = balanceEvents.filter((row) => row.kind === "GRANT");
+  const grants = historyBalances.filter((row) => row.kind === "GRANT");
   if (
     grants.length !== 1 ||
     !grants[0].amountBefore.isZero() ||
@@ -409,7 +468,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   // Ownership replay determines order from independent operational balance facts,
   // not captured spentBefore (which repeats after a restoration).
   for (const [balanceId, customerId] of spendOwners) {
-    const balance = balanceEvents.find((row) => row.id === balanceId)!;
+    const balance = historyBalances.find((row) => row.id === balanceId)!;
     if (!balance.amountBefore.equals(remaining)) return unavailable();
     if (balance.kind === "RESTORE") {
       if (!restorations.some((row) => row.restorationBalanceId === balance.id))
@@ -437,7 +496,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     )
       return unavailable();
     const event = captures[0];
-    const changes = balanceEvents.filter(
+    const changes = historyBalances.filter(
       (row) =>
         !usedBalanceIds.has(row.id) &&
         row.id === balanceId &&
@@ -502,13 +561,13 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     };
     const sourceReversals = reversals.filter((row) => row.sourceId === event.id);
     if (redemption.revertedAt) {
-      const restores = balanceEvents.filter(
+      const restores = historyBalances.filter(
         (row) => row.kind === "RESTORE" && row.saleId === usage.id,
       );
       if (restores.length !== 1 || !expiresAtByBalanceId.has(restores[0].id)) return unavailable();
       const restoration = verifyPayrollValueRestoration({
         spend,
-        balances: balanceEvents,
+        balances: historyBalances,
         reversals: sourceReversals,
         refundIds: usageRefunds.map((row) => row.id),
         restorationExpiresAt: expiresAtByBalanceId.get(restores[0].id)!,
@@ -530,11 +589,12 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     usages.push({ sale: usage, tenders, redemptions: usageRedemptions });
   }
   if (
-    !remaining.equals(holding.amountRemaining) ||
+    !remaining.equals(preRemaining) ||
     usedBalanceIds.size +
       transfers.length +
-      balanceEvents.filter((row) => row.kind === "SHARING").length !==
-      balanceEvents.length - balanceEvents.filter((row) => row.kind === "EXPIRY_CHANGE").length ||
+      historyBalances.filter((row) => row.kind === "SHARING").length !==
+      historyBalances.length -
+        historyBalances.filter((row) => row.kind === "EXPIRY_CHANGE").length ||
     verified.length !== redemptions.length ||
     restorations.length !== reversals.length ||
     related.filter((row) => row.sourceType === "VALUE_SPEND").length !== redemptions.length
@@ -542,6 +602,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     return unavailable();
   return {
     verified,
+    refund,
     restorations,
     evidence: {
       tenant,

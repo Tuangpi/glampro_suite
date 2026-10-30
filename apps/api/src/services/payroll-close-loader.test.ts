@@ -1024,6 +1024,13 @@ export function loaderFixture() {
       }),
     ],
     staff: [{ tenantId: "salon", id: "staff", name: "Staff", disabled: false }],
+    prepaidSettlements: [] as {
+      id: string;
+      tenantId: string;
+      itemType: "PACKAGE" | "VALUE_PACKAGE";
+      holdingId: string;
+      sourceKey: string;
+    }[],
     collections: [
       {
         tenantId: "salon",
@@ -1092,6 +1099,7 @@ export function loaderFixture() {
         args.where?.itemType === "VALUE_PACKAGE" ? 0 : data.usageCount,
     },
     saleRefund: many("saleRefund", () => data.refunds),
+    prepaidRefundSettlement: many("prepaidRefundSettlement", () => data.prepaidSettlements),
     commissionRedemptionSnapshot: many("commissionRedemptionSnapshot", () => []),
     payrollSourceEvent: many("payrollSourceEvent", () => data.events),
     payrollConfigurationEvent: many("payrollConfigurationEvent", () => data.configuration),
@@ -1111,7 +1119,10 @@ export function loaderFixture() {
     payrollCarryAuthorization: many("payrollCarryAuthorization", () => []),
     commissionRule: many("commissionRule", () => []),
     customerValuePackageHolding: many("customerValuePackageHolding", () => data.valueHoldings),
-    customerPackageHolding: many("customerPackageHolding", () => data.packageHoldings),
+    customerPackageHolding: {
+      ...many("customerPackageHolding", () => data.packageHoldings),
+      findFirst: async () => null,
+    },
   } as unknown as PayrollCloseTransaction;
   const load = () =>
     runAsTenant(
@@ -1849,4 +1860,47 @@ test("persisted opening and exact settlement compose authoritative inputs and in
   );
   records[0].payloadHash = "0".repeat(64);
   await assert.rejects(f.load(), /audit mismatch/);
+});
+
+const prepaidSettlement = (id: string, holdingId: string, sourceKey: string) => ({
+  id,
+  tenantId: "salon",
+  itemType: "PACKAGE" as const,
+  holdingId,
+  sourceKey,
+});
+
+test("prepaid settlements reject ambiguous, orphaned and unbacked monthly evidence", async () => {
+  const duplicateHolding = loaderFixture();
+  duplicateHolding.data.prepaidSettlements.push(
+    prepaidSettlement("s1", "holding", "package-refund:a"),
+    prepaidSettlement("s2", "holding", "package-refund:b"),
+  );
+  await assert.rejects(duplicateHolding.load(), /PREPAID_SETTLEMENT_DUPLICATE/);
+
+  const duplicateKey = loaderFixture();
+  duplicateKey.data.prepaidSettlements.push(
+    prepaidSettlement("s1", "holding-a", "package-refund:a"),
+    prepaidSettlement("s2", "holding-b", "package-refund:a"),
+  );
+  await assert.rejects(duplicateKey.load(), /PREPAID_SETTLEMENT_DUPLICATE/);
+
+  // A settlement whose holding cannot be inventoried as a confirmed refund is
+  // rejected by the history loader before any payout is admitted.
+  const orphan = loaderFixture();
+  orphan.data.prepaidSettlements.push(prepaidSettlement("s1", "holding", "package-refund:a"));
+  await assert.rejects(orphan.load(), /PACKAGE_REDEMPTION_HISTORY_UNCONFIRMED/);
+
+  const missing = loaderFixture();
+  const original = missing.data.events[0];
+  missing.data.events.push({
+    ...original,
+    id: "refund-capture",
+    sourceKey: "package-refund:a",
+    sourceType: "PACKAGE_REFUND",
+    sourceId: "holding",
+    occurredAt: missing.data.sales[0].soldAt,
+    createdAt: missing.data.sales[0].soldAt,
+  });
+  await assert.rejects(missing.load(), /PREPAID_SETTLEMENT_MISSING/);
 });

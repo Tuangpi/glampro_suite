@@ -1,3 +1,5 @@
+import { loadPayrollPackageRedemptionHistory } from "./payroll-close-redemption-loader.js";
+import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { test } from "node:test";
@@ -256,6 +258,17 @@ test(
           assert.equal(cancelled.netCents, 10000n);
           assert.equal(cancelled.taxCents, 900n);
           assert.equal(cancelled.cancelledGrossCents, 43600n);
+          const sessionHistory = await prisma.$transaction((tx) =>
+            loadPayrollPackageRedemptionHistory(tx, session.id),
+          );
+          assert.equal(sessionHistory.refund?.settlement.id, sessionSettlement.id);
+          assert.deepEqual(sessionHistory.verified.remaining, [{ first: 1, last: 5 }]);
+          for (const id of [holding.id, partial.id]) {
+            const history = await prisma.$transaction((tx) => loadPayrollValueSpendHistory(tx, id));
+            assert.ok(history.refund);
+            assert.equal(history.verified.length, 0, "cancellation is not usage");
+          }
+
           assert.equal(
             (
               await prisma.customerOutstanding.findFirstOrThrow({

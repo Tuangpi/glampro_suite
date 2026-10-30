@@ -18,7 +18,44 @@ During implementation, run focused checks for fast feedback and consolidate
 integrated regression at the milestone gate. Preserve all existing acceptance
 requirements; faster cadence does not permit weaker assertions or omitted paths.
 
-## Latest checkpoint — private credit ownership transfers
+## Latest checkpoint — prepaid refund settlement inventory
+
+- Prepaid package and value-package refunds are now inventoried from their own
+  append-only settlement row, never from a capture event alone. Each settlement is
+  validated against the pre-cancellation holding replay, the original sale-line
+  allocations/outstanding debt and the frozen refund request, re-deriving payout,
+  admin fee, net, tax and payout method instead of trusting them. Unbound, tampered
+  or ambiguous evidence refuses as `PREPAID_REFUND_SETTLEMENT_UNCONFIRMED`.
+- The monthly loader reads settlements before tenant and inventory work, so a
+  settlement lands in exactly one payroll month — the salon-local month of its
+  cancellation capture. Two settlements for one holding or one operation key refuse
+  (`PREPAID_SETTLEMENT_DUPLICATE`); a stored row that disagrees with the replayed
+  holding, a historical original capture moved between months, or a refund capture
+  outside its settlement month refuse (`PREPAID_SETTLEMENT_INVENTORY_UNCONFIRMED`,
+  `PREPAID_ORIGINAL_MONTH_CAPTURE_UNCONFIRMED`,
+  `PREPAID_REFUND_MONTH_CAPTURE_UNCONFIRMED`); a month capture with no settlement
+  refuses as `PREPAID_SETTLEMENT_MISSING` instead of being dropped.
+- A settled refund is an external cash outflow from salon cash: it adds no sale or
+  commission source, uses only the settlement's net cents, and freezes the buyer's
+  original deposit, allocations and award lineage in `refundPayouts` so a later month
+  cannot re-claim the same money or units.
+- New opt-in DB acceptance `prepaid-refund-month.acceptance.test.ts` buys, refunds and
+  loads one salon-local month: a single settlement/history, one 50000-cent payout and
+  zero salon cash; a second cancellation then rejects the stale approval with
+  `/inputs changed/`, recalculation shows two 50000-cent payouts netting 500.0000 of
+  remaining sale cash, approval succeeds, and a synthetic legacy capture without its
+  settlement refuses `PREPAID_SETTLEMENT_MISSING`. The loader unit matrix adds
+  duplicate holding, duplicate operation key, orphan holding and missing settlement.
+- Selected close API **332/332 passed, zero failures/skips**, five isolated DB suites
+  included; the three directly touched suites **44/44**; API typecheck, ESLint and
+  Prettier clean. Logs `/tmp/acc-all.log`, `/tmp/acc-two.log`, `/tmp/tsc.log`,
+  `/tmp/lint.log`, `/tmp/prettier3.log`. No web checks, schema/migration change,
+  earnings activation or deployment.
+- Blockers unchanged: refund captures written before settlements now fail closed
+  instead of loading, and prepaid refund HTTP workflows, close API/UI mounting,
+  source-base corrections, plan-switch/performance and browser acceptance stay open.
+
+## Previous checkpoint — private credit ownership transfers
 
 - Private transfer history now replays complete GRANT/SPEND/TRANSFER states from
   the original buyer to current owner and remaining balance, independently matching

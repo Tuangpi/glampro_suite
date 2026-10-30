@@ -1,3 +1,4 @@
+import { loadPayrollPrepaidSettlement } from "./payroll-close-prepaid-settlement.js";
 import { createHash } from "node:crypto";
 import { minimumPayrollPackageDeposit, voidPayrollSessionSchema } from "@glampro_suite/shared";
 import { conflict, forbidden } from "../lib/http-error.js";
@@ -117,9 +118,43 @@ export async function loadPayrollPackageRedemptionHistory(
   ]);
   const redemptionIds = new Set(redemptions.map((row) => row.id));
   const allocationIds = new Set(receipts.flatMap((row) => row.allocations.map((part) => part.id)));
+  const refundEvents = events.filter(
+    (row) => row.sourceId === holdingId && row.sourceType === "PACKAGE_REFUND",
+  );
+  if (refundEvents.length > 1) return unavailable();
+  const refund = refundEvents.length
+    ? await loadPayrollPrepaidSettlement(tx, {
+        tenantId,
+        holding,
+        event: refundEvents[0],
+        timeZone: tenant.timeZone,
+      })
+    : null;
+  if (
+    refund &&
+    (holding.quantityRemaining !== 0 || JSON.stringify(holding.payrollAvailableOrdinals) !== "[]")
+  )
+    return unavailable();
+  const replayHolding = refund
+    ? {
+        ...holding,
+        quantityRemaining: Number(refund.preHolding.quantityRemaining),
+        payrollAvailableOrdinals: refund.preHolding.payrollAvailableOrdinals,
+      }
+    : holding;
+  if (
+    refund &&
+    (redemptions.some(
+      (row) =>
+        row.usedAt >= refund.event.occurredAt ||
+        (row.revertedAt !== null && row.revertedAt >= refund.event.occurredAt),
+    ) ||
+      transfers.some((row) => row.createdAt >= refund.event.occurredAt))
+  )
+    return unavailable();
   const related = events.filter(
     (row) =>
-      row.sourceId === holdingId ||
+      (row.sourceId === holdingId && row.sourceType !== "PACKAGE_REFUND") ||
       redemptionIds.has(row.sourceId) ||
       allocationIds.has(row.sourceId),
   );
@@ -145,7 +180,7 @@ export async function loadPayrollPackageRedemptionHistory(
   const ownership = verifyPayrollPackageOwnership({
     tenantId,
     purchase,
-    holding,
+    holding: replayHolding,
     transfers,
     redemptions,
   });
@@ -409,13 +444,14 @@ export async function loadPayrollPackageRedemptionHistory(
   const verified = verifyPayrollPackageRedemptionInventory({
     tenantId,
     purchase,
-    holding,
+    holding: replayHolding,
     redemptions: inputs,
     collections,
     overrides,
   });
   return {
     verified,
+    refund,
     corrections,
     voids,
     evidence: {

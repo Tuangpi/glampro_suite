@@ -1,5 +1,27 @@
 # Glampro Suite — progress
 
+## CP-005 prepaid refund settlement inventory — October 30, 2026
+
+CP-005 IN PROGRESS, M1 open, no M2 work. Prepaid package/value-package refunds are
+now loaded from their own append-only settlement row, validated against the
+pre-cancellation holding replay, original sale-line allocations/outstanding debt and
+frozen refund request, instead of trusting the capture event. The monthly loader
+inventories settlements before tenant/inventory work: duplicate holding or operation
+key, a stored row disagreeing with the replayed holding, a moved historical original
+capture, a refund capture outside its settlement month and a month capture without a
+settlement all fail closed. Settled refunds are external cash outflows with frozen
+original deposit/allocation/award lineage and no repeated sale or commission source.
+New opt-in DB acceptance covers buy→refund→month load, stale approval rejection,
+recalculation with two payouts and remaining 500.0000 salon cash, approval, and a
+legacy capture refusing `PREPAID_SETTLEMENT_MISSING`. Selected close API 332/332,
+zero skips, including five isolated DB suites; the three directly touched suites
+44/44; API typecheck, ESLint and Prettier clean. Refund captures predating
+settlements now fail closed; prepaid refund HTTP workflows, close API/UI mounting,
+corrections, plan-switch/performance and browser acceptance remain open. No web
+checks, schema/migration change, activation, commit/push or deployment. Logs
+`/tmp/acc-all.log`, `/tmp/acc-two.log`, `/tmp/tsc.log`, `/tmp/lint.log`,
+`/tmp/prettier3.log`. Details in `docs/commission_payroll/CLOSE_ACCEPTANCE.md`.
+
 ## CP-005 current checkpoint — October 30, 2026
 
 CP-005 IN PROGRESS, M1 open. Owner approved prospective manager-confirmed prepaid

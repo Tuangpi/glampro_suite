@@ -2,6 +2,16 @@
 
 ## Workflow
 
+Latest M1 continuation: prepaid package and value-package refunds now load from
+their own append-only settlement row in the cancellation month. Independent
+settlement validation plus dual-holding replay, original-capture month checks and
+missing/duplicate settlement refusal pass in memory, and real checkout→refund→
+month load→stale approval→approval acceptance passes with 500.0000 of remaining
+salon cash and no repeated payout. Selected API 332/332, zero skips; API
+typecheck/lint/format clean. Prepaid refund HTTP workflows, refund/void UI,
+mounted application and browser acceptance remain open; M1 stays IN PROGRESS and
+M2 untouched.
+
 Latest M1 verification: SERVICE/PRODUCT plus FOC ordinary refunds with a zero
 tender pass full original-month and reversal-month loading in memory. Sixteen
 month-only capture corruptions refuse; changed historical tender invalidates
