@@ -6,6 +6,18 @@
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
+The five remaining delivery gates are tracked as CP-005-M1–M5 in
+[TASKS.md](TASKS.md). **M1 authoritative lifecycle loading is still open**, despite
+passing monthly private-credit and private-transfer subsets. Sharing, restorations,
+refunds/voids and the other required unsupported paths must be integrated and
+verified, not merely rejected, before M1 is complete. Next-open corrections,
+carry/plan-switch acceptance, mounted application workflows and final acceptance
+remain separate milestones. The checkpoint results below do not complete them.
+
+During implementation, run focused checks for fast feedback and consolidate
+integrated regression at the milestone gate. Preserve all existing acceptance
+requirements; faster cadence does not permit weaker assertions or omitted paths.
+
 ## Latest checkpoint — private credit ownership transfers
 
 - Private transfer history now replays complete GRANT/SPEND/TRANSFER states from

@@ -2,6 +2,23 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — delivery cadence updated October 30, 2026.** Latest
+  completed task CP-004. None of the five remaining delivery milestones is done.
+  Resume **CP-005-M1 authoritative lifecycle loading** as a coordinated pass, not
+  another per-helper handoff. Supported private-credit monthly loading and private
+  transfers are implemented/tested; sharing, restorations, refunds/voids and other
+  required unsupported paths keep M1 open. Then source corrections, carry/plan
+  switches, application integration and final acceptance remain.
+- Read the short Current State in
+  `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/PROGRESS.md`
+  and milestone gates in
+  `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/TASKS.md`.
+  Continue within M1 until verified completion or a genuine blocker/user instruction/
+  session limit. No automatic start of the next milestone. Previous test evidence
+  is unchanged; this update is docs only. No activation, deployment, commit or push.
+
+## Previous checkpoint — private credit ownership transfers
+
 - **CP-005 private credit ownership transfers, October 30, 2026:** IN PROGRESS;
   latest completed CP-004, CP-003A/CP-006 untouched. Independent grant/spend/transfer
   replay resolves spend-time owners with exact transfer audits, preserved original

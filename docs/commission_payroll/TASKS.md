@@ -6,6 +6,11 @@ First-priority queue approved October 27, 2026. Use this queue rather than the
 superseded SC tracker or unrelated root backlog. Read PROJECT, DECISIONS,
 REQUIREMENTS and PROGRESS before resuming. Start the first unblocked TODO task,
 mark it IN PROGRESS before implementation, verify it, update handoff, then stop.
+Resume IN PROGRESS work before selecting a TODO. For CP-005, use the delivery
+milestones below: a helper, test group or prerequisite is not a stopping point.
+Complete the selected milestone and its verification before a routine handoff;
+do not automatically start the next milestone. Stop earlier only for a genuine
+blocker, user instruction or session limit, and record the exact unfinished work.
 Existing implementation and reference tests need verification, not automatic credit.
 
 ## CP-001 — Establish management and reconcile requirements
@@ -337,6 +342,36 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+
+### Delivery milestones — execution baseline October 30, 2026
+
+These are delivery boundaries within CP-005, not new top-level tasks or proof of
+completion. **None of the five milestones is complete.** On “Next” or “Continue”,
+resume **CP-005-M1** as one coordinated implementation/verification pass. Do not
+stop merely because the next helper or lifecycle subtype passes its tests.
+
+| ID        | Milestone / status                                | Remaining scope and completion gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CP-005-M1 | Authoritative lifecycle loading — **IN PROGRESS** | Private-credit holding/sale reconciliation, supported monthly integration and private ownership transfers are implemented/tested. Finish historical sharing/membership/consent, restorations, refunds/voids, expiry edits, mixed session-package usage, spend-sale instalments and full-credit paid lines lacking allocation evidence. Gate: required operational paths load through monthly calculate/approve with independent one-to-one evidence, exact money, corruption refusal, stale-draft rejection and immutable approved history. Unsupported required paths remaining fail-closed keep M1 open. |
+| CP-005-M2 | Next-open-period source corrections — **TODO**    | Finish operational posting-date handling, idempotency and approval/source races. Gate: real transactional acceptance proves correct next-open-period placement, no duplicate sources and deterministic race/rollback behavior without rewriting approved history.                                                                                                                                                                                                                                                                                                                                          |
+| CP-005-M3 | Carry and plan-switch acceptance — **TODO**       | Opening/settlement controls exist; verify end-to-end carry, component mapping, plan switches and approved-month races. Gate: exact balances and component treatment reconcile across periods and plan changes, including concurrent approval.                                                                                                                                                                                                                                                                                                                                                              |
+| CP-005-M4 | Application close API/UI integration — **TODO**   | Router/screens remain unmounted. Gate: mounted authenticated tenant/role-safe workflows pass calculate, frozen reads, adjustments, approval and separate payout acceptance. Local integration is not deployment or earnings activation.                                                                                                                                                                                                                                                                                                                                                                    |
+| CP-005-M5 | Final acceptance — **TODO**                       | Gate: complete money reconciliation, browser permissions, concurrency/rollback, frozen-history and documented performance checks against the existing acceptance requirements. Passing a selected suite alone is insufficient.                                                                                                                                                                                                                                                                                                                                                                             |
+
+Dependencies: M2 follows M1; M3 follows M2; M4 follows M3; M5 follows M4.
+Existing foundations do not make M2–M5 DONE; verify them at their gates. Preserve
+CP-003A/CP-006/CP-007 scope and existing release gates; this table does not absorb
+or declare those tasks complete. If a required path needs a policy decision,
+record the blocker rather than silently removing it from M1.
+
+Use focused tests during implementation, then run the relevant integrated
+regression/type/lint/build checks at the milestone boundary. Re-run broad checks
+earlier when cross-cutting changes warrant it. Update handoff once per meaningful
+delivery or interruption, not once per helper. Report “completed slice; M1 open”
+for partial work, never “lifecycle loading done”.
+
+### Implementation evidence and earlier checkpoints
+
 - Private credit ownership transfers (October 30): replay complete balance chain
   against independent transfer audits; verify spend-time owner rather than current
   holding owner. Real monthly original/recipient spends, same-package multi-holding,

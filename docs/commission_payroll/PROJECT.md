@@ -21,6 +21,23 @@ evidence for this project. Existing application work may be reused after inspect
 New requirements outrank incompatible old commission policy, not authentication,
 tenant isolation, exact-money handling, historical integrity, or transaction safety.
 
+## Delivery cadence — October 30, 2026
+
+Execute CP-005 by the five milestone boundaries in [TASKS.md](TASKS.md), not by
+individual helpers or test additions. Resume M1 authoritative lifecycle loading;
+monthly private-credit integration and private transfers are completed slices,
+not completion of M1. Continue through the selected milestone's related code,
+integration and acceptance work without routine permission or per-slice handoffs.
+Stop at its verified completion, a genuine blocker, user instruction or session
+limit; record partial results honestly. Do not automatically start the next milestone.
+
+Keep safety gates unchanged: independent evidence, exact money, fail-closed
+unsupported paths, frozen approvals and no unauthorized activation/deployment.
+Fail-closed coverage is necessary but does not complete a required operational path.
+Use focused feedback while building and consolidated regression at delivery gates.
+Read the short Current State and active milestone first; consult older history and
+requirements only as needed. Do not reread the full checkpoint history each session.
+
 ## Sources
 
 - `Glampro_SRS_Commission_Plans_v1.2_1.docx`: primary SRS, dated October 27, 2026.

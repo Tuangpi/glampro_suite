@@ -2,6 +2,36 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS; latest completed task CP-004.** Active delivery:
+  **CP-005-M1 authoritative lifecycle loading**, not another transfer/helper slice.
+  None of the five delivery milestones is complete; see TASKS.md for their gates.
+- Implemented/tested subset: private-credit holding/sale reconciliation, supported
+  monthly integration, private ownership transfers, frozen evidence and lock order.
+  Still required for M1: sharing/membership/consent history, restorations,
+  refunds/voids, expiry edits, mixed session-package usage, spend-sale instalments
+  and full-credit paid lines lacking allocation evidence. These remain fail-closed.
+- Next session: resume historical sharing replay and continue the coordinated M1
+  lifecycle pass through monthly integration and acceptance. Do not hand off after
+  each helper/subtype. Stop at verified M1 completion, a genuine blocker, user
+  instruction or session limit; record the exact remainder if interrupted.
+- Latest implementation evidence remains the transfer checkpoint below: close API
+  298/298, shared 302/302; not rerun for this documentation-only cadence update.
+  Disposable PostgreSQL was stopped; synthetic fixtures retained. UI/router remain
+  unmounted. No activation/deployment/commit/push. CP-003A/CP-006 untouched.
+- After M1: M2 source corrections, M3 carry/plan-switch, M4 application integration,
+  M5 final acceptance, in order. Do not automatically start the next milestone.
+
+## Delivery cadence update — October 30, 2026
+
+User requested faster delivery after repeated partial handoffs. TASKS now defines
+five milestone gates and resumes M1; PROJECT defines coordinated execution,
+focused feedback and consolidated verification. No implementation progress or
+new application test results are claimed by this documentation-only update.
+Verification: reviewed the five-file documentation diff; Prettier check and
+`git diff --check` pass. Application tests were not rerun because no code changed.
+
+## Previous checkpoint — private credit ownership transfers
+
 - **CP-005 IN PROGRESS — private credit ownership transfers (October 30, 2026).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Complete private holding
   history now independently replays GRANT/SPEND/TRANSFER balance states against
