@@ -18,9 +18,12 @@ zero skips, including five isolated DB suites; the three directly touched suites
 44/44; API typecheck, ESLint and Prettier clean. Refund captures predating
 settlements now fail closed; prepaid refund HTTP workflows, close API/UI mounting,
 corrections, plan-switch/performance and browser acceptance remain open. No web
-checks, schema/migration change, activation, commit/push or deployment. Logs
-`/tmp/acc-all.log`, `/tmp/acc-two.log`, `/tmp/tsc.log`, `/tmp/lint.log`,
-`/tmp/prettier3.log`. Details in `docs/commission_payroll/CLOSE_ACCEPTANCE.md`.
+checks, schema/migration change or activation; slice committed locally as
+`6faab1e` and not pushed. Post-commit local re-verification (disposable cluster
+stopped, so opt-in DB suites skipped): selected close tests 321 passed / 5 skipped
+/ 0 failed, API typecheck, ESLint, Prettier and git whitespace clean. Logs
+`/tmp/cp005v-{close-suite,tsc,eslint,prettier}.log`. Details in
+`docs/commission_payroll/CLOSE_ACCEPTANCE.md`.
 
 ## CP-005 current checkpoint — October 30, 2026
 
