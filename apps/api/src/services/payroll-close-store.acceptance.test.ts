@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
+import { lockPrepaid } from "../lib/prepaid-lock.js";
+import { setTimeout } from "node:timers/promises";
 import {
   payrollInputHash,
   type PayrollCloseInputs,
@@ -157,6 +159,64 @@ test(
           /matching committed transition/,
         );
         await assert.rejects(readStoredPayrollStatement("2026-09", staffId), /Only approved/);
+
+        // A close waiting on prepaid must not hold the tenant row needed by its
+        // writer. NOWAIT turns the old inverted order into a deterministic failure.
+        for (const action of ["CALCULATE", "APPROVE"] as const) {
+          let ready!: (pid: number) => void;
+          const holdingPrepaid = new Promise<number>((resolve) => {
+            ready = resolve;
+          });
+          let releaseWriter!: () => void;
+          const continueWriter = new Promise<void>((resolve) => {
+            releaseWriter = resolve;
+          });
+          const writer = prisma.$transaction(async (tx) => {
+            await lockPrepaid(tx, tenantId);
+            const [backend] = await tx.$queryRaw<{ pid: number }[]>`SELECT pg_backend_pid() AS pid`;
+            ready(backend.pid);
+            await continueWriter;
+            await tx.$queryRaw`SELECT id FROM tenants WHERE id = ${tenantId} FOR UPDATE NOWAIT`;
+          });
+          const pid = await holdingPrepaid;
+          const stopped = new Error("Lock-order probe stops before persistence");
+          const probe: PayrollCloseLoader = async (tx) => {
+            await lockPrepaid(tx, tenantId);
+            await lockCommissionConfiguration(tx, tenantId);
+            throw stopped;
+          };
+          const close = assert.rejects(
+            action === "CALCULATE"
+              ? calculateStoredPayrollClose("2026-09", 4, probe)
+              : approveStoredPayrollClose("2026-09", 4, "Lock-order probe", probe),
+            (error) => error === stopped,
+          );
+          let results: PromiseSettledResult<unknown>[];
+          try {
+            let waiting = false;
+            for (let attempt = 0; attempt < 200 && !waiting; attempt++) {
+              const [row] = await prisma.$queryRaw<{ waiting: boolean }[]>`
+                SELECT EXISTS (
+                  SELECT 1 FROM pg_locks held JOIN pg_locks blocked
+                    ON held.locktype = blocked.locktype
+                    AND held.database = blocked.database
+                    AND held.classid = blocked.classid AND held.objid = blocked.objid
+                    AND held.objsubid = blocked.objsubid
+                  WHERE held.pid = ${pid} AND held.locktype = 'advisory'
+                    AND held.granted AND NOT blocked.granted
+                ) AS waiting`;
+              waiting = row.waiting;
+              if (!waiting) await setTimeout(10);
+            }
+            assert.equal(waiting, true, `${action} must wait on the writer's prepaid lock`);
+          } finally {
+            releaseWriter();
+            results = await Promise.allSettled([writer, close]);
+          }
+          for (const result of results) if (result.status === "rejected") throw result.reason;
+          assert.equal((await prisma.payrollClose.findFirstOrThrow()).revision, 4);
+          assert.equal(await prisma.payrollCloseEvent.count(), 4);
+        }
 
         // Lock barrier forces an authoritative input edit to commit before approval.
         let locked!: () => void;

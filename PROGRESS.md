@@ -2,6 +2,34 @@
 
 ## Current State
 
+- **CP-005 monthly prepaid lock prerequisite, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004; CP-003A/CP-006 untouched. Outer calculate/approve and
+  direct authoritative loader take prepaid before tenant. Regression tests and
+  PostgreSQL contention barriers verify ordering/re-entry without close/audit writes.
+  Selected close API 293/293, zero failures/skips (four isolated DB suites); API
+  types/lint/build pass. No web checks. Monthly prepaid gate stays closed: next
+  integrate private credit sale allocation into month inventories/frozen evidence
+  with no-fresh-cash/stale-approval checks. Remaining lifecycle/performance/mounting
+  acceptance unchanged. Disposable PostgreSQL stopped, fixtures retained. No
+  application DB/schema, activation, deployment, commit or push. Logs
+  `/tmp/cp005-lock-*`; see authoritative commission-payroll handoff.
+
+## Previous checkpoint — private credit sale allocation
+
+- **CP-005 private credit sale allocation, October 30, 2026:** IN PROGRESS;
+  latest completed CP-004; CP-003A/CP-006 untouched. Internal sale-wide reconciliation
+  matches complete private holding histories, external payments/GST/cash sellers and
+  frozen ordinary/FOC economics. Mixed and two-holding real checkout, reload and
+  corruption/refusal checks pass; credit tenders never count as fresh cash. Selected
+  API 377 passed, one opt-in CP-004 SQL suite skipped; shared 302/302; API types/lint/
+  build/format/whitespace pass. No web changes/checks. Disposable PostgreSQL stopped,
+  fixtures retained. Monthly gate stays closed: next integrate month/frozen evidence
+  and fix outer close lock order to prepaid-before-tenant. Lifecycle, plan-switch/
+  performance and mounted-app/browser acceptance remain. No application DB/schema
+  changes, activation, deployment, commit or push. Logs `/tmp/cp005-value-sale-*`.
+
+## Previous checkpoint — private credit holding history
+
 - **CP-005 private credit holding history, October 30, 2026:** IN PROGRESS;
   latest completed CP-004. Internal loader independently reconciles private credit
   purchases/collections, balance ledger, spend operations/tenders, ratio/splits and

@@ -4,6 +4,7 @@ import { prisma } from "../lib/prisma.js";
 import { currentOutletId, currentScope } from "../lib/tenant-context.js";
 import { conflict, forbidden, notFound, HttpError } from "../lib/http-error.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
+import { lockPrepaid } from "../lib/prepaid-lock.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import {
@@ -26,7 +27,7 @@ import {
 
 export type PayrollCloseTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 /** Server-owned loader only. Must resolve complete authoritative inputs in this
- * transaction while the tenant source/configuration lock is held. Never accept
+ * transaction while prepaid then tenant source/configuration locks are held. Never accept
  * this function or its returned records from an HTTP request. */
 export type PayrollCloseLoader = (
   tx: PayrollCloseTransaction,
@@ -92,6 +93,9 @@ async function transition(
   const auditReason = z.string().trim().min(3).max(1000).parse(reason);
   return prisma.$transaction(
     async (tx) => {
+      // Source loaders may re-enter prepaid locking. Take it before the tenant
+      // row, matching checkout/reversal writers, never from inside a tenant lock.
+      if (action === "CALCULATE" || action === "APPROVE") await lockPrepaid(tx, scope.tenantId);
       await lockCommissionConfiguration(tx, scope.tenantId);
       const user = await actor(tx, ownerOnly);
       const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: scope.tenantId } });

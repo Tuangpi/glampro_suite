@@ -2,6 +2,50 @@
 
 ## Current State
 
+- **CP-005 IN PROGRESS — monthly prepaid lock prerequisite (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Calculate/approve now acquire
+  prepaid before tenant at the outer transaction boundary, before actor/source reads.
+  Direct authoritative loading uses the same order; nested loaders can re-enter
+  safely. Other transitions and frozen management reads remain tenant-only.
+- Verified 293/293 selected close API tests, zero failures/skips, including all four
+  isolated DB suites. New real PostgreSQL barriers observe calculate/approve waiting
+  on prepaid while the writer takes tenant NOWAIT, then roll back without close/audit
+  changes. Direct-loader and outer-boundary regression tests pass. API typecheck,
+  lint/build pass. Logs `/tmp/cp005-lock-*`. No web changes/checks.
+- Next: integrate private value-credit sale allocation into independent monthly
+  inventories and frozen evidence, with no-fresh-cash and stale-approval checks.
+  Monthly prepaid gate deliberately remains closed; this prerequisite is not monthly
+  acceptance. Transfers/sharing/refund/voids, plan-switch/performance and mounted
+  app/browser acceptance remain. No application DB/schema, activation, deployment,
+  commit or push. Disposable PostgreSQL stopped; synthetic fixtures retained.
+
+## Previous checkpoint — private credit sale allocation
+
+- **CP-005 IN PROGRESS — private credit sale allocation (October 30, 2026).**
+  Latest completed CP-004; CP-003A/CP-006 untouched. Added internal locked sale-wide
+  reconciler for settled service/product receipts, matching every spend to complete
+  private holding history. External payments/collections/GST/seller shares, frozen
+  checkout economics, ordinary splits and full-list-price FOC independently agree.
+  Cash uses external net only; credit tenders do not create fresh collection.
+- Real checkout mixed service/product/FOC receipt verifies 64.2200/27.5200/492.0000
+  bases and 91.7400 external cash; two-holding receipt verifies both purchase ratios
+  and 45.8700 external cash. Stable reloads, catalogue changes, 14 read-only evidence
+  corruptions, role/outlet/tenant refusal and restored-credit refusal pass. No legacy
+  earnings, close or close-audit writes. Fully credit-paid paid lines without external
+  allocations still refuse rather than inventing zero ordinary bases.
+- Verified selected API 377 passed, zero failures, one opt-in CP-004 SQL lifecycle
+  suite skipped; four CP-005 isolated DB suites ran. Shared 302/302; API typecheck,
+  lint/build, formatting/whitespace pass. Logs `/tmp/cp005-value-sale-*` and exit
+  markers. No web changes/checks. Disposable PostgreSQL stopped; fixtures retained.
+- Next: monthly prepaid integration and month-inventory/frozen/reconciliation tests.
+  Acquire prepaid BEFORE tenant lock at outer close calculate/approve boundary;
+  do not call sale loader under existing tenant-first close lock. Monthly gate is
+  deliberately still closed. Transfers/sharing/refund/voids, plan-switch/performance,
+  app mounting/full HTTP/browser acceptance remain. No application DB/schema changes,
+  activation, deployment, commit or push. **Not DONE.**
+
+## Previous checkpoint — private credit holding history
+
 - **CP-005 IN PROGRESS — private credit holding history (October 30, 2026).**
   Latest completed CP-004; CP-003A/CP-006 untouched. Added internal locked loader
   for complete private, untransferred, unreversed value-credit history. Reconciles

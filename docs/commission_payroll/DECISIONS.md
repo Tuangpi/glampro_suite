@@ -8,6 +8,25 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 private credit sale allocation boundary (October 30, 2026)
+
+- Sale-level reconciliation separately proves original private-credit holding
+  history, complete spend captures and external collection allocations. Ordinary
+  paid-line bases match independently allocated external net; VP_SPEND retains
+  the original holding paid-to-credit ratio. FOC remains frozen full-list-price
+  activity. Credit tenders are never external collection or fresh cash.
+- Do not infer zero ordinary bases when checkout recorded unavailable external
+  allocation evidence. Fully credit-funded paid lines still refuse. This slice
+  supports fully settled service/product receipts only; package combinations,
+  later outstanding payments, transfers/sharing and refund/void history still refuse.
+- Internal sale readiness does not open the monthly prepaid gate or activate
+  earnings. Monthly integration must independently compare month inventories and
+  freeze sale evidence, and acquire prepaid advisory lock BEFORE tenant lock at
+  the outer close transaction boundary (including stored calculate/approve), not
+  acquire prepaid inside an already tenant-locked close transaction.
+- Real writer evidence is required for unsupported paths; no backfill, application
+  schema/database changes, inferred tender-line proportions or current-price fallback.
+
 ### CP-005 restored sessions and partial FOC (October 30, 2026)
 
 - Replay draw, restoration and transfer timestamps against original grants. Restored

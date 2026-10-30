@@ -10,6 +10,7 @@ import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 import { commissionScopeKey } from "./commission-rules.js";
 import { Prisma } from "../../generated/prisma/client.js";
+import { loadPayrollValueSaleAllocation } from "./payroll-close-value-sale.js";
 
 const hash = (value: unknown) =>
   payrollInputHash(
@@ -260,11 +261,314 @@ test(
           );
           assert.equal(hash(await load()), hash(three));
         }
+        // A holding-level capture is not enough for a full-credit paid service:
+        // checkout intentionally leaves ordinary economics unavailable without
+        // explicit external allocation. Do not infer a zero ordinary base.
+        await assert.rejects(
+          prisma.$transaction((tx) => loadPayrollValueSaleAllocation(tx, usage.id)),
+          /VALUE_SALE_ALLOCATION_UNCONFIRMED/,
+        );
+        const product = await prisma.product.create({
+          data: {
+            tenantId,
+            name: "Mixed retail",
+            memberPrice: "50",
+            nonmemberPrice: "50",
+            quantity: 10,
+          },
+        });
+        const complimentary = await prisma.service.create({
+          data: { tenantId, name: "Mixed FOC", memberPrice: "100", nonmemberPrice: "492" },
+        });
+        const performers = [
+          { staffId: ownerId, share: 2500 },
+          { staffId, share: 7500 },
+        ];
+        const sellers = [{ staffId: ownerId, share: 10000 }];
+        const mixed = await runAtOutlet(outlet.id, () =>
+          createSale({
+            customerId: customer.id,
+            lines: [
+              {
+                itemType: "SERVICE",
+                itemId: service.id,
+                quantity: 1,
+                attribution: { performers, sellers },
+              },
+              { itemType: "PRODUCT", itemId: product.id, quantity: 1, attribution: { sellers } },
+              {
+                itemType: "SERVICE",
+                itemId: complimentary.id,
+                quantity: 1,
+                discountPercent: 100,
+                attribution: { performers },
+              },
+            ],
+            payments: [
+              { method: "PREPAID_CREDIT", holdingId: holding.id, amount: 50 },
+              { method: "CASH", amount: 100 },
+            ],
+            collection: {
+              currency: "SGD",
+              allocations: [
+                { paymentIndex: 1, linePosition: 0, grossCents: "7000" },
+                { paymentIndex: 1, linePosition: 1, grossCents: "3000" },
+              ],
+            },
+          }),
+        );
+        const loadSale = (tx?: PayrollCloseTransaction) =>
+          tx
+            ? loadPayrollValueSaleAllocation(tx, mixed.id)
+            : prisma.$transaction((transaction) =>
+                loadPayrollValueSaleAllocation(transaction, mixed.id),
+              );
+        const allocated = await loadSale();
+        assert.equal(allocated.earningsActive, false);
+        assert.deepEqual(
+          allocated.ordinary.map((row) => row.baseAmount).sort(),
+          ["27.5200", "492.0000", "64.2200"].sort(),
+        );
+        assert.equal(allocated.cash.salonCash, "91.7400");
+        assert.deepEqual(allocated.cash.staff, [{ staffId: ownerId, collection: "91.7400" }]);
+        assert.equal(allocated.creditPaymentIds.length, 1);
+        assert.equal(allocated.evidence.histories[0].verified.at(-1)!.baseAmount, "41.6667");
+        assert.equal(hash(await loadSale()), hash(allocated));
+        await assert.rejects(
+          scope(() => loadSale(), staffId),
+          /not permitted/,
+        );
+        await assert.rejects(
+          runAtOutlet(outlet.id, () => loadSale()),
+          /salon-wide/,
+        );
+        await assert.rejects(
+          runAsTenant(otherId, () => loadSale(), ownerId),
+          /not permitted/,
+        );
+        for (const corruption of [
+          "SALE",
+          "REDEMPTIONS",
+          "SOURCES",
+          "ORPHAN",
+          "BASE",
+          "DUPLICATE_STAFF",
+          "COLLECTION",
+          "TAX",
+          "SELLERS",
+          "TENDER",
+          "FOREIGN",
+          "REFUND",
+          "OUTSTANDING",
+          "ECONOMICS",
+        ] as const) {
+          await assert.rejects(
+            prisma.$transaction((tx) =>
+              loadSale(
+                new Proxy(tx, {
+                  get(target, property) {
+                    if (property === "sale" && corruption === "ECONOMICS")
+                      return new Proxy(target.sale, {
+                        get(delegate, method) {
+                          if (method !== "findFirst") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findFirst>[0]) => {
+                            const row = await target.sale.findFirst({
+                              where: { tenantId, id: args?.where?.id },
+                              include: { lines: true },
+                            });
+                            return row?.id === mixed.id
+                              ? {
+                                  ...row,
+                                  lines: row.lines.map((line) => ({
+                                    ...line,
+                                    payrollEconomics: {
+                                      ...(line.payrollEconomics as Prisma.JsonObject),
+                                      coveredPackageQuantity: 1,
+                                    },
+                                  })),
+                                }
+                              : row;
+                          };
+                        },
+                      });
+                    if (property === "sale" && corruption === "SALE")
+                      return new Proxy(target.sale, {
+                        get(delegate, method) {
+                          if (method !== "findFirst") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findFirst>[0]) => {
+                            const row = await delegate.findFirst(args);
+                            return row?.id === mixed.id
+                              ? { ...row, paidAmount: new Prisma.Decimal("149") }
+                              : row;
+                          };
+                        },
+                      });
+                    if (property === "customerRedemption" && corruption === "REDEMPTIONS")
+                      return new Proxy(target.customerRedemption, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) =>
+                            args?.where?.saleId === mixed.id ? [] : delegate.findMany(args);
+                        },
+                      });
+                    if (property === "saleRefund" && corruption === "REFUND")
+                      return { findMany: async () => [{ id: "unverified-refund" }] };
+                    if (property === "customerOutstandingPayment" && corruption === "OUTSTANDING")
+                      return { findMany: async () => [{ id: "unverified-instalment" }] };
+                    if (property === "salePayment" && corruption === "TENDER")
+                      return new Proxy(target.salePayment, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) =>
+                            (await delegate.findMany(args)).map((row) =>
+                              row.saleId === mixed.id && row.method === "CASH"
+                                ? { ...row, amount: new Prisma.Decimal("99") }
+                                : row,
+                            );
+                        },
+                      });
+                    if (
+                      property === "payrollSourceEvent" &&
+                      ["SOURCES", "ORPHAN", "BASE", "DUPLICATE_STAFF"].includes(corruption)
+                    )
+                      return new Proxy(target.payrollSourceEvent, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                            const rows = await delegate.findMany(args);
+                            if (args?.where?.saleId !== mixed.id) return rows;
+                            if (corruption === "SOURCES")
+                              return rows.filter((row) => row.sourceType !== "SALE_LINE");
+                            if (corruption === "ORPHAN")
+                              return [
+                                ...rows,
+                                {
+                                  ...rows[0],
+                                  id: "orphan",
+                                  sourceId: "uninventoried",
+                                  sourceKey: "sale-line:uninventoried",
+                                },
+                              ];
+                            return rows.map((row) => {
+                              if (row.sourceType !== "SALE_LINE") return row;
+                              const evidence = structuredClone(row.evidence) as {
+                                lines: { baseAmount: string }[];
+                              };
+                              if (corruption === "BASE") evidence.lines[0].baseAmount = "999.0000";
+                              else evidence.lines.push({ ...evidence.lines[0] });
+                              return { ...row, evidence };
+                            });
+                          };
+                        },
+                      });
+                    if (
+                      property === "commissionCollection" &&
+                      ["COLLECTION", "TAX", "SELLERS", "FOREIGN"].includes(corruption)
+                    )
+                      return new Proxy(target.commissionCollection, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                            if (args?.where?.saleId !== mixed.id) return delegate.findMany(args);
+                            if (corruption === "COLLECTION") return [];
+                            const rows = await target.commissionCollection.findMany({
+                              where: { tenantId, saleId: mixed.id },
+                              include: { allocations: { orderBy: { id: "asc" } } },
+                              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                            });
+                            return rows.map((row) => ({
+                              ...row,
+                              ...(corruption === "FOREIGN" ? { tenantId: otherId } : {}),
+                              allocations: row.allocations.map((part) => ({
+                                ...part,
+                                ...(corruption === "TAX" ? { taxCents: part.taxCents + 1n } : {}),
+                                ...(corruption === "SELLERS"
+                                  ? {
+                                      evidence: {
+                                        version: 1,
+                                        attributionStatus: "KNOWN",
+                                        sellers: [{ staffId, share: 10000 }],
+                                      },
+                                    }
+                                  : {}),
+                              })),
+                            }));
+                          };
+                        },
+                      });
+                    return Reflect.get(target, property);
+                  },
+                }) as PayrollCloseTransaction,
+              ),
+            ),
+          );
+          assert.equal(hash(await loadSale()), hash(allocated));
+        }
+        // Two independent holding ratios on one receipt must both reconcile;
+        // only the external 50 gross (45.87 net) contributes fresh collection.
+        const secondItem = await prisma.valuePackage.create({
+          data: { tenantId, name: "Second private credit", price: "109", credit: "200" },
+        });
+        const secondPurchase = await runAtOutlet(outlet.id, () =>
+          createSale({
+            customerId: customer.id,
+            lines: [
+              {
+                itemType: "VALUE_PACKAGE",
+                itemId: secondItem.id,
+                quantity: 1,
+                attribution: { sellers },
+              },
+            ],
+            payments: [{ method: "CASH", amount: 109 }],
+            collection: {
+              currency: "SGD",
+              allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "10900" }],
+            },
+          }),
+        );
+        const secondHolding = await prisma.customerValuePackageHolding.findFirstOrThrow({
+          where: { saleLine: { saleId: secondPurchase.id } },
+        });
+        const multiple = await runAtOutlet(outlet.id, () =>
+          createSale({
+            customerId: customer.id,
+            lines: [
+              {
+                itemType: "SERVICE",
+                itemId: service.id,
+                quantity: 1,
+                attribution: { sellers, performers },
+              },
+            ],
+            payments: [
+              { method: "PREPAID_CREDIT", holdingId: holding.id, amount: 20 },
+              { method: "PREPAID_CREDIT", holdingId: secondHolding.id, amount: 30 },
+              { method: "CASH", amount: 50 },
+            ],
+            collection: {
+              currency: "SGD",
+              allocations: [{ paymentIndex: 2, linePosition: 0, grossCents: "5000" }],
+            },
+          }),
+        );
+        const multipleResult = await prisma.$transaction((tx) =>
+          loadPayrollValueSaleAllocation(tx, multiple.id),
+        );
+        assert.equal(multipleResult.evidence.histories.length, 2);
+        assert.equal(multipleResult.creditPaymentIds.length, 2);
+        assert.equal(multipleResult.cash.salonCash, "45.8700");
+        assert.equal(multipleResult.ordinary[0].baseAmount, "45.8700");
+        assert.equal(await prisma.employeeCommission.count(), 0);
         await prisma.valuePackage.update({
           where: { id: item.id },
           data: { price: "1", credit: "999" },
         });
-        assert.deepEqual((await load()).verified, three.verified);
+        assert.deepEqual((await loadSale()).ordinary, allocated.ordinary);
+        assert.deepEqual(
+          (await load()).verified.slice(0, -1),
+          allocated.evidence.histories[0].verified,
+        );
         // Holding-level readiness must not accidentally enable monthly prepaid allocation.
         const parts = new Intl.DateTimeFormat("en", {
           timeZone: "Asia/Singapore",
@@ -284,6 +588,7 @@ test(
         assert.equal(await prisma.payrollCloseEvent.count(), 0);
         await voidSale(usage.id, { reason: "Synthetic unsupported restoration" }, ownerId);
         await assert.rejects(load(), /VALUE_SPEND_HISTORY_UNCONFIRMED/);
+        await assert.rejects(() => loadSale(), /VALUE_SPEND_HISTORY_UNCONFIRMED/);
       });
     } finally {
       await prisma.$disconnect();

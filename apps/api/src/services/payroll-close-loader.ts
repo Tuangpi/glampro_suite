@@ -10,6 +10,7 @@ import {
 } from "@glampro_suite/shared";
 import { currentOutletId, currentScope } from "../lib/tenant-context.js";
 import { conflict, forbidden } from "../lib/http-error.js";
+import { lockPrepaid } from "../lib/prepaid-lock.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
 import { allocateCollection } from "../lib/commission-collection.js";
 import { packagePurchaseValue } from "../lib/package-valuation.js";
@@ -49,6 +50,7 @@ function unavailable(code: string): never {
 }
 
 /** Internal, non-activating loader. Invoke only inside the close transaction.
+ * Callers must acquire prepaid before tenant if they already hold either lock.
  * No caller records, paging, current salary fallback or inferred opening zero.
  * Unsupported operational workflows block the entire close, even without captures.
  */
@@ -56,6 +58,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const scope = currentScope();
   if (scope?.kind !== "tenant" || !scope.actorId || currentOutletId())
     throw forbidden("Payroll input loading requires a salon-wide authenticated actor.");
+  await lockPrepaid(tx, scope.tenantId);
   await lockCommissionConfiguration(tx, scope.tenantId);
   const actor = await tx.user.findFirst({
     where: { tenantId: scope.tenantId, id: scope.actorId, disabled: false },

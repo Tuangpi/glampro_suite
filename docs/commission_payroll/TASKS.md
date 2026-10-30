@@ -337,6 +337,23 @@ Existing implementation and reference tests need verification, not automatic cre
 
 - Status: **IN PROGRESS** (October 28, 2026).
 - Dependencies: CP-004.
+- Monthly prepaid lock prerequisite (October 30): outer calculate/approve acquire
+  prepaid BEFORE tenant and input reads; direct authoritative loader follows the
+  same order. Real PostgreSQL waiting-lock/NOWAIT barriers for both actions verify
+  safe writer progress and nested re-entry without close/audit mutation. Selected
+  close API 293/293 with all four isolated DB suites, zero failures/skips; API
+  types/lint/build pass. Logs `/tmp/cp005-lock-*`. Monthly gate remains closed;
+  next integrate month inventory, frozen evidence and no-fresh-cash reconciliation.
+- Private value-credit sale allocation continuation (October 30): internal reconciler
+  matches complete sale spends to holding histories, exact external payments/GST/
+  allocations/sellers, frozen ordinary/FOC economics and splits. Mixed service/product/
+  FOC and two-holding checkout, reload, 14 corruption and access/refusal cases pass;
+  prepaid tenders add no cash, full-credit paid lines lacking allocation still refuse.
+  Selected API 377 passed, one opt-in CP-004 SQL suite skipped; shared 302/302;
+  API types/lint/build pass. Logs `/tmp/cp005-value-sale-*`. Monthly gate stays closed:
+  next integrate month inventories/frozen/no-cash reconciliation with prepaid-before-
+  tenant lock at outer calculate/approve boundary. Transfers/sharing/refunds/voids,
+  plan-switch/performance and mounted app/full browser acceptance remain. Not DONE.
 - Private value-credit holding history continuation (October 30): internal loader
   takes prepaid then tenant locks; verifies original purchase/external collections,
   complete GRANT/SPEND balance ledger and operational usage/tender/split/ratio/rate

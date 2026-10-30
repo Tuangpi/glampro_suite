@@ -1067,6 +1067,7 @@ export function loaderFixture() {
     },
   });
   const tx = {
+    $executeRaw: async () => 1,
     $queryRaw: async () => [],
     tenant: { findUniqueOrThrow: async () => ({ id: "salon", timeZone: "Asia/Singapore" }) },
     user: {
@@ -1119,6 +1120,26 @@ export function loaderFixture() {
     );
   return { data, tx, load, queries };
 }
+
+test("direct authoritative loader takes prepaid before tenant and inventory reads", async () => {
+  const f = loaderFixture();
+  const calls: string[] = [];
+  f.tx.$executeRaw = (async (_sql: TemplateStringsArray, key: string) => {
+    calls.push(`prepaid:${key}`);
+    return 1;
+  }) as typeof f.tx.$executeRaw;
+  f.tx.$queryRaw = (async (sql: TemplateStringsArray) => {
+    calls.push(sql.join("").includes("FOR UPDATE") ? "tenant" : "context");
+    return [];
+  }) as typeof f.tx.$queryRaw;
+  const readActor = f.tx.user.findFirst;
+  f.tx.user.findFirst = (async (...args: Parameters<typeof readActor>) => {
+    assert.deepEqual(calls, ["prepaid:prepaid:salon", "context", "tenant"]);
+    return readActor(...args);
+  }) as typeof readActor;
+  await f.load();
+  assert.deepEqual(calls, ["prepaid:prepaid:salon", "context", "tenant"]);
+});
 
 test("transactional loader reconciles independent ordinary economics and GST-exclusive cash", async () => {
   const f = loaderFixture();

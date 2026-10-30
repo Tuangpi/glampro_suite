@@ -6,7 +6,49 @@
 CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
-## Latest checkpoint — private value-credit holding history
+## Latest checkpoint — monthly prepaid lock prerequisite
+
+- Calculate/approve acquire prepaid before tenant at the outer close transaction
+  boundary, before actor/source reads. Direct authoritative input loading follows
+  the same order; existing tenant-only non-loading actions/reads remain unchanged.
+- New regression tests verify exact outer-boundary and direct-loader order. Real
+  PostgreSQL barriers observe each action waiting for prepaid while the holding
+  writer acquires tenant NOWAIT; nested re-entry completes and probe rollback
+  preserves revision/audit counts. Existing stale approval/frozen checks still pass.
+- Selected close API 293/293, zero failures/skips, all four isolated DB suites run;
+  API typecheck/lint/build pass. Logs `/tmp/cp005-lock-*`. No web checks or application
+  DB/schema changes. Disposable PostgreSQL stopped, synthetic fixtures retained.
+- Monthly prepaid integration is NOT accepted. Next wire independent month
+  inventories and frozen value-sale evidence with no-fresh-cash and stale-approval
+  checks. Lifecycle, performance and mounted application/browser acceptance remain.
+
+## Previous checkpoint — private value-credit sale allocation
+
+- Added internal non-activating `loadPayrollValueSaleAllocation`: takes prepaid
+  then tenant locks, authenticates manager/owner, inventories all receipt lines,
+  payments, redemptions, sources, collections and refund/outstanding activity.
+  Independently matches every spend to complete holding history and source evidence.
+- Exact external allocations replay cumulative GST and original cash sellers.
+  Ordinary bases/splits/units and frozen checkout economics must match. FOC uses
+  immutable original list price. Cash resolver sees only external payments, never
+  credit tenders as new money. No inferred allocation or assumed zero ordinary base.
+- Expanded real checkout acceptance verifies mixed service/product/FOC ordinary
+  bases 64.2200/27.5200/492.0000, 91.7400 external net cash and 41.6667 credit-spend
+  ratio; second receipt reconciles two holdings with 45.8700 external net. Reload,
+  catalogue edit and role/outlet/tenant checks pass. Fourteen read-only corruptions
+  cover receipt balance, redemption/source/collection inventories, orphan sources,
+  ordinary bases/duplicate staff, GST, sellers, tenders, foreign tenant, refund,
+  instalments and frozen economics. Restoration and unavailable full-credit paid
+  lines still refuse. No legacy earnings or close/audit writes occur.
+- Selected API 377 passed, zero failures, one opt-in CP-004 SQL lifecycle suite
+  skipped; four CP-005 isolated DB suites ran. Shared 302/302; API types/lint/build,
+  formatting/whitespace pass. Logs `/tmp/cp005-value-sale-*`; no web checks this slice.
+- Monthly prepaid gate remains closed. Next integrate month inventory and frozen
+  evidence/no-cash reconciliation; first fix outer close lock order to prepaid
+  BEFORE tenant lock. Transfers/sharing/refund/void loading, plan-switch/performance,
+  mounting and full HTTP/browser acceptance remain. CP-005 is IN PROGRESS, not DONE.
+
+## Previous checkpoint — private value-credit holding history
 
 - Internal `loadPayrollValueSpendHistory` reads complete tenant-scoped operational
   purchase/collection/payment/redemption/balance/source/rate inventories under the
