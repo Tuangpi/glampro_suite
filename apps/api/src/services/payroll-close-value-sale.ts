@@ -42,7 +42,8 @@ const economicsSchema = z.object({
 });
 
 /** Internal sale-wide evidence, NOT monthly readiness or earnings activation.
- * Supports settled service/product receipts with private, unreversed credit only.
+ * Supports settled service/product receipts with ownership/consent-reconciled,
+ * unreversed credit only.
  * No inferred tender-to-line allocation, zero bases, outstanding or package usage. */
 export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction, saleId: string) {
   const scope = currentScope();

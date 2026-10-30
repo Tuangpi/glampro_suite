@@ -5,8 +5,8 @@
 - **CP-005 IN PROGRESS — delivery cadence updated October 30, 2026.** Latest
   completed task CP-004. None of the five remaining delivery milestones is done.
   Resume **CP-005-M1 authoritative lifecycle loading** as a coordinated pass, not
-  another per-helper handoff. Supported private-credit monthly loading and private
-  transfers are implemented/tested; sharing, restorations, refunds/voids and other
+  another per-helper handoff. Supported credit monthly loading, private transfers
+  and historical sharing/membership/consent are implemented/tested; restorations, refunds/voids and other
   required unsupported paths keep M1 open. Then source corrections, carry/plan
   switches, application integration and final acceptance remain.
 - Read the short Current State in
@@ -14,8 +14,22 @@
   and milestone gates in
   `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/commission_payroll/TASKS.md`.
   Continue within M1 until verified completion or a genuine blocker/user instruction/
-  session limit. No automatic start of the next milestone. Previous test evidence
-  is unchanged; this update is docs only. No activation, deployment, commit or push.
+  session limit. No automatic start of the next milestone. Latest checks: selected
+  close API 316/316, shared 302/302; API build/typecheck/lint pass. No activation,
+  deployment, commit or push.
+
+## Latest implementation — historical sharing lifecycle
+
+- **CP-005-M1 IN PROGRESS, October 30, 2026.** Independent consent/membership
+  replay now supports historical shared-credit monthly loading, explicit revocation,
+  leave/rejoin and original purchase ratios. Consent-only changes invalidate drafts;
+  later membership/consent changes preserve approvals. Six corruption checks and
+  rejected-spend rollback verified. Selected close API 316/316, shared 302/302;
+  API build/typecheck/lint pass. No web checks. Logs `/tmp/cp005-sharing-*`.
+- Session limit interrupted M1, not a milestone completion. Resume coordinated
+  restoration/refund/void loading, then expiry, mixed session/credit usage, spend-sale
+  instalments and full-credit paid-line allocation. Exact handoff is in the CP
+  PROGRESS.md above. No application DB/schema, activation, deployment, commit or push.
 
 ## Previous checkpoint — private credit ownership transfers
 

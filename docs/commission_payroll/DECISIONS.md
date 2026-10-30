@@ -8,6 +8,28 @@ implemented behavior or production activation. Future conflicts must be recorded
 
 ## SRS decisions and open points
 
+### CP-005 historical shared-credit access (October 30, 2026)
+
+- Replay explicit SHARING balance transitions alongside GRANT/SPEND/TRANSFER;
+  unchanged owner, amount and expiry plus actor/reason and no sale are mandatory.
+  The append-only balance journal is the holding consent evidence. Membership
+  alone never grants access, and legacy familyId/opening evidence is not inferred.
+- Independently load complete membership events and current membership for every
+  historical owner/spender, plus referenced families. Replay from no membership;
+  validate tenant, identity, transitions, actor/reason, family existence and final
+  membership. Member creation may precede event append within its transaction;
+  ambiguous equal-time changes for one customer refuse rather than sorting by ID.
+- Shared spends retain the holding owner in the balance journal but name the
+  consuming customer in redemption/sale evidence. Both must belong to the consented
+  family at ledger and usage time, with continuous access between those times.
+  Owner membership departure withdraws consent; later rejoin cannot revive it.
+- Freeze loaded consent/membership/family evidence with monthly inputs. Consent-only
+  changes invalidate drafts; approved history stays unchanged after later membership
+  edits. Sharing adds no cash/base and never changes original purchase ratios/sellers.
+- This removes the sharing-only restriction, not the remaining M1 lifecycle gates:
+  restorations, refunds/voids, expiry edits, mixed session-package usage, spend-sale
+  instalments and full-credit paid lines lacking allocation evidence remain open.
+
 ### CP-005 private credit ownership replay (October 30, 2026)
 
 - Original purchase buyer/sellers and paid-to-credit economics remain immutable

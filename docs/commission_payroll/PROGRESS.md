@@ -6,20 +6,52 @@
   **CP-005-M1 authoritative lifecycle loading**, not another transfer/helper slice.
   None of the five delivery milestones is complete; see TASKS.md for their gates.
 - Implemented/tested subset: private-credit holding/sale reconciliation, supported
-  monthly integration, private ownership transfers, frozen evidence and lock order.
-  Still required for M1: sharing/membership/consent history, restorations,
+  monthly integration, private transfers, historical sharing/membership/consent,
+  frozen evidence and lock order. Still required for M1: restorations,
   refunds/voids, expiry edits, mixed session-package usage, spend-sale instalments
   and full-credit paid lines lacking allocation evidence. These remain fail-closed.
-- Next session: resume historical sharing replay and continue the coordinated M1
+- Next session: resume restoration/refund/void reconciliation and continue the M1
   lifecycle pass through monthly integration and acceptance. Do not hand off after
   each helper/subtype. Stop at verified M1 completion, a genuine blocker, user
   instruction or session limit; record the exact remainder if interrupted.
-- Latest implementation evidence remains the transfer checkpoint below: close API
-  298/298, shared 302/302; not rerun for this documentation-only cadence update.
+- Latest verification: selected close API 316/316, zero failures/skips, including
+  five isolated DB suites; shared 302/302; API build/typecheck/lint pass.
   Disposable PostgreSQL was stopped; synthetic fixtures retained. UI/router remain
   unmounted. No activation/deployment/commit/push. CP-003A/CP-006 untouched.
 - After M1: M2 source corrections, M3 carry/plan-switch, M4 application integration,
   M5 final acceptance, in order. Do not automatically start the next milestone.
+
+## Historical sharing lifecycle pass — October 30, 2026
+
+- CP-005-M1 remains IN PROGRESS. Session limit interrupted the coordinated pass;
+  this is not milestone completion or a new per-helper delivery boundary.
+- Full holding replay now reconciles SHARING consent with independent complete
+  membership events/current rows/referenced families for historical owners and
+  spenders. Shared redemption customers need not equal the holding owner; both
+  must have historical access. No current-membership fallback or legacy backfill.
+- Owner departure withdraws consent; rejoin does not revive it. Continuous access,
+  final membership/owner/balance/consent, exact money, actor/reason and ambiguity
+  checks fail closed. Member creation can precede its event append in the same
+  transaction, as confirmed by real service acceptance; exact timestamps need not
+  match. Original purchase ratios/sellers remain immutable; sharing creates no cash.
+- Monthly real-service calculate/approve now covers sharing, another member's spend,
+  consent-only stale draft refusal, six read-only corruption refusals preserving
+  draft/audit, leave/rejoin, rejected-spend rollback, explicit re-consent and later
+  membership/consent changes preserving frozen statements. Seven supplied-record
+  tests cover missing/foreign/duplicate/ambiguous evidence and interrupted access.
+- Changed services: payroll-close-value-sharing.ts (new verifier/tests), ownership,
+  holding loader and monthly acceptance; sale-loader comment updated. All are under
+  `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/apps/api/src/services/`.
+- Verified: selected close API **316/316**, zero failures/skips, five isolated DB
+  suites; shared **302/302**. API build/typecheck/lint pass. No web changes/checks.
+  Logs `/tmp/cp005-sharing-{api,shared,build,types,lint}.log`.
+- Exact remainder: credit RESTORE must independently match reverted redemption,
+  operational sale/refund/void evidence and exact payroll reversal; monthly sale
+  allocation/inventory must admit those paths together. Then expiry history, mixed
+  session/credit receipts, spend-sale instalments and fully credit-funded paid lines
+  lacking ordinary allocation evidence. Existing refusals remain unchanged. No M2
+  work, UI/router mounting, application DB/schema changes, activation, deployment,
+  commit or push. Existing authorized disposable cluster only; fixtures retained.
 
 ## Delivery cadence update — October 30, 2026
 

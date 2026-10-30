@@ -18,8 +18,8 @@ const unavailable = (): never => {
   throw conflict("Authoritative payroll inputs unavailable: VALUE_SPEND_HISTORY_UNCONFIRMED.");
 };
 
-/** Internal, non-activating full private holding replay. No caller evidence or
- * paging. Private transfers reconcile; sharing, restorations and refunds still refuse.
+/** Internal, non-activating full holding replay. No caller evidence or
+ * paging. Transfers and explicit sharing reconcile; restorations and refunds still refuse.
  * This alone does not reconcile sale-wide ordinary/prepaid commission allocation. */
 export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, holdingId: string) {
   const scope = currentScope();
@@ -43,12 +43,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   const holding = await tx.customerValuePackageHolding.findFirst({
     where: { tenantId, id: holdingId },
   });
-  if (
-    !holding?.saleLineId ||
-    holding.tenantId !== tenantId ||
-    holding.familyId ||
-    holding.sharedFamilyId
-  )
+  if (!holding?.saleLineId || holding.tenantId !== tenantId || holding.familyId)
     return unavailable();
   const line = await tx.saleLine.findFirst({ where: { tenantId, id: holding.saleLineId } });
   if (!line || line.tenantId !== tenantId || line.itemType !== "VALUE_PACKAGE")
@@ -291,20 +286,57 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     }
   }
   if (!valueReceiptCount) return unavailable();
+  const customerIds = [
+    ...new Set([
+      sale.customerId!,
+      holding.customerId,
+      ...balanceEvents.flatMap((row) => [
+        row.customerId,
+        ...(row.previousCustomerId ? [row.previousCustomerId] : []),
+      ]),
+      ...redemptions.map((row) => row.customerId),
+    ]),
+  ].sort();
+  const [members, membershipEvents] = await Promise.all([
+    tx.prepaidFamilyMember.findMany({
+      where: { tenantId, customerId: { in: customerIds } },
+      orderBy: { id: "asc" },
+    }),
+    tx.prepaidFamilyEvent.findMany({
+      where: { tenantId, customerId: { in: customerIds } },
+      orderBy: { id: "asc" },
+    }),
+  ]);
+  const familyIds = [
+    ...new Set(
+      [
+        ...members.map((row) => row.familyId),
+        ...membershipEvents.flatMap((row) => [row.fromFamilyId, row.toFamilyId]),
+        ...balanceEvents.flatMap((row) => [row.sharedFamilyId, row.previousSharedFamilyId]),
+      ].filter((id): id is string => id !== null),
+    ),
+  ].sort();
+  const families = await tx.prepaidFamily.findMany({
+    where: { tenantId, id: { in: familyIds } },
+    orderBy: { id: "asc" },
+  });
+  const sharing = { customerIds, members, events: membershipEvents, families };
   // The database balance ledger is independent of captures. Start at an actual
   // prospective GRANT, never legacy OPENING, and consume every SPEND exactly once.
   if (
     new Set(balanceEvents.map((row) => row.id)).size !== balanceEvents.length ||
-    balanceEvents.length !== redemptions.length + transfers.length + 1 ||
+    balanceEvents.length !==
+      redemptions.length +
+        transfers.length +
+        balanceEvents.filter((row) => row.kind === "SHARING").length +
+        1 ||
     balanceEvents.some(
       (row) =>
         row.tenantId !== tenantId ||
         row.holdingId !== holdingId ||
-        row.sharedFamilyId !== null ||
-        row.previousSharedFamilyId !== null ||
         (row.expiresAt?.getTime() ?? null) !== (holding.expiresAt?.getTime() ?? null) ||
         !row.delta.equals(row.amountAfter.minus(row.amountBefore)) ||
-        !["GRANT", "SPEND", "TRANSFER"].includes(row.kind),
+        !["GRANT", "SPEND", "TRANSFER", "SHARING"].includes(row.kind),
     )
   )
     return unavailable();
@@ -318,6 +350,9 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     expiresAt: holding.expiresAt,
     balances: balanceEvents,
     transfers,
+    sharedFamilyId: holding.sharedFamilyId,
+    sharing,
+    redemptions,
   });
   const grants = balanceEvents.filter((row) => row.kind === "GRANT");
   if (
@@ -462,7 +497,10 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   }
   if (
     !remaining.equals(holding.amountRemaining) ||
-    usedBalanceIds.size + transfers.length !== balanceEvents.length ||
+    usedBalanceIds.size +
+      transfers.length +
+      balanceEvents.filter((row) => row.kind === "SHARING").length !==
+      balanceEvents.length ||
     related.filter((row) => row.sourceType === "VALUE_SPEND").length !== redemptions.length
   )
     return unavailable();
@@ -477,6 +515,7 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
       redemptions,
       balanceEvents,
       transfers,
+      sharing,
       receipts,
       payments,
       outstanding,

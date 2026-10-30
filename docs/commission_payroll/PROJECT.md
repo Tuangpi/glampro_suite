@@ -102,7 +102,10 @@ backfill, deployment, commit, or push is authorized by management initialization
   and mixed session-package workflows refuse; application close UI/router stay unmounted.
 - Private credit ownership transfers replay independent balance and transfer audits
   to verify spend-time ownership without repricing purchases or creating fresh cash.
-  Family sharing/membership/consent and other unsupported lifecycle remain gated.
+  Explicit family sharing now replays balance consent and independent membership
+  history, resolving consuming customers without replacing holding ownership.
+  Current membership is only a final-state check, not historical authorization.
+  Restorations/refunds/voids and other unsupported M1 lifecycle remain gated.
 
 ## Delivery and completion
 

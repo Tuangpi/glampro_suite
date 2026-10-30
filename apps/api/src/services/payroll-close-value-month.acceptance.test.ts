@@ -6,6 +6,11 @@ import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
 import { createSale } from "./sale.service.js";
 import { transferPrepaid } from "./prepaid.service.js";
+import {
+  createPrepaidFamily,
+  changePrepaidMembership,
+  sharePrepaid,
+} from "./prepaid-family.service.js";
 import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import { commissionScopeKey } from "./commission-rules.js";
 import { authorizeStoredPayrollCarry } from "./payroll-close-authorizations.js";
@@ -19,7 +24,7 @@ import {
 } from "./payroll-close-store.js";
 
 test(
-  "CP-005 private credit monthly inventory, external-only cash and frozen approval",
+  "CP-005 private/shared credit monthly inventory, external-only cash and frozen approval",
   {
     skip: process.env.RUN_CP005_ACCEPTANCE !== "true",
   },
@@ -182,6 +187,7 @@ test(
           where: { saleLine: { saleId: buy.id } },
         });
         let spendingCustomerId = customer.id;
+        let familyTenderId: string | undefined;
         const spend = (secondHoldingId?: string) =>
           runAtOutlet(outlet.id, () =>
             createSale({
@@ -205,7 +211,7 @@ test(
               payments: [
                 {
                   method: "PREPAID_CREDIT",
-                  holdingId: holding.id,
+                  holdingId: familyTenderId ?? holding.id,
                   amount: secondHoldingId ? 25 : 50,
                 },
                 ...(secondHoldingId
@@ -442,32 +448,213 @@ test(
           ["41.6667", "20.8333"],
         );
         assert.equal(history.evidence.transfers.length, 1);
+        const family = await createPrepaidFamily(
+          recipient.id,
+          {
+            name: "Synthetic shared credit",
+            confirmed: true,
+            reason: "Owner requested explicit sharing",
+          },
+          ownerId,
+        );
+        assert.ok(family);
+        await changePrepaidMembership(
+          customer.id,
+          {
+            familyId: family.id,
+            expectedFamilyId: null,
+            confirmed: true,
+            reason: "Recipient joins prepaid family",
+          },
+          ownerId,
+        );
+        const consent = async (familyId: string | null) => {
+          const current = await prisma.customerValuePackageHolding.findFirstOrThrow({
+            where: { id: holding.id },
+          });
+          await sharePrepaid(
+            recipient.id,
+            holding.id,
+            {
+              familyId,
+              confirmed: true,
+              expectedUpdatedAt: current.updatedAt.toISOString(),
+              reason: "Reviewed explicit holding consent",
+            },
+            ownerId,
+          );
+        };
+        const beforeConsentDraft = await calculateStoredPayrollClose(month, 1);
+        const beforeConsent = payrollInputHash(await load());
+        await consent(family.id);
+        const shared = await load();
+        assert.notEqual(payrollInputHash(shared), beforeConsent);
+        mock.timers.enable({ apis: ["Date"], now: new Date(Date.UTC(year, number, 2)) });
+        await assert.rejects(
+          approveStoredPayrollClose(month, 2, "Consent-only change invalidates draft"),
+          /inputs changed/,
+        );
+        mock.timers.reset();
+        spendingCustomerId = customer.id;
+        familyTenderId = `family:${family.id}`;
+        await spend();
+        familyTenderId = undefined;
+        const sharedHistory = await prisma.$transaction((tx) =>
+          loadPayrollValueSpendHistory(tx, holding.id),
+        );
+        assert.equal(sharedHistory.evidence.holding.customerId, recipient.id);
+        assert.equal(sharedHistory.evidence.redemptions.at(-1)!.customerId, customer.id);
+        assert.equal(sharedHistory.verified.at(-1)!.baseAmount, "41.6667");
+        for (const corruption of [
+          "MISSING_MEMBER",
+          "MISSING_EVENT",
+          "FOREIGN_EVENT",
+          "MISSING_CONSENT",
+          "CHANGED_CONSENT",
+          "MISSING_FAMILY",
+        ] as const) {
+          await assert.rejects(
+            prisma.$transaction((tx) =>
+              load(
+                new Proxy(tx, {
+                  get(target, property, receiver) {
+                    if (
+                      [
+                        "prepaidFamilyMember",
+                        "prepaidFamilyEvent",
+                        "prepaidBalanceEvent",
+                        "prepaidFamily",
+                      ].includes(String(property))
+                    ) {
+                      const delegate = Reflect.get(target, property, receiver);
+                      return new Proxy(delegate, {
+                        get(model, method) {
+                          if (method !== "findMany") return Reflect.get(model, method);
+                          return async (...args: unknown[]) => {
+                            const rows = await model.findMany(...args);
+                            if (
+                              property === "prepaidFamilyMember" &&
+                              corruption === "MISSING_MEMBER"
+                            )
+                              return [];
+                            if (property === "prepaidFamilyEvent" && corruption === "MISSING_EVENT")
+                              return [];
+                            if (property === "prepaidFamilyEvent" && corruption === "FOREIGN_EVENT")
+                              return rows.map((row: object) => ({ ...row, tenantId: "foreign" }));
+                            if (property === "prepaidFamily" && corruption === "MISSING_FAMILY")
+                              return [];
+                            if (
+                              property === "prepaidBalanceEvent" &&
+                              corruption === "MISSING_CONSENT"
+                            )
+                              return rows.filter((row: { kind: string }) => row.kind !== "SHARING");
+                            if (
+                              property === "prepaidBalanceEvent" &&
+                              corruption === "CHANGED_CONSENT"
+                            )
+                              return rows.map((row: { kind: string }) =>
+                                row.kind === "SHARING"
+                                  ? { ...row, sharedFamilyId: "foreign" }
+                                  : row,
+                              );
+                            return rows;
+                          };
+                        },
+                      });
+                    }
+                    return Reflect.get(target, property, receiver);
+                  },
+                }),
+              ),
+            ),
+            /Authoritative payroll inputs unavailable/,
+          );
+          assert.equal(
+            payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state),
+            payrollInputHash(beforeConsentDraft),
+          );
+          assert.equal(await prisma.payrollCloseEvent.count(), 2);
+        }
+        // Leaving revokes consent in the same transaction; rejoining cannot revive it.
+        await changePrepaidMembership(
+          recipient.id,
+          {
+            familyId: null,
+            expectedFamilyId: family.id,
+            confirmed: true,
+            reason: "Owner withdraws family membership",
+          },
+          ownerId,
+        );
+        await changePrepaidMembership(
+          recipient.id,
+          {
+            familyId: family.id,
+            expectedFamilyId: null,
+            confirmed: true,
+            reason: "Owner rejoins without automatic consent",
+          },
+          ownerId,
+        );
+        const revoked = await prisma.$transaction((tx) =>
+          loadPayrollValueSpendHistory(tx, holding.id),
+        );
+        assert.equal(revoked.evidence.holding.sharedFamilyId, null);
+        assert.equal(revoked.verified.length, 3);
+        const saleCount = await prisma.sale.count();
+        familyTenderId = `family:${family.id}`;
+        await assert.rejects(() => spend(), /not enough live shared family credit/);
+        familyTenderId = undefined;
+        assert.equal(await prisma.sale.count(), saleCount);
+        await consent(family.id);
+        await consent(null);
         // Use a post-month clock only for close approval; operational evidence stays real.
         mock.timers.enable({ apis: ["Date"], now: new Date(Date.UTC(year, number, 2)) });
         await assert.rejects(
-          approveStoredPayrollClose(month, 1, "Stale evidence must refuse"),
+          approveStoredPayrollClose(month, 2, "Stale evidence must refuse"),
           /inputs changed/,
         );
-        const updated = await calculateStoredPayrollClose(month, 1);
+        const updated = await calculateStoredPayrollClose(month, 2);
         assert.notEqual(payrollInputHash(updated.calculation), initialHash);
         assert.equal(
           updated.calculation!.inputs.staff.find((row) => row.staff.id === ownerId)!.collection,
-          "1183.4800",
+          "1275.2200",
         );
         assert.equal(
           updated
             .calculation!.inputs.staff.flatMap((row) => row.calculation.lines)
             .filter((row) => row.commissionType === "VP_SPEND").length,
-          6,
+          8,
         );
         const approved = await approveStoredPayrollClose(
           month,
-          2,
+          3,
           "Reviewed complete private credit month",
         );
         const frozen = payrollInputHash(approved.calculation);
         const frozenStatement = payrollInputHash(await readStoredPayrollStatement(month, staffId));
         mock.timers.reset();
+        await consent(family.id);
+        await changePrepaidMembership(
+          customer.id,
+          {
+            familyId: null,
+            expectedFamilyId: family.id,
+            confirmed: true,
+            reason: "Spender leaves after approval; historical use stays verified",
+          },
+          ownerId,
+        );
+        assert.equal(
+          (await prisma.$transaction((tx) => loadPayrollValueSpendHistory(tx, holding.id))).verified
+            .length,
+          3,
+        );
+        assert.equal(
+          payrollInputHash(await readStoredPayrollStatement(month, staffId)),
+          frozenStatement,
+        );
+        await consent(null);
         await prisma.valuePackage.update({
           where: { id: item.id },
           data: { price: "1", credit: "999" },
@@ -494,7 +681,7 @@ test(
           frozenStatement,
         );
         assert.equal(await prisma.employeeCommission.count(), 0);
-        assert.equal(await prisma.payrollCloseEvent.count(), 3);
+        assert.equal(await prisma.payrollCloseEvent.count(), 4);
         const nextMonth = new Date(Date.UTC(year, number, 1)).toISOString().slice(0, 7);
         mock.timers.enable({ apis: ["Date"], now: new Date(Date.UTC(year, number, 2)) });
         const next = await calculateStoredPayrollClose(nextMonth, 0);
