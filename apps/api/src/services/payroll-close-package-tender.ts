@@ -4,6 +4,7 @@ import { conflict } from "../lib/http-error.js";
 /** SalePayment has no holding link. Reconcile the complete sale-level inventory,
  * never infer a particular payment-to-holding pairing or fresh cash collection.
  * POS allocates residual cents to the first covered units of each line.
+ * allowCredit delegates credit validation to the sale-wide value allocator.
  */
 export function verifyPayrollPackageTenders(
   sale: {
@@ -28,6 +29,7 @@ export function verifyPayrollPackageTenders(
   }[],
   coverage: { saleLineId: string; coveredQuantity: number; remainingQuantity: number }[],
   redemptionCount: number,
+  allowCredit = false,
 ) {
   const fail = (): never => {
     throw conflict("Authoritative payroll inputs unavailable: PACKAGE_TENDER_UNCONFIRMED.");
@@ -37,7 +39,7 @@ export function verifyPayrollPackageTenders(
     sale.collectionCurrency !== "SGD" ||
     new Set(payments.map((row) => row.id)).size !== payments.length ||
     payments.some((row) => row.tenantId !== sale.tenantId || row.saleId !== sale.id) ||
-    payments.some((row) => row.method === "PREPAID_CREDIT") ||
+    (!allowCredit && payments.some((row) => row.method === "PREPAID_CREDIT")) ||
     new Set(coverage.map((row) => row.saleLineId)).size !== coverage.length ||
     coverage.length !== sale.lines.length
   )

@@ -195,3 +195,26 @@ test("ordinary service allocations reconcile payments but never masquerade as pa
   input.events = fixture().events;
   assert.equal(resolve(input).reconciliation, null);
 });
+
+test("ordinary instalment sources reconcile exact later cash without issuing units again", () => {
+  const input = fixture();
+  input.operations[0].sourceType = "OUTSTANDING_PAYMENT";
+  input.collections[0].sourceType = "OUTSTANDING_PAYMENT";
+  input.collections[0].allocations[0].itemType = "SERVICE";
+  input.events[0].sourceType = "ORDINARY_COLLECTION";
+  const evidence = input.events[0].evidence as {
+    lines: { commissionType: string; units: string; baseAmount: string }[];
+  };
+  evidence.lines[0].commissionType = "SVC";
+  evidence.lines[0].units = "0.0000";
+  assert.equal(resolve(input).status, "COLLECTION_EVIDENCE_READY");
+  evidence.lines[0].units = "1.0000";
+  assert.equal(resolve(input).reconciliation, null);
+  evidence.lines[0].units = "0.0000";
+  evidence.lines[0].baseAmount = "100.0001";
+  assert.equal(resolve(input).reconciliation, null);
+  evidence.lines[0].baseAmount = "100.0000";
+  input.collections[0].sourceType = "SALE_PAYMENT";
+  input.operations[0].sourceType = "SALE_PAYMENT";
+  assert.equal(resolve(input).reconciliation, null);
+});

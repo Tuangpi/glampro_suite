@@ -1,3 +1,5 @@
+import { payrollSessionCreditFunding } from "./payroll-session-credit-funding.js";
+import { payrollCreditInstalmentFunding } from "./payroll-credit-instalment-funding.js";
 /**
  * Sales — handoff screens 01–02, `/api/sales`.
  *
@@ -2258,6 +2260,43 @@ async function fillLedgers(
           }),
         )
       : null;
+  const instalmentCreditFunding =
+    creditPaid > 0 && covered.size === 0
+      ? payrollCreditInstalmentFunding(
+          await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } }),
+          sourceLines,
+          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
+          await tx.commissionCollection.findMany({
+            where: { tenantId, saleId },
+            include: { allocations: { orderBy: { id: "asc" } } },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          }),
+        )
+      : null;
+  const sessionCreditFunding =
+    creditPaid > 0 && covered.size > 0
+      ? payrollSessionCreditFunding(
+          {
+            ...(await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } })),
+            lines: sourceLines,
+          },
+          sourceLines,
+          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
+          await tx.commissionCollection.findMany({
+            where: { tenantId, saleId },
+            include: { allocations: { orderBy: { id: "asc" } } },
+            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+          }),
+          sourceLines
+            .map((line) => ({
+              saleLineId: line.id,
+              coveredQuantity: covered.get(line.id) ?? 0,
+              remainingQuantity: line.quantity - (covered.get(line.id) ?? 0),
+            }))
+            .sort((a, b) => a.saleLineId.localeCompare(b.saleLineId)),
+          redemptionSnapshots.length,
+        )
+      : null;
   for (const [position, line] of priced.entries()) {
     if (line.item.itemType !== "SERVICE" && line.item.itemType !== "PRODUCT") continue;
     const stored = sourceLines.find((row) => row.position === position)!;
@@ -2281,7 +2320,7 @@ async function fillLedgers(
       creditPaid: creditPaid > 0,
       externalNetCents: externalAllocations.length
         ? externalNet
-        : fullCreditFunding || mixedCreditFunding
+        : fullCreditFunding || mixedCreditFunding || sessionCreditFunding || instalmentCreditFunding
           ? 0n
           : null,
     });
@@ -2304,6 +2343,8 @@ async function fillLedgers(
           category,
           ...(fullCreditFunding ? { fullCreditFunding } : {}),
           ...(mixedCreditFunding ? { mixedCreditFunding } : {}),
+          ...(sessionCreditFunding ? { sessionCreditFunding } : {}),
+          ...(instalmentCreditFunding ? { instalmentCreditFunding } : {}),
         },
       },
     });
@@ -2333,7 +2374,13 @@ async function fillLedgers(
       missingEvidence:
         foc && !line.item.listUnitPrice
           ? ["FOC_LIST_PRICE"]
-          : !foc && creditPaid && !externalAllocations.length && !fullCreditFunding
+          : !foc &&
+              creditPaid &&
+              !externalAllocations.length &&
+              !fullCreditFunding &&
+              !mixedCreditFunding &&
+              !instalmentCreditFunding &&
+              !sessionCreditFunding
             ? ["EXTERNAL_TENDER_LINE_ALLOCATION"]
             : [],
     });
@@ -3418,10 +3465,15 @@ export async function voidSale(
       throw conflict("This sale has already been voided.", "SALE_ALREADY_VOID");
     }
 
-    const purchaseHoldingHash =
-      input.cashDisposition === "NO_MOVEMENT"
-        ? await recordSaleVoidPurchaseHoldings(tx, tenantId, sale.id, actorId)
-        : undefined;
+    // Every purchase void deletes the holdings it granted, so the pre-deletion snapshot is
+    // recorded regardless of how the cash was disposed. Only the no-movement path also
+    // writes a cash confirmation that binds this hash.
+    const purchaseHoldingHash = await recordSaleVoidPurchaseHoldings(
+      tx,
+      tenantId,
+      sale.id,
+      actorId,
+    );
     await reverseForVoid(tx, tenantId, current);
     if (input.cashDisposition === "NO_MOVEMENT")
       await recordSaleVoidCashConfirmation(tx, tenantId, sale.id, actorId, purchaseHoldingHash);

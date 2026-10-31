@@ -11,6 +11,7 @@ const operationSchema = z.object({
   sourceType: z.enum([
     "SALE_LINE",
     "COLLECTION",
+    "ORDINARY_COLLECTION",
     "REDEMPTION",
     "VALUE_SPEND",
     "CORRECTION",

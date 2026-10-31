@@ -133,6 +133,9 @@ async function transition(
           previousHash: stored ? payrollInputHash(state) : null,
           stateHash: hash,
           state: next as unknown as Json,
+          // Transaction-start timestamps can predate a source writer that won
+          // the shared lock. Audit the actual transition append time instead.
+          createdAt: new Date(),
         },
       });
       return structuredClone(next);

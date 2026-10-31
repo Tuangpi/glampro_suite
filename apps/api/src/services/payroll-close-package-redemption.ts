@@ -126,7 +126,9 @@ function verifyRedemption(
     sale.status !== "COMPLETED" ||
     !sale.outletId ||
     sale.id !== redemption.saleId ||
-    sale.soldAt.getTime() !== redemption.usedAt.getTime() ||
+    // POS writes the sale before drawing tenders in the same transaction. The
+    // independently captured draw can occur later, never before the sale.
+    sale.soldAt > redemption.usedAt ||
     snapshot.redemptionId !== redemption.id ||
     (correction ? snapshot.revision <= 0 : snapshot.revision !== 0) ||
     snapshot.eventType !== (correction ? "CORRECTION" : "CAPTURE") ||
@@ -367,7 +369,13 @@ export function verifyPayrollRedemptionCorrections(input: {
         event.actorId !== snapshot.actorId ||
         event.reason !== snapshot.reason ||
         event.occurredAt < priorEvent.occurredAt ||
-        event.createdAt < event.occurredAt ||
+        (evidence.payrollCorrectionPosting
+          ? event.createdAt < new Date(evidence.payrollCorrectionPosting.correctionAt) ||
+            event.occurredAt.toISOString() !== evidence.payrollCorrectionPosting.postingAt ||
+            payrollInputHash(
+              (event.evidence as { sourceSnapshot?: unknown }).sourceSnapshot ?? null,
+            ) !== payrollInputHash(evidence.payrollCorrectionPosting)
+          : event.createdAt < event.occurredAt) ||
         payrollInputHash(evidence.coverage) !== payrollInputHash(previousEvidence.coverage) ||
         payrollInputHash(evidence.valuation) !== payrollInputHash(previousEvidence.valuation) ||
         payrollInputHash(evidence.payrollSession?.ordinals ?? null) !==
@@ -408,6 +416,11 @@ export function verifyPayrollRedemptionCorrections(input: {
         reversal.sourceKey !== `correction:${snapshot.id}:${priorEvent.id}` ||
         reversal.actorId !== snapshot.actorId ||
         reversal.reason !== snapshot.reason ||
+        (evidence.payrollCorrectionPosting &&
+          (reversal.occurredAt.toISOString() !== evidence.payrollCorrectionPosting.postingAt ||
+            payrollInputHash(
+              (reversal.evidence as { sourceSnapshot?: unknown }).sourceSnapshot ?? null,
+            ) !== payrollInputHash(evidence.payrollCorrectionPosting))) ||
         reversal.occurredAt < priorEvent.occurredAt ||
         reversal.occurredAt > event.occurredAt
       )

@@ -15,6 +15,7 @@ import { verifyPayrollValueRestoration } from "./payroll-close-value-restoration
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
 import { replayPayrollValueOwnership } from "./payroll-close-value-ownership.js";
+import { findValueHoldingRemovedByPurchaseVoid } from "./payroll-close-value-removed-holding.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
 const unavailable = (): never => {
@@ -44,10 +45,18 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   )
     throw forbidden("Value payroll history is not permitted.");
   const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
-  const holding = await tx.customerValuePackageHolding.findFirst({
+  const live = await tx.customerValuePackageHolding.findFirst({
     where: { tenantId, id: holdingId },
   });
-  if (!holding?.saleLineId || holding.tenantId !== tenantId || holding.familyId)
+  // A purchase void deletes the holding it granted. The void writer's hash-verified
+  // snapshot is the only remaining statement of that row, so the spend is read from it
+  // instead of being refused — but never from a snapshot that fails verification.
+  const removed = live
+    ? null
+    : await findValueHoldingRemovedByPurchaseVoid(tx, tenantId, holdingId);
+  if (!live && !removed) return unavailable();
+  const holding = live ?? removed!.holding;
+  if (!holding.saleLineId || holding.tenantId !== tenantId || holding.familyId)
     return unavailable();
   const line = await tx.saleLine.findFirst({ where: { tenantId, id: holding.saleLineId } });
   if (!line || line.tenantId !== tenantId || line.itemType !== "VALUE_PACKAGE")
@@ -59,16 +68,23 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   if (
     !sale ||
     sale.tenantId !== tenantId ||
-    sale.status !== "COMPLETED" ||
     sale.collectionCurrency !== "SGD" ||
     !sale.outletId ||
     !sale.customerId
   )
     return unavailable();
-  const siblings = await tx.customerValuePackageHolding.findMany({
-    where: { tenantId, saleLineId: line.id },
-    orderBy: { id: "asc" },
-  });
+  // A live purchase must still be COMPLETED. A voided one is only readable through the
+  // snapshot that recorded the holdings it deleted, and the void itself must be stamped.
+  if (removed) {
+    if (sale.status !== "VOID" || !sale.voidedAt || !sale.voidedById || !sale.voidReason)
+      return unavailable();
+  } else if (sale.status !== "COMPLETED") return unavailable();
+  const siblings = removed
+    ? removed.credits.filter((row) => row.saleLineId === line.id)
+    : await tx.customerValuePackageHolding.findMany({
+        where: { tenantId, saleLineId: line.id },
+        orderBy: { id: "asc" },
+      });
   if (siblings.length !== 1 || siblings[0].id !== holdingId) return unavailable();
   const purchase = verifyPayrollValuePurchase(
     siblings,
@@ -187,6 +203,25 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
   const reversals = events.filter(
     (row) => row.sourceType === "REVERSAL" && originalIds.has(row.sourceId),
   );
+  const reversalSource = (row: (typeof reversals)[number]) =>
+    originals.find((original) => original.id === row.sourceId)?.sourceType;
+  const spendReversals = reversals.filter((row) => reversalSource(row) === "VALUE_SPEND");
+  // A voided purchase reverses the collections it captured. Only the void writer's own
+  // reversal counts, exactly one per capture, and only for a snapshot-read purchase.
+  const collectionOriginals = originals.filter((row) => row.sourceType === "COLLECTION");
+  const collectionReversals = reversals.filter((row) => reversalSource(row) === "COLLECTION");
+  const voidedCollection =
+    removed !== null &&
+    collectionOriginals.length > 0 &&
+    collectionReversals.length === collectionOriginals.length &&
+    collectionReversals.every(
+      (row) =>
+        row.tenantId === tenantId &&
+        row.saleId === sale.id &&
+        row.sourceKey === `void:${sale.id}:${row.sourceId}` &&
+        row.actorId === sale.voidedById &&
+        row.reason === "Source sale voided",
+    );
   const related = [...originals, ...reversals];
   const reversalIds = new Set(reversals.map((row) => row.id));
   if (
@@ -196,10 +231,11 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
           row.sourceType,
         ),
     ) ||
-    reversals.some(
-      (row) =>
-        originals.find((original) => original.id === row.sourceId)?.sourceType !== "VALUE_SPEND",
-    ) ||
+    reversals.some((row) => {
+      const source = reversalSource(row);
+      if (source === "VALUE_SPEND") return false;
+      return !(source === "COLLECTION" && voidedCollection);
+    }) ||
     events.some((row) => row.sourceType === "REVERSAL" && reversalIds.has(row.sourceId))
   )
     return unavailable();
@@ -390,18 +426,46 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     orderBy: { id: "asc" },
   });
   const sharing = { customerIds, members, events: membershipEvents, families };
+  // A purchase void removes the credit it granted, so the ledger's last row is that
+  // deletion rather than a spend. The spend replay stops at the restored balance the void
+  // emptied; the removal itself is verified here as the terminal fact that deleted the row.
+  const removalRows = historyBalances.filter((row) => row.kind === "REMOVAL");
+  const spendBalances = historyBalances.filter((row) => row.kind !== "REMOVAL");
+  if (
+    removalRows.length !== (removed ? 1 : 0) ||
+    removalRows.some(
+      (row) =>
+        removed === null ||
+        transfers.length > 0 ||
+        row.tenantId !== tenantId ||
+        row.holdingId !== holdingId ||
+        row.saleId !== sale.id ||
+        row.actorId !== sale.voidedById ||
+        row.reason !== sale.voidReason ||
+        row.customerId !== holding.customerId ||
+        row.previousCustomerId !== holding.customerId ||
+        row.sharedFamilyId !== null ||
+        row.previousSharedFamilyId !== null ||
+        !row.amountBefore.equals(holding.amount) ||
+        !row.amountAfter.isZero() ||
+        !row.delta.equals(row.amountBefore.negated()) ||
+        (row.expiresAt?.getTime() ?? null) !== (holding.expiresAt?.getTime() ?? null) ||
+        redemptions.some((redemption) => redemption.usedAt > row.createdAt),
+    )
+  )
+    return unavailable();
   // The database balance ledger is independent of captures. Start at an actual
   // prospective GRANT, never legacy OPENING, and consume every SPEND exactly once.
   if (
-    new Set(historyBalances.map((row) => row.id)).size !== historyBalances.length ||
-    historyBalances.length !==
+    new Set(spendBalances.map((row) => row.id)).size !== spendBalances.length ||
+    spendBalances.length !==
       redemptions.length +
         redemptions.filter((row) => row.revertedAt !== null).length +
         transfers.length +
-        historyBalances.filter((row) => row.kind === "SHARING").length +
-        historyBalances.filter((row) => row.kind === "EXPIRY_CHANGE").length +
+        spendBalances.filter((row) => row.kind === "SHARING").length +
+        spendBalances.filter((row) => row.kind === "EXPIRY_CHANGE").length +
         1 ||
-    historyBalances.some(
+    spendBalances.some(
       (row) =>
         row.tenantId !== tenantId ||
         row.holdingId !== holdingId ||
@@ -418,13 +482,13 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     amount: holding.amount,
     amountRemaining: preRemaining,
     expiresAt: holding.expiresAt,
-    balances: historyBalances,
+    balances: spendBalances,
     transfers,
     sharedFamilyId: holding.sharedFamilyId,
     sharing,
     redemptions,
   });
-  const grants = historyBalances.filter((row) => row.kind === "GRANT");
+  const grants = spendBalances.filter((row) => row.kind === "GRANT");
   if (
     grants.length !== 1 ||
     !grants[0].amountBefore.isZero() ||
@@ -592,11 +656,10 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
     !remaining.equals(preRemaining) ||
     usedBalanceIds.size +
       transfers.length +
-      historyBalances.filter((row) => row.kind === "SHARING").length !==
-      historyBalances.length -
-        historyBalances.filter((row) => row.kind === "EXPIRY_CHANGE").length ||
+      spendBalances.filter((row) => row.kind === "SHARING").length !==
+      spendBalances.length - spendBalances.filter((row) => row.kind === "EXPIRY_CHANGE").length ||
     verified.length !== redemptions.length ||
-    restorations.length !== reversals.length ||
+    restorations.length !== spendReversals.length ||
     related.filter((row) => row.sourceType === "VALUE_SPEND").length !== redemptions.length
   )
     return unavailable();

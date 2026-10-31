@@ -336,6 +336,26 @@ test(
         });
         assert.equal(corrected.status, "OPEN");
         assert.ok(corrected.adjustments[0].reason.includes("correction 2026-09@6"));
+        const correctionRaces = await Promise.allSettled([
+          correctStoredPayrollClose("2026-09", nextPeriod, corrected.revision, {
+            ...adjustment,
+            id: "correction-race-a",
+          }),
+          correctStoredPayrollClose("2026-09", nextPeriod, corrected.revision, {
+            ...adjustment,
+            id: "correction-race-b",
+          }),
+        ]);
+        assert.equal(correctionRaces.filter((row) => row.status === "fulfilled").length, 1);
+        assert.equal(correctionRaces.filter((row) => row.status === "rejected").length, 1);
+        const target = await prisma.payrollClose.findFirstOrThrow({
+          where: { periodKey: nextPeriod },
+        });
+        assert.equal(target.revision, corrected.revision + 1);
+        const correctionAudits = await prisma.payrollCloseEvent.findMany({
+          where: { periodKey: nextPeriod },
+        });
+        assert.equal(correctionAudits.length, 2);
         assert.equal(
           payrollInputHash(
             (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: "2026-09" } })).state,

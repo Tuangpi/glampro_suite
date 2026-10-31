@@ -16,9 +16,14 @@ const recordHash = (value: unknown) => payrollInputHash(JSON.parse(JSON.stringif
  * Complete sale inventory and every involved holding's history share the tenant
  * source lock. No current catalogue, inferred tender coverage or silent deduping.
  * Original coverage survives audited session voids; restoration does not reprice
- * the completed receipt's ordinary units. Value spending and sale voids still block.
+ * the completed receipt's ordinary units. Credit inventory can be delegated to the
+ * sale-wide value allocator; this loader never verifies credit itself. Sale voids block.
  */
-export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction, saleId: string) {
+export async function loadPayrollSalePackageCoverage(
+  tx: PayrollCloseTransaction,
+  saleId: string,
+  allowCredit = false,
+) {
   const scope = currentScope();
   if (scope?.kind !== "tenant" || !scope.actorId || currentOutletId())
     throw forbidden("Package payroll coverage requires a salon-wide authenticated actor.");
@@ -33,7 +38,7 @@ export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction
     (actor.globalRole === "SUPER_ADMIN" && !actor.twoFactorEnabled)
   )
     throw forbidden("Package payroll coverage is not permitted.");
-  const [sale, redemptions, events, snapshots, refunds] = await Promise.all([
+  const [sale, allRedemptions, events, snapshots, refunds] = await Promise.all([
     tx.sale.findFirst({ where: { tenantId, id: saleId }, include: { lines: true } }),
     // All item kinds and reverted rows matter: filtering to packages hides unsupported usage.
     tx.customerRedemption.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
@@ -41,7 +46,12 @@ export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction
     tx.commissionRedemptionSnapshot.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
     tx.saleRefund.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
   ]);
+  const redemptions = allowCredit
+    ? allRedemptions.filter((row) => row.itemType === "PACKAGE")
+    : allRedemptions;
   if (
+    (allowCredit &&
+      allRedemptions.some((row) => !["PACKAGE", "VALUE_PACKAGE"].includes(row.itemType))) ||
     !sale ||
     sale.id !== saleId ||
     sale.tenantId !== tenantId ||
@@ -70,9 +80,14 @@ export async function loadPayrollSalePackageCoverage(tx: PayrollCloseTransaction
       (row) =>
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
-        !["SALE_LINE", "COLLECTION", "REDEMPTION", "CORRECTION", "REVERSAL"].includes(
-          row.sourceType,
-        ),
+        ![
+          "SALE_LINE",
+          "COLLECTION",
+          "REDEMPTION",
+          "CORRECTION",
+          "REVERSAL",
+          ...(allowCredit ? ["VALUE_SPEND"] : []),
+        ].includes(row.sourceType),
     ) ||
     snapshots.some((row) => row.tenantId !== tenantId)
   )

@@ -2,6 +2,74 @@
 
 ## Workflow
 
+Latest continuation — October 31, 2026 (instalments): prospective ordinary
+service/product credit instalments now reconcile exact later cash through separate
+ORDINARY_COLLECTION sources. Acceptance covers concurrent idempotent retries,
+stale approval, final next-month cash and frozen approved history. Unused expired
+credit purchase voids now calculate/approve with exact ownership/expiry/removal
+evidence. Monetary correction races have added persistence coverage, not complete
+source correction acceptance. M1 remains IN PROGRESS; M2–M5 are not complete.
+Remaining M1 includes mixed session/credit instalments, legacy missing funding,
+returned-money and active-sharing purchase voids, and complete corruption/race
+acceptance. This supersedes the instalment/unused-expired refusals below only for
+the implemented prospective ordinary-credit and NO_MOVEMENT removal shapes.
+
+Latest continuation — October 31, 2026: partial-line session/credit usage is now
+prospectively evidenced and verified through real checkout, monthly calculate,
+stale approval rejection, recalculation and persisted approval, including cash on
+the partial line and exact line-level GST rounding. Mixed ordinary funding no
+longer falsely marks wholly credit-funded lines as missing allocation evidence.
+Fully restored used-credit purchase voids after expiry now reconcile and approve
+without new cash; unused expired-credit voids remain separately gated. Details and
+verification are in PROGRESS.md and CLOSE_ACCEPTANCE.md. This supersedes earlier
+partial-line/expired-restored refusal claims. M1 remains IN PROGRESS; M2–M5 TODO.
+
+Latest M1 continuation — October 31, 2026: settled mixed session-package and stored-credit
+receipts now load when session coverage and ordinary credit/cash lines are disjoint.
+Checkout freezes `sessionCreditFunding`; the loader independently verifies complete
+session histories/coverage, package tenders, credit ownership/spends and external
+collections before matching that immutable inventory. Session and credit tenders
+never become new cash. Real-writer acceptance covers both no-external-money and
+explicitly allocated cash variants through monthly calculation, stale-draft refusal,
+recalculation and persisted approval; catalogue edits leave approved history unchanged.
+Missing frozen evidence and altered tenders refuse. Partial session/credit coverage
+of one line remains `MIXED_SESSION_CREDIT_PARTIAL_LINE_NOT_SUPPORTED`; spend-sale
+instalments, mixed-usage reversals/corrections and broader lifecycle/browser acceptance
+remain open. M1 stays IN PROGRESS; M2–M5 untouched. Supersedes the blanket mixed-usage
+refusal described in earlier checkpoints below.
+
+Latest M1 continuation: the spend a later purchase void used to erase is now read, not
+refused. `voidSale` already records the pre-deletion snapshot for every purchase void;
+`loadPayrollValueSpendHistory` now rebuilds the deleted holding from it (Decimals and
+Dates revived from the snapshot, never recomputed), admits the `VOID` purchase, accepts
+only the void writer's own one-per-capture collection reversal, verifies the terminal
+`REMOVAL` balance row that emptied the credit, and replays spend/restore on the ledger
+that outlived the row while keeping the removal in the frozen evidence. Any snapshot that
+fails those checks keeps the generic `VALUE_SPEND_HISTORY_UNCONFIRMED`; the old
+`VALUE_SPEND_HOLDING_REMOVED_BY_PURCHASE_VOID` name is gone because the boundary is.
+`payroll-void-restored-spend.acceptance.test.ts` (5 cases) now proves full monthly
+loading, calculation and persisted approval using writer-supported `NO_MOVEMENT`
+confirmations. Retained cash is 500.0000 and spend/restore bases cancel exactly.
+Missing SPEND/RESTORE/REMOVAL evidence refuses, as does missing cash confirmation.
+Real-writer probes confirm expired restored-credit voids and unconfirmed returned-cash
+voids remain close boundaries, with snapshots preserved. Payroll regression: 421 passed,
+0 failed, 6 skipped; API typecheck and targeted ESLint pass. This restored-credit path is
+complete. Next: remaining mixed session/credit and instalment contracts, mounted-app/
+browser acceptance and the optional-settlement-confirmation owner decision.
+CP-005-M1 stays IN PROGRESS; M2–M5 untouched.
+
+Unsupported workflows fail closed by name instead of being approximated. One receipt redeeming a session
+package and stored credit refuses as `MIXED_SESSION_CREDIT_USAGE_NOT_SUPPORTED`
+(the loader checks it before any value allocation, and the value allocator checks
+it before its row-shape gate); a part-paid value spend refuses as
+`VALUE_SALE_INSTALMENT_NOT_SUPPORTED`. Both are
+`409 Authoritative payroll inputs unavailable: <CODE>.` and leave no close,
+commission, collection or reversal behind, including on retry. Two new
+disposable-database acceptance cases pin the boundary; targeted payroll suite
+328/328 with zero skips, API typecheck and targeted ESLint clean. Supporting these
+paths is still open work, so CP-005-M1 stays IN PROGRESS and M2 is untouched.
+Details in PROGRESS.md.
+
 Latest M1 continuation: prepaid package and value-package refunds now load from
 their own append-only settlement row in the cancellation month. Independent
 settlement validation plus dual-holding replay, original-capture month checks and
@@ -480,7 +548,7 @@ Existing implementation and reference tests need verification, not automatic cre
   journal and both refund writers; actual provider payments are never executed.
   Combined API/SQL regression 371/371 without skips, shared 302/302, API types/build
   and workspace-targeted lint pass. No application database migration/repair.
-- Next required work: mixed session/credit usage, spend-sale instalments and the
+- Next required work: spend-sale instalments and the
   remaining fail-closed void gates (used/transferred, expired-credit, later
   outstanding-funded, returned-money and active-sharing purchases). Settlement
   inventory, holding replay, monthly integration and the authenticated HTTP refund
@@ -511,13 +579,25 @@ completion. **None of the five milestones is complete.** On “Next” or “Con
 resume **CP-005-M1** as one coordinated implementation/verification pass. Do not
 stop merely because the next helper or lifecycle subtype passes its tests.
 
-| ID        | Milestone / status                                | Remaining scope and completion gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| --------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CP-005-M1 | Authoritative lifecycle loading — **IN PROGRESS** | Private-credit holding/sale reconciliation, supported monthly integration, private ownership transfers, historical sharing/membership/consent, restorations, expiry journal replay, ordinary refunds/voids, supported purchase voids, prepaid refund settlement loading and the authenticated prepaid refund HTTP workflow are implemented/tested. Finish mixed session-package usage, spend-sale instalments, full-credit paid lines lacking allocation evidence and the remaining fail-closed void gates (used/transferred, expired-credit, later outstanding-funded, returned-money, active sharing). Gate: required operational paths load through monthly calculate/approve with independent one-to-one evidence, exact money, corruption refusal, stale-draft rejection and immutable approved history. Unsupported required paths remaining fail-closed keep M1 open. |
-| CP-005-M2 | Next-open-period source corrections — **TODO**    | Finish operational posting-date handling, idempotency and approval/source races. Gate: real transactional acceptance proves correct next-open-period placement, no duplicate sources and deterministic race/rollback behavior without rewriting approved history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| CP-005-M3 | Carry and plan-switch acceptance — **TODO**       | Opening/settlement controls exist; verify end-to-end carry, component mapping, plan switches and approved-month races. Gate: exact balances and component treatment reconcile across periods and plan changes, including concurrent approval.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| CP-005-M4 | Application close API/UI integration — **TODO**   | Router/screens remain unmounted. Gate: mounted authenticated tenant/role-safe workflows pass calculate, frozen reads, adjustments, approval and separate payout acceptance. Local integration is not deployment or earnings activation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| CP-005-M5 | Final acceptance — **TODO**                       | Gate: complete money reconciliation, browser permissions, concurrency/rollback, frozen-history and documented performance checks against the existing acceptance requirements. Passing a selected suite alone is insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ID        | Milestone / status                                | Remaining scope and completion gate                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| --------- | ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CP-005-M1 | Authoritative lifecycle loading — **IN PROGRESS** | Private-credit holding/sale reconciliation, supported monthly integration, private ownership transfers, historical sharing/membership/consent, restorations, expiry journal replay, ordinary refunds/voids, supported purchase voids, prepaid refund settlement loading and the authenticated prepaid refund HTTP workflow are implemented/tested. Disjoint settled session/credit usage is implemented and persisted-approval tested. Partial-line session/credit usage and expired restored-credit purchase voids are implemented and persisted-approval tested. Finish spend-sale instalments, legacy full-credit paid lines lacking allocation evidence and the remaining fail-closed void gates (used/transferred, unused expired-credit, later outstanding-funded, returned-money, active sharing). Gate: required operational paths load through monthly calculate/approve with independent one-to-one evidence, exact money, corruption refusal, stale-draft rejection and immutable approved history. Unsupported required paths remaining fail-closed keep M1 open. |
+| CP-005-M2 | Next-open-period source corrections — **TODO**    | Finish operational posting-date handling, idempotency and approval/source races. Gate: real transactional acceptance proves correct next-open-period placement, no duplicate sources and deterministic race/rollback behavior without rewriting approved history.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| CP-005-M3 | Carry and plan-switch acceptance — **TODO**       | Opening/settlement controls exist; verify end-to-end carry, component mapping, plan switches and approved-month races. Gate: exact balances and component treatment reconcile across periods and plan changes, including concurrent approval.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| CP-005-M4 | Application close API/UI integration — **TODO**   | Router/screens remain unmounted. Gate: mounted authenticated tenant/role-safe workflows pass calculate, frozen reads, adjustments, approval and separate payout acceptance. Local integration is not deployment or earnings activation.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| CP-005-M5 | Final acceptance — **TODO**                       | Gate: complete money reconciliation, browser permissions, concurrency/rollback, frozen-history and documented performance checks against the existing acceptance requirements. Passing a selected suite alone is insufficient.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+
+October 31 M2 update: **IN PROGRESS, not accepted** (supersedes the TODO row).
+Operational session corrections now select/reconcile next-open posting evidence;
+real-DB acceptance proves same-key retry uniqueness, stale-draft rejection,
+persisted recalculation/approval, approved-history preservation, future posting
+beyond an approved current month, a competing approval/source write and rejected
+performer rollback. Expanded regression: 487 passed, 0 failed, 9 gated skips.
+Follow-up: both session-attribution approval/source lock orderings now have
+deterministic real-DB acceptance, including observed PostgreSQL blocking,
+stale-approval rollback, exact next-month reverse/repost and frozen history.
+Remaining: other required correction/lifecycle families. M1 remains open; no
+milestone is complete.
 
 Dependencies: M2 follows M1; M3 follows M2; M4 follows M3; M5 follows M4.
 Existing foundations do not make M2–M5 DONE; verify them at their gates. Preserve

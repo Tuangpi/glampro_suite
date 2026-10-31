@@ -1,6 +1,240 @@
 # Commission & Payroll progress
 
+## October 31, 2026 — deterministic session correction/approval ordering
+
+- Added separate real-DB approval-first and correction-first acceptance cases.
+  A test-only transaction barrier pauses the first writer after its real tenant
+  row lock; `pg_blocking_pids` proves the second writer is waiting before release.
+  No production lock behavior, source writer or loader is replaced.
+- Approval-first commits the approved snapshot unchanged by the queued correction.
+  Correction-first commits exactly one reverse/repost pair; queued stale approval
+  rejects without an approval audit or draft mutation. Recalculation then approves.
+- Both orderings verify idempotent retry, exact -18.3480/+18.3480 next-month bases,
+  zero new cash, persisted next-month approval and frozen prior approved hashes.
+- Verification: expanded guarded payroll/routes/redemption regression **489 passed,
+  0 failed, 9 gated skips** (498 total). API typecheck/build, targeted ESLint,
+  Prettier and whitespace checks passed. Logs `/tmp/cp005-ordered-regression.log`,
+  `/tmp/cp005-ordered-{types,build,lint,prettier}.log` with exit markers. Skipped
+  legacy gates remain unaccepted. Disposable PostgreSQL was identity-checked as
+  `payroll_close_test` / `cp005_test`, loopback 55485, UTC, with the connection guard.
+- This closes deterministic ordering coverage for session attribution only.
+  M1 remains open; M2 remains IN PROGRESS pending other required correction/lifecycle
+  combinations. M3–M5 remain unaccepted; close API/UI remain unmounted. No schema
+  changes, migrations, commits, deployment, application DB writes or activation.
+
+## October 31, 2026 — operational session source-correction posting slice
+
+- Session-attribution corrections now select posting under the existing prepaid /
+  tenant configuration locks shared with close calculation/approval. Approved
+  months are skipped; an absent close is explicitly OPEN revision zero, matching
+  store behavior. Calculated drafts remain stale until recalculated.
+- The immutable correction snapshot records occurrence, selected posting time,
+  original month and inspected close revisions/hashes. Both reverse/repost sources
+  carry matching evidence; source-time rates and checkout economics are retained.
+  Historical validation replays immutable close audits, not today's close revision.
+- Real disposable-DB acceptance passes concurrent same-key retries, stale-draft
+  refusal, persisted recalculation/approval, unchanged original approved hashes,
+  deferred posting beyond an already-approved current month, a competing
+  approval/source write, and rollback after invalid performer submission.
+- Unit coverage rejects corrupt close hashes, altered dates, skipped months and
+  inconsistent revision-zero history. Consecutive approved-month skipping and
+  salon-local future posting boundaries are covered.
+- Verification: API typecheck/build and targeted ESLint passed. Expanded guarded
+  payroll/routes/redemption regression: **487 passed, 0 failed, 9 gated skips**
+  (496 total). Three additional skips belong to the explicitly included redemption
+  suites; skipped legacy gates are not acceptance. Logs `/tmp/cp005-m2-regression.log`,
+  `/tmp/cp005-m2-{types,build,lint}.log` and corresponding exit markers.
+- Completed correction slice only: M1 remains open; M2 remains IN PROGRESS and is
+  not fully accepted. Other correction/lifecycle combinations and deterministic
+  coverage of both approval race orderings remain. M3–M5 are unaccepted; close
+  API/UI remain unmounted. No commits, migrations, deployment, application DB
+  writes or earnings activation. Existing unrelated work is preserved.
+
+## October 31, 2026 — instalment posting and unused expired credit
+
+- Ordinary service/product credit instalments now freeze prospective
+  `instalmentCreditFunding`. Debt is not cash. Later collections append independent
+  `ORDINARY_COLLECTION` sources from exact operational allocations with zero units;
+  source-time rate provenance is retained. No checkout snapshots are rewritten.
+- Monthly loading reconciles tender/receipt/allocation/payment/debt inventory,
+  immutable funding evidence and cumulative original-line GST. It includes only
+  current-month operations, even when verifying complete prior receipt history.
+- Real-writer acceptance covers simultaneous same-key collection retries, stale
+  draft rejection, append-only economics/allocation protection, persisted approval,
+  next-month final collection (27.52 then 27.53), immutable approved history and
+  refusal to void after a later debt payment. Ordinary session-plus-credit
+  instalments and legacy missing funding evidence still fail closed.
+- Unused expired credit purchase voids now replay ownership/expiry and exact full
+  terminal removal, with preserved holding snapshot and NO_MOVEMENT confirmation.
+  Real-writer monthly calculate/approve acceptance passes; no expiry-at-removal
+  requirement remains. Historical spending expiry checks are unchanged.
+- Correction persistence acceptance additionally races two same-revision monetary
+  corrections: one commits, one rejects, exactly two target audits remain including
+  the initial correction, and the original approved hash is unchanged. This is not
+  acceptance of source reverse/repost posting or approval/source races.
+- M1 remains IN PROGRESS; M2 has partial monetary-race evidence but is not accepted.
+  M3–M5 remain unaccepted. Close API/UI remain unmounted. No browser/performance
+  acceptance, deployment, earnings activation, migrations or application DB writes.
+  Existing unrelated working-tree changes were preserved.
+- Verification: guarded disposable PostgreSQL identity checked as
+  `payroll_close_test` / `cp005_test`, loopback port 55485, data directory
+  `/tmp/cp005-pg-61c634a2/data`, timezone UTC. Final payroll regression:
+  **482 passed, 0 failed, 6 gated skips** (488 total); shared **302 passed**.
+  API build, targeted ESLint, targeted Prettier and whitespace checks passed.
+  Logs: `/tmp/cp005-all-final-regression.log`, `/tmp/cp005-all-shared.log`,
+  `/tmp/cp005-all-build.log`, `/tmp/cp005-all-lint.log`,
+  `/tmp/cp005-all-prettier.log`. Gated skips are not accepted as coverage.
+
+## October 31, 2026 — partial-line funding and expired restored-credit voids
+
+- Partial session/credit lines now use independently reconciled coverage and a
+  prospective version-2 funding snapshot. Session tender reserves first-unit gross
+  cents; explicit external allocations cannot consume that reserved amount. Cash
+  tax/net components retain the original line economics and cumulative rounding.
+  Existing disjoint snapshots retain version 1 and their original verification.
+- Real checkout acceptance exhausts a five-session holding against six service
+  units. Both zero-cash and explicit-cash variants pass monthly loading, stale
+  approval refusal, recalculation, persisted approval and immutable approved-history
+  assertions. Cash split between the partial line and another line retains the
+  one-cent line-level GST residual (619.2700 versus 619.2600).
+- Fixed checkout's false `EXTERNAL_TENDER_LINE_ALLOCATION` marker for a wholly
+  credit-funded line on a receipt with verified mixed funding. A separate real-writer
+  monthly case verifies zero ordinary base, empty missing-evidence inventory and
+  retained cash. Missing historical funding evidence still refuses.
+- Removed the current-expiry gate only from fully restored, previously spent credit
+  purchase voids. The full historical spend/restore replay, hash-verified deleted
+  holding, exact terminal REMOVAL and manager NO_MOVEMENT confirmation remain required.
+  The real expired-restored-credit case now calculates and approves with 500.0000
+  retained cash and unchanged calculation evidence. Unused expired credit remains
+  separately gated; this is not a blanket expiry bypass.
+- This is not CP-005 completion: spend-sale instalments, remaining required lifecycle
+  paths, M2 correction posting, M3 carry/plan-switch acceptance, M4 mounted close API/UI
+  and M5 final/browser/performance acceptance remain open. No router mounting,
+  earnings activation, provider payout, application database change or migration.
+- Verification logs for this continuation use `/tmp/cp005-current-*`. Only the
+  identity-checked disposable cluster `/tmp/cp005-pg-61c634a2/data`, database
+  `payroll_close_test`, role `cp005_test`, loopback 55485, was used, with dotenv
+  disabled and the disposable network guard enabled.
+- Final integrated payroll run: **429 passed, 0 failed, 6 gated skips (435 total)**.
+  Shared tests: **302/302 passed**. API typecheck/build, targeted ESLint, targeted
+  Prettier and `git diff --check` passed. Browser and performance checks were not
+  run; the six gated skips are not acceptance evidence. No full CP-005 completion
+  claim is made.
+
+## October 31, 2026 — CP-005-M1 disjoint mixed session/credit receipts
+
+- Added prospective `sessionCreditFunding` evidence for settled ordinary receipts
+  with fully session-covered lines separate from credit/cash-funded lines. Reuses
+  exact-money funding verification; never infers legacy allocations or creates cash
+  from either prepaid tender. No migration or earnings activation.
+- Sale-wide loading verifies both complete holding histories, session coverage and
+  tender totals, frozen ordinary economics and external collection allocations.
+  Monthly operations retain distinct REDEMPTION and VALUE_SPEND identities.
+- Real POS revealed an existing verifier mismatch: checkout persists the sale before
+  drawing tenders, so sale and draw timestamps need not be identical. Verification
+  now rejects a draw before the sale while preserving captured draw-time checks;
+  a dedicated regression covers both directions. Writer timestamps are unchanged.
+- Real-writer disposable PostgreSQL acceptance covers session/credit with and without
+  allocated cash, complete monthly loading, stale approval after historical profile
+  change, recalculation/persisted approval, immutable approved state after catalogue
+  edits, deterministic reload and no duplicate collections/commission writes.
+  Corrupt package/credit tenders refuse; SQL blocks frozen-economics changes, and a
+  substituted read proves the loader independently refuses missing funding evidence.
+- Partial line session/credit coverage and spend-sale instalments remain fail-closed.
+  Mixed-usage corrections/voids and mounted-app/browser acceptance are not claimed.
+  CP-005-M1 remains IN PROGRESS; M2–M5 untouched.
+- Checks: focused acceptance/helper tests 5/5, zero skips; payroll regression
+  425 passed, zero failed, six skipped. API typecheck/build and targeted ESLint pass.
+  The broader sale.service DB suite cannot pass its existing cleanup: deleting frozen
+  sale economics is rejected by the immutable-economics trigger. No protection or
+  test was weakened. Logs: `/tmp/cp005-mixed-*`.
+- Used only the pre-existing authorized disposable cluster on loopback port 55485,
+  with dotenv disabled and the disposable network guard. No application database,
+  migration, production data, commit, push or deployment.
+
 ## Current State
+
+- **CP-005 increment — October 31, 2026 (restored-credit close complete):**
+  writer-recorded `NO_MOVEMENT` confirmations now take purchase → spend → spend void →
+  purchase void through full monthly loading, calculation and persisted approval after
+  month end. The purchase-void loader delegates fully restored credit to the verified
+  spend-history loader instead of refusing every historical use; session uses and
+  transfers retain their guards. Acceptance asserts 500.0000 retained salon cash,
+  matching 75.0000/-75.0000 spend bases, deterministic inputs and unchanged calculation
+  evidence at approval. Missing SPEND, RESTORE or REMOVAL rows refuse. Missing cash
+  confirmation still refuses `SALE_VOID_CASH_UNCONFIRMED`. Real writers also prove
+  expired restored credit can be voided but remains `PURCHASE_VOID_HISTORY_UNCONFIRMED`;
+  unconfirmed returned-cash voids preserve the snapshot but do not qualify for close.
+  Five real-database acceptance cases pass. Payroll sweep: **421 passed, 0 failed,
+  6 skipped (427 total)**; API typecheck and targeted ESLint pass. Logs:
+  `/tmp/cp005-payroll-final.log`, `/tmp/cp005-types-final.log`,
+  `/tmp/cp005-lint-final.log`. This supersedes the monthly-close blocker below.
+  The restored-credit NO_MOVEMENT path is complete; M1 as a whole remains IN PROGRESS
+  for mixed session/credit, instalment and mounted-app/browser acceptance. M2–M5
+  and the optional-settlement-confirmation owner decision are unchanged.
+
+- **CP-005 increment — October 31, 2026 (reading the voided spend):** a spend whose
+  holding a later purchase void deleted is no longer a refusal.
+  `loadPayrollValueSpendHistory` rebuilds that row from the void's hash-verified
+  pre-deletion snapshot (`payroll-close-value-removed-holding.ts` now returns the
+  recovered holding plus the purchase's credit rows, with Decimals and Dates revived from
+  the snapshot rather than recomputed), admits the `VOID` purchase, accepts exactly the
+  void writer's `void:<saleId>:<eventId>` collection reversal, verifies the terminal
+  `REMOVAL` balance row against `holding.amount`, and replays spend/restore on
+  `spendBalances` — the removal is excluded from the replay and still frozen in evidence.
+  Every other shape keeps `VALUE_SPEND_HISTORY_UNCONFIRMED`; the named
+  `VALUE_SPEND_HOLDING_REMOVED_BY_PURCHASE_VOID` refusal is removed because nothing reaches
+  it any more. `payroll-void-restored-spend.acceptance.test.ts` 3/3 proves it: the deleted
+  holding's history loads with one verified restoration and the `REMOVAL` in evidence, and
+  the month then stops at `SALE_VOID_CASH_UNCONFIRMED` because the fixture voids without
+  the cash confirmation audit. The fixture's credit spend also had to carry `performers`
+  (`VALUE_SPEND` captures the redemption performers, not the sale's `sellers`), otherwise
+  the verifier refused `VALUE_SPEND_EVIDENCE_UNCONFIRMED` for missing staff attribution.
+  Typecheck, ESLint and Prettier are clean, and the payroll regression run finished
+  425 tests: 419 passed, 0 failed, 6 skipped (browser/solo suites).
+- **CP-005 increment — October 31, 2026 (void evidence):** a returned-cash purchase
+  void deleted the credit rows without recording anything, because the pre-deletion
+  snapshot was only written for `NO_MOVEMENT`. The void writer now captures it for every
+  purchase void (the cash confirmation still binds the hash on the no-movement path
+  only), and the capture proves salon scope plus the sale's own `voidedById` instead of
+  re-deriving the session actor — the old check refused voids the writer allows, which
+  the sale suite showed as a 403 from the recorder on the same actor the writer stamped.
+  The spend loader now recognises this shape by evidence and names it:
+  `VALUE_SPEND_HOLDING_REMOVED_BY_PURCHASE_VOID`, claimed only when the snapshot
+  hash-verifies, names the holding and its purchase is `VOID`; otherwise
+  `VALUE_SPEND_HISTORY_UNCONFIRMED` stands. `payroll-void-restored-spend.acceptance`
+  grew a third case: a manager voids the spend and then the purchase while the session
+  is the owner, one snapshot per purchase void, hash verified, the deleted credit named,
+  zero holding rows left. Targeted payroll suite 331/331, zero skips. M1 stays
+  IN PROGRESS: the evidence now exists, reading the spend from it is the next step.
+  decides whether a "used purchase" void can ever exist. Real-writer acceptance shows a
+  purchase whose credit is still spent is refused outright with
+  `HOLDING_ALREADY_SPENT` ("Reverse the redemption first"), and transferred holdings or
+  settled balances refuse the same way, so the loader's used/transferred/paid gates are
+  corruption defences rather than missing support. The reachable shape is
+  void-the-spend — credit returns and the redemption is stamped `revertedAt` — then
+  void-the-purchase, which the writer allows; the close still refuses it as
+  `VALUE_SPEND_HISTORY_UNCONFIRMED` because the purchase void deletes the holding the
+  spend drew on while the spend loader reads live rows. New
+  `payroll-void-restored-spend.acceptance.test.ts` (2 cases, disposable DB, exact
+  GRANT/SPEND/RESTORE deltas 600/-90/+90) pins both facts and passes with no close,
+  commission or collection written. M1 stays IN PROGRESS; next is reading that spend
+  from the purchase void's pre-deletion snapshot.
+- **CP-005 increment — October 31, 2026:** the two remaining unsupported M1 sale
+  shapes now refuse by name instead of being approximated. One receipt redeeming a
+  session package plus stored credit refuses as
+  `MIXED_SESSION_CREDIT_USAGE_NOT_SUPPORTED` — the monthly loader checks it before
+  any value allocation, and the value allocator checks it before its row-shape
+  gate, because a session redemption legitimately carries no amount and a package
+  tender no collection. A part-paid (instalment) value spend refuses as
+  `VALUE_SALE_INSTALMENT_NOT_SUPPORTED`. Both surface as
+  `409 Authoritative payroll inputs unavailable: <CODE>.` and leave no close,
+  commission capture, collection or redemption reversal behind, including on retry.
+  Two new disposable-database acceptance cases pin the boundary in
+  `payroll-close-unsupported.acceptance.test.ts`; targeted payroll suite 328/328
+  with zero skips, API typecheck and targeted ESLint exit 0. These paths are still
+  unsupported, so M1 stays IN PROGRESS; M2–M5 untouched. Logs `/tmp/cp005.log`
+  (suite), `/tmp/cp005-gaps.log` (new cases), `/tmp/cp005-tsc.log`.
 
 - **Current safe checkpoint — approved extension, M1 IN PROGRESS:** owner approved
   prospective manager-confirmed prepaid refund payout/cancellation evidence and a
@@ -33,14 +267,28 @@
   do not classify it as usage or bypass inventory counts. Session refund clears
   remaining ordinals; replay pre-cancellation ordinals independently. Purchase
   verifiers alone do not establish history. Keep refunds fail-closed until proven.
-  Then remaining mixed session/credit usage and spend-sale instalments. M2–M5 TODO.
-- **Disposable restart:** cluster stopped at handoff (see final shutdown check).
+  Mixed session/credit usage and spend-sale instalments now refuse by name (October 31
+  entries) instead of being approximated, and the used/transferred/paid void gates are
+  scoped by writer refusals. Purchase-void evidence is now captured for every void and the
+  restored spend is now _read_ from it (October 31 entry), so the open void work is the
+  fixture's missing cash confirmation (`SALE_VOID_CASH_UNCONFIRMED`) for a voided sale,
+  then returned-money and expired-credit voids. M2–M5 TODO.
+- **Disposable restart:** cluster stopped at handoff (see final shutdown check). The
+  October 31 read-the-voided-spend run restarted it exactly this way: data
+  `/tmp/cp005-pg-61c634a2/data`, socket dir `/tmp/cp005-pg-61c634a2`, loopback 55485,
+  `TimeZone=UTC`, role `cp005_test`, database `payroll_close_test` (the cluster has no
+  `postgres` superuser role; a stale `postmaster.pid` makes pg_ctl warn "another server
+  might be running" even when nothing is — confirm with `pg_isready` before writing).
   Restart with PostgreSQL 18 pg_ctl using saved path `/tmp/cp005-completion-pg-path`;
   assert data_directory/port/database/role before writes. Use explicit DATABASE_URL
-  `postgresql://cp005_runner@127.0.0.1:55485/payroll_close_test`, TZ=UTC,
+  `postgresql://cp005_test@127.0.0.1:55485/payroll_close_test` — the live cluster only
+  has the `cp005_test` role, so assert whichever role is passed connects before any write
+  — TZ=UTC,
   DOTENV_CONFIG_PATH=/dev/null, synthetic JWT_SECRET,
   NODE_OPTIONS=--import=/tmp/cp005-disposable-guard.mjs, RUN_CP005_ACCEPTANCE=true.
-  Never unset DATABASE_URL as isolation: dotenv reloads application credentials.
+  Never unset DATABASE_URL as isolation: dotenv reloads application credentials. The
+  guard file is not durable either: it rejects any unix socket or non-55485 TCP connect
+  and must be recreated if `/tmp` is cleaned.
 - **Latest CP-005 continuation — October 30, 2026:** owner approved a newly created
   disposable database only, leaving the application database unchanged. New cluster
   `/tmp/cp005-completion-pg-ZcnyKUaB/data`, loopback 55485, database

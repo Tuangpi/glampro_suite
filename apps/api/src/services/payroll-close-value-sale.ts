@@ -1,3 +1,7 @@
+import { payrollSessionCreditFunding } from "./payroll-session-credit-funding.js";
+import { payrollCreditInstalmentFunding } from "./payroll-credit-instalment-funding.js";
+import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js";
+import { verifyPayrollPackageTenders } from "./payroll-close-package-tender.js";
 import { z } from "zod";
 import {
   allocatePayrollSplit,
@@ -29,6 +33,11 @@ import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 const fail = (): never => {
   throw conflict("Authoritative payroll inputs unavailable: VALUE_SALE_ALLOCATION_UNCONFIRMED.");
 };
+/** Names the unsupported M1 path explicitly so the close reports why it refuses
+ * instead of falling back to the generic allocation failure. */
+const refuse = (code: string): never => {
+  throw conflict(`Authoritative payroll inputs unavailable: ${code}.`);
+};
 const hash = (value: unknown) =>
   payrollInputHash(
     JSON.parse(
@@ -45,17 +54,21 @@ const economicsSchema = z.object({
   soldAt: z.iso.datetime(),
   netLineAmount: z.string().regex(/^(0|[1-9]\d*)\.\d{2}$/),
   originalQuantity: z.number().int().safe().positive(),
-  coveredPackageQuantity: z.literal(0),
+  coveredPackageQuantity: z.number().int().safe().nonnegative(),
   category: z.string().nullable(),
   fullCreditFunding: z.unknown().optional(),
   mixedCreditFunding: z.unknown().optional(),
+  sessionCreditFunding: z.unknown().optional(),
+  instalmentCreditFunding: z.unknown().optional(),
 });
 
 /** Internal sale-wide evidence, NOT monthly readiness or earnings activation.
  * Supports settled service/product receipts with ownership/consent-reconciled,
  * active credit or fully evidenced no-cash sale voids.
  * Zero external bases require frozen funding evidence. No inferred tender-to-line
- * allocation, outstanding or package usage. */
+ * allocation or outstanding. Mixed session/credit usage requires independently
+ * verified session coverage and prospective funding evidence, including partial
+ * lines whose remaining units are funded by credit and explicitly allocated cash. */
 export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction, saleId: string) {
   const scope = currentScope();
   if (scope?.kind !== "tenant" || !scope.actorId || currentOutletId())
@@ -87,6 +100,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       tx.saleRefund.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
       tx.customerOutstandingPayment.findMany({
         where: { tenantId, saleId },
+        include: { outstanding: true },
         orderBy: { id: "asc" },
       }),
       tx.commissionRule.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
@@ -101,10 +115,8 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     !sale.customerId ||
     !sale.outletId ||
     refunds.length ||
-    outstanding.length ||
     !sale.lines.length ||
     !redemptions.length ||
-    !sale.paidAmount.equals(sale.totalAmount) ||
     sale.lines.some(
       (row) =>
         row.tenantId !== tenantId ||
@@ -118,18 +130,16 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
         row.customerId !== sale.customerId ||
-        row.itemType !== "VALUE_PACKAGE" ||
         !row.holdingId ||
         (sale.status === "VOID" ? row.revertedAt === null : row.revertedAt !== null) ||
-        !row.amount?.isPositive() ||
-        !row.amount.mul(100).isInteger(),
+        (row.itemType === "VALUE_PACKAGE" &&
+          (!row.amount?.isPositive() || !row.amount.mul(100).isInteger())),
     ) ||
     payments.some(
       (row) =>
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
         row.sessionId !== null ||
-        row.method === "PACKAGE" ||
         row.amount.isNegative() ||
         !row.amount.mul(100).isInteger(),
     ) ||
@@ -137,23 +147,87 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       (row) =>
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
-        !["SALE_LINE", "VALUE_SPEND", ...(sale.status === "VOID" ? ["REVERSAL"] : [])].includes(
-          row.sourceType,
-        ),
+        ![
+          "SALE_LINE",
+          "VALUE_SPEND",
+          "REDEMPTION",
+          "ORDINARY_COLLECTION",
+          ...(sale.status === "VOID" ? ["REVERSAL"] : []),
+        ].includes(row.sourceType),
     ) ||
     [sale.lines, payments, redemptions, events, collections].some(
       (rows) => new Set(rows.map((row) => row.id)).size !== rows.length,
     )
   )
     return fail();
+  // Each tender kind has its own independently verified history. Instalments
+  // still require a separate posting/allocation contract.
+  if (redemptions.some((row) => !["PACKAGE", "VALUE_PACKAGE"].includes(row.itemType)))
+    return fail();
+  const creditRedemptions = redemptions.filter((row) => row.itemType === "VALUE_PACKAGE");
+  const checkoutCollections = collections.filter((row) => row.sourceType === "SALE_PAYMENT");
+  const instalmentFunding = payrollCreditInstalmentFunding(
+    sale,
+    sale.lines,
+    payments,
+    checkoutCollections,
+  );
+  const instalment = !sale.paidAmount.equals(sale.totalAmount);
+  if ((instalment && !instalmentFunding) || (!instalment && outstanding.length))
+    refuse("VALUE_SALE_INSTALMENT_FUNDING_UNCONFIRMED");
+  const sessionCount = redemptions.length - creditRedemptions.length;
+  if (instalment && sessionCount) refuse("VALUE_SALE_INSTALMENT_SESSION_COVERAGE_UNCONFIRMED");
+  const coverage = sessionCount ? await loadPayrollSalePackageCoverage(tx, saleId, true) : null;
+  const packageTender = coverage
+    ? verifyPayrollPackageTenders(sale, payments, coverage.lines, sessionCount, true)
+    : null;
+  const sessionFunding = coverage
+    ? payrollSessionCreditFunding(
+        sale,
+        sale.lines,
+        payments,
+        collections,
+        coverage.lines,
+        sessionCount,
+      )
+    : null;
+  if (coverage && !sessionFunding) return fail();
   const cents = (amount: { mul(value: number): { toFixed(places: number): string } }) =>
     BigInt(amount.mul(100).toFixed(0));
   const creditPayments = payments.filter((row) => row.method === "PREPAID_CREDIT");
   const externalPayments = payments.filter(
-    (row) => row.method !== "PREPAID_CREDIT" && !row.amount.isZero(),
+    (row) => row.method !== "PREPAID_CREDIT" && row.method !== "PACKAGE" && !row.amount.isZero(),
   );
   const creditCents = creditPayments.reduce((sum, row) => sum + cents(row.amount), 0n);
   const externalCents = externalPayments.reduce((sum, row) => sum + cents(row.amount), 0n);
+  if (
+    outstanding.some(
+      (row) =>
+        row.tenantId !== tenantId ||
+        row.saleId !== saleId ||
+        row.customerId !== sale.customerId ||
+        row.outstanding.tenantId !== tenantId ||
+        row.outstanding.id !== row.outstandingId ||
+        row.outstanding.saleId !== saleId ||
+        row.outstanding.customerId !== sale.customerId ||
+        row.paidAt < sale.soldAt ||
+        !row.paidAmount.isPositive() ||
+        !row.paidAmount.mul(100).isInteger(),
+    )
+  )
+    return fail();
+  const laterCents = outstanding.reduce((sum, row) => sum + cents(row.paidAmount), 0n);
+  if (instalment) {
+    const debts = await tx.customerOutstanding.findMany({ where: { tenantId, saleId } });
+    if (
+      debts.length !== 1 ||
+      debts[0].customerId !== sale.customerId ||
+      !debts[0].unpaidAmount.mul(100).isInteger() ||
+      debts[0].unpaidAmount.isNegative() ||
+      cents(debts[0].unpaidAmount) + laterCents !== cents(sale.totalAmount.minus(sale.paidAmount))
+    )
+      return fail();
+  }
   const purchaseByLine = new Map(
     sale.lines.map((row) => [
       row.id,
@@ -167,24 +241,25 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
   if (
     !creditCents ||
     creditPayments.some((row) => !row.amount.isPositive()) ||
-    creditCents !== redemptions.reduce((sum, row) => sum + cents(row.amount!), 0n) ||
-    externalCents + creditCents !== cents(sale.totalAmount) ||
+    creditCents !== creditRedemptions.reduce((sum, row) => sum + cents(row.amount!), 0n) ||
+    externalCents + creditCents + BigInt(packageTender?.grossCents ?? "0") !==
+      cents(instalment ? sale.paidAmount : sale.totalAmount) ||
     [...purchaseByLine.values()].reduce((sum, row) => sum + row.grossCents, 0n) !==
       cents(sale.totalAmount) ||
     [...purchaseByLine.values()].reduce((sum, row) => sum + row.taxCents, 0n) !==
       cents(sale.taxAmount) ||
-    collections.length !== externalPayments.length ||
+    collections.length !== externalPayments.length + outstanding.length ||
     new Set(collections.map((row) => `${row.sourceType}:${row.sourceId}`)).size !==
       collections.length
   )
     return fail();
 
   const histories = [];
-  for (const holdingId of [...new Set(redemptions.map((row) => row.holdingId!))].sort())
+  for (const holdingId of [...new Set(creditRedemptions.map((row) => row.holdingId!))].sort())
     histories.push(await loadPayrollValueSpendHistory(tx, holdingId));
   const spendEvents = events.filter((row) => row.sourceType === "VALUE_SPEND");
-  if (spendEvents.length !== redemptions.length) return fail();
-  for (const redemption of redemptions) {
+  if (spendEvents.length !== creditRedemptions.length) return fail();
+  for (const redemption of creditRedemptions) {
     const history = histories.find((row) => row.evidence.holding.id === redemption.holdingId)!;
     const originals = history.evidence.redemptions.filter((row) => row.id === redemption.id);
     const captures = history.evidence.related.filter(
@@ -204,7 +279,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         (row) =>
           hash(row.sale) !== hash(sale) ||
           hash(row.tenders) !== hash(payments) ||
-          hash(row.redemptions) !== hash(redemptions),
+          hash(row.redemptions) !== hash(creditRedemptions),
       )
     )
       return fail();
@@ -215,15 +290,23 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
   const allocations = collections.flatMap((row) => row.allocations);
   if (new Set(allocations.map((row) => row.id)).size !== allocations.length) return fail();
   for (const [index, receipt] of collections.entries()) {
-    const matches = externalPayments.filter((row) => row.id === receipt.sourceId);
+    const matches =
+      receipt.sourceType === "SALE_PAYMENT"
+        ? externalPayments
+            .filter((row) => row.id === receipt.sourceId)
+            .map((row) => ({ amount: row.amount, at: row.createdAt }))
+        : receipt.sourceType === "OUTSTANDING_PAYMENT"
+          ? outstanding
+              .filter((row) => row.id === receipt.sourceId)
+              .map((row) => ({ amount: row.paidAmount, at: row.paidAt }))
+          : [];
     if (
       receipt.tenantId !== tenantId ||
       receipt.saleId !== saleId ||
       receipt.currency !== "SGD" ||
-      receipt.sourceType !== "SALE_PAYMENT" ||
       matches.length !== 1 ||
       receipt.grossCents !== cents(matches[0].amount) ||
-      receipt.occurredAt.getTime() !== matches[0].createdAt.getTime() ||
+      receipt.occurredAt.getTime() !== matches[0].at.getTime() ||
       receipt.occurredAt < sale.soldAt ||
       receipt.createdAt < receipt.occurredAt ||
       (index > 0 &&
@@ -265,7 +348,8 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       )
         return fail();
       collected.set(line.id, (collected.get(line.id) ?? 0n) + allocation.grossCents);
-      net.set(line.id, (net.get(line.id) ?? 0n) + allocation.netCents);
+      if (receipt.sourceType === "SALE_PAYMENT")
+        net.set(line.id, (net.get(line.id) ?? 0n) + allocation.netCents);
       cashAttributions.push({
         tenantId,
         allocationId: allocation.id,
@@ -279,7 +363,14 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
   const mixedFunding = payrollMixedCreditFunding(sale, sale.lines, payments, collections);
   const ordinary = [];
   for (const line of sale.lines) {
+    if (coverage?.lines.find((row) => row.saleLineId === line.id)?.remainingQuantity === 0) {
+      if (events.some((row) => row.sourceType === "SALE_LINE" && row.sourceId === line.id))
+        return fail();
+      continue;
+    }
     const purchase = purchaseByLine.get(line.id)!;
+    const coveredQuantity =
+      coverage?.lines.find((row) => row.saleLineId === line.id)?.coveredQuantity ?? 0;
     const economics = economicsSchema.safeParse(line.payrollEconomics);
     if (
       !economics.success ||
@@ -289,18 +380,25 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       economics.data.itemType !== line.itemType ||
       economics.data.soldAt !== sale.soldAt.toISOString() ||
       economics.data.originalQuantity !== line.quantity ||
+      economics.data.coveredPackageQuantity !== coveredQuantity ||
       economics.data.netLineAmount !==
         `${purchase.netCents / 100n}.${(purchase.netCents % 100n).toString().padStart(2, "0")}`
     )
       return fail();
     if (
-      economics.data.mixedCreditFunding !== undefined &&
-      (!mixedFunding || hash(mixedFunding) !== hash(economics.data.mixedCreditFunding))
+      (instalmentFunding &&
+        hash(instalmentFunding) !== hash(economics.data.instalmentCreditFunding ?? null)) ||
+      (!instalmentFunding && economics.data.instalmentCreditFunding !== undefined) ||
+      (sessionFunding &&
+        hash(sessionFunding) !== hash(economics.data.sessionCreditFunding ?? null)) ||
+      (!sessionFunding && economics.data.sessionCreditFunding !== undefined) ||
+      (economics.data.mixedCreditFunding !== undefined &&
+        (!mixedFunding || hash(mixedFunding) !== hash(economics.data.mixedCreditFunding)))
     )
       return fail();
     const foc =
       line.itemType === "SERVICE" && purchase.grossCents === 0n
-        ? resolvePayrollFocEconomics(line, sale.soldAt)
+        ? resolvePayrollFocEconomics(line, sale.soldAt, coveredQuantity)
         : null;
     // A zero base needs prospective, immutable funding evidence independently
     // matched to the complete operational tender inventory. No legacy inference.
@@ -315,7 +413,12 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         mixedFunding &&
         economics.data.mixedCreditFunding &&
         hash(mixedFunding) === hash(economics.data.mixedCreditFunding);
-      if (!fullConfirmed && !mixedConfirmed) return fail();
+      const sessionConfirmed =
+        sessionFunding &&
+        economics.data.sessionCreditFunding &&
+        hash(sessionFunding) === hash(economics.data.sessionCreditFunding);
+      if (!fullConfirmed && !mixedConfirmed && !sessionConfirmed && !instalmentFunding)
+        return fail();
       net.set(line.id, 0n);
     }
     const candidates = events.filter(
@@ -333,7 +436,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       foc?.baseAmount ??
       `${net.get(line.id)! / 100n}.${(net.get(line.id)! % 100n).toString().padStart(2, "0")}00`;
     const bases = allocatePayrollSplit(baseAmount, shares);
-    const units = allocatePayrollSplit(`${line.quantity}.0000`, shares);
+    const units = allocatePayrollSplit(`${line.quantity - coveredQuantity}.0000`, shares);
     if (
       event.sourceKey !== `sale-line:${line.id}` ||
       event.outletId !== sale.outletId ||
@@ -362,9 +465,72 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       return fail();
     ordinary.push({ saleLineId: line.id, eventId: event.id, baseAmount });
   }
-  const originals = events.filter((row) => row.sourceType !== "REVERSAL");
+  const laterOperations = [];
+  for (const receipt of collections.filter((row) => row.sourceType === "OUTSTANDING_PAYMENT")) {
+    for (const allocation of receipt.allocations) {
+      const line = sale.lines.find((row) => row.id === allocation.saleLineId);
+      const captured = events.filter(
+        (row) => row.sourceType === "ORDINARY_COLLECTION" && row.sourceId === allocation.id,
+      );
+      if (!instalmentFunding || !line || captured.length !== 1) return fail();
+      const event = captured[0];
+      const parsed = captureSchema.safeParse(event.evidence);
+      const attribution = commissionAttributionSchema.parse(line.attribution);
+      const shares = line.itemType === "PRODUCT" ? attribution.sellers : attribution.performers;
+      if (
+        !shares ||
+        !parsed.success ||
+        event.sourceKey !== `ordinary-collection:${allocation.id}` ||
+        event.occurredAt.getTime() !== receipt.occurredAt.getTime() ||
+        event.outletId !== sale.outletId
+      )
+        return fail();
+      const bases = allocatePayrollSplit(
+        `${allocation.netCents / 100n}.${(allocation.netCents % 100n).toString().padStart(2, "0")}00`,
+        shares,
+      );
+      if (
+        parsed.data.lines.length !== bases.length ||
+        new Set(parsed.data.lines.map((row) => row.staffId)).size !== bases.length ||
+        parsed.data.lines.some(
+          (row) =>
+            row.commissionType !== (line.itemType === "PRODUCT" ? "PRD" : "SVC") ||
+            row.baseAmount !== bases.find((part) => part.staffId === row.staffId)?.amount ||
+            row.units !== "0.0000" ||
+            row.mode !== "FOLLOW_PLAN" ||
+            row.fixedCommission !== undefined,
+        )
+      )
+        return fail();
+      verifyOrdinaryPayrollRateProvenance(
+        event.evidence,
+        line,
+        event.occurredAt,
+        event.createdAt,
+        rules,
+        tenantId,
+      );
+      laterOperations.push({
+        tenantId,
+        sourceType: "ORDINARY_COLLECTION" as const,
+        sourceId: allocation.id,
+        saleId,
+        outletId: sale.outletId,
+        occurredAt: receipt.occurredAt,
+        evidence: { receipt, allocation, line },
+      });
+    }
+  }
+  if (
+    events.filter((row) => row.sourceType === "ORDINARY_COLLECTION").length !==
+    laterOperations.length
+  )
+    return fail();
+  const originals = events.filter(
+    (row) => !["REVERSAL", "ORDINARY_COLLECTION"].includes(row.sourceType),
+  );
   const reversals = events.filter((row) => row.sourceType === "REVERSAL");
-  if (originals.length !== ordinary.length + spendEvents.length) return fail();
+  if (originals.length !== ordinary.length + spendEvents.length + sessionCount) return fail();
   const noCashReversals: PayrollNoCashReversal[] = [];
   let noCashSaleVoid: PayrollNoCashSaleVoid | null = null;
   const cashConfirmation =
@@ -490,7 +656,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       grossCents: cents(row.amount).toString(),
       occurredAt: row.createdAt,
     })),
-    collections: collections.map((row) => ({
+    collections: checkoutCollections.map((row) => ({
       ...row,
       sourceType: "SALE_PAYMENT" as const,
       currency: "SGD" as const,
@@ -504,7 +670,11 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         taxCents: part.taxCents.toString(),
       })),
     })),
-    cashAttributions,
+    cashAttributions: cashAttributions.filter((row) =>
+      checkoutCollections.some((receipt) =>
+        receipt.allocations.some((part) => part.id === row.allocationId),
+      ),
+    ),
   });
   if (!cash.cash) return fail();
   return {
@@ -512,7 +682,10 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     ordinary,
     noCashReversals,
     noCashSaleVoid,
+    coverage,
+    packageTender,
     creditPaymentIds: creditPayments.map((row) => row.id),
+    laterOperations,
     cash: cash.cash,
     evidence: {
       sale,
@@ -524,6 +697,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       rules,
       cashAttributions,
       cashConfirmation,
+      outstanding,
     },
   };
 }

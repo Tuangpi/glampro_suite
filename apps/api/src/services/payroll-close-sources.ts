@@ -11,6 +11,7 @@ const eventSchema = z.object({
   sourceType: z.enum([
     "SALE_LINE",
     "COLLECTION",
+    "ORDINARY_COLLECTION",
     "REDEMPTION",
     "VALUE_SPEND",
     "CORRECTION",
@@ -108,6 +109,7 @@ export function resolvePayrollCloseSources(raw: PayrollCloseSourceRecords) {
     const types: Record<typeof event.sourceType, string[]> = {
       SALE_LINE: ["SVC", "PRD", "FOC"],
       COLLECTION: ["PKG_SALE", "VP_SALE"],
+      ORDINARY_COLLECTION: ["SVC", "PRD"],
       REDEMPTION: ["PKG_RED"],
       VALUE_SPEND: ["VP_SPEND"],
       CORRECTION: ["PKG_RED"],

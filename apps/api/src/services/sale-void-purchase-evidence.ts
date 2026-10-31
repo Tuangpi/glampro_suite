@@ -8,7 +8,9 @@ import { verifyPayrollValuePurchase } from "./payroll-close-value-purchase.js";
 import { payrollInputHash } from "./payroll-close-state.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
-const action = "sale.void.purchase-holdings";
+/** Audit action that carries the pre-deletion purchase holdings snapshot. */
+export const SALE_VOID_PURCHASE_HOLDINGS_ACTION = "sale.void.purchase-holdings";
+const action = SALE_VOID_PURCHASE_HOLDINGS_ACTION;
 const id = z.string().min(1);
 const money = z.string().regex(/^(0|[1-9]\d*)(?:\.\d{1,2})?$/);
 const holding = z
@@ -59,8 +61,11 @@ export async function recordSaleVoidPurchaseHoldings(
   actorId: string,
 ) {
   const scope = currentScope();
-  if (scope?.kind !== "tenant" || scope.tenantId !== tenantId || scope.actorId !== actorId)
-    throw forbidden("Purchase void evidence requires the authenticated actor.");
+  // Salon scope only. The void writer takes the actor as a parameter and stamps it on the
+  // sale, so `sale.voidedById === actorId` below is what ties this snapshot to its voider;
+  // comparing against the session actor again would refuse voids the writer accepts.
+  if (scope?.kind !== "tenant" || scope.tenantId !== tenantId)
+    throw forbidden("Purchase void evidence requires the authenticated salon scope.");
   const sale = await tx.sale.findFirst({
     where: { tenantId, id: saleId },
     include: { lines: true },

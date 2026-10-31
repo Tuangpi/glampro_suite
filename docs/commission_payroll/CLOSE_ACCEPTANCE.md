@@ -1,5 +1,66 @@
 # CP-005 monthly close acceptance checkpoint
 
+## October 31 continuation — prospective ordinary credit instalments
+
+Checkout freezes explicit funding/debt evidence; later receipts append separate
+zero-unit ORDINARY_COLLECTION sources. Complete independent payment, debt,
+collection, allocation and rate evidence reconciles before loading. No legacy
+backfill or synthetic cash is persisted. Same-key concurrent retries create one
+payment/source. Stale drafts reject after collection. Real calculation/approval
+freezes original history; the next month's final payment contributes only 27.53
+after the first 27.52, retaining original line GST rounding.
+
+Unused expired-credit purchase voids now replay expiry and exact terminal removal
+from the preserved holding with explicit NO_MOVEMENT. Their real-writer monthly
+calculation and persisted approval pass. Expiry alone is not a new spend.
+
+Monetary correction persistence additionally verifies concurrent same-revision
+corrections commit once with no original approved-state rewrite. Source corrections,
+approval/source races, plan-switch integration, mounted API/UI, browser and performance
+acceptance remain unaccepted. M1 remains IN PROGRESS; M2–M5 are not complete.
+
+Final guarded payroll regression: **482 passed, 0 failed, 6 gated skips**;
+shared **302 passed**. API build, targeted ESLint/Prettier and whitespace checks
+passed. Evidence is in `/tmp/cp005-all-final-regression.log` and companion
+`/tmp/cp005-all-{shared,build,lint,prettier}.log` files. No close browser or
+performance results are claimed; no production/application database was used.
+
+## October 31 continuation — partial lines and expired restored credit
+
+Partial session/credit coverage now passes real checkout, monthly calculation,
+stale-draft rejection, recalculation and persisted approval, with and without cash.
+Prospective version-2 evidence binds exact coverage, package/credit tenders and
+explicit external allocations; cash cannot consume session-covered gross cents.
+Existing disjoint version-1 evidence is unchanged. Tests include external cash on
+the partially covered line and preserve independent line-level GST rounding.
+
+A wholly credit-funded ordinary line alongside an externally funded line no longer
+receives a false missing-allocation marker. Its independent monthly regression
+verifies zero ordinary base without treating credit as new cash.
+
+Fully restored used-credit purchase voids after expiry now reconcile through the
+surviving complete ledger and pre-deletion snapshot, then calculate and approve.
+Historical expiry at spend/restore, exact REMOVAL and NO_MOVEMENT confirmation still
+verify. Unused expired-credit voids remain a separate boundary. Focused funding and
+monthly cases: 9/9; restored-credit database cases: 5/5; no skips in either run.
+
+These results supersede partial-line and expired-restored-credit refusal claims
+below, not the overall status. **M1 remains IN PROGRESS; M2–M5 remain TODO.**
+
+## October 31 checkpoint — disjoint session/credit usage
+
+Settled session-package/credit receipts now pass real-writer monthly calculation and
+persisted approval when session coverage and credit/cash lines are disjoint. Complete
+holding histories, package tender coverage and prospective frozen funding evidence
+must reconcile independently. Credit/session tenders add no cash; only external
+allocations contribute cash and the ordinary service base. Both credit-only residual
+and allocated-cash variants pass stale-draft rejection, recalculation and immutable
+approved-state acceptance. SQL immutability and loader-level missing-evidence refusal
+are checked separately. Partial-line mixed usage refuses
+`MIXED_SESSION_CREDIT_PARTIAL_LINE_NOT_SUPPORTED`; instalments still refuse
+`VALUE_SALE_INSTALMENT_NOT_SUPPORTED`. Mixed corrections/voids and browser acceptance
+remain open. M1 is IN PROGRESS, not DONE. Supersedes earlier blanket mixed-usage gates.
+
 ## Status — October 30, 2026
 
 **IN PROGRESS, not accepted.** CP-004 remains latest completed. No CP-003A or
@@ -39,6 +100,38 @@ requirements; faster cadence does not permit weaker assertions or omitted paths.
   refuse 403 before any transaction, a disabled session 401s and a foreign outlet
   404s before persistence, and a malformed confirmation is refused 422 by the
   strict schema.
+- A refused close names its cause, so an operator can tell a supported path from an
+  unsupported one: `MIXED_SESSION_CREDIT_PARTIAL_LINE_NOT_SUPPORTED` (one line partly
+  covered by sessions alongside stored credit) and `VALUE_SALE_INSTALMENT_NOT_SUPPORTED` (a
+  part-paid credit spend). All read
+  `409 Authoritative payroll inputs unavailable: <CODE>.` and write no close.
+- A restored spend whose holding a later purchase void deleted is read, not refused:
+  `loadPayrollValueSpendHistory` rebuilds the deleted row from the void's hash-verified
+  pre-deletion snapshot, admits the `VOID` purchase it belonged to, accepts only the void
+  writer's own one-per-capture collection reversal, verifies the terminal `REMOVAL`
+  balance row that emptied the credit, and replays the spend/restore on the ledger that
+  outlived the row (the removal is excluded from the replay and still frozen in evidence).
+  Any snapshot that fails those checks keeps the generic
+  `VALUE_SPEND_HISTORY_UNCONFIRMED`.
+- Void gates are scoped by the writer, not by guesswork: a purchase whose credit is
+  still spent cannot be voided (`HOLDING_ALREADY_SPENT`), so the loader's used and
+  transferred gates defend against edited rows; undoing the spend and then voiding the
+  purchase _is_ allowed and is now loadable, pinned by
+  `payroll-void-restored-spend.acceptance.test.ts`. With writer-supported `NO_MOVEMENT`
+  confirmations, full monthly loading, calculation and persisted approval pass: retained
+  cash 500.0000, spend/restore bases 75.0000/-75.0000, stable input hash and unchanged
+  approved calculation evidence. Missing SPEND, RESTORE or REMOVAL evidence refuses.
+  The month still refuses `SALE_VOID_CASH_UNCONFIRMED` without confirmation. Real-writer
+  probes pin expired restored credit at `PURCHASE_VOID_HISTORY_UNCONFIRMED` and prove
+  unconfirmed returned-cash snapshots alone do not authorize close. Five acceptance
+  cases pass; payroll regression 421 passed, 0 failed, 6 skipped (427 total).
+- Every purchase void now writes the pre-deletion holding snapshot, not just the
+  no-movement ones: a returned-cash void deletes the same credit rows, so restricting
+  capture to `NO_MOVEMENT` left those credits with no evidence at all. Only the
+  no-movement path additionally writes the cash confirmation that binds the hash. The
+  capture proves salon scope and ties itself to the voider through the sale's own
+  `voidedById`, because the void writer takes the actor as a parameter and a stricter
+  session-actor check refused voids the writer accepts.
 - A refund without confirmation still persists as a legacy capture with no journal
   row, and confirmation cannot be added afterwards (409), so the close loader keeps
   refusing that capture as `PREPAID_SETTLEMENT_MISSING` instead of accepting a
@@ -808,6 +901,22 @@ The DB test checks the exact loopback host, port and database before writing.
 Do not point this command at an application database.
 
 ## Required before CP-005 DONE
+
+October 31 source-correction slice: real session-attribution reverse/repost now
+records occurrence separately from posting, skips approved months, reconciles
+close revision/hash evidence and posts no new cash. Guarded acceptance includes
+concurrent idempotent retries, stale-draft refusal, recalculation/approval, deferred
+future posting, competing approval and invalid-performer rollback, retaining both
+original and subsequently approved hashes. Expanded regression: 487 pass / 0 fail /
+9 gated skips. This is partial M2 evidence, not acceptance of every correction
+family. Follow-up deterministic session cases now cover both approval-first and
+correction-first lock orderings: real PostgreSQL blocking is observed before the
+first writer is released; stale approval leaves no approval audit or draft
+mutation; both cases persist the exact next-month reverse/repost and preserve
+prior approved hashes. Other correction/lifecycle combinations and M1 remain open.
+Follow-up guarded regression: **489 passed, 0 failed, 9 gated skips** (498 total);
+API typecheck/build, targeted lint/format and whitespace checks pass. Evidence:
+`/tmp/cp005-ordered-regression.log` and companion quality-check logs/exit markers.
 
 1. Authoritative transactional loaders: independent complete operational inventory,
    settled payment/refund/void provenance/timing, historical allocations/attribution,

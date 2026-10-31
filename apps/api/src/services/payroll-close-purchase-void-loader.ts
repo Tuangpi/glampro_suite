@@ -17,6 +17,7 @@ import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-proven
 import { payrollInputHash } from "./payroll-close-state.js";
 import { verifyPayrollOrdinaryVoidLine } from "./payroll-close-sale-void-loader.js";
 import { replayPayrollValueOwnership } from "./payroll-close-value-ownership.js";
+import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import type { PayrollValueSharing } from "./payroll-close-value-sharing.js";
 import { resolvePayrollCloseVoids, type PayrollNoCashSaleVoid } from "./payroll-close-voids.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
@@ -33,8 +34,9 @@ const month = (at: Date, timeZone: string) => {
   return ["year", "month"].map((type) => parts.find((part) => part.type === type)!.value).join("-");
 };
 
-/** Prospective purchase/ordinary mixed path: unused, untransferred; session expiry
- * requires an exact independent bucket-transfer pair, credit expiry stays gated.
+/** Prospective purchase/ordinary mixed path: unused or fully restored credit, untransferred; session expiry
+ * requires an exact independent bucket-transfer pair. Credit expiry is replayed;
+ * expiry alone does not consume the balance removed by this purchase void.
  * full or partial upfront external funding and explicitly attested NO_MOVEMENT. Deleted
  * holdings alone never establish eligibility. Every independent journal is frozen. */
 export async function loadPayrollPurchaseSaleVoid(
@@ -108,7 +110,25 @@ export async function loadPayrollPurchaseSaleVoid(
         ? tx.sessionPackageTransferEvent.findMany({ where: { tenantId, holdingId: holding.id } })
         : tx.prepaidTransferEvent.findMany({ where: { tenantId, holdingId: holding.id } }),
     ]);
-    if (uses.length || transfers.length) return fail();
+    if (transfers.length || (line.itemType === "PACKAGE" && uses.length)) return fail();
+    if (line.itemType === "VALUE_PACKAGE" && uses.length) {
+      // The writer permits purchase deletion only after all credit has returned.
+      // Verify the whole surviving spend/restore ledger, not just revertedAt flags.
+      const history = await loadPayrollValueSpendHistory(tx, holding.id);
+      if (
+        history.evidence.sale.id !== saleId ||
+        history.refund ||
+        history.restorations.length !== uses.length ||
+        payrollInputHash(JSON.parse(JSON.stringify(history.evidence.redemptions))) !==
+          payrollInputHash(
+            JSON.parse(JSON.stringify([...uses].sort((a, b) => a.id.localeCompare(b.id)))),
+          )
+      )
+        return fail();
+      valuePurchases.set(line.id, history.evidence.purchase);
+      journals.push({ holdingId: holding.id, history });
+      continue;
+    }
     if (line.itemType === "VALUE_PACKAGE") {
       const credit = preserved.snapshot.credits.find((row) => row.id === holding.id)!;
       const expiresAt = credit.expiresAt;
@@ -217,8 +237,7 @@ export async function loadPayrollPurchaseSaleVoid(
         r.previousCustomerId !== sale.customerId ||
         !r.amountBefore.equals(amount) ||
         !r.amountAfter.isZero() ||
-        !r.delta.equals(amount.negated()) ||
-        (r.expiresAt !== null && (r.expiresAt <= r.createdAt || r.expiresAt <= sale.voidedAt))
+        !r.delta.equals(amount.negated())
       )
         return fail();
       journals.push({

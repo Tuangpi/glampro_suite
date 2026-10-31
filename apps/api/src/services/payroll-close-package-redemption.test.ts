@@ -1639,3 +1639,14 @@ test("sale coverage requires a verified salon-wide manager or owner even without
   f.first.data.actor.globalRole = "MANAGER";
   assert.equal((await f.load()).lines[0].remainingQuantity, 3);
 });
+
+test("POS package draw may follow sale creation but cannot precede it", () => {
+  const { input } = fixture();
+  input.sale.soldAt = new Date(input.redemption.usedAt.getTime() - 25);
+  assert.doesNotThrow(() => verifyPayrollPackageRedemption(input));
+  input.sale.soldAt = new Date(input.redemption.usedAt.getTime() + 1);
+  assert.throws(
+    () => verifyPayrollPackageRedemption(input),
+    /PACKAGE_REDEMPTION_EVIDENCE_UNCONFIRMED/,
+  );
+});

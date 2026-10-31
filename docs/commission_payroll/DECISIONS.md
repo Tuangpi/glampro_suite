@@ -1,5 +1,34 @@
 # Commission & Payroll decisions
 
+### CP-005 prospective credit instalments and unused expiry (October 31, 2026)
+
+- Freeze ordinary service/product credit instalment funding at checkout, including
+  uncollected gross separately. Never mutate the original sale or treat debt/credit
+  as cash. Later exact allocations append idempotent ORDINARY_COLLECTION sources
+  with zero units and source-time rate provenance, posted in their collection month.
+- Reconcile complete operational debt/payment/receipt history independently in the
+  loader; retain refusal for missing legacy funding and session-covered instalments.
+- An unused expired credit purchase can be removed by the existing void writer.
+  Verify historical ownership/expiry, preserved holding, exact full removal and
+  manager NO_MOVEMENT evidence; expiry at removal is not an additional condition.
+  This supersedes the unused-expired restriction in the earlier decision below.
+- Do not mount close API/UI or declare M1–M5 accepted before remaining lifecycle,
+  source-correction, carry/plan-switch and integrated acceptance gates pass.
+
+### CP-005 restored credit purchase removal after expiry (October 31, 2026)
+
+- A fully restored credit holding may be deleted by the existing purchase-void
+  writer after its expiry. Removal is not a spend and does not require the credit
+  to be live at removal time. No writer eligibility is changed.
+- For previously spent credit only, the close loader uses the existing complete
+  historical spend/restore ownership-and-expiry replay and hash-verified preserved
+  holding, followed by the exact terminal REMOVAL. It no longer additionally
+  requires the final expiry to be after purchase void time.
+- Manager-confirmed NO_MOVEMENT remains mandatory; retained collection cash is
+  unchanged. The real-writer acceptance verifies monthly calculation and persisted
+  approval. Unused expired credit and unconfirmed cash dispositions remain separate
+  unsupported boundaries; this decision does not relax them.
+
 ## Approved prepaid settlement workflow — October 30, 2026
 
 - Owner approved extending prepaid refund operations with manager-confirmed,
@@ -917,6 +946,27 @@ implemented behavior or production activation. Future conflicts must be recorded
   handling. Port behavior deliberately, not the fallback function unchanged.
 - Reference service writes are not a complete transaction/retry/tenant-security
   design. Existing production architecture wins on safety, not old commission policy.
+
+### October 31, 2026 — session source-correction posting evidence
+
+- Deterministic race acceptance uses a test-only real-transaction barrier after
+  the tenant row lock and observes `pg_blocking_pids` before releasing the winner.
+  Do not infer race ordering from sleeps or Promise submission order. The wrapper
+  is restored before the contender starts, and cleanup releases/awaits both
+  transactions. No production injection hook or replacement DB behavior is added.
+
+- Operational session corrections retain actual occurrence in their immutable
+  snapshot and select a distinct source posting timestamp under the same locks as
+  close approval. An approved current month is skipped without rewriting history.
+- Missing persisted close means OPEN revision zero (the close store's existing
+  semantics), not permission to skip that month. This differs from the pure
+  supplied-record allocation helper, where missing records mean missing evidence.
+- Freeze inspected close revisions/hashes and validate against historical audits;
+  later calculation/approval must not invalidate a legitimate prior selection.
+  Both sources bind the same snapshot evidence; historical rates remain unchanged.
+- Stamp new close audits at transition append time rather than PostgreSQL's
+  transaction-start time, which can precede a competing source that won the lock.
+  No schema migration, release activation or production data change is needed.
 
 No owner-policy question is currently blocking. Newly discovered safety-critical
 or scope-changing conflicts must be documented, not treated as blanket permission

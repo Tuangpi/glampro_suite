@@ -67,6 +67,7 @@ export function payrollMixedCreditFunding(
       taxCents: bigint;
     }[];
   }[],
+  allowPackage = false,
 ) {
   if (
     sale.collectionCurrency !== "SGD" ||
@@ -86,7 +87,7 @@ export function payrollMixedCreditFunding(
     new Set(payments.map((payment) => payment.id)).size !== payments.length ||
     payments.some(
       (payment) =>
-        ![
+        (![
           "PREPAID_CREDIT",
           "CASH",
           "CARD",
@@ -97,7 +98,8 @@ export function payrollMixedCreditFunding(
           "NETS",
           "GRABPAY",
           "ATOME",
-        ].includes(payment.method) ||
+        ].includes(payment.method) &&
+          !(allowPackage && payment.method === "PACKAGE")) ||
         payment.sessionId !== null ||
         !payment.amount.isPositive() ||
         !payment.amount.mul(100).isInteger(),
@@ -105,7 +107,14 @@ export function payrollMixedCreditFunding(
   )
     return null;
   const credit = payments.filter((payment) => payment.method === "PREPAID_CREDIT");
-  const external = payments.filter((payment) => payment.method !== "PREPAID_CREDIT");
+  const packages = payments.filter((payment) => payment.method === "PACKAGE");
+  const packageGrossCents = packages.reduce(
+    (sum, payment) => sum + BigInt(payment.amount.mul(100).toFixed(0)),
+    0n,
+  );
+  const external = payments.filter(
+    (payment) => !["PREPAID_CREDIT", "PACKAGE"].includes(payment.method),
+  );
   if (!credit.length || !external.length || receipts.length !== external.length) return null;
   const creditGrossCents = credit.reduce(
     (sum, payment) => sum + BigInt(payment.amount.mul(100).toFixed(0)),
@@ -117,7 +126,8 @@ export function payrollMixedCreditFunding(
   );
   const allocations = receipts.flatMap((receipt) => receipt.allocations);
   if (
-    creditGrossCents + externalGrossCents !== BigInt(sale.totalAmount.mul(100).toFixed(0)) ||
+    creditGrossCents + externalGrossCents + packageGrossCents !==
+      BigInt(sale.totalAmount.mul(100).toFixed(0)) ||
     new Set(receipts.map((receipt) => receipt.id)).size !== receipts.length ||
     new Set(receipts.map((receipt) => receipt.sourceId)).size !== receipts.length ||
     new Set(allocations.map((allocation) => allocation.id)).size !== allocations.length
@@ -134,7 +144,7 @@ export function payrollMixedCreditFunding(
     }));
     if (
       purchases.reduce((sum, line) => sum + line.purchase.grossCents, 0n) !==
-      creditGrossCents + externalGrossCents
+      creditGrossCents + externalGrossCents + packageGrossCents
     )
       return null;
     const collected = new Map<string, bigint>();
@@ -171,6 +181,12 @@ export function payrollMixedCreditFunding(
     creditPaymentIds: credit.map((payment) => payment.id).sort(),
     creditGrossCents: creditGrossCents.toString(),
     externalGrossCents: externalGrossCents.toString(),
+    ...(allowPackage
+      ? {
+          packagePaymentIds: packages.map((payment) => payment.id).sort(),
+          packageGrossCents: packageGrossCents.toString(),
+        }
+      : {}),
     collections: receipts
       .map((receipt) => ({
         id: receipt.id,

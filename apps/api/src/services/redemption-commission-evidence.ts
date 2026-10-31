@@ -1,4 +1,8 @@
 import { createHash } from "node:crypto";
+import {
+  payrollCorrectionPostingSchema,
+  selectPayrollCorrectionPosting,
+} from "./payroll-correction-posting.js";
 import { z } from "zod";
 import {
   commissionSharesSchema,
@@ -53,6 +57,7 @@ const rateSnapshotSchema = z.object({
   amount: z.string().nullable(),
 });
 export const redemptionCommissionEvidenceSchema = z.object({
+  payrollCorrectionPosting: payrollCorrectionPostingSchema.optional(),
   correctionRequest: correctRedemptionAttributionSchema.optional(),
   payrollSession: payrollSessionEvidenceSchema.optional(),
   version: z.literal(1),
@@ -372,6 +377,11 @@ export async function correctRedemptionAttribution(
         original.valuation?.netCents,
       ),
     });
+    const correctionAt = new Date();
+    const posting = evidence.payrollSession
+      ? await selectPayrollCorrectionPosting(tx, scope.tenantId, redemption.usedAt, correctionAt)
+      : undefined;
+    if (posting) evidence.payrollCorrectionPosting = posting;
     const corrected = await tx.commissionRedemptionSnapshot.create({
       data: {
         tenantId: scope.tenantId,
@@ -380,6 +390,7 @@ export async function correctRedemptionAttribution(
         eventKey,
         eventHash: hash,
         eventType: "CORRECTION",
+        createdAt: correctionAt,
         actorId,
         reason: input.reason,
         evidence,
@@ -392,6 +403,7 @@ export async function correctRedemptionAttribution(
         input.reason,
         `correction:${corrected.id}`,
         `redemption:${redemptionId}:${previous.revision}`,
+        posting,
       );
       const source = evidence.payrollSession;
       const purchase = source.purchase ? readPayrollPackagePurchase(source.purchase) : null;
@@ -401,7 +413,7 @@ export async function correctRedemptionAttribution(
         sourceType: "CORRECTION",
         sourceId: redemptionId,
         saleId: redemption.saleId,
-        occurredAt: new Date(),
+        occurredAt: posting ? new Date(posting.postingAt) : correctionAt,
         reason: input.reason,
         commissionType: "PKG_RED",
         baseAmount: source.baseAmount,
@@ -416,6 +428,7 @@ export async function correctRedemptionAttribution(
         missingEvidence: source.missingEvidence,
         confirmedSourceCurrency: purchase?.currency,
         rateAt: new Date(original.evaluatedAt),
+        sourceSnapshot: posting,
       });
     }
     if (active.length) {

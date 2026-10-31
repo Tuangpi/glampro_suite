@@ -1,4 +1,6 @@
 import { loadPayrollPrepaidSettlement } from "./payroll-close-prepaid-settlement.js";
+import { verifyPayrollCorrectionPosting } from "./payroll-correction-posting.js";
+import { redemptionCommissionEvidenceSchema } from "./redemption-commission-evidence.js";
 import { createHash } from "node:crypto";
 import { minimumPayrollPackageDeposit, voidPayrollSessionSchema } from "@glampro_suite/shared";
 import { conflict, forbidden } from "../lib/http-error.js";
@@ -354,6 +356,18 @@ export async function loadPayrollPackageRedemptionHistory(
     orderBy: { id: "asc" },
   });
   for (const redemption of redemptions) {
+    for (const snapshot of snapshots.filter(
+      (row) => row.redemptionId === redemption.id && row.eventType === "CORRECTION",
+    )) {
+      const evidence = redemptionCommissionEvidenceSchema.parse(snapshot.evidence);
+      if (evidence.payrollCorrectionPosting)
+        await verifyPayrollCorrectionPosting(
+          tx,
+          tenantId,
+          redemption.usedAt,
+          evidence.payrollCorrectionPosting,
+        );
+    }
     const captures = snapshots.filter((row) => row.redemptionId === redemption.id);
     const sources = related.filter((row) => row.sourceId === redemption.id);
     const initial = captures.filter((row) => row.eventType === "CAPTURE");

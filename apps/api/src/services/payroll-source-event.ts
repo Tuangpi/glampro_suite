@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   allocatePayrollSplit,
+  commissionAttributionSchema,
   payrollBaseLineSchema,
   type CommissionShares,
   type PayrollCommissionType,
@@ -11,6 +12,7 @@ import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { conflict } from "../lib/http-error.js";
 import { resolveCommission } from "./commission-rules.js";
+import type { PayrollCorrectionPosting } from "./payroll-correction-posting.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 export function payrollBusinessDate(at: Date, timeZone: string) {
@@ -173,6 +175,37 @@ export async function capturePayrollCollection(tx: Transaction, collectionId: st
   });
   for (const allocation of collection.allocations) {
     const line = await tx.saleLine.findFirstOrThrow({ where: { id: allocation.saleLineId } });
+    if (
+      ["SERVICE", "PRODUCT"].includes(line.itemType) &&
+      collection.sourceType === "OUTSTANDING_PAYMENT"
+    ) {
+      const economics = z
+        .object({
+          instalmentCreditFunding: z.object({ version: z.literal(1) }),
+          category: z.string().nullable(),
+        })
+        .safeParse(line.payrollEconomics);
+      if (!economics.success) continue;
+      const attribution = commissionAttributionSchema.parse(line.attribution);
+      await appendPayrollSource(tx, {
+        sourceKey: `ordinary-collection:${allocation.id}`,
+        sourceType: "ORDINARY_COLLECTION",
+        sourceId: allocation.id,
+        saleId: collection.saleId,
+        occurredAt: collection.occurredAt,
+        reason: collection.reason,
+        commissionType: line.itemType === "PRODUCT" ? "PRD" : "SVC",
+        baseAmount: `${allocation.netCents / 100n}.${(allocation.netCents % 100n).toString().padStart(2, "0")}00`,
+        units: "0.0000",
+        shares:
+          line.itemType === "PRODUCT"
+            ? (attribution.sellers ?? null)
+            : (attribution.performers ?? null),
+        itemId: line.itemId,
+        category: economics.data.category,
+      });
+      continue;
+    }
     if (!["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType)) continue;
     const evidence = z
       .object({ sellers: z.array(z.object({ staffId: z.string(), share: z.number() })).nullable() })
@@ -228,6 +261,7 @@ export async function reversePayrollSources(
   reason: string,
   sourceKey: string,
   onlySourceKey?: string,
+  posting?: PayrollCorrectionPosting,
 ) {
   const originals = await tx.payrollSourceEvent.findMany({
     where: {
@@ -255,7 +289,7 @@ export async function reversePayrollSources(
       where: { id: scope.tenantId },
       select: { timeZone: true },
     });
-    const at = new Date();
+    const at = posting ? new Date(posting.postingAt) : new Date();
     const negate = (value: string) => (value.startsWith("-") ? value.slice(1) : `-${value}`);
     await tx.payrollSourceEvent.create({
       data: {
@@ -268,9 +302,11 @@ export async function reversePayrollSources(
         actorId: scope.actorId ?? null,
         reason,
         occurredAt: at,
+        createdAt: new Date(),
         evidence: {
           ...evidence,
           originalEventId: original.id,
+          ...(posting ? { sourceSnapshot: posting } : {}),
           lines: evidence.lines.map((line) => ({
             ...line,
             id: `${key}:${line.staffId}`,

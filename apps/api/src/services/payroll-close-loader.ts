@@ -163,6 +163,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         ![
           "SALE_LINE",
           "COLLECTION",
+          "ORDINARY_COLLECTION",
           "REDEMPTION",
           "VALUE_SPEND",
           "CORRECTION",
@@ -227,7 +228,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
           usageCount ? "PACKAGE_TENDER_UNCONFIRMED" : "PREPAID_PAYMENT_WORKFLOW_NOT_LOADED",
         );
       const value = await loadPayrollValueSaleAllocation(tx, saleId);
-      if (value.evidence.redemptions.length !== usageCount || creditCount !== usageCount)
+      if (value.evidence.redemptions.length !== usageCount)
         unavailable("VALUE_REDEMPTION_MONTH_INVENTORY_UNCONFIRMED");
       sameInventory(
         sales.filter((row) => row.id === saleId),
@@ -259,6 +260,19 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         value.evidence.collections.filter((row) => inMonth(row.occurredAt)),
         "VALUE_COLLECTION_MONTH_INVENTORY_UNCONFIRMED",
       );
+      sameInventory(
+        outstanding.filter((row) => row.saleId === saleId).map(({ sale: _sale, ...row }) => row),
+        value.evidence.outstanding.filter((row) => inMonth(row.paidAt)),
+        "VALUE_OUTSTANDING_MONTH_INVENTORY_UNCONFIRMED",
+      );
+      if (value.coverage && value.packageTender) {
+        saleCoverage.set(saleId, value.coverage);
+        packageTenders.set(saleId, {
+          tender: value.packageTender,
+          payments: snapshot(value.evidence.payments),
+        });
+        for (const id of value.packageTender.paymentIds) verifiedPackagePaymentIds.add(id);
+      }
       valueSales.set(saleId, value);
       for (const id of value.creditPaymentIds) verifiedCreditPaymentIds.add(id);
       continue;
@@ -501,6 +515,11 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     }
   }
   for (const value of valueSales.values()) {
+    operations.push(
+      ...value.laterOperations
+        .filter((row) => inMonth(row.occurredAt))
+        .map((row) => ({ ...row, evidence: snapshot(row.evidence) })),
+    );
     const all = value.evidence.events;
     for (const reversal of all.filter(
       (row) => row.sourceType === "REVERSAL" && inMonth(row.occurredAt),
@@ -644,7 +663,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   for (const redemption of redemptions) {
     if (redemption.usedAt < from || redemption.usedAt >= to) continue;
     const value = valueSales.get(redemption.saleId);
-    if (value) {
+    if (value && redemption.itemType === "VALUE_PACKAGE") {
       operations.push({
         tenantId,
         sourceType: "VALUE_SPEND",

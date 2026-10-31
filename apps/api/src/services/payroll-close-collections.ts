@@ -72,11 +72,20 @@ export function resolvePayrollCloseCollections(raw: PayrollCloseCollectionRecord
     if (!collectionByKey.has(key(operation)))
       block("PAYMENT_COLLECTION_MISSING", operation.sourceId);
   }
-  const collectionEvents = raw.events.filter((row) => row.sourceType === "COLLECTION");
+  const collectionEvents = raw.events.filter((row) =>
+    ["COLLECTION", "ORDINARY_COLLECTION"].includes(row.sourceType),
+  );
   const allocationById = new Map(allocations.map((row) => [row.id, row]));
   for (const event of collectionEvents) {
     const allocation = allocationById.get(event.sourceId);
-    if (!allocation || !["PACKAGE", "VALUE_PACKAGE"].includes(allocation.itemType))
+    if (
+      !allocation ||
+      !(
+        event.sourceType === "ORDINARY_COLLECTION"
+          ? ["SERVICE", "PRODUCT"]
+          : ["PACKAGE", "VALUE_PACKAGE"]
+      ).includes(allocation.itemType)
+    )
       block("COLLECTION_EVENT_ALLOCATION_UNAVAILABLE", event.id);
   }
   for (const collection of collections) {
@@ -98,8 +107,9 @@ export function resolvePayrollCloseCollections(raw: PayrollCloseCollectionRecord
         BigInt(allocation.netCents) + BigInt(allocation.taxCents) !== BigInt(allocation.grossCents)
       )
         block("COLLECTION_ALLOCATION_MISMATCH", allocation.id);
-      if (!["PACKAGE", "VALUE_PACKAGE"].includes(allocation.itemType)) continue;
       const events = collectionEvents.filter((row) => row.sourceId === allocation.id);
+      const ordinary = ["SERVICE", "PRODUCT"].includes(allocation.itemType);
+      if (!["PACKAGE", "VALUE_PACKAGE"].includes(allocation.itemType) && !events.length) continue;
       if (events.length !== 1) {
         block("PACKAGE_COLLECTION_EVENT_MISSING_OR_DUPLICATE", allocation.id);
         continue;
@@ -107,12 +117,23 @@ export function resolvePayrollCloseCollections(raw: PayrollCloseCollectionRecord
       const event = events[0];
       const parsed = z.object({ lines: z.array(payrollBaseLineSchema) }).safeParse(event.evidence);
       const lines = parsed.success ? parsed.data.lines : null;
-      const type = allocation.itemType === "PACKAGE" ? "PKG_SALE" : "VP_SALE";
+      const type =
+        allocation.itemType === "PACKAGE"
+          ? "PKG_SALE"
+          : allocation.itemType === "VALUE_PACKAGE"
+            ? "VP_SALE"
+            : allocation.itemType === "PRODUCT"
+              ? "PRD"
+              : "SVC";
       if (
         event.saleId !== collection.saleId ||
+        event.sourceType !== (ordinary ? "ORDINARY_COLLECTION" : "COLLECTION") ||
+        (ordinary && collection.sourceType !== "OUTSTANDING_PAYMENT") ||
         event.occurredAt.getTime() !== collection.occurredAt.getTime() ||
         !lines ||
-        lines.some((line) => line.commissionType !== type) ||
+        lines.some(
+          (line) => line.commissionType !== type || (ordinary && line.units !== "0.0000"),
+        ) ||
         lines.reduce((sum, line) => {
           const [whole, fraction = ""] = line.baseAmount.split(".");
           return sum + BigInt(whole + fraction.padEnd(4, "0"));
