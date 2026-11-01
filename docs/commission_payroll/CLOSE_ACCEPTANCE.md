@@ -1,5 +1,94 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 1 continuation — returned-money purchase voids
+
+A purchase that was paid in money can now be voided and handed back in one act, and
+the close reads it instead of refusing or, worse, counting cash the salon no longer
+holds. `POST /sales/:id/void` takes `cashDisposition: "RETURNED"` with
+`returnedCash: { reference, payouts[] }`; the writer (`sale-void-cash.ts`) binds that
+claim to `SalePayment` inventory it re-reads inside the void transaction, records a
+version-2 `sale.void.cash-disposition` attestation beside the pre-deletion holding
+snapshot, and refuses `VOID_RETURN_UNSUPPORTED_SALE` (not a purchase paid entirely in
+money), `VOID_RETURN_AMOUNT_INVALID` (non-money or sub-cent payout) or
+`VOID_RETURN_AMOUNT_MISMATCH` (payouts ≠ collected) before anything is reversed. No
+partial return is representable.
+
+Loading re-derives the returned gross from the surviving tenders, so an attestation
+edited outside the writer fails `SALE_VOID_CASH_UNCONFIRMED`.
+`payroll-close-purchase-void-loader.ts` builds one returned allocation per receipt
+allocation — original `COLLECTION` event id, sale line, item type, net/GST/gross and
+the historical seller shares — sums them to the record totals, and submits it through
+`resolvePayrollCloseVoids` as `returnedCashSaleVoids`; `payroll-close-loader.ts`
+passes that into the cash resolution, so the month subtracts the net once from salon
+cash, from the seller and from the outlet. The month's own commission capture and its
+reversal stay visible (a returned void removes cash, not sale history).
+
+Acceptance `payroll-returned-purchase-void.acceptance.test.ts`, four cases on the
+disposable cluster, real writers only:
+
+1. A 545.00 value package (500.00 net / 45.00 GST) paid by cash, voided with a
+   returned payout of 545.00 and a reference: `salonCash 0.0000`, seller collection
+   `0.0000`, one `returnedCash` entry of net 50000 cents, `VP_SALE` 500.0000 and
+   −500.0000 both present, identical input hash on reload, no `payroll_close` row
+   before calculation, then `CALCULATED` and `APPROVED` with the draft's hash.
+2. The same sale refused at 540.00 (`VOID_RETURN_AMOUNT_MISMATCH`), left `COMPLETED`
+   with no attestation row, and accepted afterwards at the correct figure.
+3. A cash-paid service sale refused `VOID_RETURN_UNSUPPORTED_SALE`, still `COMPLETED`
+   — a service giving-back is a refund (ADR 0020 / R1), not a void.
+4. An attestation edited to 645.00 refuses `SALE_VOID_CASH_UNCONFIRMED`, because the
+   loader recomputes the total from the tenders.
+
+The close's returned/refund payout enum widened from five codes to the shared
+money-tender list (`MONEY_PAYMENT_METHODS`, keeping legacy `PAYNOW`), so a return
+given back by PayNow, GrabPay or Atome is not forced into `CASH`; `voidSaleSchema`
+and the void writer share that same tuple.
+
+Verification: payroll/prepaid acceptance family **511 passed, 0 failed, 9 skipped**
+(520 tests); shared `sales` **48/48**; void/inputs unit files **50/50**; web `Sale`
+**58/58**; API and web typecheck, targeted ESLint, Prettier and `git diff --check`
+clean. Logs `/tmp/cp005-returned-*.log`, `/tmp/cp005-payroll-family.log`,
+`/tmp/cp005-acceptance-family.log`. Not claimed: mounted close API/UI, browser,
+concurrency/race proofs for this path, or M1–M5 completion. M1 remains IN PROGRESS.
+
+Known pre-existing full-suite noise on a shared acceptance database (reproduces
+without this slice): `sale.service.test.ts` and `sales.routes.test.ts` pass their
+tests but their `purge` hook is refused by `protect_sale_line_payroll_economics`, and
+`requireModule.test.ts` can see `packages` seeded `isCore: true` by another file's
+fixture. Running those files against a freshly migrated database, or in their own
+database, is the current workaround.
+
+## October 31 continuation — session-covered credit instalments
+
+A session-covered receipt that is not paid in full now loads through close instead
+of refusing. Checkout freezes version-2 `sessionCreditFunding` with verified
+coverage, package tenders, credit gross and the uncollected gross; the uncollected
+balance is validation-only tender inventory — never cash, never a payment row and
+never a collection source. Later receipts append their own zero-unit
+`ORDINARY_COLLECTION` sources, so session coverage, credit and debt stay
+independently evidenced, and the sale-level session loader now admits those later
+sources.
+
+Acceptance "CP-005 session-covered credit instalments keep coverage, credit and
+debt apart" drives the real writers through checkout on a session-covered line
+plus a separate credit line, paid by a package tender and stored credit with the
+balance left uncollected, then monthly calculation, stale-draft rejection, a later
+partial collection, recalculation and persisted approval. It asserts the frozen
+split (session gross with the covered units, credit as credit, remainder as debt),
+that the later cash posts exactly once in its own collection month, and that no
+checkout snapshot is rewritten. Plain credit instalments keep version-1
+`instalmentCreditFunding`; lines with neither contract are still skipped by the
+collection writer, and an instalment without provable funding or session coverage
+without a session contract still refuses.
+
+Verification after the change: full API suite 1153 tests, **1059 passed,
+0 failed**, 57 cancelled and 37 gated skips (other modules' env-gated suites); the
+payroll close family alone is **338 passed, 0 failed**. API typecheck, targeted
+ESLint and Prettier are clean. Evidence: `/tmp/cp005-session-full-unit.log`,
+`/tmp/cp005-session-full-accept.log` and companion
+`/tmp/cp005-session-{typecheck,lint,prettier}.log`. No mounted API/UI, browser,
+performance or production-database acceptance is claimed; M1 remains IN PROGRESS
+and M2–M5 are not complete.
+
 ## October 31 continuation — prospective ordinary credit instalments
 
 Checkout freezes explicit funding/debt evidence; later receipts append separate
@@ -517,6 +606,17 @@ Only synthetic tenants/users were inserted. Immutable audit fixtures remain in
 this disposable cluster; no production data was copied.
 The cluster was stopped cleanly after verification; its data directory remains
 available for the next CP-005 continuation. No server was left listening.
+
+**November 1 resume note.** The previous `/tmp` data directory was gone after a host
+restart, so a fresh PostgreSQL 18 cluster was initialized at the path recorded in
+`/tmp/cp005-disposable-cluster.path`, the role and database recreated
+(`cp005_test` / `payroll_close_test`, loopback 55485) and the repository migrations
+applied with `prisma migrate deploy`. `initdb` inherited the host zone
+(`Asia/Yangon`), which made database-defaulted `now()` timestamps disagree with the
+application's UTC `new Date()` by 6.5 hours and broke timestamp-ordering loaders;
+`ALTER DATABASE payroll_close_test SET timezone TO 'UTC'` and
+`ALTER ROLE cp005_test SET timezone TO 'UTC'` fixed it, and every command in this
+checkpoint ran with `DOTENV_CONFIG_PATH=/dev/null` plus an explicit test URL.
 
 Applied the existing migrations, then three new migrations:
 

@@ -1,5 +1,112 @@
 # Commission & Payroll progress
 
+## November 1, 2026 — returned-money purchase voids
+
+- A package or credit purchase that was paid in money can now be voided **and** its
+  money handed back in one act. `POST /sales/:id/void` accepts
+  `cashDisposition: "RETURNED"` with `returnedCash: { reference, payouts[] }`; the
+  void writer binds that claim to the tenders it can still see and records a
+  version-2 `sale.void.cash-disposition` attestation beside the pre-deletion holding
+  snapshot every purchase void already keeps.
+- Refusals stay explicit and happen before anything is reversed:
+  `VOID_RETURN_UNSUPPORTED_SALE` for a sale that is not a purchase paid entirely in
+  money (an ordinary line, or a package/credit tender), `VOID_RETURN_AMOUNT_INVALID`
+  for a non-money or sub-cent payout, and `VOID_RETURN_AMOUNT_MISMATCH` when the
+  payouts are not exactly what the sale collected. There is no partial return, and an
+  unattested void still lands on `SALE_VOID_CASH_UNCONFIRMED`.
+- The loader re-derives the returned total from the surviving tenders, so an
+  attestation edited outside the writer refuses instead of overstating a return.
+  `payroll-close-purchase-void-loader.ts` then builds the returned record from every
+  collection allocation (one per receipt allocation, the original `COLLECTION` event
+  id, the historical seller shares) and hands it to `resolvePayrollCloseVoids` as
+  `returnedCashSaleVoids` instead of `noCashSaleVoids`; `payroll-close-loader.ts`
+  routes that into the close's cash reconciliation, so the month subtracts the net
+  once from salon cash, from the seller and from the outlet.
+- The close's returned/refund payout enum now speaks the shared money-tender
+  vocabulary (`MONEY_PAYMENT_METHODS`) instead of five codes, so a giving-back made by
+  PayNow, GrabPay or Atome is not forced into `CASH`. `PAYNOW` stays accepted for rows
+  supplied under the earlier contract.
+- Real-writer acceptance `payroll-returned-purchase-void.acceptance.test.ts` (4 cases
+  on the disposable database): a returned value-package void nets to `salonCash
+0.0000` and staff collection `0.0000`, keeps the `VP_SALE` 500.0000/−500.0000
+  capture pair, loads deterministically, then calculates and approves; a 540.00 claim
+  on a 545.00 sale rolls back untouched and the corrected retry loads; a cash-paid
+  service sale refuses `VOID_RETURN_UNSUPPORTED_SALE`; a tampered `grossCents`
+  refuses `SALE_VOID_CASH_UNCONFIRMED`.
+- Till UI: the void dialog now asks one question with three answers (not saying,
+  nothing moved, returned in full) and offers the returned answer only for a receipt
+  whose lines are all packages/credit with money collected. The amount is the
+  receipt's own paid total — there is no field for it — and the reference is
+  required before the button is reachable.
+- `payroll-close-loader.acceptance.test.ts` needed one fixture fix: its post-month
+  clock was the fixed `2026-11-01T00:00:00Z`, and the cross-month capture stamps its
+  own `createdAt` from that clock, so once the wall clock was later that same day the
+  new receipt sorted _before_ receipts written hours earlier and the package
+  collection history read as reversed. The clock is now
+  `max(now, 2026-11-01T00:00:00Z) + 1s`.
+- Verification: payroll/prepaid acceptance family **511 passed, 0 failed, 9 skipped**
+  (520 tests, including the 4 new cases); shared `sales` **48/48**; void/inputs unit
+  files **50/50**; web `Sale` **58/58**; API and web typecheck, targeted ESLint,
+  Prettier and `git diff --check` clean. Logs `/tmp/cp005-returned-*.log`,
+  `/tmp/cp005-payroll-family.log`, `/tmp/cp005-acceptance-family.log`.
+- Known, pre-existing full-suite noise when everything shares one acceptance
+  database: `sale.service.test.ts` and `sales.routes.test.ts` finish their tests but
+  their `purge` hook is refused by the committed
+  `protect_sale_line_payroll_economics` trigger (so a second run in the same database
+  fails earlier, at the next purge), and `requireModule.test.ts` can see `packages`
+  seeded `isCore: true` by another file's fixture. Both reproduce without this slice
+  (57/57 tests pass, only the hook fails) and are fixture-isolation debt rather than
+  close-contract changes.
+- Remaining M1: active-sharing purchase voids, used/transferred purchase voids,
+  legacy full-credit paid lines without allocation evidence, returned voids on mixed
+  or credit-funded sales (the contract allows one original source type per void), and
+  complete corruption/race acceptance. M1 stays IN PROGRESS; M2–M5 are not complete;
+  the close API and UI remain unmounted.
+
+## October 31, 2026 — session-covered credit instalments
+
+- A session-covered receipt that is not paid in full now keeps its checkout
+  economics instead of being refused. `payrollSessionInstalmentFunding` (next to
+  `payrollSessionCreditFunding`) freezes version-2 `sessionCreditFunding` evidence:
+  verified coverage, package tenders, credit gross and the uncollected gross. The
+  uncollected balance is validated tender inventory only — a synthetic
+  `payroll-uncollected-balance` id that is never persisted as a payment, never
+  attributed to a line and never emitted as a collection source.
+- Checkout writes that evidence from the same shared sale/payment/collection
+  snapshot the settled path already used (`sale.service.ts`); the settled session
+  contract is tried first and the instalment variant answers only for the
+  uncollected balance. The close loader (`payroll-close-value-sale.ts`) verifies the
+  same frozen evidence, the sale-level coverage loader admits later
+  `ORDINARY_COLLECTION` sources (`payroll-close-sale-coverage.ts`), and each later
+  receipt allocation posts once against the contract that explained the original
+  split. Plain credit instalments keep version-1 `instalmentCreditFunding`, and
+  `payroll-source-event.ts` accepts either contract while still skipping lines with
+  neither.
+- Refusals stay explicit: an instalment with no provable funding contract
+  (`VALUE_SALE_INSTALMENT_FUNDING_UNCONFIRMED`) and session coverage without a
+  session contract (`VALUE_SALE_INSTALMENT_SESSION_COVERAGE_UNCONFIRMED`). Session
+  coverage, credit and debt are never merged into cash, and no checkout snapshot is
+  rewritten.
+- Real-writer acceptance "CP-005 session-covered credit instalments keep coverage,
+  credit and debt apart" runs checkout on a session-covered line plus a separate
+  credit line, paid by a package tender and stored credit with the balance left
+  uncollected, then monthly calculation, stale-draft rejection, a later partial
+  collection, recalculation and persisted approval: the session gross stays with
+  the covered units, credit stays credit, the remaining balance stays debt, and the
+  later cash posts exactly once in its own month.
+- Verification: full API suite **1059 passed, 0 failed** (1153 tests; 57 cancelled
+  and 37 gated skips belong to other modules' env-gated acceptance suites); the
+  payroll close family alone is **338 passed, 0 failed**. API typecheck, targeted
+  ESLint and Prettier are clean. Logs `/tmp/cp005-session-full-unit.log`,
+  `/tmp/cp005-session-full-accept.log`,
+  `/tmp/cp005-session-{typecheck,lint,prettier}.log`. Disposable PostgreSQL was
+  identity-checked as `payroll_close_test` / `cp005_test` on loopback 55485.
+- This closes the mixed session/credit instalment boundary only. Returned-money and
+  active-sharing purchase voids, legacy missing funding evidence and complete
+  corruption/race acceptance remain. M1 stays IN PROGRESS; M2–M5 unaccepted; close
+  API/UI remain unmounted. No schema changes, migrations, commits, deployment or
+  application DB writes.
+
 ## October 31, 2026 — deterministic session correction/approval ordering
 
 - Added separate real-DB approval-first and correction-first acceptance cases.

@@ -86,7 +86,7 @@ export async function loadPayrollSalePackageCoverage(
           "REDEMPTION",
           "CORRECTION",
           "REVERSAL",
-          ...(allowCredit ? ["VALUE_SPEND"] : []),
+          ...(allowCredit ? ["VALUE_SPEND", "ORDINARY_COLLECTION"] : []),
         ].includes(row.sourceType),
     ) ||
     snapshots.some((row) => row.tenantId !== tenantId)

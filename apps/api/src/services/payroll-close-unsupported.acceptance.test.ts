@@ -970,6 +970,162 @@ test(
 );
 
 test(
+  "CP-005 session-covered credit instalments keep coverage, credit and debt apart",
+  { skip: disabled },
+  tenantCase("session-instalment", async (fixture) => {
+    const sale = await atOutlet(fixture, () =>
+      createSale({
+        customerId: fixture.customerId,
+        lines: [
+          {
+            itemType: "SERVICE",
+            itemId: fixture.sessionServiceId,
+            quantity: 1,
+            attribution: { sellers: shares(fixture.ownerId), performers: shares(fixture.ownerId) },
+          },
+          {
+            itemType: "SERVICE",
+            itemId: fixture.creditServiceId,
+            quantity: 1,
+            attribution: { sellers: shares(fixture.ownerId), performers: shares(fixture.ownerId) },
+          },
+        ],
+        payments: [
+          {
+            method: "PACKAGE",
+            holdingId: fixture.sessionHoldingId,
+            amount: 10,
+            performers: shares(fixture.ownerId),
+          },
+          { method: "PREPAID_CREDIT", holdingId: fixture.creditHoldingId, amount: 30 },
+        ],
+        collection: { currency: "SGD", allocations: [] },
+      }),
+    );
+    assert.equal(sale.status, "COMPLETED");
+    assert.equal(sale.paymentStatus, "UNPAID");
+    const debt = await prisma.customerOutstanding.findFirstOrThrow({
+      where: { tenantId: fixture.tenantId, saleId: sale.id },
+    });
+    assert.equal(debt.unpaidAmount.toFixed(2), "60.00");
+    const kinds = await prisma.customerRedemption.findMany({
+      where: { tenantId: fixture.tenantId, saleId: sale.id },
+      select: { itemType: true },
+    });
+    assert.deepEqual(kinds.map((row) => row.itemType).sort(), ["PACKAGE", "VALUE_PACKAGE"]);
+    // The covered session line leaves the ordinary set: only the credit line keeps
+    // commission economics, and the package tender states the frozen coverage gross.
+    const initial = await loadValueSale(fixture, sale.id);
+    assert.equal(initial.ordinary.length, 1);
+    assert.equal(initial.ordinary[0].baseAmount, "0.0000");
+    assert.equal(initial.packageTender!.grossCents, "1000");
+    const creditLine = await prisma.saleLine.findFirstOrThrow({
+      where: { saleId: sale.id, itemId: fixture.creditServiceId },
+    });
+    const evidence = (
+      creditLine.payrollEconomics as {
+        sessionCreditFunding: {
+          version: number;
+          packageGrossCents: string;
+          creditGrossCents: string;
+          unpaidGrossCents: string;
+          collections: unknown[];
+        };
+      }
+    ).sessionCreditFunding;
+    assert.equal(evidence.version, 2);
+    assert.equal(evidence.packageGrossCents, "1000");
+    assert.equal(evidence.creditGrossCents, "3000");
+    // The uncollected remainder is debt, so it is never a collection.
+    assert.equal(evidence.unpaidGrossCents, "6000");
+    assert.deepEqual(evidence.collections, []);
+    await assert.rejects(
+      prisma.saleLine.update({
+        where: { id: creditLine.id },
+        data: {
+          payrollEconomics: {
+            ...(creditLine.payrollEconomics as object),
+            sessionCreditFunding: null,
+          },
+        },
+      }),
+      /immutable/,
+    );
+    assert.equal(
+      (await loadMonth(fixture)).staff.find((row) => row.staff.id === fixture.ownerId)!.collection,
+      "591.7400",
+    );
+    await calculateStoredPayrollClose((await loadMonth(fixture)).periodKey, 0);
+    const payment = {
+      idempotencyKey: randomUUID(),
+      currency: "SGD" as const,
+      collected: true as const,
+      grossCents: "3000",
+      reason: "Collected instalment",
+      allocations: [{ saleLineId: creditLine.id, grossCents: "3000" }],
+    };
+    await Promise.all([
+      atOutlet(fixture, () => recordSaleCollection(sale.id, payment)),
+      atOutlet(fixture, () => recordSaleCollection(sale.id, payment)),
+    ]);
+    assert.equal(await prisma.customerOutstandingPayment.count({ where: { saleId: sale.id } }), 1);
+    const allocated = await loadValueSale(fixture, sale.id);
+    assert.equal(allocated.ordinary.length, 1);
+    assert.equal(allocated.ordinary[0].baseAmount, "0.0000");
+    assert.equal(allocated.laterOperations.length, 1);
+    const month = await loadMonth(fixture);
+    assert.equal(
+      month.staff.find((row) => row.staff.id === fixture.ownerId)!.collection,
+      "619.2600",
+    );
+    mock.timers.enable({ apis: ["Date"], now: new Date(month.endsAt) });
+    try {
+      await assert.rejects(
+        approveStoredPayrollClose(month.periodKey, 1, "Reject stale session instalment draft"),
+        /changed|recalculate/i,
+      );
+      const draft = await calculateStoredPayrollClose(month.periodKey, 1);
+      const approved = await approveStoredPayrollClose(
+        month.periodKey,
+        draft.revision,
+        "Reviewed session coverage, credit and collected instalment",
+      );
+      assert.equal(approved.status, "APPROVED");
+      const frozenHash = payrollInputHash(approved);
+      await atOutlet(fixture, () =>
+        recordSaleCollection(sale.id, {
+          ...payment,
+          idempotencyKey: randomUUID(),
+          reason: "Collected final instalment in next month",
+        }),
+      );
+      assert.equal(payrollInputHash(await readStoredPayrollClose(month.periodKey)), frozenHash);
+      const nextPeriod = new Date(new Date(month.endsAt).getTime() + 86400000)
+        .toISOString()
+        .slice(0, 7);
+      const next = await calculateStoredPayrollClose(nextPeriod, 0);
+      assert.equal(
+        next.calculation!.inputs.staff.find((row) => row.staff.id === fixture.ownerId)!.collection,
+        "27.5300",
+      );
+    } finally {
+      mock.timers.reset();
+    }
+    assert.equal(await prisma.payrollClose.count({ where: { tenantId: fixture.tenantId } }), 2);
+    assert.equal(
+      await prisma.employeeCommission.count({ where: { tenantId: fixture.tenantId } }),
+      0,
+    );
+    assert.equal(
+      await prisma.customerOutstanding.count({
+        where: { tenantId: fixture.tenantId, saleId: sale.id },
+      }),
+      1,
+    );
+  }),
+);
+
+test(
   "CP-005 credit instalments retain checkout economics and post later cash once",
   { skip: disabled },
   tenantCase("instalment", async (fixture) => {

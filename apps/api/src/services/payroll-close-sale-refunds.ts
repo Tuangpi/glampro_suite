@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  MONEY_PAYMENT_METHODS,
   allocatePayrollSplit,
   commissionSharesSchema,
   payrollBaseLineSchema,
@@ -27,7 +28,9 @@ const refundSchema = money.extend({
   payouts: z
     .array(
       z.object({
-        method: z.enum(["CASH", "CARD", "PAYNOW", "NETS", "BANK_TRANSFER"]),
+        /** Money tenders only, as everywhere a giving-back is recorded. `PAYNOW` is the
+         * earlier contract's code; the recorded rails are money of the same kind. */
+        method: z.enum([...MONEY_PAYMENT_METHODS, "PAYNOW"]),
         grossCents: cents,
       }),
     )

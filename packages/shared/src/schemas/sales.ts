@@ -27,6 +27,7 @@ import {
   MAX_SALE_ITEM_LIMIT,
   MAX_SALE_LINES,
   MAX_SALE_PAYMENTS,
+  MONEY_PAYMENT_METHODS,
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   SALE_STATUSES,
@@ -730,12 +731,56 @@ export type SaleDetail = z.infer<typeof saleDetailSchema>;
  * Three characters is the floor that keeps `"x"` from being an audit record; five
  * hundred is the ceiling that keeps a reason a sentence rather than a transcript.
  */
-export const voidSaleSchema = z.object({
-  reason: z.string().trim().min(3).max(500),
-  /** Explicit manager attestation, never inferred from VOID status. Omitted legacy
-   * requests may still void, but cannot establish payroll cash reconciliation. */
-  cashDisposition: z.literal("NO_MOVEMENT").optional(),
+/**
+ * What happened to the customer's money, as the manager attests it.
+ *
+ * Only two answers exist because only two are provable from the till: nothing moved
+ * (`NO_MOVEMENT`) or the money went back in full (`RETURNED`, whose payouts say how).
+ * "Settlement cancelled" and "not sure" stay unattested, and payroll then refuses the
+ * sale instead of inventing a cash effect for it.
+ */
+export const VOID_SALE_CASH_DISPOSITIONS = ["NO_MOVEMENT", "RETURNED"] as const;
+
+/** One giving-back of money: the same tenders a refund is paid out in. */
+const voidSaleReturnedPayoutSchema = z.object({
+  method: z.enum(MONEY_PAYMENT_METHODS),
+  amount: moneySchema.refine(
+    (amount) => amount > 0 && Math.abs(amount * 100 - Math.round(amount * 100)) < 0.000001,
+    "Enter a positive payout amount with at most two decimal places.",
+  ),
 });
+
+export const voidSaleSchema = z
+  .object({
+    reason: z.string().trim().min(3).max(500),
+    /** Explicit manager attestation, never inferred from VOID status. Omitted legacy
+     * requests may still void, but cannot establish payroll cash reconciliation. */
+    cashDisposition: z.enum(VOID_SALE_CASH_DISPOSITIONS).optional(),
+    /** The payouts that gave the money back — required by `RETURNED` and refused by
+     * `NO_MOVEMENT`, so one request can never attest both. The total must equal what the
+     * sale collected; the server checks that, because a body could name any figure. */
+    returnedCash: z
+      .object({
+        /** Bank slip, voucher or till note that names this giving-back (3+ characters). */
+        reference: z.string().trim().min(3).max(100),
+        payouts: z.array(voidSaleReturnedPayoutSchema).min(1).max(MAX_SALE_PAYMENTS),
+      })
+      .optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.cashDisposition === "RETURNED" && !input.returnedCash)
+      ctx.addIssue({
+        code: "custom",
+        path: ["returnedCash"],
+        message: "Say how the money was returned before attesting that it was.",
+      });
+    if (input.returnedCash && input.cashDisposition !== "RETURNED")
+      ctx.addIssue({
+        code: "custom",
+        path: ["cashDisposition"],
+        message: "Returned-cash payouts require the RETURNED disposition.",
+      });
+  });
 
 export type VoidSaleInput = z.infer<typeof voidSaleSchema>;
 

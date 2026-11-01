@@ -19,7 +19,8 @@ import { verifyPayrollOrdinaryVoidLine } from "./payroll-close-sale-void-loader.
 import { replayPayrollValueOwnership } from "./payroll-close-value-ownership.js";
 import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import type { PayrollValueSharing } from "./payroll-close-value-sharing.js";
-import { resolvePayrollCloseVoids, type PayrollNoCashSaleVoid } from "./payroll-close-voids.js";
+import { resolvePayrollCloseVoids } from "./payroll-close-voids.js";
+import type { PayrollNoCashSaleVoid, PayrollReturnedCashSaleVoid } from "./payroll-close-voids.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
 const fail = (): never => {
@@ -37,7 +38,8 @@ const month = (at: Date, timeZone: string) => {
 /** Prospective purchase/ordinary mixed path: unused or fully restored credit, untransferred; session expiry
  * requires an exact independent bucket-transfer pair. Credit expiry is replayed;
  * expiry alone does not consume the balance removed by this purchase void.
- * full or partial upfront external funding and explicitly attested NO_MOVEMENT. Deleted
+ * full or partial upfront external funding and explicitly attested cash disposition —
+ * no movement, or every collected cent returned per the attested payouts. Deleted
  * holdings alone never establish eligibility. Every independent journal is frozen. */
 export async function loadPayrollPurchaseSaleVoid(
   tx: PayrollCloseTransaction,
@@ -87,6 +89,18 @@ export async function loadPayrollPurchaseSaleVoid(
     new Set(events.map((row) => row.id)).size !== events.length
   )
     return fail();
+  // A returned void is representable only when every original commission source is an
+  // external collection — that is, a purchase paid entirely in money. The close's returned
+  // contract allows one original source type per void, so an ordinary line or a credit
+  // tender on the same sale cannot be stated here; the writer refuses those attestations.
+  const returnedCash =
+    cash.confirmation.cashDisposition === "RETURNED" ? cash.confirmation.returned : null;
+  if (
+    returnedCash &&
+    sale.lines.some((line) => !["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType))
+  )
+    return fail();
+  const returnedAllocations: PayrollReturnedCashSaleVoid["allocations"] = [];
   const until = new Date(cash.confirmation.recordedAt);
   const during = (at: Date) => Number.isFinite(at.getTime()) && at >= sale.soldAt && at <= until;
   const packagePurchases = new Map<string, ReturnType<typeof verifyPayrollPackagePurchase>>();
@@ -471,6 +485,7 @@ export async function loadPayrollPurchaseSaleVoid(
       } | null;
       if (
         !attribution.success ||
+        !attribution.data.sellers ||
         !historical ||
         historical.version !== 1 ||
         historical.attributionStatus !== "KNOWN" ||
@@ -543,6 +558,18 @@ export async function loadPayrollPurchaseSaleVoid(
         return fail();
       seenEvents.add(original.id);
       seenEvents.add(reversal.id);
+      if (returnedCash)
+        returnedAllocations.push({
+          id: part.id,
+          originalEventId: original.id,
+          saleLineId: line.id,
+          itemType: line.itemType as "PACKAGE" | "VALUE_PACKAGE",
+          netCents: part.netCents.toString(),
+          taxCents: part.taxCents.toString(),
+          grossCents: part.grossCents.toString(),
+          shares: attribution.data.sellers,
+          evidence: part.evidence,
+        });
       reversals.push({
         eventId: reversal.id,
         originalEventId: original.id,
@@ -618,21 +645,57 @@ export async function loadPayrollPurchaseSaleVoid(
       typeof value === "bigint" ? value.toString() : value,
     ),
   );
-  const noCashSaleVoid: PayrollNoCashSaleVoid = {
-    id: cash.audit.id,
-    tenantId,
-    saleId,
-    outletId: sale.outletId,
-    occurredAt: sale.voidedAt,
-    currency: "SGD",
-    cashDisposition: "NO_MOVEMENT",
-    netCents: "0",
-    taxCents: "0",
-    grossCents: "0",
-    evidence,
-    reversals,
-  };
   const periodKey = month(sale.voidedAt, timeZone);
+  const totals = returnedAllocations.reduce(
+    (sum, part) => ({
+      netCents: sum.netCents + BigInt(part.netCents),
+      taxCents: sum.taxCents + BigInt(part.taxCents),
+      grossCents: sum.grossCents + BigInt(part.grossCents),
+    }),
+    { netCents: 0n, taxCents: 0n, grossCents: 0n },
+  );
+  // Every receipt allocation carries one returned allocation, so the returned gross is
+  // exactly what the sale collected. An attestation the writer did not produce still has
+  // to agree with those surviving tenders, not just with itself.
+  if (
+    returnedCash &&
+    (returnedAllocations.length !== reversals.length ||
+      totals.grossCents !== upfrontGrossCents ||
+      totals.grossCents !== BigInt(returnedCash.grossCents) ||
+      totals.netCents + totals.taxCents !== totals.grossCents)
+  )
+    return fail();
+  const saleVoid: PayrollNoCashSaleVoid | PayrollReturnedCashSaleVoid = returnedCash
+    ? {
+        id: cash.audit.id,
+        tenantId,
+        saleId,
+        outletId: sale.outletId,
+        occurredAt: sale.voidedAt,
+        currency: "SGD",
+        cashDisposition: "RETURNED",
+        netCents: totals.netCents.toString(),
+        taxCents: totals.taxCents.toString(),
+        grossCents: totals.grossCents.toString(),
+        evidence,
+        reversals,
+        payouts: [...returnedCash.payouts].sort((a, b) => a.id.localeCompare(b.id)),
+        allocations: returnedAllocations,
+      }
+    : {
+        id: cash.audit.id,
+        tenantId,
+        saleId,
+        outletId: sale.outletId,
+        occurredAt: sale.voidedAt,
+        currency: "SGD",
+        cashDisposition: "NO_MOVEMENT",
+        netCents: "0",
+        taxCents: "0",
+        grossCents: "0",
+        evidence,
+        reversals,
+      };
   const result = resolvePayrollCloseVoids({
     tenantId,
     timeZone,
@@ -643,7 +706,9 @@ export async function loadPayrollPurchaseSaleVoid(
     lineageEvents: events.filter(
       (row) => month(row.occurredAt, timeZone) !== periodKey,
     ) as Parameters<typeof resolvePayrollCloseVoids>[0]["lineageEvents"],
-    noCashSaleVoids: [noCashSaleVoid],
+    ...(saleVoid.cashDisposition === "RETURNED"
+      ? { returnedCashSaleVoids: [saleVoid] }
+      : { noCashSaleVoids: [saleVoid] }),
   });
   if (!result.reconciliation) return fail();
   return {
@@ -651,7 +716,7 @@ export async function loadPayrollPurchaseSaleVoid(
     events,
     payments,
     receipts,
-    noCashSaleVoid,
+    saleVoid,
     evidence,
     packagePurchases,
     valuePurchases,

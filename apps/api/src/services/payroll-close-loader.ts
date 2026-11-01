@@ -374,6 +374,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const operations: PayrollCloseInputRecords["inventoryOperations"] = [];
   const noCashReversals: NonNullable<PayrollCloseInputRecords["noCashReversals"]> = [];
   const noCashSaleVoids: NonNullable<PayrollCloseInputRecords["noCashSaleVoids"]> = [];
+  const returnedCashSaleVoids: NonNullable<PayrollCloseInputRecords["returnedCashSaleVoids"]> = [];
   const lineage = new Map<string, (typeof events)[number]>();
   const reconciledCorrections = new Set<string>();
   const correctionEvidence = [];
@@ -461,11 +462,15 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     unavailable("PREPAID_SETTLEMENT_MISSING");
   const saleRefunds: NonNullable<PayrollCloseInputRecords["saleRefunds"]> = [];
   for (const loaded of ordinaryVoids.values()) {
-    if (inMonth(loaded.noCashSaleVoid.occurredAt)) noCashSaleVoids.push(loaded.noCashSaleVoid);
+    const voidOccurred = loaded.saleVoid.occurredAt;
+    if (inMonth(voidOccurred)) {
+      if (loaded.saleVoid.cashDisposition === "RETURNED")
+        returnedCashSaleVoids.push(loaded.saleVoid);
+      else noCashSaleVoids.push(loaded.saleVoid);
+    }
     for (const event of loaded.events) {
       if (!inMonth(event.occurredAt)) {
-        if (event.occurredAt < from && inMonth(loaded.noCashSaleVoid.occurredAt))
-          lineage.set(event.id, event);
+        if (event.occurredAt < from && inMonth(voidOccurred)) lineage.set(event.id, event);
         continue;
       }
       const monthly = events.filter((row) => row.id === event.id);
@@ -1271,6 +1276,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     cashAttributions,
     noCashReversals,
     noCashSaleVoids,
+    returnedCashSaleVoids,
     saleRefunds,
     refundPayouts,
   });
@@ -1362,6 +1368,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     cashAttributions,
     noCashReversals,
     noCashSaleVoids,
+    returnedCashSaleVoids,
     saleRefunds,
     refundPayouts,
   });

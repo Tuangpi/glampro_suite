@@ -1,4 +1,7 @@
-import { payrollSessionCreditFunding } from "./payroll-session-credit-funding.js";
+import {
+  payrollSessionCreditFunding,
+  payrollSessionInstalmentFunding,
+} from "./payroll-session-credit-funding.js";
 import { payrollCreditInstalmentFunding } from "./payroll-credit-instalment-funding.js";
 /**
  * Sales — handoff screens 01–02, `/api/sales`.
@@ -2239,63 +2242,56 @@ async function fillLedgers(
   const creditPaid = await tx.customerRedemption.count({
     where: { saleId, itemType: "VALUE_PACKAGE" },
   });
+  const fundingSale = {
+    ...(await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } })),
+    lines: sourceLines,
+  };
+  const storedPayments = await tx.salePayment.findMany({
+    where: { tenantId, saleId },
+    orderBy: { id: "asc" },
+  });
+  const storedCollections = await tx.commissionCollection.findMany({
+    where: { tenantId, saleId },
+    include: { allocations: { orderBy: { id: "asc" } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const sessionCoverage = sourceLines
+    .map((line) => ({
+      saleLineId: line.id,
+      coveredQuantity: covered.get(line.id) ?? 0,
+      remainingQuantity: line.quantity - (covered.get(line.id) ?? 0),
+    }))
+    .sort((a, b) => a.saleLineId.localeCompare(b.saleLineId));
   const fullCreditFunding =
-    creditPaid > 0
-      ? payrollFullCreditFunding(
-          await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } }),
-          sourceLines,
-          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
-        )
-      : null;
+    creditPaid > 0 ? payrollFullCreditFunding(fundingSale, sourceLines, storedPayments) : null;
   const mixedCreditFunding =
     creditPaid > 0 && !fullCreditFunding
-      ? payrollMixedCreditFunding(
-          await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } }),
-          sourceLines,
-          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
-          await tx.commissionCollection.findMany({
-            where: { tenantId, saleId },
-            include: { allocations: { orderBy: { id: "asc" } } },
-            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          }),
-        )
+      ? payrollMixedCreditFunding(fundingSale, sourceLines, storedPayments, storedCollections)
       : null;
   const instalmentCreditFunding =
     creditPaid > 0 && covered.size === 0
-      ? payrollCreditInstalmentFunding(
-          await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } }),
-          sourceLines,
-          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
-          await tx.commissionCollection.findMany({
-            where: { tenantId, saleId },
-            include: { allocations: { orderBy: { id: "asc" } } },
-            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          }),
-        )
+      ? payrollCreditInstalmentFunding(fundingSale, sourceLines, storedPayments, storedCollections)
       : null;
   const sessionCreditFunding =
     creditPaid > 0 && covered.size > 0
-      ? payrollSessionCreditFunding(
-          {
-            ...(await tx.sale.findFirstOrThrow({ where: { tenantId, id: saleId } })),
-            lines: sourceLines,
-          },
+      ? (payrollSessionCreditFunding(
+          fundingSale,
           sourceLines,
-          await tx.salePayment.findMany({ where: { tenantId, saleId }, orderBy: { id: "asc" } }),
-          await tx.commissionCollection.findMany({
-            where: { tenantId, saleId },
-            include: { allocations: { orderBy: { id: "asc" } } },
-            orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          }),
-          sourceLines
-            .map((line) => ({
-              saleLineId: line.id,
-              coveredQuantity: covered.get(line.id) ?? 0,
-              remainingQuantity: line.quantity - (covered.get(line.id) ?? 0),
-            }))
-            .sort((a, b) => a.saleLineId.localeCompare(b.saleLineId)),
+          storedPayments,
+          storedCollections,
+          sessionCoverage,
           redemptionSnapshots.length,
-        )
+        ) ??
+        // An uncollected balance keeps the same frozen coverage; its debt is never
+        // cash, so credit and cash stay independently evidenced.
+        payrollSessionInstalmentFunding(
+          fundingSale,
+          sourceLines,
+          storedPayments,
+          storedCollections,
+          sessionCoverage,
+          redemptionSnapshots.length,
+        ))
       : null;
   for (const [position, line] of priced.entries()) {
     if (line.item.itemType !== "SERVICE" && line.item.itemType !== "PRODUCT") continue;
@@ -3466,8 +3462,9 @@ export async function voidSale(
     }
 
     // Every purchase void deletes the holdings it granted, so the pre-deletion snapshot is
-    // recorded regardless of how the cash was disposed. Only the no-movement path also
-    // writes a cash confirmation that binds this hash.
+    // recorded regardless of how the cash was disposed. A disposition that claims money
+    // moved is attested against the surviving tenders; an unattested void records neither,
+    // and payroll then refuses the sale rather than guessing.
     const purchaseHoldingHash = await recordSaleVoidPurchaseHoldings(
       tx,
       tenantId,
@@ -3477,6 +3474,15 @@ export async function voidSale(
     await reverseForVoid(tx, tenantId, current);
     if (input.cashDisposition === "NO_MOVEMENT")
       await recordSaleVoidCashConfirmation(tx, tenantId, sale.id, actorId, purchaseHoldingHash);
+    else if (input.cashDisposition === "RETURNED" && input.returnedCash)
+      await recordSaleVoidCashConfirmation(
+        tx,
+        tenantId,
+        sale.id,
+        actorId,
+        purchaseHoldingHash,
+        input.returnedCash,
+      );
   });
 
   return getSale(sale.id);

@@ -1522,6 +1522,77 @@ describe("voiding a rung-up sale", () => {
     expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
+  it("records a returned purchase void with the reference somebody can look up", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    // A package paid in cash is the one receipt shape that can carry a giving-back, so
+    // the ring-up answers with that receipt rather than the service one.
+    post.mockResolvedValueOnce(
+      receipt({
+        totalAmount: "225.00",
+        paidAmount: "225.00",
+        lines: [
+          {
+            id: "l1",
+            itemType: "PACKAGE",
+            itemId: "k1",
+            itemName: "Five-cut bundle",
+            quantity: 1,
+            unitPrice: "225.00",
+            lineTotal: "225.00",
+            discountPercent: "0.00",
+            discountAmount: "0.00",
+            voucherDiscountAmount: "0.00",
+            netLineTotal: "225.00",
+            taxAmount: "18.58",
+            taxRate: "9.00",
+            staffId: null,
+            staffName: null,
+          },
+        ],
+      }),
+    );
+    await ringUpAReceipt(user);
+    post.mockResolvedValueOnce(receipt({ status: "VOID" }));
+
+    await user.click(screen.getByRole("button", { name: "Void sale" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Reason for voiding this sale"),
+      "Customer changed their mind",
+    );
+    await user.click(within(dialog).getByRole("radio", { name: /I returned the S\$225\.00/ }));
+
+    // The amount is the receipt's own paid total — there is no field for it — and the
+    // reference is what a person can find again, so the button waits for one.
+    expect(within(dialog).getByRole("button", { name: "Void it" })).toBeDisabled();
+    await user.type(
+      within(dialog).getByLabelText("Reference for the returned money"),
+      "Void slip 42",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Void it" }));
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/sales/sale-1/void", {
+        reason: "Customer changed their mind",
+        cashDisposition: "RETURNED",
+        returnedCash: { reference: "Void slip 42", payouts: [{ method: "CASH", amount: 225 }] },
+      }),
+    );
+  });
+
+  it("offers no returned void where the money cannot have come from the till", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    await ringUpAReceipt(user);
+
+    await user.click(screen.getByRole("button", { name: "Void sale" }));
+    const dialog = await screen.findByRole("dialog");
+    // The service receipt on screen: giving the money back is a refund, not a void, so the
+    // dialog does not pretend the till can record it either way.
+    expect(within(dialog).queryByRole("radio", { name: /I returned the/ })).not.toBeInTheDocument();
+  });
+
   it("offers no void action to a cashier", async () => {
     role.value = "STAFF";
     const user = userEvent.setup();

@@ -93,7 +93,9 @@ export function verifyPayrollOrdinaryVoidLine(
 }
 
 /** Ordinary-only operational voids with explicit no-movement attestation. No
- * inferred payout or prepaid restoration, and no current-rate/attribution fallback. */
+ * inferred payout or prepaid restoration, and no current-rate/attribution fallback.
+ * Returned money has no ordinary-sale path: a service or product sale that gave money
+ * back is refunded, not voided, so a returned attestation here is corrupt evidence. */
 export async function loadPayrollOrdinarySaleVoid(
   tx: PayrollCloseTransaction,
   tenantId: string,
@@ -156,6 +158,7 @@ export async function loadPayrollOrdinarySaleVoid(
   )
     return fail();
   const cashConfirmation = await loadSaleVoidCashConfirmation(tx, tenantId, saleId);
+  if (cashConfirmation.confirmation.cashDisposition === "RETURNED") return fail();
   const periodKey = month(sale.voidedAt, timeZone);
   const reversals: PayrollNoCashSaleVoid["reversals"] = [];
   for (const line of sale.lines) {
@@ -188,7 +191,7 @@ export async function loadPayrollOrdinarySaleVoid(
       originalSourceType: "SALE_LINE",
     });
   }
-  const noCashSaleVoid: PayrollNoCashSaleVoid = {
+  const saleVoid: PayrollNoCashSaleVoid = {
     id: cashConfirmation.audit.id,
     tenantId,
     saleId,
@@ -210,8 +213,8 @@ export async function loadPayrollOrdinarySaleVoid(
     periodKey,
     events: current as Parameters<typeof resolvePayrollCloseVoids>[0]["events"],
     lineageEvents: lineage as Parameters<typeof resolvePayrollCloseVoids>[0]["lineageEvents"],
-    noCashSaleVoids: [noCashSaleVoid],
+    noCashSaleVoids: [saleVoid],
   });
   if (!result.reconciliation) return fail();
-  return { sale, events, noCashSaleVoid, evidence: cashConfirmation };
+  return { sale, events, saleVoid, evidence: cashConfirmation };
 }

@@ -1,5 +1,65 @@
 # Commission & Payroll decisions
 
+### CP-005 returned-money purchase voids (November 1, 2026)
+
+- A void that gave the customer their money back is attested, not inferred. The manager
+  posts `cashDisposition: "RETURNED"` with `returnedCash: { reference, payouts[] }`; the
+  void writer binds that to the `SalePayment` rows it re-reads inside the same
+  transaction and stores a version-2 `sale.void.cash-disposition` attestation next to the
+  pre-deletion holding snapshot. Version-1 `NO_MOVEMENT` rows stay loadable.
+- Only a **purchase paid entirely in money** can claim it. The close's returned-void
+  contract reconciles one original source type per void (all `COLLECTION`), and the
+  returned allocations are literally the receipts' collection allocations; a service
+  line, or a package/credit tender, has no returned allocation to name, so
+  `VOID_RETURN_UNSUPPORTED_SALE` refuses it. An ordinary sale that gave money back is
+  refunded, not voided (ADR 0020 / R1). Mixed and credit-funded purchases therefore stay
+  refused for now, and the manager is told by name rather than encouraged to attest
+  "no movement" falsely.
+- The return is **total**: payouts must equal what the sale collected, exactly, to the
+  cent. A partial return, a sub-cent amount or a credit "payout" refuses
+  (`VOID_RETURN_AMOUNT_INVALID`, `VOID_RETURN_AMOUNT_MISMATCH`) before anything is
+  reversed, because a partial giving-back of a voided sale has no reconciled shape in
+  this month's cash.
+- The loader re-derives the total from the surviving tenders instead of trusting the
+  attestation, so a hand-edited `grossCents`/payout refuses
+  `SALE_VOID_CASH_UNCONFIRMED`. The record's allocations are built from the receipt
+  allocations (id, original `COLLECTION` event, sale line, item type, net/GST/gross and
+  the historical seller shares), summed to the record totals, and submitted as
+  `returnedCashSaleVoids`, which the close subtracts once from salon cash, the seller and
+  the outlet.
+- Adding a returned void does not rewrite the month: the purchase's own `VP_SALE`/
+  `PKG_SALE` capture and its `REVERSAL` both remain visible, so an approved month shows
+  what was sold and that it was undone, with zero cash retained.
+- Payout methods are the shared money tenders (`MONEY_PAYMENT_METHODS`) in
+  `voidSaleSchema`, the stored attestation and the close's returned/refund contracts,
+  with legacy `PAYNOW` still accepted for already-supplied rows. Adding the recorded
+  rails is additive; no existing row's meaning changes.
+- Do not mount the close API/UI or declare M1–M5 accepted on this evidence. M1 still
+  includes active-sharing and used/transferred purchase voids, legacy full-credit paid
+  lines, returned voids on mixed/credit-funded sales, and corruption/race acceptance.
+
+### CP-005 session-covered credit instalments (October 31, 2026)
+
+- A receipt that has a session-covered line and is not paid in full keeps its
+  checkout economics. The uncollected balance is debt: it is represented at checkout
+  as a validation-only tender (`payroll-uncollected-balance`) that is never
+  persisted, attributed to a line or posted as cash, and the frozen contract records
+  credit gross and unpaid gross separately so the package + credit + debt split must
+  balance exactly.
+- Session-covered instalments store the same version-2 `sessionCreditFunding`
+  contract as settled session receipts, verified against checkout-only receipt
+  inventory. Later collections append their own zero-unit `ORDINARY_COLLECTION`
+  sources instead of rewriting that contract; plain credit instalments keep
+  version-1 `instalmentCreditFunding`, and the collection writer requires one of
+  the two before it posts later cash.
+- Sale-level session coverage loading admits later `ORDINARY_COLLECTION` sources so
+  the frozen split can still be verified once a receipt has been collected.
+- This supersedes the earlier "retain refusal for session-covered instalments"
+  boundary. Refusal remains for an instalment with no provable funding contract
+  (`VALUE_SALE_INSTALMENT_FUNDING_UNCONFIRMED`) and for session coverage without a
+  session contract (`VALUE_SALE_INSTALMENT_SESSION_COVERAGE_UNCONFIRMED`). Do not
+  mount close API/UI or declare M1–M5 accepted on this evidence alone.
+
 ### CP-005 prospective credit instalments and unused expiry (October 31, 2026)
 
 - Freeze ordinary service/product credit instalment funding at checkout, including

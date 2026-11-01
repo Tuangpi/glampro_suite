@@ -644,7 +644,14 @@ test(
         const frozenSeptember = payrollInputHash(approved.calculation);
         // October is still open on the development date; exercise approval only
         // under an explicit post-month test clock, never weaken the runtime gate.
-        mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-01T00:00:00Z") });
+        // The capture below stamps its own `createdAt` from this clock, so it has to sit
+        // after every receipt the real clock already wrote — a fixed "2026-11-01T00:00Z"
+        // sorts before them once the wall clock is later that day, and the receipt history
+        // would then read as if the sale payment came second.
+        mock.timers.enable({
+          apis: ["Date"],
+          now: new Date(Math.max(Date.now(), Date.parse("2026-11-01T00:00:00Z")) + 1000),
+        });
         const octoberEmpty = await calculateStoredPayrollClose("2026-10", 0);
         const finalPayment = await prisma.customerOutstandingPayment.create({
           data: {

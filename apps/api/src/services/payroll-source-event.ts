@@ -179,13 +179,21 @@ export async function capturePayrollCollection(tx: Transaction, collectionId: st
       ["SERVICE", "PRODUCT"].includes(line.itemType) &&
       collection.sourceType === "OUTSTANDING_PAYMENT"
     ) {
+      // Later cash is only ordinary commission when the receipt froze a prospective
+      // contract that explains the original split: plain credit instalments store
+      // `instalmentCreditFunding`, session-covered ones store the v2 session contract.
       const economics = z
         .object({
-          instalmentCreditFunding: z.object({ version: z.literal(1) }),
+          instalmentCreditFunding: z.object({ version: z.literal(1) }).optional(),
+          sessionCreditFunding: z.object({ version: z.literal(2) }).optional(),
           category: z.string().nullable(),
         })
         .safeParse(line.payrollEconomics);
-      if (!economics.success) continue;
+      if (
+        !economics.success ||
+        (!economics.data.instalmentCreditFunding && !economics.data.sessionCreditFunding)
+      )
+        continue;
       const attribution = commissionAttributionSchema.parse(line.attribution);
       await appendPayrollSource(tx, {
         sourceKey: `ordinary-collection:${allocation.id}`,

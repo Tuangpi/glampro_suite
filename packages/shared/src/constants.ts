@@ -176,6 +176,27 @@ export const REDEMPTION_PAYMENT_METHODS = ["PACKAGE", "PREPAID_CREDIT"] as const
 
 export type RedemptionPaymentMethodCode = (typeof REDEMPTION_PAYMENT_METHODS)[number];
 
+/**
+ * The tenders money can be **given back** in.
+ *
+ * A refund, a returned void and any other giving-back pays out money, never credit, so
+ * the list is every tender that is not a redemption. Kept as its own tuple so the
+ * callers that hand money back share one vocabulary instead of narrowing it by hand.
+ */
+export const MONEY_PAYMENT_METHODS = [
+  "CASH",
+  "CARD",
+  "BANK_TRANSFER",
+  "CHEQUE",
+  "OTHER",
+  "PAYNOW_SGQR",
+  "NETS",
+  "GRABPAY",
+  "ATOME",
+] as const;
+
+export type MoneyPaymentMethodCode = (typeof MONEY_PAYMENT_METHODS)[number];
+
 /** Whether this tender spends a holding rather than money. */
 export function isRedemptionPaymentMethod(
   method: PaymentMethodCode,

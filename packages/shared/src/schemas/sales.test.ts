@@ -491,6 +491,87 @@ describe("voidSaleSchema", () => {
     assert.equal(voidSaleSchema.safeParse({ reason: "x".repeat(501) }).success, false);
     assert.equal(voidSaleSchema.safeParse({ reason: "x".repeat(500) }).success, true);
   });
+
+  it("accepts one cash disposition at a time, silent about the rest", () => {
+    // Omitted is the legacy call: it still voids, and payroll refuses the sale instead.
+    assert.equal(voidSaleSchema.safeParse({ reason: "Rung up twice" }).success, true);
+    assert.equal(
+      voidSaleSchema.safeParse({ reason: "Rung up twice", cashDisposition: "NO_MOVEMENT" }).success,
+      true,
+    );
+    assert.equal(
+      voidSaleSchema.safeParse({ reason: "Customer changed mind", cashDisposition: "UNKNOWN" })
+        .success,
+      false,
+    );
+  });
+
+  it("requires the payouts behind a returned-cash attestation, and only then", () => {
+    const returned = {
+      reason: "Customer changed mind",
+      cashDisposition: "RETURNED",
+      returnedCash: {
+        reference: "Void slip 2026-11-01",
+        payouts: [{ method: "CASH", amount: 109 }],
+      },
+    } as const;
+    const parsed = voidSaleSchema.parse(returned);
+
+    assert.equal(parsed.returnedCash?.reference, "Void slip 2026-11-01");
+    assert.equal(parsed.returnedCash?.payouts[0]?.amount, 109);
+    // A claim that money went back says how, or it is not a claim.
+    assert.equal(
+      voidSaleSchema.safeParse({ reason: "Customer changed mind", cashDisposition: "RETURNED" })
+        .success,
+      false,
+    );
+    // And the no-movement attestation cannot carry payouts that contradict it.
+    assert.equal(
+      voidSaleSchema.safeParse({
+        ...returned,
+        cashDisposition: "NO_MOVEMENT",
+      }).success,
+      false,
+    );
+    assert.equal(
+      voidSaleSchema.safeParse({ ...returned, cashDisposition: undefined }).success,
+      false,
+    );
+  });
+
+  it("takes returned money only in positive two-decimal money tenders", () => {
+    const withPayouts = (payouts: unknown[], reference = "Void slip 2026-11-01") => ({
+      reason: "Customer changed mind",
+      cashDisposition: "RETURNED",
+      returnedCash: { reference, payouts },
+    });
+
+    for (const payouts of [
+      [],
+      [{ method: "PREPAID_CREDIT", amount: 10 }],
+      [{ method: "PACKAGE", amount: 10 }],
+      [{ method: "CASH", amount: 0 }],
+      [{ method: "CASH", amount: -5 }],
+      [{ method: "CASH", amount: 10.005 }],
+    ])
+      assert.equal(voidSaleSchema.safeParse(withPayouts(payouts)).success, false);
+
+    // Two tenders are fine: the money can come back the way it was not taken.
+    assert.equal(
+      voidSaleSchema.safeParse(
+        withPayouts([
+          { method: "CASH", amount: 50 },
+          { method: "CARD", amount: 59.9 },
+        ]),
+      ).success,
+      true,
+    );
+    // The reference is what a human can look up, so it cannot be a single character.
+    assert.equal(
+      voidSaleSchema.safeParse(withPayouts([{ method: "CASH", amount: 10 }], "x")).success,
+      false,
+    );
+  });
 });
 
 describe("discountPercentSchema", () => {

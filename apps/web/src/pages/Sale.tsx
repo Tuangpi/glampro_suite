@@ -39,6 +39,7 @@ import {
   type SaleItemKind,
   type SalePaymentInput,
   type SaleItemSearchResult,
+  type VoidSaleInput,
 } from "@glampro_suite/shared";
 
 import { Search } from "@/components/icons";
@@ -495,21 +496,34 @@ export default function Sale() {
     }
   }
 
+  /** Whether this receipt is the shape a returned void can even describe: a purchase
+   * paid in money. A service sale that gave money back is refunded, not voided. */
+  const canReturnVoidMoney =
+    receipt !== null &&
+    receipt.lines.length > 0 &&
+    receipt.lines.every(
+      (line) => line.itemType === "PACKAGE" || line.itemType === "VALUE_PACKAGE",
+    ) &&
+    Number(receipt.paidAmount) > 0;
+
   /**
    * Voids the receipt on screen (ADR 0016).
    *
-   * The reason and optional cash confirmation are sent; the actor is the token's, so nothing here can
-   * name somebody else. The server answers with the voided receipt, which replaces the
-   * one on screen — the same sale, with a status the receipt now says out loud.
+   * The reason and the manager's cash attestation are sent; the actor is the token's, so
+   * nothing here can name somebody else. The server answers with the voided receipt, which
+   * replaces the one on screen — the same sale, with a status the receipt now says out loud.
    */
-  async function voidReceipt(reason: string, cashDisposition?: "NO_MOVEMENT") {
+  async function voidReceipt(
+    reason: string,
+    cash: Pick<VoidSaleInput, "cashDisposition" | "returnedCash">,
+  ) {
     if (!receipt) return;
     setVoidError(null);
     try {
       const voided = await voidSale.mutateAsync({
         saleId: receipt.id,
         reason,
-        ...(cashDisposition ? { cashDisposition } : {}),
+        ...cash,
       });
       setVoidOpen(false);
       setReceipt(voided);
@@ -666,10 +680,13 @@ export default function Sale() {
               receiptLabel={
                 receipt.receiptNumber === null ? "This sale" : `Receipt #${receipt.receiptNumber}`
               }
+              paidAmount={receipt.paidAmount}
+              paidAmountLabel={formatPrice(receipt.paidAmount)}
+              canReturnMoney={canReturnVoidMoney}
               isPending={voidSale.isPending}
               errorMessage={voidError}
               onClose={() => setVoidOpen(false)}
-              onConfirm={(reason, cashDisposition) => void voidReceipt(reason, cashDisposition)}
+              onConfirm={(reason, cash) => void voidReceipt(reason, cash)}
             />
           ) : null}
 

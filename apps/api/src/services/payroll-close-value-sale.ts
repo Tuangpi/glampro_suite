@@ -1,4 +1,7 @@
-import { payrollSessionCreditFunding } from "./payroll-session-credit-funding.js";
+import {
+  payrollSessionCreditFunding,
+  payrollSessionInstalmentFunding,
+} from "./payroll-session-credit-funding.js";
 import { payrollCreditInstalmentFunding } from "./payroll-credit-instalment-funding.js";
 import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js";
 import { verifyPayrollPackageTenders } from "./payroll-close-package-tender.js";
@@ -160,38 +163,56 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     )
   )
     return fail();
-  // Each tender kind has its own independently verified history. Instalments
-  // still require a separate posting/allocation contract.
+  // Each tender kind has its own independently verified history. A receipt that is
+  // not paid in full keeps the same frozen session coverage; the uncollected balance
+  // is debt, never cash, so the credit/debt split must still balance exactly.
   if (redemptions.some((row) => !["PACKAGE", "VALUE_PACKAGE"].includes(row.itemType)))
     return fail();
   const creditRedemptions = redemptions.filter((row) => row.itemType === "VALUE_PACKAGE");
   const checkoutCollections = collections.filter((row) => row.sourceType === "SALE_PAYMENT");
+  const instalment = !sale.paidAmount.equals(sale.totalAmount);
   const instalmentFunding = payrollCreditInstalmentFunding(
     sale,
     sale.lines,
     payments,
     checkoutCollections,
   );
-  const instalment = !sale.paidAmount.equals(sale.totalAmount);
-  if ((instalment && !instalmentFunding) || (!instalment && outstanding.length))
-    refuse("VALUE_SALE_INSTALMENT_FUNDING_UNCONFIRMED");
   const sessionCount = redemptions.length - creditRedemptions.length;
-  if (instalment && sessionCount) refuse("VALUE_SALE_INSTALMENT_SESSION_COVERAGE_UNCONFIRMED");
   const coverage = sessionCount ? await loadPayrollSalePackageCoverage(tx, saleId, true) : null;
   const packageTender = coverage
     ? verifyPayrollPackageTenders(sale, payments, coverage.lines, sessionCount, true)
     : null;
   const sessionFunding = coverage
-    ? payrollSessionCreditFunding(
+    ? (payrollSessionCreditFunding(
         sale,
         sale.lines,
         payments,
         collections,
         coverage.lines,
         sessionCount,
-      )
+      ) ??
+      (instalment
+        ? // Checkout-only inventory: later collections append their own allocations and
+          // never retroactively change the frozen session/credit evidence.
+          payrollSessionInstalmentFunding(
+            sale,
+            sale.lines,
+            payments,
+            checkoutCollections,
+            coverage.lines,
+            sessionCount,
+          )
+        : null))
     : null;
-  if (coverage && !sessionFunding) return fail();
+  if ((instalment && !instalmentFunding && !sessionFunding) || (!instalment && outstanding.length))
+    refuse("VALUE_SALE_INSTALMENT_FUNDING_UNCONFIRMED");
+  // Later cash posts against the frozen contract that explained the original split.
+  // A session-covered receipt names it through the session contract instead.
+  const laterFunding = instalmentFunding ?? (instalment ? sessionFunding : null);
+  if (coverage && !sessionFunding) {
+    if (instalment) refuse("VALUE_SALE_INSTALMENT_SESSION_COVERAGE_UNCONFIRMED");
+    return fail();
+  }
   const cents = (amount: { mul(value: number): { toFixed(places: number): string } }) =>
     BigInt(amount.mul(100).toFixed(0));
   const creditPayments = payments.filter((row) => row.method === "PREPAID_CREDIT");
@@ -472,7 +493,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       const captured = events.filter(
         (row) => row.sourceType === "ORDINARY_COLLECTION" && row.sourceId === allocation.id,
       );
-      if (!instalmentFunding || !line || captured.length !== 1) return fail();
+      if (!laterFunding || !line || captured.length !== 1) return fail();
       const event = captured[0];
       const parsed = captureSchema.safeParse(event.evidence);
       const attribution = commissionAttributionSchema.parse(line.attribution);
