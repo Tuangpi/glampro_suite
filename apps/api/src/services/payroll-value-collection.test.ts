@@ -30,6 +30,7 @@ function fixture() {
   ];
   const sale = {
     id: "sale",
+    soldAt: at,
     customerId: "customer",
     outletId: "outlet",
     status: "COMPLETED",
@@ -254,6 +255,7 @@ function fixture() {
     },
     commissionRule: { findMany: async () => rules },
     tenant: { findUniqueOrThrow: async () => ({ timeZone: "Asia/Singapore" }) },
+    payrollClose: { findMany: async () => [] },
     customerValuePackageHolding: {
       findFirst: async () => holding,
       findMany: async () => [{ saleLineId: holding.saleLineId }],

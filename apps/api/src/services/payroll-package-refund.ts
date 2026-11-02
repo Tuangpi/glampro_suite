@@ -1,3 +1,5 @@
+import { recordPayrollLifecyclePosting } from "./payroll-lifecycle-posting.js";
+import { selectPayrollCorrectionPosting } from "./payroll-correction-posting.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -122,6 +124,7 @@ export async function refundPayrollPackage(
       select: { timeZone: true },
     });
     const at = new Date();
+    const posting = await selectPayrollCorrectionPosting(tx, scope.tenantId, sale.soldAt, at);
     const sources = await tx.payrollSourceEvent.findMany({
       where: { sourceType: "COLLECTION", sourceId: { in: allocations.map((row) => row.id) } },
     });
@@ -260,6 +263,9 @@ export async function refundPayrollPackage(
           lines,
           purchase,
           remainingOrdinals: available,
+          ...(posting.postingAt !== posting.correctionAt
+            ? { payrollLifecyclePosting: posting }
+            : {}),
         },
       },
     });
@@ -274,6 +280,15 @@ export async function refundPayrollPackage(
         data: { unpaidAmount: { decrement: cancelledAmount } },
       });
     }
+    await recordPayrollLifecyclePosting(tx, {
+      tenantId: scope.tenantId,
+      actorId: actor.id,
+      reason: input.reason,
+      targetId: key,
+      originalAt: sale.soldAt,
+      occurredAt: at,
+      eventIds: [event.id],
+    });
     return event;
   });
 }

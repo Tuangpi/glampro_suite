@@ -57,6 +57,7 @@ const rateSnapshotSchema = z.object({
   amount: z.string().nullable(),
 });
 export const redemptionCommissionEvidenceSchema = z.object({
+  payrollVoidPosting: payrollCorrectionPostingSchema.optional(),
   payrollCorrectionPosting: payrollCorrectionPostingSchema.optional(),
   correctionRequest: correctRedemptionAttributionSchema.optional(),
   payrollSession: payrollSessionEvidenceSchema.optional(),
@@ -444,6 +445,7 @@ export async function voidRedemptionCommissionEvidence(
   tx: Transaction,
   redemptionId: string,
   actorId: string | null,
+  voidAt?: Date,
 ) {
   const scope = tenant();
   await lockCommissionConfiguration(tx, scope.tenantId);
@@ -453,12 +455,25 @@ export async function voidRedemptionCommissionEvidence(
   });
   if (!previous || previous.eventType === "VOID") return;
   const redemption = await tx.customerRedemption.findFirstOrThrow({ where: { id: redemptionId } });
+  const original = redemptionCommissionEvidenceSchema.parse(previous.evidence);
+  // Whole-sale voids already reverse their sources in the sale transaction. Only
+  // the independently authorized session void selects its own posting period.
+  const selectedPosting =
+    voidAt && original.payrollSession
+      ? await selectPayrollCorrectionPosting(tx, scope.tenantId, redemption.usedAt, voidAt)
+      : undefined;
+  // Preserve the existing occurrence-time format when no approved month is
+  // skipped. Deferred sources additionally need frozen close-selection evidence.
+  const posting = selectedPosting?.inspectedPeriods.some((row) => row.status === "APPROVED")
+    ? selectedPosting
+    : undefined;
   await reversePayrollSources(
     tx,
     redemption.saleId,
     "Manager voided source session",
     `session-void:${redemptionId}`,
     `redemption:${redemptionId}:${previous.revision}`,
+    selectedPosting,
   );
   const active = await activeRedemptionEarnings(tx, redemptionId);
   if (active.length) {
@@ -474,7 +489,8 @@ export async function voidRedemptionCommissionEvidence(
     );
   }
   const evidence = redemptionCommissionEvidenceSchema.parse({
-    ...redemptionCommissionEvidenceSchema.parse(previous.evidence),
+    ...original,
+    ...(posting ? { payrollVoidPosting: posting } : {}),
     previousSnapshotId: previous.id,
   });
   await tx.commissionRedemptionSnapshot.create({
@@ -485,6 +501,7 @@ export async function voidRedemptionCommissionEvidence(
       eventKey: `void:${redemptionId}`,
       eventHash: createHash("sha256").update(JSON.stringify(evidence)).digest("hex"),
       eventType: "VOID",
+      ...(voidAt ? { createdAt: voidAt } : {}),
       actorId,
       reason: "Source redemption voided; original attribution retained",
       evidence,

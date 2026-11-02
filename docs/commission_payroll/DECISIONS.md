@@ -1091,3 +1091,17 @@ implemented behavior or production activation. Future conflicts must be recorded
 No owner-policy question is currently blocking. Newly discovered safety-critical
 or scope-changing conflicts must be documented, not treated as blanket permission
 to modify production, erase history or expand statutory payroll scope.
+
+### November 2, 2026 — lifecycle commission posting is not cash occurrence
+
+- Whole-sale void/refund and prepaid refund operational captures remain at actual
+  occurrence. Their cash, restoration and settlement journals are not deferred.
+- Deferred captures bind historical close selection; an independent lifecycle audit
+  binds exact request and complete capture hashes. Both inventories are checked so
+  deleting/moving one side cannot silently remove commission from an open month.
+- The authoritative loader separately projects commission lines into the selected
+  open period, preserving staff, attribution and source-time rate evidence. Only
+  the projected posting date changes; operational cash reconciliation continues
+  unchanged. Both operational and posting evidence are frozen with the close.
+- This is internal source/close integration, not an API mounting, provider payout,
+  earnings activation or extension of the supported M1 lifecycle policy matrix.

@@ -1,4 +1,8 @@
 import {
+  recordPayrollLifecyclePosting,
+  verifyPayrollLifecycleRetry,
+} from "./payroll-lifecycle-posting.js";
+import {
   payrollSessionCreditFunding,
   payrollSessionInstalmentFunding,
 } from "./payroll-session-credit-funding.js";
@@ -3431,7 +3435,10 @@ export async function voidSale(
 
   // Already void: the receipt it has is the answer, and neither the reason nor the actor
   // is rewritten.
-  if (sale.status === "VOID") return getSale(sale.id);
+  if (sale.status === "VOID") {
+    await verifyPayrollLifecycleRetry(prisma, tenantId, `void:${sale.id}`, actorId, input);
+    return getSale(sale.id);
+  }
 
   // A cart that was never rung up has no ledger and no receipt number, so there is
   // nothing to void — `DELETE /api/sales/:id` is its ending (ADR 0015).
@@ -3444,6 +3451,7 @@ export async function voidSale(
 
   await prisma.$transaction(async (tx) => {
     await lockPrepaid(tx, tenantId, actorId, input.reason);
+    await lockCommissionConfiguration(tx, tenantId);
     await prepaidSaleContext(tx, sale.id);
     // Serialize with refund before checking its record. Otherwise a refund could
     // commit after assertVoidable's read but before this void changes the status.
@@ -3453,7 +3461,10 @@ export async function voidSale(
       select: VOIDABLE_SALE_SELECT,
     });
     if (!current) throw notFound("That sale does not exist.", "SALE_NOT_FOUND");
-    if (current.status === "VOID") return;
+    if (current.status === "VOID") {
+      await verifyPayrollLifecycleRetry(tx, tenantId, `void:${sale.id}`, actorId, input);
+      return;
+    }
     if (current.status !== "COMPLETED")
       throw conflict("This sale was not completed.", "SALE_NOT_COMPLETED");
     // Both refusals run here rather than before, so a void that is going to be refused
@@ -3497,6 +3508,24 @@ export async function voidSale(
         purchaseHoldingHash,
         input.returnedCash,
       );
+    const ended = await tx.sale.findFirstOrThrow({ where: { id: sale.id } });
+    const captures = await tx.payrollSourceEvent.findMany({
+      where: {
+        saleId: sale.id,
+        sourceType: "REVERSAL",
+        sourceKey: { startsWith: `void:${sale.id}:` },
+      },
+    });
+    await recordPayrollLifecyclePosting(tx, {
+      tenantId,
+      actorId,
+      reason: input.reason,
+      targetId: `void:${sale.id}`,
+      originalAt: ended.soldAt,
+      occurredAt: ended.voidedAt!,
+      eventIds: captures.map((row) => row.id),
+      request: input,
+    });
   });
 
   return getSale(sale.id);
@@ -3544,7 +3573,16 @@ export async function refundSale(
   if (!sale) throw notFound("That sale does not exist.", "SALE_NOT_FOUND");
 
   // Idempotent, like a void: the first reason and actor are the audit record.
-  if (sale.refund !== null) return getSale(sale.id);
+  if (sale.refund !== null) {
+    await verifyPayrollLifecycleRetry(
+      prisma,
+      requireTenantScope(),
+      `refund:${sale.id}`,
+      actorId,
+      input,
+    );
+    return getSale(sale.id);
+  }
 
   if (sale.status === "HELD") {
     throw conflict(
@@ -3559,6 +3597,7 @@ export async function refundSale(
   try {
     await prisma.$transaction(async (tx) => {
       await lockPrepaid(tx, requireTenantScope(), actorId, input.reason);
+      await lockCommissionConfiguration(tx, requireTenantScope());
       // Lock the sale row first. A void racing this refund either waits and then sees
       // the row below, or holds the row itself and this read sees `VOID` — so the two
       // endings cannot both be recorded.
@@ -3583,6 +3622,13 @@ export async function refundSale(
       if (current.refund !== null) {
         // A retry that waited for the first transaction returns its receipt without
         // repeating stock or points adjustments.
+        await verifyPayrollLifecycleRetry(
+          tx,
+          requireTenantScope(),
+          `refund:${sale.id}`,
+          actorId,
+          input,
+        );
         return;
       }
 
@@ -3622,7 +3668,7 @@ export async function refundSale(
         );
       }
 
-      await tx.saleRefund.create({
+      const refund = await tx.saleRefund.create({
         data: {
           tenantId: requireTenantScope(),
           saleId: sale.id,
@@ -3639,6 +3685,24 @@ export async function refundSale(
         },
       });
       await reversePayrollSources(tx, sale.id, input.reason, `refund:${sale.id}`);
+      const original = await tx.sale.findFirstOrThrow({ where: { id: sale.id } });
+      const captures = await tx.payrollSourceEvent.findMany({
+        where: {
+          saleId: sale.id,
+          sourceType: "REVERSAL",
+          sourceKey: { startsWith: `refund:${sale.id}:` },
+        },
+      });
+      await recordPayrollLifecyclePosting(tx, {
+        tenantId: requireTenantScope(),
+        actorId,
+        reason: input.reason,
+        targetId: `refund:${sale.id}`,
+        originalAt: original.soldAt,
+        occurredAt: refund.refundedAt,
+        eventIds: captures.map((row) => row.id),
+        request: input,
+      });
 
       const performances = await tx.employeePerformance.findMany({
         where: { saleId: sale.id, refundAdjustment: false },

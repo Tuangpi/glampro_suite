@@ -1099,6 +1099,7 @@ export function loaderFixture() {
         args.where?.itemType === "VALUE_PACKAGE" ? 0 : data.usageCount,
     },
     saleRefund: many("saleRefund", () => data.refunds),
+    auditLog: many("auditLog", () => []),
     prepaidRefundSettlement: many("prepaidRefundSettlement", () => data.prepaidSettlements),
     commissionRedemptionSnapshot: many("commissionRedemptionSnapshot", () => []),
     payrollSourceEvent: many("payrollSourceEvent", () => data.events),

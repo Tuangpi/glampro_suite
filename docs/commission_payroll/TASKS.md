@@ -2,14 +2,14 @@
 
 ## Quick status navigation
 
-- **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. M2 remains IN PROGRESS; M3–M5 remain TODO. This is not release or earnings activation.
+- **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. M2 is DONE; M3–M5 remain TODO. This is not release or earnings activation.
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
 
 ## Workflow
 
 Current continuation — November 2, 2026: **M1 DONE** after M1-19 final gate review.
-Resume **M2** next-open-period source corrections. The dated continuations below
+M2 next-open-period source corrections is now **DONE**; resume **M3** carry and plan-switch acceptance. The dated continuations below
 are historical; their M1-open/remainder statements do not override the checklist.
 
 Latest continuation — November 1, 2026 (active-sharing credit purchase voids):
@@ -608,7 +608,7 @@ Existing implementation and reference tests need verification, not automatic cre
       session-attribution approval/source lock orderings have deterministic real-DB
       acceptance, including PostgreSQL blocking, reverse/repost and rollback.
 
-### Milestone status — M1 accepted; M2 in progress
+### Milestone status — M1 and M2 accepted; M3–M5 remain open
 
 #### CP-005-M1 — Authoritative lifecycle loading: DONE
 
@@ -648,21 +648,38 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
 - [x] **CP-005-M1-18 — DONE: Complete remaining lifecycle/void/close race acceptance.** `payroll-prepaid-races.acceptance.test.ts` adds 31 deterministic real-DB cases with PostgreSQL blocking proven for each ordering: membership/consent/usage-void/purchase-void versus calculate/approve in both orders; family spending versus revocation; restoration versus purchase void; duplicate purchase void; stale membership/consent; invalid payout versus close; competing same-revision close transitions. Exact money/holding journals, unchanged stale/failed-write state and audit, unique reversals, recalculation/approval and immutable approved history pass. Focused **31/31 twice**; consolidated **641 tests, 632 passed, 0 failed, 9 separately gated skips**; API typecheck, full API lint, affected formatting and shared/API build pass. Existing M2 session-correction race coverage is rerun, not substituted for these M1 cases. No production code/schema/dependency change. Evidence: [race checkpoint](PROGRESS.md#november-2-2026--m1-18-deterministic-prepaid-race-acceptance) and [race matrix](CLOSE_ACCEPTANCE.md#november-2-2026--m1-18-deterministic-prepaid-race-acceptance). M1-19/overall M1 remain open; the older sale-service cleanup failure remains unresolved.
 - [x] **CP-005-M1-19 — DONE: Final M1 completion-gate review.** Reviewed items 01–18, the lifecycle matrix and approved policy decisions; no remaining required supported M1 path identified. Reproduced and fixed the older sale-service fixture cleanup failure using fresh per-suite tenant identities and retained immutable receipts; added deletion-refusal regression without disabling constraints. Integrated payroll/prepaid/HTTP plus sale-service regression: **699 tests, 690 passed, 0 failed, 9 separately gated skips**, exit 0. Shared **305/305**, full web **977/977** with one worker, workspace lint/typechecks, shared/API/web build, formatting and diff checks pass. Delivered demo/reference artifacts are explicitly excluded from formatting, not modified. Evidence and initial failed runs: [final review](CLOSE_ACCEPTANCE.md#november-2-2026--m1-19-final-completion-review), `/tmp/m119-*`. M2–M5 retain their gates; no mounting, deployment or earnings activation.
 
-- **Next work:** M1-01–19 are DONE. Continue M2 next-open-period source corrections beyond the completed session-attribution slice. The sale-service cleanup issue is resolved and its suite is included in the final integrated regression.
+- **Next work:** M1-01–19 are DONE. M2 is DONE; continue M3 carry and plan-switch acceptance. The sale-service cleanup issue is resolved and its suite is included in the final integrated regression.
 - **Completion gate:** all required operational paths load through monthly
   calculate/approve with independent one-to-one evidence, exact money, corruption
   refusal, stale-draft rejection and immutable approved history. Unsupported
   required paths remaining fail-closed keep M1 open.
 
-#### CP-005-M2 — Next-open-period source corrections: IN PROGRESS
+#### CP-005-M2 — Next-open-period source corrections: DONE
 
-- [ ] Extend and verify correction handling for the other required
-      correction/lifecycle families beyond the completed session-attribution slice.
-- [ ] Complete operational posting-date handling, idempotency and approval/source
-      race acceptance across those families.
+- [x] Session-only void posting slice: preserve restoration occurrence separately
+      from a deferred reversal, freeze/verify approved-period selection, inventory
+      VOID snapshots independently, reject altered evidence and conflicting retry,
+      and prove both approval/void lock orderings on the disposable DB. Focused M2
+      **3/3** and related regression **131/131** pass. This does not accept whole-sale
+      voids or refund families; see the November 2 M2 checkpoint in PROGRESS.md.
+- [x] Extend correction handling to ordinary service/product void/refund, whole-sale
+      session/credit restoration, package/value-package purchase voids with no cash
+      movement or full returned cash, and package/value-package refunds.
+- [x] Keep operational occurrence/cash settlement independent of commission posting;
+      inventory deferred operations independently, bind immutable capture hashes and
+      historical close evidence, and preserve original attribution/rates.
+- [x] Verify same-request uniqueness/conflicting retries, six corruption variants,
+      final-audit transactional rollback, both calculate/approve lock orderings,
+      stale approval/recalculation, next-month approval and frozen history.
+- **November 2 completion evidence:** focused M2 **55/55**, payroll unit **430/430**,
+  four-file lifecycle regression **128/128**, broader acceptance/sale **121 tests:
+  115 passed, 0 failed, 6 separately gated skips**. API types, shared/API build,
+  affected ESLint, formatting and diff checks pass. See latest PROGRESS/CLOSE_ACCEPTANCE.
+  Earlier session-only checkpoint counts above are historical.
 - **Completion gate:** real transactional acceptance proves correct next-open-period
   placement, no duplicate sources and deterministic race/rollback behavior without
-  rewriting approved history. Session-only acceptance does not complete M2.
+  rewriting approved history. Accepted for the supported M1 lifecycle matrix; no
+  previously refused lifecycle or payout-provider behavior is enabled.
 
 ### To do — milestones not yet accepted
 

@@ -508,8 +508,10 @@ export function verifyPayrollRedemptionVoid(
       events: input.events.filter((row) => row.id !== reversal.id),
     });
     const evidence = redemptionCommissionEvidenceSchema.parse(terminal.evidence);
+    const posting = evidence.payrollVoidPosting;
     const expected = redemptionCommissionEvidenceSchema.parse({
       ...redemptionCommissionEvidenceSchema.parse(previous.evidence),
+      ...(posting ? { payrollVoidPosting: posting } : {}),
       previousSnapshotId: previous.id,
     });
     // Reconstruct schema ordering before replaying the writer's SHA-256 hash.
@@ -538,8 +540,15 @@ export function verifyPayrollRedemptionVoid(
           reversal.occurredAt > original.saleVoid.recordedAt ||
           revertedAt > original.saleVoid.recordedAt)) ||
       reversal.occurredAt < prior.occurredAt ||
-      reversal.createdAt < reversal.occurredAt ||
-      reversal.occurredAt > revertedAt
+      (posting
+        ? original.saleVoid !== undefined ||
+          new Date(posting.correctionAt).getTime() !== revertedAt.getTime() ||
+          reversal.createdAt < revertedAt ||
+          reversal.occurredAt.toISOString() !== posting.postingAt ||
+          payrollInputHash(
+            (reversal.evidence as { sourceSnapshot?: unknown }).sourceSnapshot ?? null,
+          ) !== payrollInputHash(posting)
+        : reversal.createdAt < reversal.occurredAt || reversal.occurredAt > revertedAt)
     )
       return fail();
     const parts = new Intl.DateTimeFormat("en", {

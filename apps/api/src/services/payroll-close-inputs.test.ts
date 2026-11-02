@@ -92,6 +92,14 @@ function fixture(): PayrollCloseInputRecords {
     ],
   };
 }
+
+test("commission posting projection cannot cross salon, month or timezone scope", () => {
+  for (const scope of [{ tenantId: "foreign" }, { periodKey: "2026-10" }, { timeZone: "UTC" }]) {
+    const records = fixture();
+    records.commissionSources = { ...records.sources, ...scope };
+    assert.throws(() => resolve(records), /commission posting.*scope/);
+  }
+});
 function withOwedStaff() {
   const input = fixture();
   input.state.adjustments = [

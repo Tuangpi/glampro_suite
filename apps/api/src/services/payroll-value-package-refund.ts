@@ -1,3 +1,5 @@
+import { recordPayrollLifecyclePosting } from "./payroll-lifecycle-posting.js";
+import { selectPayrollCorrectionPosting } from "./payroll-correction-posting.js";
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import {
@@ -166,6 +168,7 @@ export async function refundPayrollValuePackageInTransaction(
     select: { timeZone: true },
   });
   const at = new Date();
+  const posting = await selectPayrollCorrectionPosting(tx, scope.tenantId, sale.soldAt, at);
   await prepaidSaleContext(tx, sale.id);
   if (input.settlement && sale.collectionCurrency !== "SGD")
     throw conflict("Prepaid refund settlement requires original SGD consideration.");
@@ -224,6 +227,7 @@ export async function refundPayrollValuePackageInTransaction(
         payoutMethod: input.payoutMethod,
         purchase,
         originalSourceIds: sources.map((row) => row.id),
+        ...(posting.postingAt !== posting.correctionAt ? { payrollLifecyclePosting: posting } : {}),
         lines,
       },
     },
@@ -237,6 +241,15 @@ export async function refundPayrollValuePackageInTransaction(
       where: { id: outstanding.id },
       data: { unpaidAmount: { decrement: cancelled } },
     });
+  await recordPayrollLifecyclePosting(tx, {
+    tenantId: scope.tenantId,
+    actorId: actor.id,
+    reason: input.reason,
+    targetId: key,
+    originalAt: sale.soldAt,
+    occurredAt: at,
+    eventIds: [event.id],
+  });
   return event;
 }
 

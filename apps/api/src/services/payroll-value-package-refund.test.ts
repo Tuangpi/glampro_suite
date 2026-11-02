@@ -44,6 +44,7 @@ function fixture() {
   };
   const sale = {
     id: "purchase",
+    soldAt: new Date("2026-10-01T00:00:00Z"),
     status: "COMPLETED",
     collectionCurrency: "SGD",
     outletId: null,
@@ -147,6 +148,7 @@ function fixture() {
       },
     },
     tenant: { findUniqueOrThrow: async () => ({ timeZone: "Asia/Singapore" }) },
+    payrollClose: { findMany: async () => [] },
   };
   const run = (input = request) =>
     runAsTenant(

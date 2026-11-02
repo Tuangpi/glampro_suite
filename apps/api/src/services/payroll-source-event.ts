@@ -13,6 +13,7 @@ import { currentScope } from "../lib/tenant-context.js";
 import { conflict } from "../lib/http-error.js";
 import { resolveCommission } from "./commission-rules.js";
 import type { PayrollCorrectionPosting } from "./payroll-correction-posting.js";
+import { selectPayrollCorrectionPosting } from "./payroll-correction-posting.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 export function payrollBusinessDate(at: Date, timeZone: string) {
@@ -280,6 +281,17 @@ export async function reversePayrollSources(
   });
   const scope = currentScope();
   if (scope?.kind !== "tenant") throw new Error("Payroll reversal requires tenant scope.");
+  const sale =
+    !posting && !onlySourceKey ? await tx.sale.findFirstOrThrow({ where: { id: saleId } }) : null;
+  const refund =
+    sale && sourceKey.startsWith("refund:")
+      ? await tx.saleRefund.findFirst({ where: { saleId } })
+      : null;
+  const correctionAt = refund?.refundedAt ?? sale?.voidedAt;
+  const lifecyclePosting =
+    sale && correctionAt
+      ? await selectPayrollCorrectionPosting(tx, scope.tenantId, sale.soldAt, correctionAt)
+      : null;
   for (const original of originals) {
     if (
       await tx.payrollSourceEvent.findFirst({
@@ -315,6 +327,9 @@ export async function reversePayrollSources(
           ...evidence,
           originalEventId: original.id,
           ...(posting ? { sourceSnapshot: posting } : {}),
+          ...(lifecyclePosting && lifecyclePosting.postingAt !== lifecyclePosting.correctionAt
+            ? { payrollLifecyclePosting: lifecyclePosting }
+            : {}),
           lines: evidence.lines.map((line) => ({
             ...line,
             id: `${key}:${line.staffId}`,

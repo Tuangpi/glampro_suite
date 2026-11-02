@@ -1,5 +1,89 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — M2 DONE: lifecycle posting separated from cash occurrence
+
+CP-005 M1 and M2 are DONE; M3–M5 remain TODO. No API/UI mounting or earnings activation.
+This checkpoint supersedes older M2/session-only remainder statements below.
+
+- Extended approved-month selection to ordinary service/product voids and refunds,
+  whole-sale session/credit restoration, package/value-package purchase voids with
+  NO_MOVEMENT or full RETURNED cash, and package/value-package refunds.
+- Deferred operations retain their original operational captures, restoration and
+  settlement timestamps. Immutable captures carry posting evidence; independent
+  lifecycle audits bind exact request/capture hashes and inspected historical close
+  revisions. Missing/duplicate audits, moved/missing captures and altered evidence
+  refuse. Future posting replays the operational family verifier and freezes its
+  evidence; a capture is not enough to admit a correction.
+- Monthly assembly uses a separate validated commission projection for earned lines
+  and SUM_INDIVIDUAL. Existing operational inventories and cash reconciliation still
+  use actual occurrence, so future commission posting never repeats money returns.
+  Frozen approved statements are never recalculated or edited by source writers.
+- Same-period formats and legacy first-receipt retries remain unchanged. Deferred
+  whole-sale retries must match actor and request; prepaid refunds retain their
+  existing request-key hash check. Locks remain prepaid then configuration/tenant.
+- Final M2 acceptance **55/55**, zero skips/failures:
+  `/tmp/m2-lifecycle-acceptance-verified.{log,exit}`. Includes 12 deferred-family
+  cases (rollback plus six read-corruption variants each), 40 new lifecycle
+  calculate/approve orderings with real PostgreSQL blocking, and retained session
+  correction/void cases. Returned package and credit purchase races are explicit.
+- Related four-file regression **128/128**, zero skips/failures:
+  `/tmp/m2-lifecycle-regression-final.{log,exit}`. Expanded purchase race cases and
+  final scope validation were subsequently verified in the final acceptance/unit runs.
+- All payroll non-acceptance unit files **430/430**, zero skips/failures:
+  `/tmp/m2-lifecycle-unit-final.{log,exit}`. Broader supported acceptance plus real
+  sale service **121 tests, 115 passed, 0 failed, 6 separately gated skips**:
+  `/tmp/m2-lifecycle-broad-final.{log,exit}`. Skips are separate lifecycle/browser
+  gates, not enabled CP-005 acceptance. Authorizations plus sale-service rerun
+  independently passed **59/59** (`/tmp/m2-lifecycle-http-sale.*`).
+- API typecheck and shared/API build pass (`/tmp/m2-lifecycle-quality-verified.exit`,
+  `/tmp/m2-lifecycle-{types,build}-verified.log`); affected ESLint, formatting and
+  whitespace checks pass. Existing pg client concurrent-query deprecation warning
+  remains; no warnings were suppressed.
+- Initial mock fixtures lacked new posting inventory delegates; updated them without
+  weakening assertions. Earlier broad run lacked JWT_SECRET in three test processes;
+  final run uses a synthetic test-only secret and passes. One intermediate extra
+  purchase-race run was cancelled by the terminal/event loop; all those cases pass
+  in the final 55-case run. Earlier attempts remain as evidence, not passing claims.
+- Only verified PostgreSQL 18.6/UTC disposable target
+  `127.0.0.1:55485/payroll_close_test`, role `postgres`, data directory
+  `/tmp/cp005-m1-14-n6d0gta5` was written. No application DB, schema/migration,
+  dependency, provider payment, deployment, commit or push changes.
+
+## November 2, 2026 — M2 session-only void posting and approval races
+
+- **M2 remains IN PROGRESS.** Session-only voids now select posting under the
+  existing prepaid/configuration locks, preserving actual restoration time and
+  original attribution/rates. When approved months are skipped, the immutable VOID
+  snapshot and reversal bind the selected posting and historical close evidence.
+  Same-period voids retain their existing snapshot format; their reversal uses the
+  same captured occurrence instant, avoiding sub-millisecond ordering drift.
+- The monthly loader inventories VOID snapshots independently of source dates, so
+  deferred reversals remain discoverable without a prior attribution correction.
+  Loader validation replays historical close selection; pure verification binds
+  the reversal to the terminal snapshot and requires exact prior-source reversal.
+- Added deterministic void-first/approval-first acceptance with real
+  `pg_blocking_pids` assertions, unchanged approved history, stale-draft refusal,
+  retry uniqueness and next-month approval. A late correction in an already
+  approved occurrence month explicitly tests deferred posting. Corrupt posting,
+  inspected hash and occurrence refuse without changing close state/audits.
+- Verification: related five-file regression **131/131**, zero skips/failures,
+  `/tmp/m2-regression-verified.log`; final expanded M2 evidence **3/3**,
+  `/tmp/m2-evidence-final.log`; focused expiry/race regression **7/7**,
+  `/tmp/m2-focused-final.log`; pure unit checks **36/36**, `/tmp/m2-unit.log`.
+  API typecheck, shared/API build, affected ESLint and diff check pass. Earlier
+  failed mock-clock/type checks and two regression attempts remain in `/tmp/m2-*`;
+  expiry failures were fixed without weakening assertions or disabling constraints.
+- **Remaining:** whole-sale ordinary/prepaid voids, ordinary refunds and
+  package/value-package refund posting/occurrence reconciliation, and their full
+  idempotency, corruption, approval/calculation race and rollback acceptance. Cash
+  settlement dates must not be silently replaced by deferred commission dates.
+  No M2 completion, M3–M5 acceptance or application API/UI mounting is claimed.
+- Only identity-checked disposable PostgreSQL 18.6/UTC at
+  `127.0.0.1:55485/payroll_close_test`, data directory
+  `/tmp/cp005-m1-14-n6d0gta5`, was used. The current cluster uses `postgres`, not
+  the older documented `cp005_test` role. No application DB, migrations, schema,
+  dependencies, provider transfers, activation, deployment, commit or push.
+
 ## November 2, 2026 — M1-19 final review; M1 DONE
 
 - **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE.** Reviewed M1-01–18,

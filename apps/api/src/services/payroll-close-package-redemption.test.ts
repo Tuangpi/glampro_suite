@@ -576,6 +576,47 @@ test("void rejects missing, duplicate, foreign, altered and non-exact evidence",
   }
 });
 
+test("session void separates occurrence from deferred payroll posting and binds its evidence", () => {
+  const fixture = () => {
+    const input = voidFixture();
+    const terminal = input.snapshots.at(-1)!;
+    const reversal = input.events.at(-1)!;
+    const posting = {
+      version: 1,
+      correctionAt: input.original.redemption.revertedAt!.toISOString(),
+      postingAt: "2026-10-31T16:00:00.000Z",
+      originalPeriodKey: "2026-09",
+      periodKey: "2026-11",
+      inspectedPeriods: [
+        { periodKey: "2026-10", revision: 2, status: "APPROVED", stateHash: "reviewed" },
+        { periodKey: "2026-11", revision: 0, status: "OPEN", stateHash: null },
+      ],
+    };
+    terminal.evidence = redemptionCommissionEvidenceSchema.parse({
+      ...terminal.evidence,
+      payrollVoidPosting: posting,
+    });
+    terminal.eventHash = createHash("sha256")
+      .update(JSON.stringify(terminal.evidence))
+      .digest("hex");
+    reversal.occurredAt = new Date(posting.postingAt);
+    Object.assign(reversal.evidence, { sourceSnapshot: posting });
+    for (const line of reversal.evidence.lines) line.businessDate = "2026-11-01";
+    return input;
+  };
+  assert.equal(verifyPayrollRedemptionVoid(fixture()).previousRevision, 1);
+  for (const corrupt of ["POSTING", "OCCURRENCE", "SOURCE", "CREATED"] as const) {
+    const input = fixture();
+    const reversal = input.events.at(-1)!;
+    if (corrupt === "POSTING") reversal.occurredAt = new Date("2026-11-02T00:00:00Z");
+    if (corrupt === "OCCURRENCE")
+      input.original.redemption.revertedAt = new Date("2026-10-07T00:00:00Z");
+    if (corrupt === "SOURCE") Object.assign(reversal.evidence, { sourceSnapshot: null });
+    if (corrupt === "CREATED") reversal.createdAt = new Date("2026-10-05T00:00:00Z");
+    assert.throws(() => verifyPayrollRedemptionVoid(input), /EVIDENCE_UNCONFIRMED/);
+  }
+});
+
 test("correction chain verifies original economics, request-order hash, new attribution and exact prior reversal", () => {
   const input = correctionFixture();
   const result = verifyPayrollRedemptionCorrections(input);

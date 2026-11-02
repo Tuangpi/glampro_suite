@@ -382,7 +382,7 @@ export async function loadPayrollPackageRedemptionHistory(
   });
   for (const redemption of redemptions) {
     for (const snapshot of snapshots.filter(
-      (row) => row.redemptionId === redemption.id && row.eventType === "CORRECTION",
+      (row) => row.redemptionId === redemption.id && ["CORRECTION", "VOID"].includes(row.eventType),
     )) {
       const evidence = redemptionCommissionEvidenceSchema.parse(snapshot.evidence);
       if (evidence.payrollCorrectionPosting)
@@ -392,6 +392,16 @@ export async function loadPayrollPackageRedemptionHistory(
           redemption.usedAt,
           evidence.payrollCorrectionPosting,
         );
+      if (evidence.payrollVoidPosting) {
+        if (snapshot.createdAt.toISOString() !== evidence.payrollVoidPosting.correctionAt)
+          return unavailable();
+        await verifyPayrollCorrectionPosting(
+          tx,
+          tenantId,
+          redemption.usedAt,
+          evidence.payrollVoidPosting,
+        );
+      }
     }
     const captures = snapshots.filter((row) => row.redemptionId === redemption.id);
     const sources = related.filter((row) => row.sourceId === redemption.id);

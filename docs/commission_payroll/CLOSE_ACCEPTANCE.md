@@ -1,5 +1,54 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 2, 2026 — M2 DONE: lifecycle posting separated from cash occurrence
+
+CP-005 M1 and M2 are DONE; M3–M5 remain TODO. No API/UI mounting or earnings activation.
+This checkpoint supersedes older M2/session-only remainder statements below.
+
+- Extended approved-month selection to ordinary service/product voids and refunds,
+  whole-sale session/credit restoration, package/value-package purchase voids with
+  NO_MOVEMENT or full RETURNED cash, and package/value-package refunds.
+- Deferred operations retain their original operational captures, restoration and
+  settlement timestamps. Immutable captures carry posting evidence; independent
+  lifecycle audits bind exact request/capture hashes and inspected historical close
+  revisions. Missing/duplicate audits, moved/missing captures and altered evidence
+  refuse. Future posting replays the operational family verifier and freezes its
+  evidence; a capture is not enough to admit a correction.
+- Monthly assembly uses a separate validated commission projection for earned lines
+  and SUM_INDIVIDUAL. Existing operational inventories and cash reconciliation still
+  use actual occurrence, so future commission posting never repeats money returns.
+  Frozen approved statements are never recalculated or edited by source writers.
+- Same-period formats and legacy first-receipt retries remain unchanged. Deferred
+  whole-sale retries must match actor and request; prepaid refunds retain their
+  existing request-key hash check. Locks remain prepaid then configuration/tenant.
+- Final M2 acceptance **55/55**, zero skips/failures:
+  `/tmp/m2-lifecycle-acceptance-verified.{log,exit}`. Includes 12 deferred-family
+  cases (rollback plus six read-corruption variants each), 40 new lifecycle
+  calculate/approve orderings with real PostgreSQL blocking, and retained session
+  correction/void cases. Returned package and credit purchase races are explicit.
+- Related four-file regression **128/128**, zero skips/failures:
+  `/tmp/m2-lifecycle-regression-final.{log,exit}`. Expanded purchase race cases and
+  final scope validation were subsequently verified in the final acceptance/unit runs.
+- All payroll non-acceptance unit files **430/430**, zero skips/failures:
+  `/tmp/m2-lifecycle-unit-final.{log,exit}`. Broader supported acceptance plus real
+  sale service **121 tests, 115 passed, 0 failed, 6 separately gated skips**:
+  `/tmp/m2-lifecycle-broad-final.{log,exit}`. Skips are separate lifecycle/browser
+  gates, not enabled CP-005 acceptance. Authorizations plus sale-service rerun
+  independently passed **59/59** (`/tmp/m2-lifecycle-http-sale.*`).
+- API typecheck and shared/API build pass (`/tmp/m2-lifecycle-quality-verified.exit`,
+  `/tmp/m2-lifecycle-{types,build}-verified.log`); affected ESLint, formatting and
+  whitespace checks pass. Existing pg client concurrent-query deprecation warning
+  remains; no warnings were suppressed.
+- Initial mock fixtures lacked new posting inventory delegates; updated them without
+  weakening assertions. Earlier broad run lacked JWT_SECRET in three test processes;
+  final run uses a synthetic test-only secret and passes. One intermediate extra
+  purchase-race run was cancelled by the terminal/event loop; all those cases pass
+  in the final 55-case run. Earlier attempts remain as evidence, not passing claims.
+- Only verified PostgreSQL 18.6/UTC disposable target
+  `127.0.0.1:55485/payroll_close_test`, role `postgres`, data directory
+  `/tmp/cp005-m1-14-n6d0gta5` was written. No application DB, schema/migration,
+  dependency, provider payment, deployment, commit or push changes.
+
 ## November 2, 2026 — M1-19 final completion review
 
 **M1-19 DONE; 19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE.** This checkpoint

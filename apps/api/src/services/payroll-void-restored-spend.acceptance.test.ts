@@ -1,3 +1,8 @@
+import {
+  orderedCorrectionWriters,
+  assertLifecycleRollback,
+  assertLifecycleCorruptionRefused,
+} from "./payroll-lifecycle.test-helper.js";
 /** Purchase voids whose credit was spent and then given back.
  *
  * Two facts decide the M1 void-gate scope, and both are proven here against the real
@@ -399,6 +404,454 @@ const loadMonth = (fixture: Fixture) =>
     },
     fixture.ownerId,
   );
+
+for (const family of [
+  "ordinary-void",
+  "ordinary-product-void",
+  "ordinary-refund",
+  "ordinary-product-refund",
+  "credit-void",
+  "session-void",
+  "purchase-void",
+  "purchase-return",
+  "package-purchase-void",
+  "package-purchase-return",
+] as const)
+  test(
+    `CP-005-M2 lifecycle ${family} defers commission without moving cash or approved history`,
+    { skip: disabled },
+    tenantCase(
+      family.startsWith("ordinary")
+        ? family.includes("product")
+          ? "ordinary-refund-product"
+          : "ordinary-refund-service"
+        : family === "session-void" || family.startsWith("package-")
+          ? "restored-session-m2-lifecycle"
+          : "m2-lifecycle-credit",
+      async (fixture) => {
+        const before = await loadMonth(fixture);
+        const draft = await calculateStoredPayrollClose(before.periodKey, 0);
+        const occurredAt = new Date(Date.now() + 1000);
+        mock.timers.enable({ apis: ["Date"], now: new Date(before.endsAt) });
+        await approveStoredPayrollClose(
+          before.periodKey,
+          draft.revision,
+          "Freeze original lifecycle history",
+        );
+        const frozen = payrollInputHash(
+          (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: before.periodKey } }))
+            .state,
+        );
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: occurredAt });
+        const purchase = family.includes("purchase");
+        const target = purchase ? fixture.purchaseId : fixture.spendId;
+        const cancel = async () => {
+          if (family.endsWith("refund"))
+            return refundSale(
+              target,
+              {
+                reason: "Late source refund",
+                restock: false,
+                payouts: [{ method: "CASH", amount: 90 }],
+              },
+              fixture.ownerId,
+            );
+          if (purchase)
+            await voidSale(
+              fixture.spendId,
+              {
+                reason: "Restore before purchase cancellation",
+                cashDisposition: "NO_MOVEMENT",
+              },
+              fixture.ownerId,
+            );
+          return voidSale(
+            target,
+            family.endsWith("return")
+              ? {
+                  reason: "Late source void",
+                  cashDisposition: "RETURNED",
+                  returnedCash: {
+                    reference: "Actual late cash return",
+                    payouts: [{ method: "CASH", amount: 545 }],
+                  },
+                }
+              : { reason: "Late source void", cashDisposition: "NO_MOVEMENT" },
+            fixture.ownerId,
+          );
+        };
+        await assertLifecycleRollback(cancel, fixture.tenantId);
+        await cancel();
+        await assertLifecycleCorruptionRefused(fixture.tenantId);
+        await assert.rejects(
+          family.endsWith("refund")
+            ? refundSale(
+                target,
+                {
+                  reason: "Conflicting deferred retry",
+                  restock: false,
+                  payouts: [{ method: "CASH", amount: 90 }],
+                },
+                fixture.ownerId,
+              )
+            : voidSale(
+                target,
+                { reason: "Conflicting deferred retry", cashDisposition: "NO_MOVEMENT" },
+                fixture.ownerId,
+              ),
+          /different evidence/,
+        );
+        const captures = await prisma.payrollSourceEvent.findMany({
+          where: { sourceType: "REVERSAL" },
+        });
+        await cancel();
+        assert.equal(
+          await prisma.payrollSourceEvent.count({ where: { sourceType: "REVERSAL" } }),
+          captures.length,
+        );
+        const operational = await loadMonth(fixture);
+        assert.ok(
+          operational.staff
+            .flatMap((row) => row.calculation.lines)
+            .every((line) => !captures.some((event) => line.id.startsWith(event.sourceKey))),
+        );
+        const next =
+          before.endsAt.slice(0, 7) === before.periodKey
+            ? new Date(new Date(before.endsAt).getTime() + 86400000).toISOString().slice(0, 7)
+            : before.endsAt.slice(0, 7);
+        const loadNext = () =>
+          prisma.$transaction((tx) =>
+            loadAuthoritativePayrollCloseInputs(tx, openPayrollClose(next)),
+          );
+        const upcoming = await loadNext();
+        const lines = upcoming.staff.flatMap((row) => row.calculation.lines);
+        assert.equal(
+          lines.length,
+          captures.flatMap((event) => (event.evidence as { lines: unknown[] }).lines).length,
+        );
+        assert.equal(upcoming.staff[0].collection, "0.0000");
+        assert.ok(
+          lines.every((line) => line.baseAmount.startsWith("-") || line.baseAmount === "0.0000"),
+        );
+        const nextDraft = await calculateStoredPayrollClose(next, 0);
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date(upcoming.endsAt) });
+        await approveStoredPayrollClose(
+          next,
+          nextDraft.revision,
+          "Approve deferred lifecycle commission",
+        );
+        assert.equal(
+          payrollInputHash(
+            (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: before.periodKey } }))
+              .state,
+          ),
+          frozen,
+        );
+        const ended = await prisma.sale.findFirstOrThrow({ where: { id: target } });
+        if (!family.endsWith("refund"))
+          assert.equal(ended.voidedAt!.getTime(), occurredAt.getTime());
+      },
+    ),
+  );
+
+for (const family of [
+  "ordinary-void",
+  "ordinary-refund",
+  "credit-void",
+  "session-void",
+  "purchase-void",
+  "package-purchase-void",
+  "purchase-return",
+  "package-purchase-return",
+] as const)
+  for (const transition of ["calculate", "approve"] as const)
+    for (const sourceFirst of [false, true])
+      test(
+        `CP-005-M2 lifecycle race ${family} ${transition} source-first=${sourceFirst}`,
+        { skip: disabled, timeout: 25000 },
+        tenantCase(
+          family.startsWith("ordinary")
+            ? "ordinary-refund-service"
+            : family === "session-void" || family.startsWith("package-")
+              ? "restored-session-m2-lifecycle-race"
+              : "m2-credit-race",
+          async (fixture) => {
+            if (family.includes("purchase"))
+              await voidSale(
+                fixture.spendId,
+                { reason: "Restore before racing purchase", cashDisposition: "NO_MOVEMENT" },
+                fixture.ownerId,
+              );
+            const before = await loadMonth(fixture);
+            const draft = await calculateStoredPayrollClose(before.periodKey, 0);
+            mock.timers.enable({ apis: ["Date"], now: new Date(before.endsAt) });
+            const target = family.includes("purchase") ? fixture.purchaseId : fixture.spendId;
+            const source = () =>
+              family === "ordinary-refund"
+                ? refundSale(
+                    target,
+                    {
+                      reason: "Race refund",
+                      restock: false,
+                      payouts: [{ method: "CASH", amount: 90 }],
+                    },
+                    fixture.ownerId,
+                  )
+                : voidSale(
+                    target,
+                    family.endsWith("return")
+                      ? {
+                          reason: "Race void",
+                          cashDisposition: "RETURNED",
+                          returnedCash: {
+                            reference: "Race returned purchase",
+                            payouts: [{ method: "CASH", amount: 545 }],
+                          },
+                        }
+                      : { reason: "Race void", cashDisposition: "NO_MOVEMENT" },
+                    fixture.ownerId,
+                  );
+            const close = () =>
+              transition === "approve"
+                ? approveStoredPayrollClose(
+                    before.periodKey,
+                    draft.revision,
+                    "Race lifecycle approval",
+                  )
+                : calculateStoredPayrollClose(before.periodKey, draft.revision);
+            const results = await orderedCorrectionWriters(
+              sourceFirst ? source : close,
+              sourceFirst ? close : source,
+            );
+            for (const [index, result] of results.entries())
+              if (result.status === "rejected") {
+                assert.ok(sourceFirst && transition === "approve" && index === 1);
+                assert.match(String(result.reason), /inputs changed/);
+              }
+            if (transition === "calculate" || sourceFirst) {
+              const current = await prisma.payrollClose.findFirstOrThrow({
+                where: { periodKey: before.periodKey },
+              });
+              const refreshed = await calculateStoredPayrollClose(
+                before.periodKey,
+                current.revision,
+              );
+              await approveStoredPayrollClose(
+                before.periodKey,
+                refreshed.revision,
+                "Approve refreshed race evidence",
+              );
+            }
+            const ended = await loadMonth(fixture);
+            assert.equal(
+              ended.staff[0].collection,
+              family === "ordinary-refund"
+                ? "-82.5700"
+                : family.endsWith("return")
+                  ? "-500.0000"
+                  : "0.0000",
+            );
+            const current = await prisma.payrollClose.findFirstOrThrow({
+              where: { periodKey: before.periodKey },
+            });
+            if (transition === "approve" && !sourceFirst) {
+              assert.equal(current.status, "APPROVED");
+              assert.equal(
+                payrollInputHash((current.state as unknown as typeof draft).calculation),
+                payrollInputHash(draft.calculation),
+              );
+            }
+            await source();
+            const count = await prisma.payrollSourceEvent.count({
+              where: { saleId: target, sourceType: "REVERSAL" },
+            });
+            assert.ok(count > 0);
+            const hash = payrollInputHash(current.state);
+            const latest = await prisma.payrollClose.findFirstOrThrow({
+              where: { periodKey: before.periodKey },
+            });
+            assert.equal(payrollInputHash(latest.state), hash);
+          },
+        ),
+      );
+
+for (const first of ["void", "approve"] as const)
+  test(
+    `CP-005-M2 session void and approval serialize with ${first} first`,
+    { skip: disabled, timeout: 20000 },
+    tenantCase("restored-session-m2-race", async (fixture) => {
+      const inputs = await loadMonth(fixture);
+      const draft = await calculateStoredPayrollClose(inputs.periodKey, 0);
+      mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+      const redemption = await prisma.customerRedemption.findFirstOrThrow({
+        where: { saleId: fixture.spendId },
+      });
+      const request = {
+        expectedRevision: 0,
+        idempotencyKey: randomUUID(),
+        reason: "Deterministic session correction approval race",
+      };
+      const voidSession = () => voidPayrollSession(fixture.spendId, redemption.id, request);
+      const approve = () =>
+        approveStoredPayrollClose(inputs.periodKey, draft.revision, "Approve competing correction");
+      const results = await orderedCorrectionWriters(
+        first === "void" ? voidSession : approve,
+        first === "void" ? approve : voidSession,
+      );
+      assert.equal(results[0].status, "fulfilled");
+      if (first === "void") {
+        assert.equal(results[1].status, "rejected");
+        const recalculated = await calculateStoredPayrollClose(inputs.periodKey, draft.revision);
+        await approveStoredPayrollClose(
+          inputs.periodKey,
+          recalculated.revision,
+          "Approve refreshed evidence",
+        );
+      } else {
+        if (results[1].status === "rejected") throw results[1].reason;
+        const stored = await prisma.payrollClose.findFirstOrThrow({
+          where: { periodKey: inputs.periodKey },
+        });
+        assert.equal(
+          payrollInputHash((stored.state as unknown as typeof draft).calculation),
+          payrollInputHash(draft.calculation),
+        );
+      }
+      const retried = await voidSession();
+      assert.ok(retried.revertedAt);
+      assert.equal(
+        await prisma.payrollSourceEvent.count({
+          where: { saleId: fixture.spendId, sourceType: "REVERSAL" },
+        }),
+        1,
+      );
+      const next = await loadMonth(fixture);
+      assert.equal(next.staff[0].collection, "0.0000");
+      assert.deepEqual(
+        next.staff.flatMap((row) => row.calculation.lines.map((line) => line.baseAmount)),
+        ["-250.0000"],
+      );
+      const nextDraft = await calculateStoredPayrollClose(next.periodKey, 0);
+      mock.timers.setTime(new Date(next.endsAt).getTime());
+      await approveStoredPayrollClose(
+        next.periodKey,
+        nextDraft.revision,
+        "Approve raced correction",
+      );
+    }),
+  );
+
+test(
+  "CP-005-M2 session void skips an approved occurrence month without changing approved history",
+  { skip: disabled },
+  tenantCase("restored-session-m2", async (fixture) => {
+    const inputs = await loadMonth(fixture);
+    const draft = await calculateStoredPayrollClose(inputs.periodKey, 0);
+    // Approve at the boundary, then perform a late source correction within the
+    // approved salon month. Posting must move forward; restoration must not.
+    const boundary = new Date(inputs.endsAt);
+    mock.timers.enable({ apis: ["Date"], now: boundary });
+    await approveStoredPayrollClose(inputs.periodKey, draft.revision, "Approve before correction");
+    const frozen = await prisma.payrollClose.findFirstOrThrow({
+      where: { periodKey: inputs.periodKey },
+    });
+    mock.timers.setTime(boundary.getTime() - 1000);
+    const redemption = await prisma.customerRedemption.findFirstOrThrow({
+      where: { saleId: fixture.spendId },
+    });
+    const request = {
+      expectedRevision: 0,
+      idempotencyKey: randomUUID(),
+      reason: "Late session correction in approved month",
+    };
+    const restored = await voidPayrollSession(fixture.spendId, redemption.id, request);
+    assert.equal(restored.revertedAt, new Date(boundary.getTime() - 1000).toISOString());
+    assert.deepEqual(await voidPayrollSession(fixture.spendId, redemption.id, request), restored);
+    await assert.rejects(
+      voidPayrollSession(fixture.spendId, redemption.id, { ...request, reason: "Changed retry" }),
+      /retry differs/,
+    );
+    const reversals = await prisma.payrollSourceEvent.findMany({
+      where: { saleId: fixture.spendId, sourceType: "REVERSAL" },
+    });
+    assert.equal(reversals.length, 1);
+    assert.equal(reversals[0].occurredAt.toISOString(), inputs.endsAt);
+    assert.ok(reversals[0].createdAt < reversals[0].occurredAt);
+    mock.timers.setTime(boundary.getTime() + 1000);
+    const next = await loadMonth(fixture);
+    assert.equal(next.staff[0].collection, "0.0000");
+    assert.deepEqual(
+      next.staff.flatMap((row) => row.calculation.lines.map((line) => line.baseAmount)),
+      ["-250.0000"],
+    );
+    const nextDraft = await calculateStoredPayrollClose(next.periodKey, 0);
+    for (const corruption of ["POSTING", "HASH", "OCCURRENCE"] as const) {
+      const before = await prisma.payrollClose.findFirstOrThrow({
+        where: { periodKey: next.periodKey },
+      });
+      const auditCount = await prisma.payrollCloseEvent.count({
+        where: { periodKey: next.periodKey },
+      });
+      await assert.rejects(
+        prisma.$transaction((tx) =>
+          loadAuthoritativePayrollCloseInputs(
+            new Proxy(tx, {
+              get(target, key) {
+                if (key !== "commissionRedemptionSnapshot") return Reflect.get(target, key);
+                return new Proxy(target.commissionRedemptionSnapshot, {
+                  get(delegate, method) {
+                    if (method !== "findMany") return Reflect.get(delegate, method);
+                    return async (args: Parameters<typeof delegate.findMany>[0]) =>
+                      (await delegate.findMany(args)).map((row) => {
+                        if (row.eventType !== "VOID") return row;
+                        const evidence = structuredClone(row.evidence) as Record<string, unknown>;
+                        const posting = evidence.payrollVoidPosting as Record<string, unknown>;
+                        if (corruption === "POSTING") posting.postingAt = inputs.startsAt;
+                        if (corruption === "HASH") {
+                          const periods = posting.inspectedPeriods as { stateHash: string }[];
+                          periods[0].stateHash = "0".repeat(64);
+                        }
+                        if (corruption === "OCCURRENCE") posting.correctionAt = inputs.startsAt;
+                        return { ...row, evidence: evidence as typeof row.evidence };
+                      });
+                  },
+                });
+              },
+            }),
+            openPayrollClose(next.periodKey),
+          ),
+        ),
+        /posting evidence is inconsistent|HISTORY_UNCONFIRMED/,
+      );
+      assert.equal(
+        payrollInputHash(
+          (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: next.periodKey } }))
+            .state,
+        ),
+        payrollInputHash(before.state),
+      );
+      assert.equal(
+        await prisma.payrollCloseEvent.count({ where: { periodKey: next.periodKey } }),
+        auditCount,
+      );
+    }
+    mock.timers.setTime(new Date(next.endsAt).getTime());
+    await approveStoredPayrollClose(
+      next.periodKey,
+      nextDraft.revision,
+      "Approve deferred session void",
+    );
+    assert.equal(
+      payrollInputHash(
+        (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: inputs.periodKey } }))
+          .state,
+      ),
+      payrollInputHash(frozen.state),
+    );
+  }),
+);
 
 for (const restoration of ["session", "whole-sale"] as const)
   for (const cashDisposition of ["NO_MOVEMENT", "RETURNED"] as const)

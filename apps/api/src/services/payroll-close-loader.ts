@@ -1,3 +1,6 @@
+import { loadPayrollLifecyclePostings } from "./payroll-lifecycle-posting.js";
+import { payrollBusinessDate } from "./payroll-source-event.js";
+import { payrollBaseLineSchema } from "@glampro_suite/shared";
 import { loadPayrollPackageRedemptionHistory } from "./payroll-close-redemption-loader.js";
 import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import { z } from "zod";
@@ -174,9 +177,13 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     )
   )
     unavailable("SOURCE_WORKFLOW_NOT_LOADED");
+  const voidSnapshots = await tx.commissionRedemptionSnapshot.findMany({
+    where: { tenantId, eventType: "VOID" },
+    orderBy: { id: "asc" },
+  });
   const correctionRedemptions = [];
   for (const redemptionId of [
-    ...new Set(correctionSnapshots.map((row) => row.redemptionId)),
+    ...new Set([...correctionSnapshots, ...voidSnapshots].map((row) => row.redemptionId)),
   ].sort()) {
     const redemption = await tx.customerRedemption.findFirst({
       where: { tenantId, id: redemptionId },
@@ -1298,7 +1305,61 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     collections: normalizedCollections,
     legacyCommissions: legacy.map((row) => ({ ...row, amount: row.amount.toFixed(10) })),
   };
-  const sourceResult = resolvePayrollCloseSources(sources);
+  const lifecyclePostings = await loadPayrollLifecyclePostings(tx, tenantId);
+  const deferred = new Map(
+    lifecyclePostings.flatMap((row) => row.captures.map((event) => [event.id, row] as const)),
+  );
+  for (const event of events) {
+    if (
+      z.object({ payrollLifecyclePosting: z.unknown() }).safeParse(event.evidence).success &&
+      (event.evidence as { payrollLifecyclePosting?: unknown }).payrollLifecyclePosting !==
+        undefined &&
+      !deferred.has(event.id)
+    )
+      unavailable("LIFECYCLE_POSTING_AUDIT_MISSING");
+  }
+  const commissionEvents = events.filter((event) => !deferred.has(event.id));
+  const commissionLineage = new Map(lineage);
+  for (const posting of lifecyclePostings) {
+    if (posting.posting.periodKey !== periodKey) continue;
+    for (const capture of posting.captures) {
+      const evidence = z
+        .object({ lines: z.array(payrollBaseLineSchema) })
+        .passthrough()
+        .parse(capture.evidence);
+      const at = new Date(posting.posting.postingAt);
+      commissionEvents.push({
+        ...capture,
+        occurredAt: at,
+        evidence: {
+          ...evidence,
+          lines: evidence.lines.map((line) => ({
+            ...line,
+            businessDate: payrollBusinessDate(at, tenant.timeZone),
+          })),
+        },
+      });
+      commissionLineage.delete(capture.id);
+      if (
+        capture.sourceType === "REVERSAL" &&
+        !commissionEvents.some((row) => row.id === capture.sourceId)
+      ) {
+        const original = await tx.payrollSourceEvent.findFirst({
+          where: { tenantId, id: capture.sourceId },
+        });
+        if (!original) unavailable("DEFERRED_REVERSAL_ORIGINAL_MISSING");
+        commissionLineage.set(original.id, original);
+      }
+    }
+  }
+  const commissionSources = {
+    ...sources,
+    events: commissionEvents,
+    lineageEvents: [...commissionLineage.values()].filter(
+      (row) => !commissionEvents.some((event) => event.id === row.id),
+    ),
+  } as PayrollCloseInputRecords["sources"];
+  const sourceResult = resolvePayrollCloseSources(commissionSources);
   if (!sourceResult.sources) unavailable("SOURCE_EVIDENCE_INVALID");
   const lineIds = new Set(sourceResult.sources.lines.map((line) => line.id));
   const priorEvidence = [];
@@ -1360,7 +1421,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         rule,
       })),
   );
-  const groups = resolvePayrollCloseGroupMetrics({ ...sources, requests });
+  const groups = resolvePayrollCloseGroupMetrics({ ...commissionSources, requests });
   if (!groups.groups) unavailable("GROUP_METRICS_UNAVAILABLE");
   const metrics = selected.configuration.staff.map((row) => {
     const groupMetrics: PayrollGroupMetric[] = groups
@@ -1407,6 +1468,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     state,
     configuration,
     sources,
+    commissionSources,
     carry,
     carrySettlements: settlements,
     metrics,
@@ -1440,6 +1502,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       prepaidSettlements: snapshot(prepaidSettlements),
       prepaidHistories: snapshot(prepaidHistories),
       corrections: correctionEvidence,
+      lifecyclePostings: snapshot(lifecyclePostings),
       priorCloses: priorEvidence,
     },
   };

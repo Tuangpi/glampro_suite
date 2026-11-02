@@ -69,6 +69,9 @@ export interface PayrollCloseInputRecords {
   state: PayrollCloseState;
   configuration: PayrollCloseConfigurationRecords;
   sources: PayrollCloseLegacyRecords & PayrollCloseCollectionRecords;
+  /** Authoritative commission-only projection; operational sources above continue
+   * to drive inventory, money collection and cash-settlement reconciliation. */
+  commissionSources?: PayrollCloseLegacyRecords;
   carry: PayrollCloseCarryRecords;
   metrics: z.input<typeof metricSchema>[];
 }
@@ -84,7 +87,14 @@ export function resolvePayrollCloseInputs(raw: PayrollCloseInputRecords) {
   }
   if (raw.state.periodKey !== scope.periodKey || raw.sources.timeZone !== scope.timeZone)
     throw new Error("Payroll input evidence has inconsistent period or timezone.");
-  const sources = resolvePayrollCloseLegacyExclusion(raw.sources);
+  const commissionSources = raw.commissionSources ?? raw.sources;
+  if (
+    commissionSources.tenantId !== scope.tenantId ||
+    commissionSources.periodKey !== scope.periodKey ||
+    commissionSources.timeZone !== scope.timeZone
+  )
+    throw new Error("Payroll commission posting has inconsistent salon, month or timezone scope.");
+  const sources = resolvePayrollCloseLegacyExclusion(commissionSources);
   const inventory = resolvePayrollCloseInventory({
     ...raw.sources,
     operations: raw.inventoryOperations,
@@ -119,7 +129,7 @@ export function resolvePayrollCloseInputs(raw: PayrollCloseInputRecords) {
   ].sort();
   const configuration = resolvePayrollCloseConfiguration({ ...scope, requiredStaffIds });
   const groups = resolvePayrollCloseGroupMetrics({
-    ...raw.sources,
+    ...commissionSources,
     requests: (configuration.configuration?.staff ?? []).flatMap((row) =>
       (row.version?.definition.incentives ?? [])
         .filter(

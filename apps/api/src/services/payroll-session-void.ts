@@ -55,8 +55,8 @@ export async function voidPayrollSession(
       where: { id: redemption.holdingId },
       data: { quantityRemaining: { increment: redemption.quantity } },
     });
-    await voidRedemptionCommissionEvidence(tx, redemptionId, actor.id);
     const at = new Date();
+    await voidRedemptionCommissionEvidence(tx, redemptionId, actor.id, at);
     await tx.customerRedemption.update({ where: { id: redemptionId }, data: { revertedAt: at } });
     await tx.auditLog.create({
       data: {

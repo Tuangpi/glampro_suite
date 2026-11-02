@@ -1,5 +1,34 @@
 # Glampro Suite — progress
 
+## November 2, 2026 — CP-005 M2 DONE
+
+Completed next-open-period correction handling across supported ordinary/prepaid
+whole-sale voids and all refund families, preserving actual settlement/restoration
+dates and frozen approved history. Independent lifecycle posting evidence and a
+separate commission projection prevent deferred commission from moving cash.
+
+Final M2 acceptance **55/55**, payroll unit checks **430/430**, related lifecycle
+regression **128/128**; broader acceptance/sale **121 tests: 115 passed, 0 failed,
+6 separately gated skips**. API types, shared/API build, affected lint/format and
+whitespace checks pass. Details, initial failed attempts and execution boundaries:
+`docs/commission_payroll/{PROGRESS,CLOSE_ACCEPTANCE}.md`, `/tmp/m2-lifecycle-*`.
+M1/M2 DONE; CP-005 remains IN PROGRESS, M3–M5 TODO. Only the identity-verified
+disposable DB was used; no application DB/schema/dependency, mounting, activation,
+deployment, commit or push changes. Older M2-open entries below are historical.
+
+## November 2, 2026 — M2 session-only void posting checkpoint
+
+CP-005 M2 remains IN PROGRESS. Session-only void reversals now honor approved
+periods with frozen historical posting evidence, independent VOID inventory and
+preserved restoration occurrence. Deterministic approval-first/void-first DB races,
+retry uniqueness, stale approval, corrupted posting refusal and next-month approval
+are covered. Related regression **131/131**, final expanded M2 checks **3/3**,
+focused expiry/race rerun **7/7**, unit checks **36/36** pass; API types,
+shared/API build, affected lint and diff checks pass. Evidence `/tmp/m2-*`;
+details and remaining whole-sale/refund families in
+`docs/commission_payroll/PROGRESS.md`. Only the identity-checked disposable DB was
+used. No schema/migration, application DB, mounting, activation or deployment.
+
 ## November 2, 2026 — M1-19 DONE; M1 complete
 
 Final gate review accepts **19 DONE, 0 IN PROGRESS, 0 TODO; CP-005 M1 DONE** for
