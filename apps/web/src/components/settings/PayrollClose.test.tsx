@@ -109,6 +109,8 @@ it("approved months are immutable and payout recording is a separate owner actio
 it("adjustments carry a revision and reason but never a client actor", async () => {
   mount(false);
   const user = await load();
+  expect(screen.queryByRole("columnheader", { name: "Salary" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Take home" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Approve payroll" })).not.toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText("Adjustment staff"), "staff");
   await user.type(screen.getByLabelText("Adjustment amount"), "12.30");

@@ -1,5 +1,68 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — CP-005 M4 DONE; M5 IN PROGRESS
+
+Mounted `/api/payroll-close` in the real application and Settings → Payroll close.
+Owner/manager actions use authenticated salon-wide scope; manager/self-service
+responses omit salary and raw input inventories. Cashiers cannot read statements.
+Frozen reads, reasoned adjustments/approval and separate actual payout confirmation
+pass real HTTP and Chrome acceptance. No funds are transferred or earnings activated.
+
+Verification: mounted HTTP/state/projection **14/14**, Chrome **8/8**, full API **1,386
+tests: 1,130 passed, 0 failed, 256 explicit opt-in skips**, full web **981/981**,
+enabled CP-005 payroll acceptance **204 tests: 201 passed, 0 failed, 3 separately
+gated CP004 skips**. API/web typecheck, lint and builds pass. Measured real HTTP
+calculation for 50 staff/50 cash receipts **1,154.2 ms**; not an MTD benchmark.
+
+M5 is not accepted: remaining manager/carry mounted browser flows and broader
+plan-volume performance/final money review are explicitly tracked in
+`docs/commission_payroll/APPLICATION_CLOSE_ACCEPTANCE.md`. CP-003A/006/007 and
+production release remain separately gated. Only the verified disposable DB was
+written. Initial mock/immutable fixture cleanup failures and CPU-loaded web timeouts
+were resolved and complete reruns passed; no assertions/constraints disabled.
+
+## November 2, 2026 — M3 carry and plan-switch acceptance
+
+**M3 DONE; M1–M3 DONE. CP-005 remains IN PROGRESS; M4/M5 TODO.**
+
+- Added `payroll-carry-switch.acceptance.test.ts`: authoritative loading and real
+  opening/settlement, plan publication/assignment, checkout, calculate and approval
+  writers. Historical salary/classification events are explicit synthetic fixtures,
+  not reconstructed production history.
+- Focused acceptance **17/17**, zero failures/skips/cancellations:
+  `/tmp/m3-acceptance-verified.{log,exit}`. Covers three-month component carry,
+  four-decimal many-to-one mapping, retained keys across rate/plan changes,
+  fractional fixed-unit carry, incompatible/missing mapping refusal and explicit
+  write-offs, exact ten-decimal fallback debt, both directions of fallback/plan
+  switching, departed staff, stale approval and unchanged frozen prior statements.
+- Four real PostgreSQL-blocking orderings cover settlement/approval and
+  assignment/approval. Assignment race tests model the month boundary with a
+  clock-only wrapper around the unchanged authoritative loader. Failed writers
+  leave no partial close/audit or assignment; recalculated results reconcile.
+- Fixed persisted plan-version loading: project schema fields explicitly rather
+  than feeding DB audit columns to a strict calculation schema. Added approved
+  plan-based month guards to prospective assignment/publication checks; legacy
+  commission-period locks alone did not cover those frozen months.
+- Payroll unit tests **430/430** (`/tmp/m3-units-final.*`), shared **305/305**
+  (`/tmp/m3-shared.*`), API typecheck/build and full API lint pass
+  (`/tmp/m3-{types-final,build-final,lint-all}.*`).
+- Initial fixture failures (statement field/rate precedence and race ordering),
+  accidental nested test registration, and an event-loop cancellation were fixed,
+  not counted as passes. The final fixture retains a bounded-race process keepalive.
+  A resumed run first failed because the earlier disposable cluster no longer
+  existed. A fresh cluster `/tmp/cp005-m3-apyc3kkj` replayed all **69 migrations**;
+  verified PostgreSQL 18.6/UTC, role `postgres`, database `payroll_close_test`,
+  `127.0.0.1:55485`. Only this disposable target was written after resumption.
+- Broader supported payroll/prepaid and real sale-service regression: **274 tests,
+  271 passed, 0 failed/cancelled, 3 separately gated CP004 package/value lifecycle
+  skips**, `/tmp/m3-regression-verified.{log,exit}`. Includes the original 16 M3
+  cases; the added new-version case passes in the final 17-case focused run.
+  Earlier foreground broad/remainder attempts timed out; the detached complete
+  run above exited zero.
+- No application DB,
+  schema/migration source, dependency, provider payment, API/UI mounting, earnings
+  activation, deployment, commit or push change. M4/M5 remain gated.
+
 ## November 2, 2026 — M2 DONE: lifecycle posting separated from cash occurrence
 
 CP-005 M1 and M2 are DONE; M3–M5 remain TODO. No API/UI mounting or earnings activation.

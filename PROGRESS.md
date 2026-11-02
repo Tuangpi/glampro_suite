@@ -1,5 +1,44 @@
 # Glampro Suite — progress
 
+## November 2, 2026 — CP-005 M4 DONE; M5 IN PROGRESS
+
+Mounted `/api/payroll-close` in the real application and Settings → Payroll close.
+Owner/manager actions use authenticated salon-wide scope; manager/self-service
+responses omit salary and raw input inventories. Cashiers cannot read statements.
+Frozen reads, reasoned adjustments/approval and separate actual payout confirmation
+pass real HTTP and Chrome acceptance. No funds are transferred or earnings activated.
+
+Verification: mounted HTTP/state/projection **14/14**, Chrome **8/8**, full API **1,386
+tests: 1,130 passed, 0 failed, 256 explicit opt-in skips**, full web **981/981**,
+enabled CP-005 payroll acceptance **204 tests: 201 passed, 0 failed, 3 separately
+gated CP004 skips**. API/web typecheck, lint and builds pass. Measured real HTTP
+calculation for 50 staff/50 cash receipts **1,154.2 ms**; not an MTD benchmark.
+
+M5 is not accepted: remaining manager/carry mounted browser flows and broader
+plan-volume performance/final money review are explicitly tracked in
+`docs/commission_payroll/APPLICATION_CLOSE_ACCEPTANCE.md`. CP-003A/006/007 and
+production release remain separately gated. Only the verified disposable DB was
+written. Initial mock/immutable fixture cleanup failures and CPU-loaded web timeouts
+were resolved and complete reruns passed; no assertions/constraints disabled.
+
+## November 2, 2026 — CP-005 M3 DONE
+
+M1–M3 DONE; CP-005 remains IN PROGRESS, M4/M5 TODO. Real opening/settlement,
+published plan/assignment, checkout and default-loader calculate/approve acceptance
+passes **17/17**. Exact cross-period base/unit/fallback debt, stable keys/new
+versions, explicit mapping/write-off, fallback/plan switches, departed staff and
+four PostgreSQL-blocking approval orderings reconcile. Fixed persisted plan
+version projection and prospective approved-plan-month configuration guards.
+
+Broader payroll/prepaid/sale-service regression **274 tests, 271 passed, 0 failed,
+0 cancelled, 3 separately gated CP004 lifecycle skips**; payroll units **430/430**,
+shared **305/305**, API typecheck/build/full lint and affected formatting pass.
+Details and earlier unsuccessful attempts:
+`docs/commission_payroll/{PROGRESS,CLOSE_ACCEPTANCE}.md`, `/tmp/m3-*`.
+Fresh identity-verified disposable PostgreSQL `/tmp/cp005-m3-apyc3kkj` only;
+69 migrations replayed there. No application DB/schema/dependency changes,
+mounting, activation, provider payments, deployment, commit or push.
+
 ## November 2, 2026 — CP-005 M2 DONE
 
 Completed next-open-period correction handling across supported ordinary/prepaid

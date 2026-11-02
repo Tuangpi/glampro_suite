@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
 import { after, before, beforeEach, test } from "node:test";
 import type { AddressInfo } from "node:net";
-import express from "express";
+import { createApp } from "../app.js";
 import type { GlobalRole } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { signAccessToken } from "../lib/tokens.js";
-import { errorHandler } from "../middleware/errorHandler.js";
-import { payrollCloseRouter } from "./payroll-close.routes.js";
 
 const restorers: (() => void)[] = [];
 function replace<T extends object>(target: T, key: keyof T, value: unknown) {
@@ -17,10 +15,7 @@ function replace<T extends object>(target: T, key: keyof T, value: unknown) {
     Reflect.set(target, key, original);
   });
 }
-const app = express();
-app.use(express.json());
-app.use("/payroll-close", payrollCloseRouter);
-app.use(errorHandler);
+const app = createApp();
 let server: ReturnType<typeof app.listen>;
 let base: string;
 let role: GlobalRole;
@@ -38,7 +33,7 @@ const token = (overrides: Partial<Parameters<typeof signAccessToken>[0]> = {}) =
     ...overrides,
   }).token;
 async function request(path = "/2026-09", body?: unknown, bearer: string | null = token()) {
-  return fetch(`${base}/payroll-close${path}`, {
+  return fetch(`${base}/api/payroll-close${path}`, {
     method: body === undefined ? "GET" : "POST",
     headers: {
       "Content-Type": "application/json",
@@ -176,7 +171,7 @@ test("suspended salons cannot mutate payroll", async () => {
   assert.equal(transactions, 0);
 });
 test("outlet-scoped close reads refuse rather than exposing salon-wide payroll", async () => {
-  const response = await fetch(`${base}/payroll-close/2026-09`, {
+  const response = await fetch(`${base}/api/payroll-close/2026-09`, {
     headers: { Authorization: `Bearer ${token()}`, "x-outlet-id": "branch" },
   });
   assert.equal(response.status, 403);
@@ -188,4 +183,11 @@ test("own-statement reads do not expose another staff route to staff or managers
     assert.equal((await request("/2026-09/statements/other")).status, 403);
     assert.equal((await request("/2026-09/statement")).status, 404);
   }
+});
+
+test("cashiers cannot read even their own payroll statement", async () => {
+  role = "CASHIER";
+  assert.equal((await request("/2026-09/statement")).status, 403);
+  assert.equal((await request()).status, 403);
+  assert.equal(transactions, 0);
 });

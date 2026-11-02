@@ -20,6 +20,7 @@ import MessagingCard from "@/components/settings/MessagingCard";
 import ResourcesCard from "@/components/settings/ResourcesCard";
 import CommissionRules from "@/components/settings/CommissionRules";
 import PayrollPlans from "@/components/settings/PayrollPlans";
+import PayrollWorkspace from "@/components/settings/PayrollWorkspace";
 import CommissionMatrix from "@/components/settings/CommissionMatrix";
 import CommissionAttributionPolicy from "@/components/settings/CommissionAttributionPolicy";
 
@@ -72,6 +73,11 @@ const SETTINGS_SECTIONS = [
     id: "team",
     label: "Team & commissions",
     description: "Your team and company commission defaults.",
+  },
+  {
+    id: "payroll",
+    label: "Payroll close",
+    description: "Monthly payroll review, frozen statements and separate payout confirmation.",
   },
   {
     id: "messages",
@@ -188,6 +194,7 @@ export default function Settings() {
                     </>
                   )}
                   {section.id === "team" && <TeamSettings canEdit={canEdit} />}
+                  {section.id === "payroll" && <PayrollWorkspace />}
                   {section.id === "messages" && <MessagingCard canEdit={canEdit} />}
                   {section.id === "privacy" && (
                     <>

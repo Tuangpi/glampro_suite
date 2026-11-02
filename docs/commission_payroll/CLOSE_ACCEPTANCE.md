@@ -1,5 +1,58 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 2, 2026 — CP-005 M4 DONE; M5 IN PROGRESS
+
+Mounted `/api/payroll-close` in the real application and Settings → Payroll close.
+Owner/manager actions use authenticated salon-wide scope; manager/self-service
+responses omit salary and raw input inventories. Cashiers cannot read statements.
+Frozen reads, reasoned adjustments/approval and separate actual payout confirmation
+pass real HTTP and Chrome acceptance. No funds are transferred or earnings activated.
+
+Verification: mounted HTTP/state/projection **14/14**, Chrome **8/8**, full API **1,386
+tests: 1,130 passed, 0 failed, 256 explicit opt-in skips**, full web **981/981**,
+enabled CP-005 payroll acceptance **204 tests: 201 passed, 0 failed, 3 separately
+gated CP004 skips**. API/web typecheck, lint and builds pass. Measured real HTTP
+calculation for 50 staff/50 cash receipts **1,154.2 ms**; not an MTD benchmark.
+
+M5 is not accepted: remaining manager/carry mounted browser flows and broader
+plan-volume performance/final money review are explicitly tracked in
+`docs/commission_payroll/APPLICATION_CLOSE_ACCEPTANCE.md`. CP-003A/006/007 and
+production release remain separately gated. Only the verified disposable DB was
+written. Initial mock/immutable fixture cleanup failures and CPU-loaded web timeouts
+were resolved and complete reruns passed; no assertions/constraints disabled.
+
+## November 2, 2026 — M3 carry and plan-switch acceptance
+
+**M3 DONE; M1–M3 DONE. CP-005 remains IN PROGRESS; M4/M5 TODO.**
+
+Focused real-writer/default-loader acceptance: **17/17**, no skips/failures or
+cancellations, `/tmp/m3-acceptance-verified.{log,exit}`.
+
+| Gate                         | Verified behavior                                                                                                                                                      |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Cross-period balances        | Three approved months; exact four-decimal bases and ten-decimal fallback money; no repeated base percentage or debt repricing                                          |
+| Component changes            | Retained keys/new rates, many-to-one mapping, fractional fixed-unit mapping, incompatible or absent target refusal, explicit audited write-off                         |
+| Plan/fallback transitions    | Neither direction silently converts base debt to money or drops fallback debt; partial fallback write-off refuses                                                      |
+| Historical integrity         | Departed debt staff retained, frozen reads and prior state hashes unchanged, changed settlements/assignments invalidate draft approval                                 |
+| Concurrent approval          | Four deterministic PostgreSQL-blocking orderings: settlement first/approval first and assignment first/approval first; failed writes do not append partial audit/state |
+| Published plans              | Persisted DB metadata projected out before strict plan-version validation; default loader calculates with actual published versions                                    |
+| Approved month configuration | Prospective publication/assignment guards include plan-based closes independently of legacy period locks; future changes remain allowed                                |
+
+Historical configuration events are synthetic fixtures. Opening/settlement,
+publication/assignment, checkout and monthly transitions use real writers. Plan
+race approval wraps the real loader only to advance the test clock at the month
+boundary; it does not substitute input records. Payroll unit **430/430**, shared
+**305/305**, full API lint, API typecheck and shared/API build pass. Full execution
+boundaries, earlier failed attempts and disposable DB identity are in PROGRESS.md.
+No mounted API/UI, browser release, performance acceptance or earnings activation
+is implied; those remain M4/M5 gates.
+
+Broader payroll/prepaid/default-loader and real sale-service regression: **274
+tests, 271 passed, 0 failed/cancelled, 3 separately gated CP004 package/value
+lifecycle skips**, `/tmp/m3-regression-verified.{log,exit}`. Original 16 M3 cases
+are included; the additional new-version case passes in the final 17-case run.
+Earlier timed-out partial broad attempts are not passing evidence.
+
 ## November 2, 2026 — M2 DONE: lifecycle posting separated from cash occurrence
 
 CP-005 M1 and M2 are DONE; M3–M5 remain TODO. No API/UI mounting or earnings activation.

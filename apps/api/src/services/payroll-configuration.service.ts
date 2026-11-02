@@ -146,6 +146,15 @@ async function today(tx: Transaction) {
 async function prospective(tx: Transaction, date: string) {
   if (date < (await today(tx)))
     throw badRequest("Configuration changes must be today or future dated.");
+  // The plan-based close is independent of the legacy commission-period table.
+  // Both writers share the tenant lock, so an assignment/publication cannot win
+  // after approval and change the configuration of a frozen payroll month.
+  const approvedCloses = await tx.payrollClose.findMany({
+    where: { status: "APPROVED" },
+    select: { periodKey: true },
+  });
+  if (approvedCloses.some((close) => date <= payrollMonthEnd(close.periodKey)))
+    throw conflict("The effective date would change an approved payroll close.");
   // Compare using each frozen period's own zone, not a potentially changed salon zone.
   const locked = await tx.commissionPeriod.findMany({
     where: { OR: [{ lockedAt: { not: null } }, { approvedAt: { not: null } }] },

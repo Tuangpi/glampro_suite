@@ -18,9 +18,13 @@ import {
 import { authorizeStoredPayrollCarry } from "../services/payroll-close-authorizations.js";
 import { payrollOpeningCarrySchema } from "../services/payroll-close-opening.js";
 import { payrollCarrySettlementSchema } from "../services/payroll-close-settlements.js";
+import {
+  payrollCloseView,
+  payrollCommissionStatementView,
+} from "../services/payroll-close-view.js";
 
-/** Not mounted until CP-005 lifecycle and HTTP acceptance are complete.
- * This boundary never accepts source records, a loader, or a calculation snapshot. */
+/** This boundary never accepts source records, a loader, or a calculation snapshot.
+ * Response projections omit raw inputs and protect salary information. */
 export const payrollCloseRouter = Router();
 payrollCloseRouter.use(auth, requireModule("staff"));
 const period = (req: Parameters<RequestHandler>[0]) =>
@@ -62,21 +66,32 @@ const settlement = reasoned.extend(
 
 payrollCloseRouter.get(
   "/:period/statement",
-  handle((req) => {
+  requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),
+  handle(async (req) => {
     const scope = currentScope();
     if (scope?.kind !== "tenant" || !scope.actorId) throw forbidden();
-    return readStoredPayrollStatement(period(req), scope.actorId);
+    return payrollCommissionStatementView(
+      await readStoredPayrollStatement(period(req), scope.actorId),
+    );
   }),
 );
 payrollCloseRouter.get(
   "/:period/statements/:staffId",
   owner,
-  handle((req) => readStoredPayrollStatement(period(req), String(req.params.staffId))),
+  handle(async (req) => {
+    const statement = await readStoredPayrollStatement(period(req), String(req.params.staffId));
+    return { staff: statement.staff, result: statement.result, payroll: statement.payroll };
+  }),
 );
 payrollCloseRouter.get(
   "/:period",
   management,
-  handle((req) => readStoredPayrollClose(period(req))),
+  handle(async (req) =>
+    payrollCloseView(
+      await readStoredPayrollClose(period(req)),
+      req.user!.globalRole === "SUPER_ADMIN",
+    ),
+  ),
 );
 payrollCloseRouter.get(
   "/:period/carry",
@@ -92,7 +107,7 @@ payrollCloseRouter.post(
     calculateStoredPayrollClose(
       period(req),
       validated<z.infer<typeof revision>>(req, "body").expectedRevision,
-    ),
+    ).then((state) => payrollCloseView(state, req.user!.globalRole === "SUPER_ADMIN")),
   ),
 );
 payrollCloseRouter.post(
@@ -102,7 +117,9 @@ payrollCloseRouter.post(
   validate(reasoned),
   handle((req) => {
     const input = validated<z.infer<typeof reasoned>>(req, "body");
-    return approveStoredPayrollClose(period(req), input.expectedRevision, input.reason);
+    return approveStoredPayrollClose(period(req), input.expectedRevision, input.reason).then(
+      (state) => payrollCloseView(state, true),
+    );
   }),
 );
 payrollCloseRouter.post(
@@ -117,7 +134,7 @@ payrollCloseRouter.post(
     return adjustStoredPayrollClose(period(req), input.expectedRevision, {
       ...input.adjustment,
       actorId: scope.actorId,
-    });
+    }).then((state) => payrollCloseView(state, req.user!.globalRole === "SUPER_ADMIN"));
   }),
 );
 payrollCloseRouter.post(
@@ -132,7 +149,7 @@ payrollCloseRouter.post(
       input.expectedRevision,
       input.reference,
       input.reason,
-    );
+    ).then((state) => payrollCloseView(state, true));
   }),
 );
 payrollCloseRouter.post(

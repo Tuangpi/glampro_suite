@@ -1400,7 +1400,14 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     ...common,
     events: configurationEvents as PayrollCloseInputRecords["configuration"]["events"],
     versions: versions.map((row) => ({
-      ...payrollPlanVersionSchema.parse(row),
+      ...payrollPlanVersionSchema.parse({
+        id: row.id,
+        planId: row.planId,
+        versionNo: row.versionNo,
+        status: row.status,
+        effectiveFrom: row.effectiveFrom,
+        definition: row.definition,
+      }),
       tenantId: row.tenantId,
     })),
     staff,

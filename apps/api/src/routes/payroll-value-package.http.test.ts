@@ -167,6 +167,7 @@ before(() => {
         },
       },
       tenant: { findUniqueOrThrow: async () => ({ timeZone: "Asia/Singapore" }) },
+      payrollClose: { findMany: async () => [] },
     });
   });
   server = app.listen(0, "127.0.0.1");

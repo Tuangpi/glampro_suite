@@ -265,7 +265,8 @@ export async function readStoredPayrollStatement(period: string, staffId: string
   return prisma.$transaction(async (tx) => {
     await lockCommissionConfiguration(tx, scope.tenantId);
     const user = await tx.user.findFirst({ where: { id: scope.actorId, disabled: false } });
-    if (!user) throw forbidden("Payroll actor unavailable.");
+    if (!user || !["SUPER_ADMIN", "MANAGER", "STAFF"].includes(user.globalRole))
+      throw forbidden("Payroll actor unavailable.");
     const verified = await verifiedPayrollClose(tx, periodKey);
     if (!verified) throw notFound("Payroll close not found.");
     return readFrozenPayrollStatement(verified.state, staffId, {

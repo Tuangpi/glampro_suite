@@ -335,6 +335,9 @@ test("frozen statement reads isolate own data and require verified owner for oth
   assert.equal(result.payroll.takeHome, "2000.00");
   assert.equal(readFrozenPayrollStatement(approved(), "departed", owner).staff.id, "departed");
   assert.throws(() => readFrozenPayrollStatement(approved(), "departed", manager));
+  assert.throws(() =>
+    readFrozenPayrollStatement(approved(), "departed", { ...self, role: "CASHIER" }),
+  );
   assert.throws(() => readFrozenPayrollStatement(approved(), "departed", { ...self, id: "other" }));
   assert.throws(() =>
     readFrozenPayrollStatement(approved(), "departed", { ...self, disabled: true }),

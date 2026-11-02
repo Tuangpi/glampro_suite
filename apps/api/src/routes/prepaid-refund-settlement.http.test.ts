@@ -172,6 +172,7 @@ function transaction() {
       },
     },
     tenant: { findUniqueOrThrow: async () => ({ timeZone: "Asia/Singapore" }) },
+    payrollClose: { findMany: async () => [] },
     prepaidRefundSettlement: {
       create: async ({ data }: { data: SettlementRow }) => {
         settlements.push(data);

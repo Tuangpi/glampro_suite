@@ -252,7 +252,8 @@ export function readFrozenPayrollStatement(
   staffId: string,
   actor: PayrollCloseActor,
 ): PayrollStatement {
-  if (actor.disabled || !actor.id) throw forbidden("A current salon actor is required.");
+  if (actor.disabled || !actor.id || !["SUPER_ADMIN", "MANAGER", "STAFF"].includes(actor.role))
+    throw forbidden("A current authorized salon actor is required.");
   if (actor.id !== staffId) permitted(actor, true);
   if (state.status !== "APPROVED" || !state.calculation)
     throw conflict("Only approved statements are available through frozen statement reads.");

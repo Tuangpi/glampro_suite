@@ -1,5 +1,24 @@
 # CP-003 readiness and plan lifecycle browser acceptance
 
+## CP-005 mounted close browser acceptance — November 2, 2026
+
+The additional opt-in `apps/api/src/services/payroll-close-browser.acceptance.test.ts`
+uses the same extracted Chrome-pipe helper with real createApp/Vite/PostgreSQL.
+Use only `127.0.0.1:55485/payroll_close_test`, verified `/tmp/cp005-*` UTC data
+directory, `NODE_ENV=test`, synthetic JWT_SECRET and
+`CORS_ORIGINS=http://127.0.0.1:55175`. Enable `RUN_CP005_BROWSER_ACCEPTANCE=true`;
+port 55175 must be free. No schema migration or application DB access is performed.
+Run the test with `node --import tsx --test` from the repository root.
+
+Final run: 8/8 including seven subcases, `/tmp/m4-browser.{log,exit}`. It covers
+owner calculate/adjust/approve/payout, missing reason refusal, frozen results,
+manager salary redaction and direct owner-action refusal, failed read/retry, outlet
+scope refusal, staff/cashier denial. Synthetic signed access tokens bootstrap real
+auth/me; this is not login/2FA/token-refresh acceptance. No response mocks.
+Detailed boundaries and unaccepted M5 paths: APPLICATION_CLOSE_ACCEPTANCE.md.
+
+## Earlier CP-003 configuration acceptance
+
 The opt-in test at
 `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/apps/api/src/services/payroll-preview-browser.acceptance.test.ts`
 starts the real API and Vite web app and drives installed headless Chrome over its

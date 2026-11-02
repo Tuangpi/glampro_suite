@@ -4,6 +4,7 @@ import { loginForRouteTest } from "../test-support/route-login.js";
 import "dotenv/config";
 
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { after, before, describe, it } from "node:test";
@@ -26,7 +27,7 @@ import { after, before, describe, it } from "node:test";
  * here, because a cashier must not have to sign out to sell a bundle they just bought.
  *
  * Gated on `DATABASE_URL`, like the other integration suites: it creates two salons,
- * signs in for real, and removes everything it made.
+ * signs in for real, and retains immutable receipts in fresh per-run tenants.
  */
 const databaseUrl = process.env["DATABASE_URL"];
 process.env.DATABASE_URL ??= "postgresql://glampro:glampro@127.0.0.1:5432/glampro_test";
@@ -40,29 +41,17 @@ const { hashPassword } = await import("../lib/password.js");
 const { CORE_MODULE_CODES, MODULE_CODES } = await import("@glampro_suite/shared");
 
 const PASSWORD = "correct-horse-1";
-const DOMAIN = "sales-items-rt.test";
+const fixtureId = randomUUID();
+const DOMAIN = `sales-items-${fixtureId}.test`;
 const EMAIL = `owner@${DOMAIN}`;
 const CASHIER_EMAIL = `cashier@${DOMAIN}`;
 
-const TENANT_A = "sales-items-a";
-const TENANT_B = "sales-items-b";
+const TENANT_A = `sales-items-a-${fixtureId}`;
+const TENANT_B = `sales-items-b-${fixtureId}`;
 const TENANT_IDS = [TENANT_A, TENANT_B];
 
-/** Removes everything this file created, so runs are repeatable. */
-async function purge(): Promise<void> {
-  await runAsPlatform(async () => {
-    await prisma.tenantModule.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.package.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.valuePackage.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.giftCard.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.product.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.service.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    // Receipts intentionally prevent customer/staff cascades; remove fixture sales first.
-    await prisma.sale.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.user.deleteMany({ where: { email: { endsWith: `@${DOMAIN}` } } });
-    await prisma.tenant.deleteMany({ where: { id: { in: TENANT_IDS } } });
-  });
-}
+// Each run owns fresh tenant identities. Retain immutable receipts and payroll
+// evidence in the disposable database instead of bypassing source protections.
 
 /**
  * Two salons, one owner in A, and no add-ons for either.
@@ -262,7 +251,7 @@ async function dataOf<T>(response: Response): Promise<T> {
 
 /**
  * An id from **this** salon's seeded catalogue, read through the platform scope the
- * way `purge` does. Scoped to `TENANT_A` by name rather than trusting the first row,
+ * way the fixture does. Scoped to `TENANT_A` by name rather than trusting the first row,
  * so another suite seeding an "Aloha Cut" cannot hand this one a foreign id.
  */
 async function seededIdOf(kind: "SERVICE" | "PRODUCT"): Promise<string> {
@@ -284,7 +273,7 @@ async function seededIdOf(kind: "SERVICE" | "PRODUCT"): Promise<string> {
   return row.id;
 }
 
-/** The suite's own customer id, read through the platform scope the way `purge` does. */
+/** The suite's own customer id, read through the fixture's platform scope. */
 async function seededCustomerId(): Promise<string> {
   const row = await runAsPlatform(() =>
     prisma.customer.findFirstOrThrow({
@@ -395,7 +384,7 @@ async function completeBody(staffId?: string): Promise<Record<string, unknown>> 
  *
  * The suite's own shampoo is deliberately small (3) and the write tests above are eating
  * it, so a stock assertion against that row would be an assertion about test order. This
- * one is the hold's own evidence; `purge` clears it with the rest of the salon's catalogue.
+ * one is the hold's own evidence, retained with the synthetic salon's catalogue.
  */
 async function stockProduct(name: string, quantity: number): Promise<string> {
   const row = await runAsPlatform(() =>
@@ -454,7 +443,6 @@ describe(
     let ringedUp: ReceiptBody | undefined;
 
     before(async () => {
-      await purge();
       await seed();
 
       await new Promise<void>((resolve) => {
@@ -486,7 +474,6 @@ describe(
         }
         server.close((error) => (error ? reject(error) : resolve()));
       });
-      await purge();
     });
 
     it("serves paginated completed and void history to cashiers without leaking other tenants", async () => {

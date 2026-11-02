@@ -13,12 +13,17 @@ interface CloseView {
   revision: number;
   status: "OPEN" | "CALCULATED" | "APPROVED";
   adjustments: PayrollAdjustment[];
-  calculation: { statements: PayrollStatement[]; calculatedAt: string } | null;
+  calculation: {
+    statements: (Omit<PayrollStatement, "payroll"> & {
+      payroll: Partial<PayrollStatement["payroll"]>;
+    })[];
+    calculatedAt: string;
+  } | null;
   approval: { at: string; reason: string } | null;
   payout: { at: string; reference: string } | null;
 }
 
-/** Kept unmounted until the server lifecycle/permission acceptance gate is met. */
+/** Salon-wide close; the server enforces roles and independently redacts salaries. */
 export default function PayrollClose({
   canWrite,
   isOwner,
@@ -136,11 +141,12 @@ export default function PayrollClose({
               <thead>
                 <tr>
                   <th>Staff</th>
-                  <th>Salary</th>
+                  {isOwner && <th>Salary</th>}
                   <th>Commission</th>
                   <th>Incentive</th>
                   <th>Collection</th>
-                  <th>Take home</th>
+                  <th>Calculation detail</th>
+                  {isOwner && <th>Take home</th>}
                 </tr>
               </thead>
               <tbody>
@@ -150,11 +156,21 @@ export default function PayrollClose({
                       {row.staff.name}
                       {row.staff.disabled ? " (departed)" : ""}
                     </td>
-                    <td>{row.payroll.basicSalary}</td>
+                    {isOwner && <td>{row.payroll.basicSalary}</td>}
                     <td>{row.payroll.commission}</td>
                     <td>{row.payroll.incentive}</td>
                     <td>{row.payroll.collection}</td>
-                    <td>{row.payroll.takeHome}</td>
+                    <td>
+                      {row.result && (
+                        <details>
+                          <summary>Commission breakdown for {row.staff.name}</summary>
+                          <pre className="max-w-lg overflow-auto whitespace-pre-wrap">
+                            {JSON.stringify(row.result, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </td>
+                    {isOwner && <td>{row.payroll.takeHome}</td>}
                   </tr>
                 ))}
               </tbody>
