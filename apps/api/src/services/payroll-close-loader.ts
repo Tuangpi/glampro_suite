@@ -288,6 +288,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       tenderPayments,
       covered.lines,
       covered.evidence.redemptions.length,
+      false,
+      covered.evidence.sale.status === "VOID",
     );
     const monthlyTenders = payments.filter(
       (row) => row.saleId === saleId && row.method === "PACKAGE",
@@ -336,7 +338,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     | Awaited<ReturnType<typeof loadPayrollOrdinarySaleVoid>>
     | Awaited<ReturnType<typeof loadPayrollPurchaseSaleVoid>>
   >();
-  for (const sale of sales.filter((row) => row.status === "VOID" && !valueSales.has(row.id))) {
+  for (const sale of sales.filter(
+    (row) => row.status === "VOID" && !valueSales.has(row.id) && !saleCoverage.has(row.id),
+  )) {
     const purchase = sale.lines.some((line) =>
       ["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType),
     );

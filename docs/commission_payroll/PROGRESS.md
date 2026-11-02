@@ -1,5 +1,34 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — CP-005-M1-14 completion
+
+- M1-14 is **DONE within the reconciled writer scope**. Checklist: **14 DONE,
+  1 IN PROGRESS (17), 4 TODO (15, 16, 18, 19)**. M1 overall is still open;
+  M1-15 was not started.
+- Whole-sale restoration is verified as its own provenance: the original usage
+  sale stays VOID, its NO_MOVEMENT attestation binds sale/actor/time, and each
+  original session has an exact sale-wide reversal and hash-verified terminal
+  snapshot. No session-void manager request is invented. Fully covered package
+  tenders are verified without counting them as new cash. Mixed usage-sale voids
+  remain fail-closed, not implicitly enabled.
+- Session and whole-sale restoration each support active, expired-before-restore
+  and expired-after-restore purchase voids for NO_MOVEMENT/full money RETURNED.
+  Expiry replay moves only the ordinals available at expiry; later restorations
+  enter EXPIRED directly. Exact ordinal, quantity, net, tax and gross evidence
+  remains mandatory. Same-month retained net is 500.0000/0.0000 respectively.
+- Four cross-month cases approve the original month, restore and void in the next
+  month, reject the stale next-month draft, recalculate and approve. Later-month
+  collection is 0.0000/-500.0000 and the original approved-state hash is unchanged.
+- Corrupt draw/restore/expiry inventories, wrong values/ordinals, missing terminal
+  snapshots, missing purchase or usage cash attestations and missing/forged usage
+  reversals refuse. Existing real-writer spent/transferred refusal tests remain.
+- Acceptance runs on the verified disposable PostgreSQL 18 cluster only. Time
+  travel synchronizes the valuation clock query with the mocked POS Date clock
+  in the test process; actual writes, locks and constraints still use PostgreSQL.
+  No production clock, writer eligibility or historical funding was changed.
+- Verification details and scope are recorded in CLOSE_ACCEPTANCE below its
+  November 2 completion heading; earlier checkpoint limitations below are historical.
+
 ## November 2, 2026 — CP-005-M1-14 restored-session checkpoint
 
 - M1-14 remains **IN PROGRESS**. Current checklist: **13 DONE (supported scope),

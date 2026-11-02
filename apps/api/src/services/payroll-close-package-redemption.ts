@@ -51,6 +51,8 @@ export function verifyPayrollPackageRedemption(input: {
     revertedAt: Date | null;
   };
   purchase: unknown;
+  /** Independently attested whole-sale void; never inferred from a reverted row. */
+  saleVoid?: { voidedAt: Date; recordedAt: Date; actorId: string };
   /** Original holding rules only. Never substitute today's catalogue coverage. */
   redemptionRules: unknown;
   snapshot: {
@@ -123,7 +125,7 @@ function verifyRedemption(
     !Number.isSafeInteger(redemption.quantity) ||
     redemption.quantity <= 0 ||
     redemption.revertedAt !== null ||
-    sale.status !== "COMPLETED" ||
+    (sale.status !== "COMPLETED" && !(sale.status === "VOID" && input.saleVoid)) ||
     !sale.outletId ||
     sale.id !== redemption.saleId ||
     // POS writes the sale before drawing tenders in the same transaction. The
@@ -522,9 +524,19 @@ export function verifyPayrollRedemptionVoid(
         (value) =>
           terminal.eventHash === createHash("sha256").update(JSON.stringify(value)).digest("hex"),
       ) ||
-      reversal.sourceKey !== `session-void:${original.redemption.id}:${prior.id}` ||
+      reversal.sourceKey !==
+        (original.saleVoid
+          ? `void:${original.sale.id}:${prior.id}`
+          : `session-void:${original.redemption.id}:${prior.id}`) ||
       reversal.actorId !== terminal.actorId ||
-      reversal.reason !== "Manager voided source session" ||
+      reversal.reason !==
+        (original.saleVoid ? "Source sale voided" : "Manager voided source session") ||
+      (original.saleVoid &&
+        (original.sale.status !== "VOID" ||
+          terminal.actorId !== original.saleVoid.actorId ||
+          reversal.occurredAt < original.saleVoid.voidedAt ||
+          reversal.occurredAt > original.saleVoid.recordedAt ||
+          revertedAt > original.saleVoid.recordedAt)) ||
       reversal.occurredAt < prior.occurredAt ||
       reversal.createdAt < reversal.occurredAt ||
       reversal.occurredAt > revertedAt

@@ -1,5 +1,48 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 2 completion — M1-14
+
+M1-14's used/transferred scope is reconciled with the operational writers. Spent
+and transferred purchases (including transfer-back/restored-after-transfer) stay
+prohibited and leave evidence unchanged. Both session-specific and whole-sale
+restoration now load deleted session purchase holdings through calculate/approve.
+The whole-sale path retains the VOID sale and independently verifies its
+NO_MOVEMENT cash attestation and exact sale-wide reversal, rather than pretending
+that a manager session-void request exists.
+
+`payroll-void-restored-spend.acceptance.test.ts` covers twelve same-month shapes:
+session/whole-sale restoration × active/expired-before-restore/expired-after-restore
+× NO_MOVEMENT/full money RETURNED. It verifies exact retained cash, preserved
+capture snapshots, corruption refusal, stale-draft rejection and persisted approval.
+Four later-month cases additionally freeze an approved original month and verify
+unchanged history after restoring/voiding and approving the next month.
+Expiry journals reconcile the available ordinal subset at expiry, independently
+of sessions restored into the expired bucket later.
+
+Scope remains explicit: whole-sale usage voids here are fully session-covered and
+independently attested NO_MOVEMENT. Mixed usage-sale voids are not enabled, nor are
+mixed/credit-funded returned purchase voids (M1-16). No historical funding is
+invented and no writer eligibility is relaxed. M1-15 remains TODO; integrated
+matrix/race/final gates M1-17–19 are not claimed complete.
+
+Verification uses the identity-checked disposable PostgreSQL 18 database
+`127.0.0.1:55485/payroll_close_test`, cluster directory
+`/tmp/cp005-m1-14-n6d0gta5`, timezone UTC. The acceptance-only clock interception
+keeps the valuation SQL clock aligned with mocked POS time, without modifying
+production clock code or bypassing operational writes/constraints.
+
+Final verification on November 2, 2026:
+
+- Payroll and prepaid-refund-settlement regression, `RUN_CP005_ACCEPTANCE=true`,
+  `TZ=UTC`, `node --import tsx --test --test-concurrency=2`: **481 tests,
+  475 passed, 0 failed, 0 cancelled, 6 skipped**. Skips require separate browser
+  or CP004 opt-ins and are not claimed verified. All 23 restored-spend tests pass.
+- API typecheck, affected-file ESLint, shared/API build, affected-file Prettier
+  (including these three milestone documents), and `git diff --check`: passed.
+- Ephemeral logs: `/tmp/m114-final-regression.log`, `/tmp/m114-final-types.log`,
+  `/tmp/m114-final-lint.log`, `/tmp/m114-build.log`, `/tmp/m114-final-format.log`.
+  No mounted API/UI, browser, production or concurrency acceptance is claimed.
+
 ## November 2 continuation — M1-14 restored-session checkpoint
 
 M1-14 is **not complete**. Verified restored-session purchase voids use the real

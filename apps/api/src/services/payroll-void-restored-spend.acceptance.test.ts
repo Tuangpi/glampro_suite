@@ -18,6 +18,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mock, test } from "node:test";
+import pg from "pg";
 import { PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
@@ -101,7 +102,7 @@ async function setup(tag: string): Promise<Fixture> {
       const service = await prisma.service.create({
         data: { tenantId, name: "Credit service", memberPrice: "90", nonmemberPrice: "90" },
       });
-      const session = tag === "restored-session";
+      const session = tag.startsWith("restored-session");
       if (session)
         await prisma.packageValuationActivation.create({
           data: {
@@ -119,6 +120,7 @@ async function setup(tag: string): Promise<Fixture> {
               tenantId,
               name: "Two restored sessions",
               sessionCount: 2,
+              validityDays: tag.includes("expired") ? 1 : null,
               memberPrice: "545",
               nonmemberPrice: "545",
               commissionSettings: {
@@ -261,8 +263,28 @@ async function setup(tag: string): Promise<Fixture> {
 
 const tenantCase = (tag: string, work: (fixture: Fixture) => Promise<void>) => async () => {
   assertDisposableTarget();
-  const fixture = await setup(tag);
-  await runAsTenant(fixture.tenantId, () => work(fixture), fixture.ownerId);
+  // Keep the valuation SQL clock on the same deterministic timeline as the POS
+  // Date clock. All writes, locks, constraints and reconciliation use the real DB.
+  const query = pg.Client.prototype.query;
+  const clock = tag.startsWith("restored-session")
+    ? mock.method(pg.Client.prototype, "query", function (this: pg.Client, ...args: unknown[]) {
+        const config = args[0] as { text?: string; values?: unknown[] } | undefined;
+        if (config?.text?.includes("clock_timestamp() AT TIME ZONE 'UTC'"))
+          args[0] = {
+            ...config,
+            text: "SELECT $1::timestamp(3) AS at",
+            values: [new Date().toISOString()],
+          };
+        return Reflect.apply(query, this, args);
+      })
+    : null;
+  try {
+    const fixture = await setup(tag);
+    await runAsTenant(fixture.tenantId, () => work(fixture), fixture.ownerId);
+  } finally {
+    clock?.mock.restore();
+    mock.timers.reset();
+  }
 };
 
 const loadMonth = (fixture: Fixture) =>
@@ -288,178 +310,327 @@ const loadMonth = (fixture: Fixture) =>
     fixture.ownerId,
   );
 
-test(
-  "CP-005-M1-14 whole-sale session restoration remains an explicit monthly boundary",
-  { skip: disabled },
-  tenantCase("restored-session", async (fixture) => {
-    await voidSale(
-      fixture.spendId,
-      { reason: "Restore sessions by cancelling usage sale" },
-      fixture.ownerId,
-    );
-    await voidSale(
-      fixture.purchaseId,
-      {
-        reason: "Cancel purchase restored by whole-sale void",
-        cashDisposition: "NO_MOVEMENT",
-      },
-      fixture.ownerId,
-    );
-    assert.equal(
-      await prisma.customerPackageHolding.count({ where: { id: fixture.holdingId } }),
-      0,
-    );
-    // Both operations are writer-permitted, unlike spent/transferred purchases.
-    // Whole-sale restoration has different reversal provenance from a session void;
-    // do not normalize the sale status or silently accept it as equivalent.
-    await assert.rejects(loadMonth(fixture), /SALE_PACKAGE_COVERAGE_UNCONFIRMED/);
-  }),
-);
-
-for (const cashDisposition of ["NO_MOVEMENT", "RETURNED"] as const)
-  test(
-    `CP-005-M1-14 restored session purchase void ${cashDisposition} reconciles deleted holding through monthly approval`,
-    { skip: disabled },
-    tenantCase("restored-session", async (fixture) => {
-      const redemption = await prisma.customerRedemption.findFirstOrThrow({
-        where: { saleId: fixture.spendId },
-      });
-      await voidPayrollSession(fixture.spendId, redemption.id, {
-        expectedRevision: 0,
-        idempotencyKey: randomUUID(),
-        reason: "Restore session before cancelling purchase",
-      });
-      const before = await loadMonth(fixture);
-      await calculateStoredPayrollClose(before.periodKey, 0);
-      const originalSnapshot = await prisma.commissionRedemptionSnapshot.findFirstOrThrow({
-        where: { redemptionId: redemption.id, eventType: "CAPTURE" },
-      });
-      await voidSale(
-        fixture.purchaseId,
-        {
-          reason: "Cancel fully restored sessions",
-          cashDisposition,
-          ...(cashDisposition === "RETURNED"
-            ? {
-                returnedCash: {
-                  reference: "Full restored-session return",
-                  payouts: [{ method: "CASH" as const, amount: 545 }],
-                },
-              }
-            : {}),
-        },
-        fixture.ownerId,
-      );
-      assert.equal(
-        await prisma.customerPackageHolding.count({ where: { id: fixture.holdingId } }),
-        0,
-      );
-      const inputs = await loadMonth(fixture);
-      assert.equal(
-        payrollInputHash(
-          (
-            await prisma.commissionRedemptionSnapshot.findFirstOrThrow({
-              where: { id: originalSnapshot.id },
-            })
-          ).evidence,
-        ),
-        payrollInputHash(originalSnapshot.evidence),
-      );
-      assert.equal(
-        inputs.staff[0].collection,
-        cashDisposition === "RETURNED" ? "0.0000" : "500.0000",
-      );
-      assert.equal(payrollInputHash(await loadMonth(fixture)), payrollInputHash(inputs));
-      for (const corruption of [
-        "missing-draw",
-        "missing-restore",
-        "wrong-value",
-        "wrong-ordinals",
-        "duplicate-draw",
-        "missing-snapshot",
-        "missing-cash",
-      ] as const) {
-        await assert.rejects(
-          prisma.$transaction(async (tx) => {
-            const proxy = new Proxy(tx, {
-              get(target, key) {
-                if (key === "packageValuationMovement")
-                  return new Proxy(target.packageValuationMovement, {
-                    get(delegate, method) {
-                      if (method !== "findMany") return Reflect.get(delegate, method);
-                      return async (args: Parameters<typeof delegate.findMany>[0]) => {
-                        const rows = await delegate.findMany(args);
-                        if (corruption === "missing-draw")
-                          return rows.filter((row) => row.kind !== "REDEEM");
-                        if (corruption === "missing-restore")
-                          return rows.filter((row) => row.kind !== "RESTORE");
-                        if (corruption === "duplicate-draw")
-                          return [...rows, ...rows.filter((row) => row.kind === "REDEEM")];
-                        return rows.map((row) =>
-                          row.kind !== "RESTORE"
-                            ? row
-                            : {
-                                ...row,
-                                ...(corruption === "wrong-value"
-                                  ? { netCents: row.netCents + 1n }
-                                  : {}),
-                                ...(corruption === "wrong-ordinals"
-                                  ? { ordinals: [{ first: 2, last: 2 }] }
-                                  : {}),
-                              },
-                        );
-                      };
-                    },
-                  });
-                if (key === "auditLog")
-                  return new Proxy(target.auditLog, {
-                    get(delegate, method) {
-                      if (method !== "findMany") return Reflect.get(delegate, method);
-                      return async (args: Parameters<typeof delegate.findMany>[0]) =>
-                        (await delegate.findMany(args)).filter(
-                          (row) =>
-                            !(
-                              corruption === "missing-snapshot" &&
-                              row.action === SALE_VOID_PURCHASE_HOLDINGS_ACTION
-                            ) &&
-                            !(
-                              corruption === "missing-cash" &&
-                              row.action === "sale.void.cash-disposition"
-                            ),
-                        );
-                    },
-                  });
-                return Reflect.get(target, key);
-              },
-            });
-            return loadAuthoritativePayrollCloseInputs(proxy, openPayrollClose(inputs.periodKey));
-          }),
-          /UNCONFIRMED/,
-          corruption,
+for (const restoration of ["session", "whole-sale"] as const)
+  for (const cashDisposition of ["NO_MOVEMENT", "RETURNED"] as const)
+    test(
+      `CP-005-M1-14 cross-month ${restoration} ${cashDisposition} preserves approved history`,
+      { skip: disabled },
+      tenantCase("restored-session-expired", async (fixture) => {
+        const originalInputs = await loadMonth(fixture);
+        await calculateStoredPayrollClose(originalInputs.periodKey, 0);
+        mock.timers.enable({ apis: ["Date"], now: new Date(originalInputs.endsAt) });
+        await approveStoredPayrollClose(
+          originalInputs.periodKey,
+          1,
+          "Approve original purchase and usage",
         );
-      }
-      mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
-      try {
-        await assert.rejects(
-          approveStoredPayrollClose(inputs.periodKey, 1, "Stale pre-void draft"),
+        const original = await prisma.payrollClose.findFirstOrThrow({
+          where: { periodKey: originalInputs.periodKey },
+        });
+        const originalHash = payrollInputHash(original.state);
+        mock.timers.reset();
+        mock.timers.enable({
+          apis: ["Date"],
+          now: new Date(new Date(originalInputs.endsAt).getTime() + 86400000),
+        });
+        const redemption = await prisma.customerRedemption.findFirstOrThrow({
+          where: { saleId: fixture.spendId },
+        });
+        if (restoration === "whole-sale")
+          await voidSale(
+            fixture.spendId,
+            {
+              reason: "Restore previous-month usage",
+              cashDisposition: "NO_MOVEMENT",
+            },
+            fixture.ownerId,
+          );
+        else
+          await voidPayrollSession(fixture.spendId, redemption.id, {
+            expectedRevision: 0,
+            idempotencyKey: randomUUID(),
+            reason: "Restore previous-month session",
+          });
+        mock.timers.tick(1000);
+        const before = await loadMonth(fixture);
+        await calculateStoredPayrollClose(before.periodKey, 0);
+        await voidSale(
+          fixture.purchaseId,
+          {
+            reason: "Void previous-month restored expired purchase",
+            cashDisposition,
+            ...(cashDisposition === "RETURNED"
+              ? {
+                  returnedCash: {
+                    reference: "Previous-month purchase returned",
+                    payouts: [{ method: "CASH" as const, amount: 545 }],
+                  },
+                }
+              : {}),
+          },
+          fixture.ownerId,
         );
-        const draft = await calculateStoredPayrollClose(inputs.periodKey, 1);
+        const after = await loadMonth(fixture);
+        assert.equal(
+          after.staff[0].collection,
+          cashDisposition === "RETURNED" ? "-500.0000" : "0.0000",
+        );
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date(after.endsAt) });
+        await assert.rejects(
+          approveStoredPayrollClose(after.periodKey, 1, "Reject stale purchase inputs"),
+        );
+        await calculateStoredPayrollClose(after.periodKey, 1);
         const approved = await approveStoredPayrollClose(
-          inputs.periodKey,
+          after.periodKey,
           2,
-          "Reviewed restored session purchase void",
+          "Approve later restoration and void",
         );
         assert.equal(approved.status, "APPROVED");
-        assert.equal(payrollInputHash(approved.calculation), payrollInputHash(draft.calculation));
-        const frozen = await prisma.payrollClose.findFirstOrThrow({
-          where: { periodKey: inputs.periodKey },
-        });
-        assert.equal((frozen.state as { status?: string }).status, "APPROVED");
-      } finally {
-        mock.timers.reset();
-      }
-    }),
-  );
+        assert.equal(
+          payrollInputHash(
+            (await prisma.payrollClose.findFirstOrThrow({ where: { id: original.id } })).state,
+          ),
+          originalHash,
+        );
+      }),
+    );
+
+for (const restoration of ["session", "whole-sale"] as const)
+  for (const expiry of ["active", "expired-before-restore", "expired-after-restore"] as const)
+    for (const cashDisposition of ["NO_MOVEMENT", "RETURNED"] as const)
+      test(
+        `CP-005-M1-14 ${restoration} ${expiry} purchase void ${cashDisposition} reconciles deleted holding through monthly approval`,
+        { skip: disabled },
+        tenantCase(`restored-session-${expiry}`, async (fixture) => {
+          const redemption = await prisma.customerRedemption.findFirstOrThrow({
+            where: { saleId: fixture.spendId },
+          });
+          const expiresAt = (
+            await prisma.customerPackageHolding.findFirstOrThrow({
+              where: { id: fixture.holdingId },
+            })
+          ).expiresAt;
+          if (expiry === "expired-before-restore")
+            mock.timers.enable({ apis: ["Date"], now: new Date(expiresAt!.getTime() + 1000) });
+          try {
+            if (restoration === "whole-sale")
+              await voidSale(
+                fixture.spendId,
+                {
+                  reason: "Restore sessions by cancelling usage sale",
+                  cashDisposition: "NO_MOVEMENT",
+                },
+                fixture.ownerId,
+              );
+            else
+              await voidPayrollSession(fixture.spendId, redemption.id, {
+                expectedRevision: 0,
+                idempotencyKey: randomUUID(),
+                reason: "Restore session before cancelling purchase",
+              });
+          } finally {
+            mock.timers.reset();
+          }
+          const before = await loadMonth(fixture);
+          await calculateStoredPayrollClose(before.periodKey, 0);
+          const originalSnapshot = await prisma.commissionRedemptionSnapshot.findFirstOrThrow({
+            where: { redemptionId: redemption.id, eventType: "CAPTURE" },
+          });
+          if (expiry !== "active")
+            mock.timers.enable({ apis: ["Date"], now: new Date(expiresAt!.getTime() + 2000) });
+          try {
+            await voidSale(
+              fixture.purchaseId,
+              {
+                reason: "Cancel fully restored sessions",
+                cashDisposition,
+                ...(cashDisposition === "RETURNED"
+                  ? {
+                      returnedCash: {
+                        reference: "Full restored-session return",
+                        payouts: [{ method: "CASH" as const, amount: 545 }],
+                      },
+                    }
+                  : {}),
+              },
+              fixture.ownerId,
+            );
+          } finally {
+            mock.timers.reset();
+          }
+          assert.equal(
+            await prisma.customerPackageHolding.count({ where: { id: fixture.holdingId } }),
+            0,
+          );
+          const inputs = await loadMonth(fixture);
+          assert.equal(
+            payrollInputHash(
+              (
+                await prisma.commissionRedemptionSnapshot.findFirstOrThrow({
+                  where: { id: originalSnapshot.id },
+                })
+              ).evidence,
+            ),
+            payrollInputHash(originalSnapshot.evidence),
+          );
+          assert.equal(
+            inputs.staff[0].collection,
+            cashDisposition === "RETURNED" ? "0.0000" : "500.0000",
+          );
+          assert.equal(payrollInputHash(await loadMonth(fixture)), payrollInputHash(inputs));
+          for (const corruption of [
+            "missing-draw",
+            "missing-restore",
+            "wrong-value",
+            "wrong-ordinals",
+            "duplicate-draw",
+            "missing-snapshot",
+            "missing-cash",
+            "missing-usage-reversal",
+            "wrong-usage-reversal-key",
+            "wrong-usage-reversal-actor",
+            "missing-terminal-snapshot",
+            ...(restoration === "whole-sale" ? ["missing-usage-cash"] : []),
+            ...(expiry !== "active" ? ["missing-expiry", "wrong-expiry-value"] : []),
+          ] as const) {
+            await assert.rejects(
+              prisma.$transaction(async (tx) => {
+                const proxy = new Proxy(tx, {
+                  get(target, key) {
+                    if (key === "payrollSourceEvent")
+                      return new Proxy(target.payrollSourceEvent, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) =>
+                            (await delegate.findMany(args)).flatMap((row) => {
+                              if (row.saleId !== fixture.spendId || row.sourceType !== "REVERSAL")
+                                return [row];
+                              if (corruption === "missing-usage-reversal") return [];
+                              return [
+                                {
+                                  ...row,
+                                  ...(corruption === "wrong-usage-reversal-key"
+                                    ? { sourceKey: "forged:void" }
+                                    : {}),
+                                  ...(corruption === "wrong-usage-reversal-actor"
+                                    ? { actorId: randomUUID() }
+                                    : {}),
+                                },
+                              ];
+                            });
+                        },
+                      });
+                    if (key === "commissionRedemptionSnapshot")
+                      return new Proxy(target.commissionRedemptionSnapshot, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) =>
+                            (await delegate.findMany(args)).filter(
+                              (row) =>
+                                !(
+                                  corruption === "missing-terminal-snapshot" &&
+                                  row.eventType === "VOID"
+                                ),
+                            );
+                        },
+                      });
+                    if (key === "packageValuationMovement")
+                      return new Proxy(target.packageValuationMovement, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) => {
+                            const rows = await delegate.findMany(args);
+                            if (corruption === "missing-expiry")
+                              return rows.filter((row) => row.kind !== "EXPIRE_OUT");
+                            if (corruption === "wrong-expiry-value")
+                              return rows.map((row) =>
+                                row.kind === "EXPIRE_IN"
+                                  ? { ...row, netCents: row.netCents + 1n }
+                                  : row,
+                              );
+                            if (corruption === "missing-draw")
+                              return rows.filter((row) => row.kind !== "REDEEM");
+                            if (corruption === "missing-restore")
+                              return rows.filter((row) => row.kind !== "RESTORE");
+                            if (corruption === "duplicate-draw")
+                              return [...rows, ...rows.filter((row) => row.kind === "REDEEM")];
+                            return rows.map((row) =>
+                              row.kind !== "RESTORE"
+                                ? row
+                                : {
+                                    ...row,
+                                    ...(corruption === "wrong-value"
+                                      ? { netCents: row.netCents + 1n }
+                                      : {}),
+                                    ...(corruption === "wrong-ordinals"
+                                      ? { ordinals: [{ first: 2, last: 2 }] }
+                                      : {}),
+                                  },
+                            );
+                          };
+                        },
+                      });
+                    if (key === "auditLog")
+                      return new Proxy(target.auditLog, {
+                        get(delegate, method) {
+                          if (method !== "findMany") return Reflect.get(delegate, method);
+                          return async (args: Parameters<typeof delegate.findMany>[0]) =>
+                            (await delegate.findMany(args)).filter(
+                              (row) =>
+                                !(
+                                  corruption === "missing-snapshot" &&
+                                  row.action === SALE_VOID_PURCHASE_HOLDINGS_ACTION
+                                ) &&
+                                !(
+                                  corruption === "missing-cash" &&
+                                  row.action === "sale.void.cash-disposition"
+                                ) &&
+                                !(
+                                  corruption === "missing-usage-cash" &&
+                                  row.action === "sale.void.cash-disposition" &&
+                                  row.targetId === fixture.spendId
+                                ),
+                            );
+                        },
+                      });
+                    return Reflect.get(target, key);
+                  },
+                });
+                return loadAuthoritativePayrollCloseInputs(
+                  proxy,
+                  openPayrollClose(inputs.periodKey),
+                );
+              }),
+              /UNCONFIRMED/,
+              corruption,
+            );
+          }
+          mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+          try {
+            await assert.rejects(
+              approveStoredPayrollClose(inputs.periodKey, 1, "Stale pre-void draft"),
+            );
+            const draft = await calculateStoredPayrollClose(inputs.periodKey, 1);
+            const approved = await approveStoredPayrollClose(
+              inputs.periodKey,
+              2,
+              "Reviewed restored session purchase void",
+            );
+            assert.equal(approved.status, "APPROVED");
+            assert.equal(
+              payrollInputHash(approved.calculation),
+              payrollInputHash(draft.calculation),
+            );
+            const frozen = await prisma.payrollClose.findFirstOrThrow({
+              where: { periodKey: inputs.periodKey },
+            });
+            assert.equal((frozen.state as { status?: string }).status, "APPROVED");
+          } finally {
+            mock.timers.reset();
+          }
+        }),
+      );
 
 test(
   "CP-005 a purchase whose credit is spent cannot be voided at all",

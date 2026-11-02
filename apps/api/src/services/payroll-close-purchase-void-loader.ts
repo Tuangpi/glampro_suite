@@ -2,7 +2,12 @@ import { Prisma } from "../../generated/prisma/client.js";
 import { commissionAttributionSchema, minimumPayrollPackageDeposit } from "@glampro_suite/shared";
 import { conflict } from "../lib/http-error.js";
 import { allocateCollection } from "../lib/commission-collection.js";
-import { packagePurchaseValue, packageRangeValue } from "../lib/package-valuation.js";
+import {
+  packagePurchaseValue,
+  packageRangeValue,
+  takePackageSessions,
+  restorePackageSessions,
+} from "../lib/package-valuation.js";
 import { loadSaleVoidCashConfirmation } from "./sale-void-cash.js";
 import { loadSaleVoidPurchaseHoldings } from "./sale-void-purchase-evidence.js";
 import {
@@ -422,9 +427,33 @@ export async function loadPayrollPurchaseSaleVoid(
         )
           return fail();
       }
+      // Expiry moves only the ordinals still available at the expiry instant.
+      // Sessions restored later enter EXPIRED directly, not through the old pair.
+      let expiryOrdinals = [{ first: 1, last: p.grantedSessions }];
+      if (expired) {
+        try {
+          for (const row of [...usageMovements].sort(
+            (a, b) => a.effectiveAt.getTime() - b.effectiveAt.getTime(),
+          )) {
+            if (row.effectiveAt >= p.originalExpiresAt!) continue;
+            const ranges = ordinalsSchema.parse(row.ordinals);
+            if (row.kind === "REDEEM") {
+              const taken = takePackageSessions(p.grantedSessions, expiryOrdinals, -row.quantity);
+              if (payrollInputHash(taken.allocated) !== payrollInputHash(ranges)) return fail();
+              expiryOrdinals = taken.remaining;
+            } else {
+              expiryOrdinals = restorePackageSessions(p.grantedSessions, expiryOrdinals, ranges);
+            }
+          }
+        } catch {
+          return fail();
+        }
+      }
       for (const row of movements) {
         const expiry = row.kind === "EXPIRE_OUT" || row.kind === "EXPIRE_IN";
         const sign = row.kind === "GRANT" || row.kind === "EXPIRE_IN" ? 1 : -1;
+        const expectedOrdinals = expiry ? expiryOrdinals : [{ first: 1, last: pkg.quantity }];
+        const expectedValue = packageRangeValue(p, p.grantedSessions, expectedOrdinals);
         const sourceKey =
           row.kind === "GRANT"
             ? "grant"
@@ -444,11 +473,11 @@ export async function loadPayrollPurchaseSaleVoid(
           row.sourceKey !== sourceKey ||
           (expiry ? row.actorId !== null : !row.actorId) ||
           (row.kind === "PURCHASE_VOID" && row.actorId !== sale.voidedById) ||
-          row.quantity !== sign * pkg.quantity ||
-          row.netCents !== BigInt(sign) * p.netCents ||
-          row.taxCents !== BigInt(sign) * p.taxCents ||
-          row.grossCents !== BigInt(sign) * p.grossCents ||
-          payrollInputHash(row.ordinals) !== payrollInputHash([{ first: 1, last: pkg.quantity }]) ||
+          row.quantity !== sign * expectedValue.quantity ||
+          row.netCents !== BigInt(sign) * expectedValue.netCents ||
+          row.taxCents !== BigInt(sign) * expectedValue.taxCents ||
+          row.grossCents !== BigInt(sign) * expectedValue.grossCents ||
+          payrollInputHash(row.ordinals) !== payrollInputHash(expectedOrdinals) ||
           !during(row.effectiveAt) ||
           !during(row.recordedAt) ||
           row.recordedAt < row.effectiveAt ||

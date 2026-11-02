@@ -1,4 +1,5 @@
 import { loadPayrollPrepaidSettlement } from "./payroll-close-prepaid-settlement.js";
+import { loadSaleVoidCashConfirmation } from "./sale-void-cash.js";
 import { findPackageHoldingRemovedByPurchaseVoid } from "./payroll-close-package-removed-holding.js";
 import { verifyPayrollCorrectionPosting } from "./payroll-correction-posting.js";
 import { redemptionCommissionEvidenceSchema } from "./redemption-commission-evidence.js";
@@ -409,7 +410,21 @@ export async function loadPayrollPackageRedemptionHistory(
       (holding.expiresAt && redemption.usedAt >= holding.expiresAt)
     )
       return unavailable();
+    const saleCash =
+      usage.status === "VOID" ? await loadSaleVoidCashConfirmation(tx, tenantId, usage.id) : null;
+    if (
+      saleCash &&
+      (!redemption.revertedAt || saleCash.confirmation.cashDisposition !== "NO_MOVEMENT")
+    )
+      return unavailable();
     const original = {
+      ...(saleCash && {
+        saleVoid: {
+          voidedAt: new Date(saleCash.confirmation.voidedAt),
+          recordedAt: new Date(saleCash.confirmation.recordedAt),
+          actorId: saleCash.confirmation.actorId,
+        },
+      }),
       tenantId,
       timeZone: tenant.timeZone,
       purchase,
@@ -431,7 +446,7 @@ export async function loadPayrollPackageRedemptionHistory(
       ],
     };
     const voided = redemption.revertedAt ? verifyPayrollRedemptionVoid(chain) : null;
-    if (voided) {
+    if (voided && !saleCash) {
       const audits = voidAudits.filter((row) => {
         const metadata = row.metadata as Record<string, unknown> | null;
         return metadata?.redemptionId === redemption.id;
@@ -466,13 +481,23 @@ export async function loadPayrollPackageRedemptionHistory(
         audit.createdAt < redemption.revertedAt!
       )
         return unavailable();
-      voids.push({ redemptionId: redemption.id, audit, ...voided });
     } else if (
       voidAudits.some(
         (row) => (row.metadata as Record<string, unknown> | null)?.redemptionId === redemption.id,
       )
     )
       return unavailable();
+    if (voided)
+      voids.push({
+        redemptionId: redemption.id,
+        audit:
+          saleCash?.audit ??
+          voidAudits.find(
+            (row) =>
+              (row.metadata as Record<string, unknown> | null)?.redemptionId === redemption.id,
+          )!,
+        ...voided,
+      });
     corrections.push({
       redemptionId: redemption.id,
       revisions: voided?.corrections ?? verifyPayrollRedemptionCorrections(chain),

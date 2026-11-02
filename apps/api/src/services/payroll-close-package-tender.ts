@@ -30,12 +30,13 @@ export function verifyPayrollPackageTenders(
   coverage: { saleLineId: string; coveredQuantity: number; remainingQuantity: number }[],
   redemptionCount: number,
   allowCredit = false,
+  verifiedWholeSaleVoid = false,
 ) {
   const fail = (): never => {
     throw conflict("Authoritative payroll inputs unavailable: PACKAGE_TENDER_UNCONFIRMED.");
   };
   if (
-    sale.status !== "COMPLETED" ||
+    (sale.status !== "COMPLETED" && !(sale.status === "VOID" && verifiedWholeSaleVoid)) ||
     sale.collectionCurrency !== "SGD" ||
     new Set(payments.map((row) => row.id)).size !== payments.length ||
     payments.some((row) => row.tenantId !== sale.tenantId || row.saleId !== sale.id) ||

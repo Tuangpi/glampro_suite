@@ -17,7 +17,8 @@ const recordHash = (value: unknown) => payrollInputHash(JSON.parse(JSON.stringif
  * source lock. No current catalogue, inferred tender coverage or silent deduping.
  * Original coverage survives audited session voids; restoration does not reprice
  * the completed receipt's ordinary units. Credit inventory can be delegated to the
- * sale-wide value allocator; this loader never verifies credit itself. Sale voids block.
+ * sale-wide value allocator; this loader never verifies credit itself. Whole-sale
+ * voids require independently attested restoration of every original session.
  */
 export async function loadPayrollSalePackageCoverage(
   tx: PayrollCloseTransaction,
@@ -55,7 +56,7 @@ export async function loadPayrollSalePackageCoverage(
     !sale ||
     sale.id !== saleId ||
     sale.tenantId !== tenantId ||
-    sale.status !== "COMPLETED" ||
+    !["COMPLETED", "VOID"].includes(sale.status) ||
     sale.collectionCurrency !== "SGD" ||
     !sale.outletId ||
     refunds.length ||
@@ -154,6 +155,14 @@ export async function loadPayrollSalePackageCoverage(
     }
   }
   if (reconciled.size !== redemptions.length) return unavailable();
+  if (
+    sale.status === "VOID" &&
+    (!redemptions.length ||
+      redemptions.some((row) => !row.revertedAt) ||
+      sale.lines.some((line) => coverage.get(line.id) !== line.quantity) ||
+      events.some((row) => !["REDEMPTION", "CORRECTION", "REVERSAL"].includes(row.sourceType)))
+  )
+    return unavailable();
   const verifiedEvents = new Map(
     histories.flatMap((history) =>
       [...history.evidence.related, ...history.evidence.correctionReversals].map(
