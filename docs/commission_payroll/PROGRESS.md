@@ -1,5 +1,87 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — CP-005-M1-14 restored-session checkpoint
+
+- M1-14 remains **IN PROGRESS**. Current checklist: **13 DONE (supported scope),
+  2 IN PROGRESS (14, 17), 4 TODO**; historical counts below describe earlier state.
+- Real-writer eligibility tests verify credit and session purchases refuse while
+  spent, after transfer, after transfer-back, and after restoring usage following
+  transfer. Each refusal preserves sale, holdings, redemptions, balance/transfer/
+  valuation journals, payroll captures and tenant-scoped audit evidence.
+- Deleted session holdings are revived only from the actual hash-verified preserved
+  purchase-void snapshot bound to independently verified cash disposition; no
+  catalogue reconstruction or live-data backfill. Reconciliation requires complete
+  restoration, no transfers and exact REDEEM/RESTORE ordinal/value/actor/order evidence.
+- Session restoration via `voidPayrollSession`, then purchase void, supports
+  NO_MOVEMENT and full RETURNED through monthly recalculation and persisted approval.
+  Net retained collection is respectively 500.0000 and 0.0000. Missing draw, restore,
+  holding snapshot or cash attestation, wrong values/ordinals and duplicate draw
+  inventories refuse; pre-void drafts cannot approve stale inputs.
+- **Remaining required path:** whole-sale session restoration is permitted by the
+  writer, but monthly loading still refuses its different reversal provenance.
+  A real-writer regression records this boundary rather than conflating it with
+  prohibited spent/transferred voids. Restored-session expiry and cross-month
+  immutable-approved-history combinations remain unaccepted. Continue 14 before 15.
+- Corrected a pre-existing date-sensitive ownership fixture: recipient usage must
+  follow the real-clock transfer instead of always using November 2 midnight.
+  Its original missing-capture refusal assertion is unchanged.
+- Verification uses only a newly initialized disposable PostgreSQL 18 database at
+  `127.0.0.1:55485/payroll_close_test` with UTC and verified cluster identity.
+  Earlier `/tmp` cluster/logs were unavailable after resumption. Unit run: 424 passed,
+  zero failures/skips. API typecheck, affected-file ESLint and API/shared build exit 0.
+  Final integrated regression results are recorded in CLOSE_ACCEPTANCE.
+
+## November 1, 2026 — CP-005-M1 line-by-line tracking
+
+- Replaced the broad M1 remainder checklist with stable CP-005-M1-01–19 items in
+  [TASKS.md](TASKS.md#cp-005-m1--authoritative-lifecycle-loading-in-progress):
+  **13 DONE within supported scope, 1 IN PROGRESS, 5 TODO**. M1 overall remains
+  IN PROGRESS; counts do not measure effort or imply full acceptance.
+- Each item identifies its evidence and accepted scope or a concrete completion
+  condition. Completed M1 work is listed once; the top-of-file navigation points
+  directly to the current checklist instead of requiring readers to reconstruct
+  status from historical continuation notes.
+- Used/transferred purchase-void scope must be reconciled against real writer
+  eligibility, not automatically enabled: existing restored-spend acceptance records
+  refusal of still-spent/transferred operations. Legacy funding and mixed/credit
+  returns remain open; no policy decision or evidence backfill is implied.
+- Documentation-only restructuring; no new application tests or database actions
+  are claimed. M2–M5, existing release gates and prior implementation changes are
+  unchanged.
+
+## November 1, 2026 — active-sharing credit purchase voids
+
+- Removed the private-only snapshot restriction for explicit `sharedFamilyId`, not
+  legacy `familyId`. Preserved/revived credit retains its own pre-deletion consent;
+  no historical funding, membership or consent is inferred or backfilled.
+- Purchase-void loading replays independent balance consent and full owner family
+  membership history against that state. Both terminal removal family fields must
+  match the snapshot. The restored-spend loader uses the same exact comparison,
+  keeping complete spend/restoration/removal evidence and purchase seller history.
+- Real-writer cases cover unused shared credit with NO_MOVEMENT and RETURNED:
+  500.0000 retained net cash or 0.0000 after full return, respectively, with the
+  500.0000/-500.0000 purchase base pair. Seven independent missing/mismatched
+  evidence variants refuse per path. Pre-void drafts refuse approval; recalculation
+  and persisted approval pass, and later membership departure leaves approved
+  state unchanged. An additional restored-before-sharing case verifies deleted
+  holding revival, exact spend/restoration bases and persisted approval.
+- Verification uses a newly created disposable PostgreSQL cluster only, all
+  migrations replayed with UTC database sessions. The initial host-timezone setup
+  produced timestamp-order refusals (including existing tests); configuring that
+  disposable cluster to UTC resolved them without application code changes.
+- Final payroll service/regression selection: **456 passed, 0 failed, 6 skipped**
+  (462 tests, including three added real-writer paths); focused restored-spend
+  acceptance **7/7**. Logs: `/tmp/cp005-active-sharing-regression-final.log`,
+  `/tmp/cp005-active-sharing-restored.log`.
+- API typecheck, targeted ESLint, shared/API build, targeted Prettier and Git
+  whitespace checks pass. No web code changed; browser checks were not run.
+- Remaining M1: used/transferred purchase voids, legacy missing funding evidence,
+  mixed/credit-funded returns and complete lifecycle/corruption/race acceptance.
+  Active sharing during the original family spend, concurrent membership/void/close
+  races and browser acceptance are not newly claimed by this slice. No migration,
+  live data repair, provider payout, deployment, earnings activation or close
+  router/screen mounting. M1 and M2 remain IN PROGRESS; M3–M5 remain TODO.
+
 ## November 1, 2026 — returned-money purchase voids
 
 - A package or credit purchase that was paid in money can now be voided **and** its

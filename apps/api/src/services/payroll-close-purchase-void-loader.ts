@@ -2,7 +2,7 @@ import { Prisma } from "../../generated/prisma/client.js";
 import { commissionAttributionSchema, minimumPayrollPackageDeposit } from "@glampro_suite/shared";
 import { conflict } from "../lib/http-error.js";
 import { allocateCollection } from "../lib/commission-collection.js";
-import { packagePurchaseValue } from "../lib/package-valuation.js";
+import { packagePurchaseValue, packageRangeValue } from "../lib/package-valuation.js";
 import { loadSaleVoidCashConfirmation } from "./sale-void-cash.js";
 import { loadSaleVoidPurchaseHoldings } from "./sale-void-purchase-evidence.js";
 import {
@@ -18,6 +18,8 @@ import { payrollInputHash } from "./payroll-close-state.js";
 import { verifyPayrollOrdinaryVoidLine } from "./payroll-close-sale-void-loader.js";
 import { replayPayrollValueOwnership } from "./payroll-close-value-ownership.js";
 import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
+import { loadPayrollPackageRedemptionHistory } from "./payroll-close-redemption-loader.js";
+import { z } from "zod";
 import type { PayrollValueSharing } from "./payroll-close-value-sharing.js";
 import { resolvePayrollCloseVoids } from "./payroll-close-voids.js";
 import type { PayrollNoCashSaleVoid, PayrollReturnedCashSaleVoid } from "./payroll-close-voids.js";
@@ -124,7 +126,7 @@ export async function loadPayrollPurchaseSaleVoid(
         ? tx.sessionPackageTransferEvent.findMany({ where: { tenantId, holdingId: holding.id } })
         : tx.prepaidTransferEvent.findMany({ where: { tenantId, holdingId: holding.id } }),
     ]);
-    if (transfers.length || (line.itemType === "PACKAGE" && uses.length)) return fail();
+    if (transfers.length) return fail();
     if (line.itemType === "VALUE_PACKAGE" && uses.length) {
       // The writer permits purchase deletion only after all credit has returned.
       // Verify the whole surviving spend/restore ledger, not just revertedAt flags.
@@ -173,6 +175,8 @@ export async function loadPayrollPurchaseSaleVoid(
         r = removal[0];
       // Expiry/consent edits do not consume or transfer credit. Replay their
       // independent journals rather than substituting today's holding state.
+      // Active consent may survive until deletion; both removal family fields must
+      // match that independently replayed, pre-deletion consent below.
       // Removal is verified separately because ownership replay retains balances.
       const history = balances.filter((row) => row.kind !== "REMOVAL");
       if (history.some((row) => row.createdAt > r.createdAt || row.createdAt > sale.voidedAt!))
@@ -216,7 +220,7 @@ export async function loadPayrollPurchaseSaleVoid(
           expiresAt: expiresAt === null ? null : new Date(expiresAt),
           balances: history,
           transfers: [],
-          sharedFamilyId: null,
+          sharedFamilyId: credit.sharedFamilyId,
           sharing,
         });
       } catch {
@@ -245,8 +249,8 @@ export async function loadPayrollPurchaseSaleVoid(
         r.actorId !== sale.voidedById ||
         r.reason !== sale.voidReason ||
         r.saleId !== saleId ||
-        r.sharedFamilyId !== null ||
-        r.previousSharedFamilyId !== null ||
+        r.sharedFamilyId !== credit.sharedFamilyId ||
+        r.previousSharedFamilyId !== credit.sharedFamilyId ||
         (r.expiresAt?.toISOString() ?? null) !== (credit.expiresAt ?? null) ||
         r.previousCustomerId !== sale.customerId ||
         !r.amountBefore.equals(amount) ||
@@ -269,7 +273,7 @@ export async function loadPayrollPurchaseSaleVoid(
       });
       if (purchases.length !== 1) return fail();
       const p = purchases[0];
-      const [movements, states, activation] = await Promise.all([
+      const [allMovements, states, activation] = await Promise.all([
         tx.packageValuationMovement.findMany({
           where: { tenantId, purchaseId: p.id },
           orderBy: { id: "asc" },
@@ -277,6 +281,93 @@ export async function loadPayrollPurchaseSaleVoid(
         tx.packageValuationState.findMany({ where: { tenantId, purchaseId: p.id } }),
         tx.packageValuationActivation.findFirst({ where: { tenantId, id: p.activationId } }),
       ]);
+      // A fully restored package is operationally voidable. Reconcile every draw
+      // and restoration against audited payroll history AND the independent valuation
+      // journal before applying the existing full-grant/removal verification.
+      const history = uses.length
+        ? await loadPayrollPackageRedemptionHistory(tx, holding.id)
+        : null;
+      if (
+        history &&
+        (history.refund ||
+          history.voids.length !== uses.length ||
+          payrollInputHash(JSON.parse(JSON.stringify(history.evidence.redemptions))) !==
+            payrollInputHash(
+              JSON.parse(JSON.stringify([...uses].sort((a, b) => a.id.localeCompare(b.id)))),
+            ))
+      )
+        return fail();
+      const usageMovements = allMovements.filter((row) => ["REDEEM", "RESTORE"].includes(row.kind));
+      if (
+        usageMovements.length !== uses.length * 2 ||
+        new Set(allMovements.map((row) => row.id)).size !== allMovements.length ||
+        new Set(allMovements.map((row) => row.sourceKey)).size !== allMovements.length
+      )
+        return fail();
+      const ordinalsSchema = z.array(
+        z.object({ first: z.number().int().positive(), last: z.number().int().positive() }),
+      );
+      for (const use of uses) {
+        const restored = history!.voids.find((row) => row.redemptionId === use.id);
+        if (!restored || !use.revertedAt || use.revertedAt > sale.voidedAt!) return fail();
+        const draw = usageMovements.filter(
+          (row) => row.kind === "REDEEM" && row.sourceKey === `redeem:${use.id}`,
+        );
+        const restore = usageMovements.filter(
+          (row) => row.kind === "RESTORE" && row.sourceKey === `restore:${use.id}`,
+        );
+        if (draw.length !== 1 || restore.length !== 1) return fail();
+        const ranges = ordinalsSchema.safeParse(draw[0].ordinals);
+        if (!ranges.success) return fail();
+        let value;
+        try {
+          value = packageRangeValue(p, p.grantedSessions, ranges.data);
+        } catch {
+          return fail();
+        }
+        if (
+          value.quantity !== use.quantity ||
+          payrollInputHash(draw[0].ordinals) !== payrollInputHash(restore[0].ordinals)
+        )
+          return fail();
+        const captured = history!.evidence.snapshots.find(
+          (row) => row.redemptionId === use.id && row.eventType === "CAPTURE",
+        );
+        const capture = captured?.evidence as
+          { payrollSession?: { ordinals?: unknown } } | undefined;
+        if (
+          payrollInputHash(capture?.payrollSession?.ordinals ?? null) !==
+          payrollInputHash(draw[0].ordinals)
+        )
+          return fail();
+        for (const row of [draw[0], restore[0]]) {
+          const sign = row.kind === "REDEEM" ? -1n : 1n;
+          if (
+            row.tenantId !== tenantId ||
+            row.purchaseId !== p.id ||
+            row.customerId !== sale.customerId ||
+            !row.actorId ||
+            row.bucket !==
+              (p.originalExpiresAt && p.originalExpiresAt <= row.effectiveAt
+                ? "EXPIRED"
+                : "ACTIVE") ||
+            row.quantity !== Number(sign) * value.quantity ||
+            row.netCents !== sign * value.netCents ||
+            row.taxCents !== sign * value.taxCents ||
+            row.grossCents !== sign * value.grossCents ||
+            !during(row.effectiveAt) ||
+            !during(row.recordedAt) ||
+            row.recordedAt < row.effectiveAt ||
+            row.recordedAt > sale.voidedAt! ||
+            (row.kind === "REDEEM"
+              ? row.effectiveAt < use.usedAt || row.recordedAt > captured!.createdAt
+              : row.effectiveAt > use.revertedAt || row.actorId !== restored.actorId) ||
+            restore[0].effectiveAt <= draw[0].effectiveAt
+          )
+            return fail();
+        }
+      }
+      const movements = allMovements.filter((row) => !["REDEEM", "RESTORE"].includes(row.kind));
       const grants = movements.filter((row) => row.kind === "GRANT"),
         removals = movements.filter((row) => row.kind === "PURCHASE_VOID"),
         expiryOut = movements.filter((row) => row.kind === "EXPIRE_OUT"),
@@ -376,7 +467,8 @@ export async function loadPayrollPurchaseSaleVoid(
       journals.push({
         holdingId: holding.id,
         purchase: p,
-        movements,
+        movements: allMovements,
+        history,
         states,
         activation,
         uses,

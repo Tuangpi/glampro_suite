@@ -1,5 +1,70 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 2 continuation — M1-14 restored-session checkpoint
+
+M1-14 is **not complete**. Verified restored-session purchase voids use the real
+`voidPayrollSession` writer before voiding the purchase. Both NO_MOVEMENT and full
+RETURNED reconcile the verified deleted holding and redemption/restoration/valuation
+inventories through monthly calculation, stale-draft rejection and persisted approval.
+Missing evidence, wrong ordinal/value evidence and duplicate draw inventories refuse.
+Original capture evidence remains unchanged; post-approval cross-month lifecycle
+mutation and expired restored-session combinations are not claimed by these cases.
+
+Real writers still reject spent and any transferred credit/session purchase,
+including transfer-back and restored-after-transfer, without changing evidence.
+Whole-sale session restoration is a **different, permitted operation**, but its
+monthly reversal reconciliation remains fail-closed and required under M1-14;
+the added real-writer boundary test must not be read as acceptance of that path.
+
+See `payroll-purchase-void-eligibility.acceptance.test.ts` and
+`payroll-void-restored-spend.acceptance.test.ts` for executable scope. No eligibility
+rules, production data, historical funding or policy were relaxed/backfilled.
+
+Verification on November 2, 2026:
+
+- Disposable PostgreSQL 18, UTC, freshly deployed migrations; no production DB used.
+- `RUN_CP005_ACCEPTANCE=true`, `TZ=UTC`, `node --import tsx --test
+--test-concurrency=2` over 56 payroll/prepaid-refund-settlement test files:
+  **468 tests, 462 passed, 0 failed, 6 skipped**. The skipped suites require separate
+  browser/CP004 acceptance opt-ins; they are not claimed as verified here.
+- Separate payroll unit run: **424 passed, 0 failed, 0 skipped**.
+- API typecheck, affected-file ESLint, shared/API build, affected-file Prettier
+  check and `git diff --check`: successful. Regression log:
+  `/tmp/cp005-m1-14-regression.log` (ephemeral, not a repository artifact).
+
+## November 1 continuation — active-sharing credit purchase voids
+
+The hash-verified pre-deletion credit snapshot now permits explicit `sharedFamilyId`
+(legacy `familyId` remains refused). Purchase-void loading independently replays
+consent and owner membership, matching both terminal removal family fields to that
+state. Deleted holding revival preserves consent; restored-spend loading verifies
+the same exact removal state rather than requiring private credit.
+
+Real-writer acceptance added to `payroll-returned-purchase-void.acceptance.test.ts`:
+unused shared credit supports NO_MOVEMENT (500.0000 retained net) and full RETURNED
+(0.0000 retained net), with original/reversed purchase bases intact. Each path
+refuses seven corrupt read inventories: missing consent, membership history, live
+membership or family, foreign membership, and either removal family mismatch.
+Pre-void drafts refuse approval; recalculation and approval pass. Later membership
+departure does not rewrite the frozen approved state.
+
+`payroll-void-restored-spend.acceptance.test.ts` additionally verifies a private
+spend restored in full, then shared and purchase-voided with NO_MOVEMENT: deleted
+holding revival, full independent history, exact spend/restoration bases and
+persisted approval. Sharing during the original spend is not newly accepted here.
+
+Verification: payroll service/regression selection **456 passed, 0 failed,
+6 skipped** (462 tests); focused restored-spend acceptance **7/7**. API typecheck,
+targeted ESLint, shared/API build, targeted Prettier and Git whitespace checks pass.
+Logs: `/tmp/cp005-active-sharing-regression-final.log` and
+`/tmp/cp005-active-sharing-restored.log`. All database checks used a newly created,
+fully migrated disposable PostgreSQL cluster configured for UTC sessions.
+
+No application database changes, legacy evidence backfill or live activation.
+Remaining used/transferred shapes and full lifecycle/corruption/race coverage keep
+M1 open; close API/UI stay unmounted. Browser and new concurrent race acceptance
+are not claimed.
+
 ## November 1 continuation — returned-money purchase voids
 
 A purchase that was paid in money can now be voided and handed back in one act, and

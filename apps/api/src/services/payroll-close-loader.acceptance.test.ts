@@ -729,7 +729,15 @@ test(
         // Server-owned holding history remains separate from enabling monthly
         // usage coverage. Exercise real draw/capture writers on the isolated DB.
         mock.timers.reset();
-        mock.timers.enable({ apis: ["Date"], now: new Date("2026-11-02T00:00:00Z") });
+        // A recipient draw must follow the independently journalled transfer.
+        // The transfer uses the real DB clock; midnight becomes historical on
+        // November 2 and would otherwise mask the intended missing-capture check.
+        mock.timers.enable({
+          apis: ["Date"],
+          now: new Date(
+            Math.max(Date.parse("2026-11-02T00:00:00Z"), Date.parse(transfer.createdAt) + 1),
+          ),
+        });
         await prisma.$transaction(
           async (tx) => {
             const usage = await runAtOutlet(outlet.id, () =>

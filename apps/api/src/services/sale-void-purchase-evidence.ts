@@ -43,7 +43,7 @@ const snapshotSchema = z.object({
       amount: money,
       amountRemaining: money,
       familyId: z.null(),
-      sharedFamilyId: z.null(),
+      sharedFamilyId: id.nullable(),
     }),
   ),
 });

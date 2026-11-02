@@ -1119,6 +1119,7 @@ export function loaderFixture() {
     payrollCarryAuthorization: many("payrollCarryAuthorization", () => []),
     commissionRule: many("commissionRule", () => []),
     customerValuePackageHolding: many("customerValuePackageHolding", () => data.valueHoldings),
+    packagePurchaseSnapshot: many("packagePurchaseSnapshot", () => []),
     customerPackageHolding: {
       ...many("customerPackageHolding", () => data.packageHoldings),
       findFirst: async () => null,

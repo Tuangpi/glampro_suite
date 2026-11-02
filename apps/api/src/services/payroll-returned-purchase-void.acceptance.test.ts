@@ -20,10 +20,18 @@ import { PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
 import { createSale, voidSale } from "./sale.service.js";
+import {
+  createPrepaidFamily,
+  changePrepaidMembership,
+  sharePrepaid,
+} from "./prepaid-family.service.js";
+import { loadPayrollPurchaseSaleVoid } from "./payroll-close-purchase-void-loader.js";
+import { findValueHoldingRemovedByPurchaseVoid } from "./payroll-close-value-removed-holding.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import { openPayrollClose, payrollInputHash } from "./payroll-close-state.js";
 import { authorizeStoredPayrollCarry } from "./payroll-close-authorizations.js";
 import { calculateStoredPayrollClose, approveStoredPayrollClose } from "./payroll-close-store.js";
+import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
 const disabled = process.env.RUN_CP005_ACCEPTANCE !== "true";
 const shares = (staffId: string) => [{ staffId, share: 10000 }];
@@ -249,6 +257,178 @@ const returnAll = (amount = 545) => ({
     payouts: [{ method: "CASH" as const, amount }],
   },
 });
+
+for (const disposition of ["NO_MOVEMENT", "RETURNED"] as const) {
+  test(
+    `CP-005 actively shared unused credit purchase void ${disposition} freezes verified consent`,
+    { skip: disabled },
+    tenantCase(`shared-${disposition}`, async (fixture) => {
+      const family = await createPrepaidFamily(
+        fixture.customerId,
+        { name: "Shared purchase", confirmed: true, reason: "Owner requests family sharing" },
+        fixture.ownerId,
+      );
+      assert.ok(family);
+      const holding = await prisma.customerValuePackageHolding.findFirstOrThrow({
+        where: { saleLine: { saleId: fixture.purchaseId } },
+      });
+      await sharePrepaid(
+        fixture.customerId,
+        holding.id,
+        {
+          familyId: family.id,
+          confirmed: true,
+          expectedUpdatedAt: holding.updatedAt.toISOString(),
+          reason: "Owner consents to sharing this purchase",
+        },
+        fixture.ownerId,
+      );
+      const beforeVoid = await loadMonth(fixture);
+      const priorDraft = await calculateStoredPayrollClose(beforeVoid.periodKey, 0);
+      await voidSale(
+        fixture.purchaseId,
+        {
+          reason: "Customer cancels shared purchase",
+          ...(disposition === "RETURNED" ? returnAll() : { cashDisposition: "NO_MOVEMENT" }),
+        },
+        fixture.ownerId,
+      );
+      const inputs = await loadMonth(fixture);
+      assert.notEqual(payrollInputHash(inputs), payrollInputHash(beforeVoid));
+      assert.equal(
+        resolvedCash(inputs).cash!.salonCash,
+        disposition === "RETURNED" ? "0.0000" : "500.0000",
+      );
+      assert.deepEqual(
+        inputs.staff[0]!.calculation.lines.filter((row) => row.commissionType === "VP_SALE")
+          .map((row) => row.baseAmount)
+          .sort(),
+        ["-500.0000", "500.0000"],
+      );
+      const revived = await prisma.$transaction((tx) =>
+        findValueHoldingRemovedByPurchaseVoid(tx, fixture.tenantId, holding.id),
+      );
+      assert.equal(revived?.holding.sharedFamilyId, family.id);
+      assert.equal(
+        await prisma.customerValuePackageHolding.count({ where: { id: holding.id } }),
+        0,
+      );
+
+      // Corrupt independent read evidence, not the append-only operational journals.
+      // Every omission/mismatch must refuse without changing the existing draft.
+      for (const corruption of [
+        "MISSING_CONSENT",
+        "MISSING_MEMBERSHIP",
+        "MISSING_MEMBER",
+        "MISSING_FAMILY",
+        "FOREIGN_MEMBERSHIP",
+        "REMOVAL_CONSENT",
+        "REMOVAL_PREVIOUS_CONSENT",
+      ] as const) {
+        await assert.rejects(
+          prisma.$transaction((tx) =>
+            loadPayrollPurchaseSaleVoid(
+              new Proxy(tx, {
+                get(target, property, receiver) {
+                  if (
+                    ![
+                      "prepaidBalanceEvent",
+                      "prepaidFamilyEvent",
+                      "prepaidFamilyMember",
+                      "prepaidFamily",
+                    ].includes(String(property))
+                  )
+                    return Reflect.get(target, property, receiver);
+                  const delegate = Reflect.get(target, property, receiver);
+                  return new Proxy(delegate, {
+                    get(model, method) {
+                      if (method !== "findMany") return Reflect.get(model, method);
+                      return async (...args: unknown[]) => {
+                        const rows = await model.findMany(...args);
+                        if (
+                          (property === "prepaidFamilyEvent" &&
+                            corruption === "MISSING_MEMBERSHIP") ||
+                          (property === "prepaidFamilyMember" && corruption === "MISSING_MEMBER") ||
+                          (property === "prepaidFamily" && corruption === "MISSING_FAMILY")
+                        )
+                          return [];
+                        if (
+                          property === "prepaidFamilyEvent" &&
+                          corruption === "FOREIGN_MEMBERSHIP"
+                        )
+                          return rows.map((row: object) => ({ ...row, tenantId: "foreign" }));
+                        if (property === "prepaidBalanceEvent") {
+                          if (corruption === "MISSING_CONSENT")
+                            return rows.filter((row: { kind: string }) => row.kind !== "SHARING");
+                          return rows.map((row: { kind: string }) =>
+                            row.kind === "REMOVAL"
+                              ? {
+                                  ...row,
+                                  ...(corruption === "REMOVAL_CONSENT" && { sharedFamilyId: null }),
+                                  ...(corruption === "REMOVAL_PREVIOUS_CONSENT" && {
+                                    previousSharedFamilyId: null,
+                                  }),
+                                }
+                              : row,
+                          );
+                        }
+                        return rows;
+                      };
+                    },
+                  });
+                },
+              }) as PayrollCloseTransaction,
+              fixture.tenantId,
+              fixture.purchaseId,
+              "Asia/Singapore",
+            ),
+          ),
+          /Authoritative payroll inputs unavailable/,
+          corruption,
+        );
+      }
+      assert.equal((await prisma.payrollClose.findFirstOrThrow()).revision, priorDraft.revision);
+      mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+      let approved;
+      try {
+        await assert.rejects(
+          approveStoredPayrollClose(
+            inputs.periodKey,
+            priorDraft.revision,
+            "Reject stale shared draft",
+          ),
+          /changed|stale|recalculate/i,
+        );
+        const draft = await calculateStoredPayrollClose(inputs.periodKey, priorDraft.revision);
+        approved = await approveStoredPayrollClose(
+          inputs.periodKey,
+          draft.revision,
+          "Reviewed shared purchase void",
+        );
+        assert.equal(approved.status, "APPROVED");
+        assert.equal(payrollInputHash(approved.calculation), payrollInputHash(draft.calculation));
+      } finally {
+        mock.timers.reset();
+      }
+      // A later membership change invalidates live evidence, never the frozen approval.
+      const frozenHash = payrollInputHash(approved);
+      await changePrepaidMembership(
+        fixture.customerId,
+        {
+          familyId: null,
+          expectedFamilyId: family.id,
+          confirmed: true,
+          reason: "Customer leaves after purchase void",
+        },
+        fixture.ownerId,
+      );
+      assert.equal(
+        payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state),
+        frozenHash,
+      );
+    }),
+  );
+}
 
 test(
   "CP-005 a purchase void that returned the money nets to zero cash and approves",

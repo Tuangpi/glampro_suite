@@ -1,4 +1,5 @@
 import { loadPayrollPrepaidSettlement } from "./payroll-close-prepaid-settlement.js";
+import { findPackageHoldingRemovedByPurchaseVoid } from "./payroll-close-package-removed-holding.js";
 import { verifyPayrollCorrectionPosting } from "./payroll-correction-posting.js";
 import { redemptionCommissionEvidenceSchema } from "./redemption-commission-evidence.js";
 import { createHash } from "node:crypto";
@@ -31,7 +32,8 @@ const unavailable = (): never => {
 /** Internal, non-activating complete holding history. No client-supplied records.
  * Holds the same tenant lock as source writes. Supports ownership-reconciled, unreversed,
  * paid-session or sale-bound manager-override history, attribution correction
- * chains and audited session restorations. Purchase refunds/voids remain blocked.
+ * chains, audited session restorations and independently settled refunds. Deleted
+ * purchase holdings require verified void/cash snapshots and fully restored usage.
  * This does not reconcile coverage against OTHER holdings on a sale, and
  * must not on its own enable the monthly close's usage-coverage gate.
  */
@@ -54,7 +56,11 @@ export async function loadPayrollPackageRedemptionHistory(
   )
     throw forbidden("Package payroll history is not permitted.");
   const tenant = await tx.tenant.findUniqueOrThrow({ where: { id: tenantId } });
-  const holding = await tx.customerPackageHolding.findFirst({ where: { tenantId, id: holdingId } });
+  const live = await tx.customerPackageHolding.findFirst({ where: { tenantId, id: holdingId } });
+  const removed = live
+    ? null
+    : await findPackageHoldingRemovedByPurchaseVoid(tx, tenantId, holdingId);
+  const holding = live ?? removed?.holding;
   if (!holding?.saleLineId) return unavailable();
   const line = await tx.saleLine.findFirst({ where: { tenantId, id: holding.saleLineId } });
   if (!line || line.itemType !== "PACKAGE") return unavailable();
@@ -65,14 +71,16 @@ export async function loadPayrollPackageRedemptionHistory(
   if (
     !sale ||
     sale.tenantId !== tenantId ||
-    sale.status !== "COMPLETED" ||
+    (removed ? sale.status !== "VOID" : sale.status !== "COMPLETED") ||
     sale.collectionCurrency !== "SGD"
   )
     return unavailable();
-  const siblings = await tx.customerPackageHolding.findMany({
-    where: { tenantId, saleLineId: line.id },
-    orderBy: { id: "asc" },
-  });
+  const siblings = removed
+    ? removed.packages.filter((row) => row.saleLineId === line.id)
+    : await tx.customerPackageHolding.findMany({
+        where: { tenantId, saleLineId: line.id },
+        orderBy: { id: "asc" },
+      });
   if (siblings.length !== 1 || siblings[0].id !== holding.id) return unavailable();
   const purchase = verifyPayrollPackagePurchase(siblings, line, sale, tenantId);
   const [
@@ -119,6 +127,15 @@ export async function loadPayrollPackageRedemptionHistory(
     }),
   ]);
   const redemptionIds = new Set(redemptions.map((row) => row.id));
+  // A deleted purchase can be replayed only after every session was independently
+  // restored and without any ownership transfer. Purchase reversal is verified by
+  // the monthly void loader; it must not be mistaken for an orphan usage reversal.
+  if (
+    removed &&
+    (transfers.length ||
+      redemptions.some((row) => !row.revertedAt || row.revertedAt > sale.voidedAt!))
+  )
+    return unavailable();
   const allocationIds = new Set(receipts.flatMap((row) => row.allocations.map((part) => part.id)));
   const refundEvents = events.filter(
     (row) => row.sourceId === holdingId && row.sourceType === "PACKAGE_REFUND",
@@ -168,6 +185,13 @@ export async function loadPayrollPackageRedemptionHistory(
       (row) =>
         row.sourceType === "REVERSAL" &&
         relatedIds.has(row.sourceId) &&
+        !(
+          removed &&
+          row.saleId === sale.id &&
+          related.some(
+            (original) => original.id === row.sourceId && original.sourceType === "COLLECTION",
+          )
+        ) &&
         !related.some(
           (original) =>
             original.id === row.sourceId &&

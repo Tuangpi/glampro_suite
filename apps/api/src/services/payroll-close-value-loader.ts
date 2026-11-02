@@ -444,8 +444,8 @@ export async function loadPayrollValueSpendHistory(tx: PayrollCloseTransaction, 
         row.reason !== sale.voidReason ||
         row.customerId !== holding.customerId ||
         row.previousCustomerId !== holding.customerId ||
-        row.sharedFamilyId !== null ||
-        row.previousSharedFamilyId !== null ||
+        row.sharedFamilyId !== holding.sharedFamilyId ||
+        row.previousSharedFamilyId !== holding.sharedFamilyId ||
         !row.amountBefore.equals(holding.amount) ||
         !row.amountAfter.isZero() ||
         !row.delta.equals(row.amountBefore.negated()) ||
