@@ -33,7 +33,7 @@
  * passes on a machine with no database running.
  */
 import assert from "node:assert/strict";
-import { after, before, describe, it } from "node:test";
+import { before, describe, it } from "node:test";
 
 import {
   CORE_MODULE_CODES,
@@ -61,9 +61,12 @@ import {
 
 const databaseUrl = process.env["DATABASE_URL"];
 
-const TENANT_A = "sale-search-a";
-const TENANT_B = "sale-search-b";
-const TENANT_IDS = [TENANT_A, TENANT_B];
+// Each suite owns fresh tenants. Completed receipts and payroll evidence are
+// intentionally immutable, so retain them on the disposable test database rather
+// than deleting source economics or disabling their production constraints.
+let TENANT_A: string;
+let TENANT_B: string;
+let TENANT_IDS: string[];
 
 /**
  * No filters — the query contract makes `search` and `kind` optional, and a caller that
@@ -78,39 +81,6 @@ const NO_FILTERS = {
 /** A name is `Shampoo <tenant>`, so two salons both holding "Shampoo" stay tellable apart. */
 function nameOf(tenantId: string, name: string): string {
   return `${name} ${tenantId}`;
-}
-
-async function purge(): Promise<void> {
-  await runAsPlatform(async () => {
-    await prisma.tenantModule.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.packageService.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.valuePackageService.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.package.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.valuePackage.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.giftCard.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.product.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.service.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-
-    // Children first: the sale-ledgers rows hang off the sale, and the sale's own
-    // child rows off it, so a partial tree from a failed run still clears.
-    await prisma.customerOutstandingPayment.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.customerOutstanding.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.customerRedemption.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.customerPoint.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.customerPackageHolding.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.customerValuePackageHolding.deleteMany({
-      where: { tenantId: { in: TENANT_IDS } },
-    });
-    await prisma.customerGiftCardHolding.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.employeePerformance.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.employeeCommission.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.salePayment.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.saleLine.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.sale.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.customer.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
-    await prisma.user.deleteMany({ where: { email: { contains: "@sale-write.test" } } });
-    await prisma.tenant.deleteMany({ where: { id: { in: TENANT_IDS } } });
-  });
 }
 
 /**
@@ -142,7 +112,10 @@ async function seedModules(): Promise<void> {
  * test pays for something.
  */
 async function seed(): Promise<void> {
-  await purge();
+  const runId = randomUUID();
+  TENANT_A = `sale-search-a-${runId}`;
+  TENANT_B = `sale-search-b-${runId}`;
+  TENANT_IDS = [TENANT_A, TENANT_B];
 
   await runAsPlatform(async () => {
     await seedModules();
@@ -326,7 +299,6 @@ describe(
   { skip: databaseUrl ? false : "DATABASE_URL is not set" },
   () => {
     before(seed);
-    after(purge);
 
     it("keeps the five kinds and the cart's discriminator in step", () => {
       // The cart stores `SaleLine.itemType`, so a kind this list knows and the schema
@@ -687,7 +659,29 @@ describe(
   { skip: databaseUrl ? false : "DATABASE_URL is not set" },
   () => {
     before(seed);
-    after(purge);
+
+    it("retains original payroll sale economics when receipt-line deletion is attempted", async () => {
+      await runAsTenant(TENANT_A, async () => {
+        const sale = await createSale({
+          lines: [
+            {
+              itemType: "SERVICE",
+              itemId: await idOf(TENANT_A, nameOf(TENANT_A, "Cut")),
+              quantity: 1,
+            },
+          ],
+          payments: [{ method: "CASH", amount: 50 }],
+        });
+        const original = await prisma.saleLine.findMany({ where: { saleId: sale.id } });
+        assert.equal(original.length, 1);
+        await assert.rejects(
+          prisma.saleLine.deleteMany({ where: { saleId: sale.id } }),
+          /Original payroll sale economics are immutable/,
+        );
+        assert.deepEqual(await prisma.saleLine.findMany({ where: { saleId: sale.id } }), original);
+        assert.equal((await getSale(sale.id)).status, "COMPLETED");
+      });
+    });
 
     it("snapshots discounted tax-exclusive service commission once and reverses it on refund", async () => {
       await runAsTenant(TENANT_A, async () => {
@@ -1068,7 +1062,7 @@ describe(
         const performer = await prisma.user.create({
           data: {
             tenantId: TENANT_A,
-            email: "receipt-performer@sale-write.test",
+            email: `receipt-performer-${randomUUID()}@sale-write.test`,
             name: "Receipt performer",
             passwordHash: "test-only",
           },

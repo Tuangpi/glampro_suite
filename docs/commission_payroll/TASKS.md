@@ -2,11 +2,15 @@
 
 ## Quick status navigation
 
-- **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-in-progress) — **15 DONE (supported scope), 1 IN PROGRESS (17), 3 TODO (16, 18, 19)** as of November 2, 2026. M1 overall remains **IN PROGRESS**; these counts are not a percentage of effort or acceptance.
+- **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. M2 remains IN PROGRESS; M3–M5 remain TODO. This is not release or earnings activation.
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
 
 ## Workflow
+
+Current continuation — November 2, 2026: **M1 DONE** after M1-19 final gate review.
+Resume **M2** next-open-period source corrections. The dated continuations below
+are historical; their M1-open/remainder statements do not override the checklist.
 
 Latest continuation — November 1, 2026 (active-sharing credit purchase voids):
 hash-verified pre-deletion snapshots retain explicit sharing consent, and the loader
@@ -586,34 +590,33 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-005 — Monthly close and frozen payroll statements
 
-- Status: **IN PROGRESS** — current summary as of November 1, 2026.
+- Status: **IN PROGRESS** — current summary as of November 2, 2026.
 - Dependencies: CP-004.
-- **No milestone is complete.** M1 and M2 have completed slices but remain
-  **IN PROGRESS**; M3–M5 are **TODO**. Completed slices below do not mean the
-  full monthly close is accepted or ready for activation.
+- **M1 is DONE** for its documented supported scope and explicit policy refusals.
+  M2 remains **IN PROGRESS**; M3–M5 are **TODO**. The full monthly close is not
+  accepted or ready for activation.
 - This summary supersedes older status/remainder notes in the dated checkpoints
   below. Supporting evidence: `PROGRESS.md` and `CLOSE_ACCEPTANCE.md`.
 
 ### Done — completed implementation and verified slices
 
-- Completed M1 work is tracked individually as **CP-005-M1-01–13** in the
-  [M1 checklist](#cp-005-m1--authoritative-lifecycle-loading-in-progress), rather than duplicated here.
+- Completed M1 work is tracked individually as **CP-005-M1-01–19** in the
+  [M1 checklist](#cp-005-m1--authoritative-lifecycle-loading-done), rather than duplicated here.
 - [x] **M2 session-correction slice:** next-open posting evidence, same-key retry
       uniqueness, stale-draft refusal, persisted recalculation/approval, future posting
       beyond an approved current month and frozen-history preservation. Both
       session-attribution approval/source lock orderings have deterministic real-DB
       acceptance, including PostgreSQL blocking, reverse/repost and rollback.
 
-### In progress — remaining work in started milestones
+### Milestone status — M1 accepted; M2 in progress
 
-#### CP-005-M1 — Authoritative lifecycle loading: IN PROGRESS
+#### CP-005-M1 — Authoritative lifecycle loading: DONE
 
-**Status snapshot — November 2, 2026: 15 DONE (supported scope), 2 IN PROGRESS (16, 17),
-2 TODO (18, 19).** These are stable tracking IDs, not new milestones. Completed items stay
-complete for their stated scope; remaining combinations belong to the open items
-below. Do not reopen completed slices merely because M1 overall is still open.
-Evidence links refer to recorded implementation checks, not a new test run for this
-documentation change.
+**Status snapshot — November 2, 2026: 19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE.**
+These are stable tracking IDs, not new milestones. Scope is the supported lifecycle
+matrix and explicit approved writer/policy refusals, not an arbitrary Cartesian
+product. Earlier item/checkpoint remainder statements are historical and superseded
+by the M1-19 review below. M2–M5 retain their own acceptance gates.
 
 ##### DONE — implemented and verified within the stated scope
 
@@ -635,17 +638,17 @@ documentation change.
 
 - [x] **CP-005-M1-15 — DONE: Resolve legacy full-credit paid lines missing allocation evidence.** User-approved policy keeps legacy history unavailable and uses an explicitly owner-authorized prospective opening boundary, not historical reconstruction. Strict optional coverage metadata is frozen with monthly inputs; stale coverage, pre-boundary closes, missing prospective funding and later legacy-dependent activity refuse. No live backfill or missing-evidence bypass. Evidence: [prospective boundary acceptance](PROGRESS.md#november-2-2026--cp-005-m1-15-prospective-boundary) and DECISIONS.md's November 2 policy.
 
-##### IN PROGRESS — acceptance started but not complete
+##### DONE — integrated lifecycle/corruption acceptance
 
-- [ ] **CP-005-M1-17 — IN PROGRESS: Complete integrated lifecycle/corruption acceptance.** The [lifecycle matrix](CLOSE_ACCEPTANCE.md#november-2-2026--m1-17-lifecyclecorruption-matrix) now records supported paths, intentional refusals and unaccepted combinations. Sharing during original owner/member spend, full restoration and NO_MOVEMENT/full money-returned purchase void now have four real-writer monthly approval cases, 32 corrupt-read refusals, stale rejection and frozen-history checks. **Finish when:** all required matrix paths have independent one-to-one evidence, exact money, corruption refusal, stale-draft rejection and immutable approved history through monthly calculate/approve. Service/product plus FOC and zero-tender same/cross-month refunds and both prepaid refund kinds now have real-writer monthly approval coverage. Unresolved M1-16 combinations remain explicit; do not count selected passing suites as full acceptance. Evidence: [current checkpoint](PROGRESS.md#november-2-2026--cp-005-m1-17-integrated-acceptance) and [close acceptance requirements](CLOSE_ACCEPTANCE.md).
+- [x] **CP-005-M1-17 — DONE: Complete integrated lifecycle/corruption acceptance.** The [lifecycle matrix](CLOSE_ACCEPTANCE.md#november-2-2026--m1-17-lifecyclecorruption-matrix) reconciles supported paths and intentional policy/writer refusals with M1-16 DONE. Shared-original owner/member spend now has 24 cases across same/cross-month, active/expiry-before/expiry-after restoration and NO_MOVEMENT/full money RETURNED purchase voids: exact restoration/cash/bases, 272 independent corrupted-read refusals, unchanged drafts, stale rejection, persisted approval and frozen original/current history. Existing ordinary/FOC/zero-tender and both prepaid refund families, transfer refusals, session restoration and prospective-only legacy boundary are retained and rerun. Consolidated regression: **610 tests, 601 passed, 0 failed, 9 separately gated skips**; focused **24/24**, HTTP **62/62**, API typecheck, affected ESLint/formatting and shared/API build pass. No arbitrary Cartesian-product or race acceptance is claimed; M1-18/19 and overall M1 remain open. Evidence: [completion checkpoint](PROGRESS.md#november-2-2026--m1-17-expanded-sharingexpiry-acceptance) and [close acceptance requirements](CLOSE_ACCEPTANCE.md).
 
-##### Additional open work — status and explicit completion conditions
+##### Final lifecycle items and completion review
 
 - [x] **CP-005-M1-16 — DONE: Resolve returned voids on mixed or credit-funded sales.** User-approved external-money-only returns and original-holding prepaid restoration now cover credit/session-credit usage, session-plus-cash without value credit, mixed purchase/service/product with zero-product/zero-tender and FOC companions, and credit-funded PACKAGE/VALUE_PACKAGE purchase-only receipts. Purchase-only conversion explicitly excludes VP_SPEND commission under the additional November 2 user decision; historical missing attribution stays unavailable. Same/cross-month real writers verify exact cash, credit/session restoration, wrong-return rollback, independent omissions/stripped policy refusal, stale drafts, persisted approval and unchanged approved history. Fully prepaid reversals use NO_MOVEMENT, not zero RETURNED; partial returns remain refused. Final focused 19/19; payroll/prepaid/HTTP regression 577 tests, 571 passed, 0 failed, 6 gated skips. The separately rerun older sale-service cleanup failure remains documented; M1-17/18/19 and overall M1 are not closed. Evidence: [final acceptance](PROGRESS.md#november-2-2026--m1-16-final-purchase-conversion-acceptance), DECISIONS.md and CLOSE_ACCEPTANCE.md.
-- [ ] **CP-005-M1-18 — TODO: Complete remaining lifecycle/void/close race acceptance.** Existing lock prerequisites and M2 session races do not complete M1. **Finish when:** deterministic real-DB tests cover required concurrent membership/consent, void and close calculate/approve orderings, stale inputs, rollback and frozen-history preservation. Evidence: [unclaimed concurrent coverage](PROGRESS.md#november-1-2026--active-sharing-credit-purchase-voids) and [monthly lock prerequisite](PROGRESS.md#previous-checkpoint--monthly-prepaid-lock-prerequisite).
-- [ ] **CP-005-M1-19 — TODO: Final M1 completion-gate review.** Blocked by 14–18. **Finish when:** all preceding items meet their stated completion conditions, the required integrated regression and applicable type/lint/build checks are executed, and evidence/remainders are reconciled in TASKS, PROGRESS and CLOSE_ACCEPTANCE. Record policy blockers rather than silently deleting required scope. M2–M5 retain their own acceptance gates; router/screen mounting, browser release acceptance and earnings activation are not silently added to M1.
+- [x] **CP-005-M1-18 — DONE: Complete remaining lifecycle/void/close race acceptance.** `payroll-prepaid-races.acceptance.test.ts` adds 31 deterministic real-DB cases with PostgreSQL blocking proven for each ordering: membership/consent/usage-void/purchase-void versus calculate/approve in both orders; family spending versus revocation; restoration versus purchase void; duplicate purchase void; stale membership/consent; invalid payout versus close; competing same-revision close transitions. Exact money/holding journals, unchanged stale/failed-write state and audit, unique reversals, recalculation/approval and immutable approved history pass. Focused **31/31 twice**; consolidated **641 tests, 632 passed, 0 failed, 9 separately gated skips**; API typecheck, full API lint, affected formatting and shared/API build pass. Existing M2 session-correction race coverage is rerun, not substituted for these M1 cases. No production code/schema/dependency change. Evidence: [race checkpoint](PROGRESS.md#november-2-2026--m1-18-deterministic-prepaid-race-acceptance) and [race matrix](CLOSE_ACCEPTANCE.md#november-2-2026--m1-18-deterministic-prepaid-race-acceptance). M1-19/overall M1 remain open; the older sale-service cleanup failure remains unresolved.
+- [x] **CP-005-M1-19 — DONE: Final M1 completion-gate review.** Reviewed items 01–18, the lifecycle matrix and approved policy decisions; no remaining required supported M1 path identified. Reproduced and fixed the older sale-service fixture cleanup failure using fresh per-suite tenant identities and retained immutable receipts; added deletion-refusal regression without disabling constraints. Integrated payroll/prepaid/HTTP plus sale-service regression: **699 tests, 690 passed, 0 failed, 9 separately gated skips**, exit 0. Shared **305/305**, full web **977/977** with one worker, workspace lint/typechecks, shared/API/web build, formatting and diff checks pass. Delivered demo/reference artifacts are explicitly excluded from formatting, not modified. Evidence and initial failed runs: [final review](CLOSE_ACCEPTANCE.md#november-2-2026--m1-19-final-completion-review), `/tmp/m119-*`. M2–M5 retain their gates; no mounting, deployment or earnings activation.
 
-- **Next work:** M1-16 is DONE. Finish M1-17's remaining integrated lifecycle/sharing/expiry matrix without assuming every combination from bounded tests; complete M1-18 races separately, then M1-19 final review. Reconcile the pre-existing sale-service immutable-economics fixture cleanup failure. Overall M1 remains open.
+- **Next work:** M1-01–19 are DONE. Continue M2 next-open-period source corrections beyond the completed session-attribution slice. The sale-service cleanup issue is resolved and its suite is included in the final integrated regression.
 - **Completion gate:** all required operational paths load through monthly
   calculate/approve with independent one-to-one evidence, exact money, corruption
   refusal, stale-draft rejection and immutable approved history. Unsupported
@@ -671,7 +674,11 @@ documentation change.
 
 ### Verification evidence and execution boundaries
 
-- Latest recorded verification (November 1): payroll/prepaid acceptance family
+- Latest M1 verification (November 2): **699 tests, 690 passed, 0 failed, 9 separately
+  gated skips** including sale-service; shared **305/305**, web **977/977** with one
+  worker. Workspace lint/typechecks, full build, formatting and diff checks pass.
+  See the M1-19 review for exact evidence and excluded-suite boundaries.
+- Earlier recorded verification (November 1): payroll/prepaid acceptance family
   **511 passed, 0 failed, 9 skipped** (520 tests); shared sales **48/48**;
   void/inputs unit files **50/50**; web Sale **58/58**. API/web typecheck,
   targeted ESLint, Prettier and whitespace checks were clean. These are recorded
@@ -686,15 +693,13 @@ documentation change.
 - Keep existing refund writer eligibility outside the approved prepaid workflow
   unchanged. No production database work, deployment or earnings activation is
   implied by completed slices.
-- Acceptance order remains M1 → M2 → M3 → M4 → M5. M2 has implementation progress,
-  but does not bypass the open M1 gate. On “Next” or “Continue”, resume **M1** as a
-  coordinated implementation/verification pass, not just the next helper.
+- Acceptance order remains M1 → M2 → M3 → M4 → M5. M1 is accepted; on “Next” or
+  “Continue”, resume **M2** as a coordinated implementation/verification pass.
 - Preserve CP-003A/CP-006/CP-007 scope and existing release gates. If a required
   path needs a policy decision, record the blocker rather than removing it from M1.
 - Use focused tests during implementation, then relevant integrated regression,
   type, lint and build checks at milestone boundaries; run broad checks earlier
-  for cross-cutting changes. Report “completed slice; M1 open”, not “lifecycle
-  loading done”.
+  for cross-cutting changes. M1 completion does not imply CP-005 release acceptance.
 
 ### Implementation evidence and earlier checkpoints
 

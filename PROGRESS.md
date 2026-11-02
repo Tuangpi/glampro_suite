@@ -1,5 +1,61 @@
 # Glampro Suite — progress
 
+## November 2, 2026 — M1-19 DONE; M1 complete
+
+Final gate review accepts **19 DONE, 0 IN PROGRESS, 0 TODO; CP-005 M1 DONE** for
+its documented supported scope and policy refusals. CP-005 remains IN PROGRESS;
+next is M2 next-open-period corrections beyond session attribution, then M3–M5.
+
+Reproduced and fixed the older sale-service fixture purge failure using fresh
+per-suite tenant identities and retained immutable receipts; added deletion-refusal
+regression without changing production constraints. Focused **58/58** and final
+integrated payroll/prepaid/HTTP plus sale-service **699 tests: 690 passed, 0 failed,
+9 separately gated skips**, exit 0. Shared **305/305**, full web **977/977** with one
+worker, workspace lint/typechecks, full build, formatting and diff checks pass.
+
+Delivered commission demo/reference artifacts are explicit formatting exclusions,
+unchanged. Initial failed parallel web/reference-format runs and exact suite
+boundaries are recorded in commission-payroll CLOSE_ACCEPTANCE/PROGRESS;
+evidence `/tmp/m119-*`. No enabled CP-005 acceptance skipped. Only the verified
+disposable DB was written; no production code/schema/dependency changes, mounting,
+activation, deployment, commit or push. Earlier M1-open notes below are historical.
+
+## November 2, 2026 — M1-18 DONE
+
+Added 31 deterministic real-DB prepaid race cases covering membership/consent,
+family spending, restoration/purchase void, invalid-payout rollback, duplicate
+voids and calculate/approve orderings. Every ordering proves PostgreSQL blocking;
+checks include exact money/journals, stale refusal, persisted approval and frozen
+history. Existing production locks/writers are unchanged.
+
+Focused **31/31 twice**; consolidated payroll/prepaid/HTTP **641 tests, 632 passed,
+0 failed, 9 separately gated skips**. API typecheck, full API lint, affected
+formatting, shared/API build and diff checks pass. Evidence: commission-payroll
+PROGRESS/CLOSE_ACCEPTANCE and `/tmp/m118-*`. Only the verified disposable database
+was written. No production code/schema/dependency change, activation or deployment.
+
+**18 DONE, 0 IN PROGRESS, 1 TODO (M1-19); overall M1 OPEN.** Next: final M1-19
+review, including the older immutable-economics sale-service cleanup failure,
+which was not included in the passing regression and remains unresolved.
+
+## November 2, 2026 — M1-17 DONE
+
+Expanded shared-original owner/member credit-spend acceptance to 24 real-writer
+same/cross-month × active/expired-before/expired-after restoration ×
+NO_MOVEMENT/full RETURNED purchase-void cases. Exact credit/cash/bases, 272
+independent corrupt-read refusals, stale drafts, persisted approval and immutable
+original/current history are verified. No production code or schema changes.
+
+Focused **24/24**; consolidated payroll/prepaid/HTTP **610 tests, 601 passed,
+0 failed, 9 separately gated skips**; independent HTTP **62/62**. API typecheck,
+affected lint/formatting and shared/API build pass. Evidence and corrected initial
+fixture/environment runs: `docs/commission_payroll/PROGRESS.md` and
+`/tmp/m117-expanded-*`. All DB writes targeted the verified disposable cluster.
+The older sale-service immutable-economics cleanup failure was not rerun/resolved.
+
+**17 DONE, 0 IN PROGRESS, 2 TODO (M1-18/19); overall M1 OPEN.** Next: M1-18 races,
+then M1-19 final gate review. No deployment, activation, commit or push.
+
 ## November 2, 2026 — M1-16 DONE
 
 - Completed session-plus-cash and credit-funded PACKAGE/VALUE_PACKAGE purchase

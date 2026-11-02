@@ -1,5 +1,94 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — M1-19 final review; M1 DONE
+
+- **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE.** Reviewed M1-01–18,
+  lifecycle/corruption/race matrix, approved policy refusals and evidence/remainders.
+  This supersedes earlier M1-open checkpoints. CP-005 remains IN PROGRESS; next is
+  M2 correction families beyond session attribution. M3–M5 remain TODO.
+- Reproduced older sale-service immutable-economics purge failure, then replaced
+  fixed fixtures/destructive cleanup with fresh per-suite tenants and retained
+  immutable receipts. Added receipt-line deletion-refusal/unchanged-row regression.
+  Focused **58/58**; same suite included in passing final integrated run.
+- Integrated payroll/prepaid/HTTP plus sale-service: **699 tests, 690 passed,
+  0 failed, 9 separately gated skips**, exit 0. Shared **305/305**; full web
+  **977/977** with one worker. Workspace lint/typechecks, full shared/API/web build,
+  full formatting and final diff checks pass. Evidence: `/tmp/m119-*` and
+  [final review](CLOSE_ACCEPTANCE.md#november-2-2026--m1-19-final-completion-review).
+- Initial parallel web failure and reference-artifact formatting failure are
+  retained as failed evidence, not erased. Full one-worker web rerun passes with
+  no timeout/assertion changes. Delivered demo/reference artifacts are now explicit
+  formatting exclusions, not reformatted. Nine separately gated suites retain
+  their original boundaries; no enabled CP-005 acceptance skipped.
+- Legacy missing history, partial returns and ineligible purchase voids retain
+  documented fail-closed policies. No new policy exception, production code/schema/
+  dependency change or claim of arbitrary Cartesian-product acceptance.
+- DB writes only on verified disposable PostgreSQL 18.6/UTC,
+  `127.0.0.1:55485/payroll_close_test`, `/tmp/cp005-m1-14-n6d0gta5`.
+  No application DB operation, mounting, provider transfer, activation, deployment,
+  commit or push. M2–M5 and browser/release/performance acceptance remain separate.
+
+## November 2, 2026 — M1-18 deterministic prepaid race acceptance
+
+- **M1-18 DONE; 18 DONE, 0 IN PROGRESS, 1 TODO (19); overall M1 OPEN.**
+- Final consolidated regression: **641 tests, 632 passed, 0 failed, 9 separately
+  gated skips**, exit 0, `/tmp/m118-regression.{log,exit}`. Skips are three
+  unrelated prepaid route suites and six CP-003/CP-004/browser suites; no enabled
+  CP-005 acceptance skipped. Focused repeat also **31/31**, exit 0,
+  `/tmp/m118-focused-repeat.{log,exit}`.
+- API typecheck, full API lint, affected formatting, shared/API build and diff
+  checks pass; `/tmp/m118-{types-complete,api-lint,build}.{log,exit}`.
+- Added `payroll-prepaid-races.acceptance.test.ts`: **31/31 focused passing**,
+  zero skips, with real PostgreSQL blocking asserted in every ordering.
+- Matrix: 16 lifecycle/close orderings, four family-spend/revocation cases,
+  two restoration/purchase-void orderings, one duplicate purchase void, two stale
+  lifecycle requests, four invalid-payout/close rollback orderings and two
+  competing same-revision close transitions. Exact money, holding journals,
+  stale refusals, rollback, persisted approval and frozen history are covered.
+- Production advisory locking and writers remain intact; a test-only transaction
+  proxy pauses the first writer after acquisition and is restored before the
+  contender starts. `pg_blocking_pids` proves blocking; no sleep-only race claim.
+- Corrected initial fixture expectations for spend-first SHARING_STALE and an
+  auditLog count that required explicit tenantId; also fixed a TypeScript generic.
+  No production defect or code change was needed. API typecheck/affected lint pass.
+- Disposable target verified before writes: PostgreSQL 18.6, UTC,
+  `127.0.0.1:55485/payroll_close_test`, `/tmp/cp005-m1-14-n6d0gta5`.
+  Logs/exit markers use `/tmp/m118-*`; final regression/build results are above.
+- M1-19 and overall M1 remain OPEN. No schema/dependency/application DB change,
+  activation, deployment, commit or push. The older sale-service cleanup failure
+  is neither included in the passing focused suite nor resolved by this task.
+
+## November 2, 2026 — M1-17 expanded sharing/expiry acceptance
+
+- **M1-17 DONE; 17 DONE, 0 IN PROGRESS, 2 TODO (18/19); overall M1 OPEN.**
+- Final consolidated regression **610 tests, 601 passed, 0 failed, 9 separately
+  gated skips**, exit 0: `/tmp/m117-expanded-regression-complete.{log,exit}`.
+  Skips: three separately gated prepaid route suites plus six CP-003/CP-004/browser
+  suites; no enabled CP-005 acceptance skipped. Existing sale-service cleanup
+  failure was not rerun or resolved and remains a final-review issue.
+- Expanded the four shared-original-spend cases to **24**: owner/member ×
+  same/cross-month × active/expired-before/expired-after restoration ×
+  NO_MOVEMENT/full money RETURNED purchase void.
+- Focused run **24/24**, with **272 independent corrupt-read refusals**, exact
+  600.00 restoration, ±75.0000 VP_SPEND bases and 500.0000/0.0000 same-month or
+  0.0000/-500.0000 later-month collection. Stale drafts refuse; recalculated closes
+  approve; original and current approved history remain frozen after membership
+  departure. Read proxies do not alter immutable operational journals.
+- API typecheck, affected ESLint and shared/API build pass. Authenticated HTTP
+  regression independently passes **62/62** with a synthetic local JWT secret.
+- Initial expiry corruptions targeted nonexistent credit EXPIRE events; corrected
+  to actual GRANT/RESTORE expiry evidence before the passing focused run. Initial
+  broad verification lacked JWT_SECRET; corrected. Two background broad runs were
+  terminated by terminal Hangup (129), not counted as passing. The final run is
+  detached from the terminal; evidence prefix `/tmp/m117-expanded-`.
+- Verified disposable target before writes: PostgreSQL 18.6, UTC,
+  `127.0.0.1:55485/payroll_close_test`, data directory
+  `/tmp/cp005-m1-14-n6d0gta5`. No application database writes/migrations,
+  dependencies, production-code changes, deployment or activation.
+- Reconciled stale M1-16 IN PROGRESS wording in the current lifecycle matrix;
+  M1-16 remains DONE. M1-18 races and M1-19 final review remain separate and
+  overall M1 remains OPEN. Final consolidated verification is recorded above.
+
 ## November 2, 2026 — M1-16 final purchase-conversion acceptance
 
 - **M1-16 DONE; M1-17 IN PROGRESS; M1 overall OPEN.** Current checklist:

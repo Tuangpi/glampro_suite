@@ -9,3 +9,7 @@ apps/web/src/styles/tokens.css
 # Vendored Salon Pro redesign package (screens, tokens, icons) — reference
 # material, kept exactly as delivered. See docs/design/HANDOFF.md.
 design/handoff
+# Supplied commission demo/reference implementation, retained as delivered rather
+# than treated as application source. See docs/commission_payroll/PROJECT.md.
+docs/commission_payroll/Glampro_Commission_Demo_2.html
+docs/commission_payroll/glampro-commission-module_2

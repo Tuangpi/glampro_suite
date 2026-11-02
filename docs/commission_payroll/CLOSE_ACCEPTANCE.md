@@ -1,5 +1,147 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 2, 2026 — M1-19 final completion review
+
+**M1-19 DONE; 19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE.** This checkpoint
+supersedes earlier M1-open and unresolved sale-service cleanup statements below.
+CP-005 remains IN PROGRESS: M2 is IN PROGRESS, M3–M5 TODO. Router/screens stay
+unmounted; this is not browser release acceptance, deployment or earnings activation.
+
+### Gate review and retained boundaries
+
+- Reviewed M1-01–18 against the lifecycle matrix, real-writer acceptance and
+  DECISIONS.md. Supported source inventories reconcile independently through
+  calculate/approve, exact external cash and commission bases, corruption/stale
+  refusal, transactional rollback and frozen approved history. The 31 M1-18 races
+  and 24 expanded M1-17 sharing/expiry cases are included in the final run.
+- Spent/transferred purchase voids retain their accepted writer refusal, including
+  transfer-back/restored-after-transfer. Partial returned voids remain refused;
+  fully prepaid restoration uses NO_MOVEMENT, never a fictitious zero payout.
+- Legacy missing economics/funding remain unavailable. The approved prospective-only
+  boundary requires owner authorization and complete later evidence; it does not
+  backfill history. Purchase-only credit conversion keeps its explicit zero
+  VP_SPEND exclusion while reconciling credit restoration and external money.
+- No new policy exception or remaining required supported M1 path was identified.
+  M2 other correction families, M3 carry/plan-switch acceptance, M4 mounting and
+  M5 final/browser/performance acceptance remain separate, unaccepted gates.
+
+### Sale-service failure reconciliation
+
+Reproduced the old suite failure in `/tmp/m119-sale-before.{log,exit}`: its fixed
+tenant purge attempts to delete protected original receipt economics, causing
+setup/teardown failure rather than demonstrating incorrect sale processing.
+`sale.service.test.ts` now allocates fresh tenant IDs per suite and unique extra
+performer email, retaining immutable evidence on the disposable database instead
+of deleting it. The broad email deletion is removed. A new regression attempts
+receipt-line deletion, asserts the immutability error and verifies unchanged rows
+and completed receipt. No trigger, production constraint or source writer changed.
+Focused **58/58** passes; the same suite passes again inside the integrated run.
+Retained fixtures accumulate only on the authorized disposable test target.
+
+### Executed verification
+
+| Check                                                                                                                                                       | Result                                                     | Evidence                                                                                                                   |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Integrated API: all payroll test files, prepaid acceptance files, prepaid refund HTTP and sale-service; `RUN_CP005_ACCEPTANCE=true`, `--test-concurrency=1` | **699 tests: 690 passed, 0 failed, 9 gated skips**, exit 0 | `/tmp/m119-integrated.{log,exit}`, `/tmp/m119-test-inventory.txt` (63 discovered files, plus refund HTTP and sale-service) |
+| Shared                                                                                                                                                      | **305/305**, exit 0                                        | `/tmp/m119-shared.{log,exit}`                                                                                              |
+| Full web, `--maxWorkers=1`                                                                                                                                  | **977/977**, 110 files, exit 0                             | `/tmp/m119-web-serial.{log,exit}`                                                                                          |
+| Workspace lint and typechecks                                                                                                                               | Exit 0 each                                                | `/tmp/m119-{lint,types}.{log,exit}`                                                                                        |
+| Full shared/API/web build                                                                                                                                   | Exit 0                                                     | `/tmp/m119-build.{log,exit}`                                                                                               |
+| Full formatting                                                                                                                                             | Exit 0 after explicit reference-artifact exclusions        | `/tmp/m119-format-fixed.{log,exit}`                                                                                        |
+
+The nine skips match M1-18: three separately gated prepaid HTTP acceptance suites,
+two CP-003 lifecycle/concurrency suites, three CP-004 session/split/value SQL suites
+and one CP-003 Chrome suite. No enabled CP-005 acceptance case skipped. These are
+not claimed as newly accepted or run. The CP-004 collection-evidence suite is
+outside this inventory and requires a different guarded disposable DB; it is not
+silently counted as passed. Full API test-workspace execution is not claimed.
+
+Initial default-parallel web run failed **9/977** (seven timeouts and two field
+assertions amid overlapping build/DB load); the complete one-worker rerun passes
+without changing tests, timeouts or production UI. That failed run is retained in
+`/tmp/m119-web.{log,exit}`, not reported as passing. Initial full formatting found
+52 supplied demo/reference artifact files; `.prettierignore` now explicitly retains
+those delivered artifacts unchanged, following the existing reference-handoff
+convention. No application-source formatting failure was suppressed. Existing
+pg client-query deprecation warnings are non-fatal and not resolved by this review.
+
+All DB writes used identity-checked PostgreSQL 18.6/UTC at
+`127.0.0.1:55485/payroll_close_test`, data directory
+`/tmp/cp005-m1-14-n6d0gta5`. Build client generation is not a migration. No
+production code/schema/dependency changes, application DB operation, provider
+payment, commit, push, deployment or activation.
+
+## November 2, 2026 — M1-18 deterministic prepaid race acceptance
+
+**M1-18 DONE; 18 DONE, 0 IN PROGRESS, 1 TODO (19); overall M1 OPEN.**
+Final consolidated regression: **641 tests, 632 passed, 0 failed, 9 separately
+gated skips**, exit 0 (`/tmp/m118-regression.{log,exit}`). Skips are three unrelated
+prepaid route suites plus six CP-003/CP-004/browser suites; no enabled CP-005
+acceptance skipped. Focused suite passed twice at **31/31**. API typecheck, full
+API lint, affected formatting, shared/API build and diff checks pass. The older
+sale-service cleanup issue was excluded, not rerun/resolved; review under M1-19.
+
+`payroll-prepaid-races.acceptance.test.ts` adds **31 real-DB race cases**; focused
+run **31 passed, 0 failed, 0 skipped**. Each ordering pauses the first transaction
+after its real production advisory lock, starts an unwrapped contender and verifies
+PostgreSQL blocking through `pg_blocking_pids` before releasing the winner. No
+production lock, journal constraint or authorization is replaced.
+
+| Race family                                                                                                  | Cases | Verified result                                                                                                                                                                                                                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------ | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Membership departure, consent revocation, usage void, purchase void versus calculate/approve; both orderings | 16    | Calculation sees exactly the winning committed inventory. Source-first approval refuses stale inputs without state/audit changes; close-first approval stays frozen after the later lifecycle write. Recalculation/approval succeeds where mutable. Exact holdings and 500.0000 original-month cash reconcile; later-month returns are not backdated. |
+| Family spend versus membership departure or consent revocation; both orderings                               | 4     | Revocation-first spend rolls back without sale or SPEND journal. Spend-first membership departure succeeds; spend-first consent revocation refuses SHARING_STALE, preserves consent, then succeeds after reload. Exact remaining credit 420.00 or 510.00; monthly approval succeeds.                                                                  |
+| Restoration versus purchase void; both orderings                                                             | 2     | Purchase-first refuses HOLDING_ALREADY_SPENT with unchanged purchase/no removal; retry after restoration succeeds. Restoration-first permits purchase void. One RESTORE/REMOVAL and exact full returned cash; monthly approval succeeds.                                                                                                              |
+| Duplicate full-return purchase void                                                                          | 1     | Both requests finish idempotently; one removal and tenant-scoped purchase snapshot. Retry leaves authoritative inputs identical and monthly approval succeeds.                                                                                                                                                                                        |
+| Competing stale membership/consent requests                                                                  | 2     | Exactly one writer succeeds; the loser refuses FAMILY_MEMBERSHIP_STALE/SHARING_STALE without duplicate journals or credit changes.                                                                                                                                                                                                                    |
+| Invalid payout versus calculate/approve; both orderings                                                      | 4     | Wrong return rolls back sale, holding, balance journal and tenant audit exactly; close sees unchanged authoritative inputs and commits one transition.                                                                                                                                                                                                |
+| Competing calculate/approve requests at the same revision                                                    | 2     | One transition commits; stale contender refuses without duplicate close events.                                                                                                                                                                                                                                                                       |
+
+Verified target before writes: PostgreSQL 18.6, UTC,
+`127.0.0.1:55485/payroll_close_test`, data directory
+`/tmp/cp005-m1-14-n6d0gta5`. Evidence: `/tmp/m118-focused-complete.{log,exit}`;
+API typecheck and full API ESLint pass. Consolidated regression/build completion
+is recorded above. Existing M2 session-correction/close race
+tests are rerun, not reclassified as new M1 work. No schema/dependency/production
+code change, application database operation, activation or deployment.
+
+Initial test runs exposed fixture expectations, not production defects: queued
+consent after spend correctly refuses a stale timestamp; auditLog is not an
+automatically tenant-filtered delegate, so the snapshot count now explicitly
+filters tenantId. The intermediate TypeScript generic annotation was also fixed.
+Only the corrected final passing run is acceptance evidence. M1-19 and overall M1
+remain open; the older sale-service immutable-economics cleanup issue is unresolved.
+
+## November 2, 2026 — M1-17 expanded lifecycle matrix
+
+**M1-17 DONE; 17 DONE, 0 IN PROGRESS, 2 TODO (18/19); overall M1 OPEN.**
+Final consolidated payroll/prepaid/HTTP regression: **610 tests, 601 passed,
+0 failed, 9 separately gated skips**, exit 0, recorded in
+`/tmp/m117-expanded-regression-complete.{log,exit}`. Skips are three unrelated
+prepaid route suites and six CP-003/CP-004/browser suites; no enabled CP-005 case
+skipped. Independent HTTP run **62/62**; API typecheck, affected ESLint/formatting,
+shared/API build and diff checks pass. The pre-existing sale-service cleanup
+failure was not included, rerun or resolved; retain it for M1-19 review.
+
+The shared-original-spend matrix now covers 24 real-writer cases: owner/member ×
+same/cross-month × active/expired-before-restoration/expired-after-restoration ×
+NO_MOVEMENT/full money RETURNED purchase void. Focused verification: **24 passed,
+0 failed, 0 skipped** (`/tmp/m117-expanded-focused-final.{log,exit}`).
+
+Each case verifies restoration to 600.00, exact VP_SPEND bases (±75.0000 in the
+same month; -75.0000 in the later month), independent reload, stale-draft refusal,
+persisted recalculation/approval and frozen state after later membership departure.
+Later-month cases also preserve the original approved month. Exact collection is
+500.0000/0.0000 for same-month NO_MOVEMENT/RETURNED, or 0.0000/-500.0000 later.
+There are **272 independent corrupted-read refusals** covering consent, membership,
+family, spend, restoration and historical expiry; each preserves the prior draft.
+Credit expiry is timestamp evidence in GRANT/RESTORE histories, not a session
+valuation EXPIRE event. The initial test incorrectly assumed the latter; corrected
+before the recorded passing focused run. No immutable journals were modified.
+
+This checkpoint supersedes the matrix's former cross-month/expiry gap and stale
+M1-16 status. M1-18 races and M1-19 final review remain separate; overall M1 is open.
+
 ## November 2, 2026 — M1-16 final purchase-conversion acceptance
 
 - **M1-16 DONE; M1-17 IN PROGRESS; M1 overall OPEN.** Current checklist:
@@ -136,21 +278,21 @@ See `/tmp/m116-payroll-final.{log,exit}` and `/tmp/m116-regression-final.{log,ex
 The following matrix includes historical M1-17 evidence and the newer bounded
 M1-16 slice; neither constitutes overall M1 acceptance.
 
-| Lifecycle / boundary                                                                                           | Current evidence                                                                                                                                            | Acceptance and remaining scope                                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Ordinary sales, collections, source identity and configuration                                                 | `payroll-close-loader.acceptance.test.ts`, `payroll-close-store.acceptance.test.ts`                                                                         | Real persisted calculate/approve, missing capture refusal, stale inputs and frozen history; exact original source/split reconciliation.                                                                                                                                                                                                                                      |
-| Private credit, ownership transfers and historical family sharing                                              | `payroll-close-value-loader.acceptance.test.ts`, `payroll-close-value-month.acceptance.test.ts`                                                             | Independent holding/balance/redemption/transfer/membership/consent replay; missing, duplicate, foreign and changed evidence refuses; cash excludes credit; persisted approval and frozen statements. Transferred purchase voids are not enabled.                                                                                                                             |
-| Mixed session/credit usage, partial-line coverage, wholly credit-funded lines and later instalment collections | `payroll-close-unsupported.acceptance.test.ts`                                                                                                              | Real checkout and monthly approval, exact line GST and cash/debt separation, immutable funding, corrupted/missing evidence and stale drafts. Does not accept mixed returned voids.                                                                                                                                                                                           |
-| Prepaid refunds                                                                                                | `prepaid-refund-settlement.acceptance.test.ts`, `prepaid-refund-month.acceptance.test.ts`, `payroll-close-prepaid-settlement.test.ts`                       | Real settlement journal/rollback and monthly calculate/approve with stale rejection and legacy capture refusal. The monthly fixture now independently runs PACKAGE and VALUE_PACKAGE writers, verifies exact retained cash, stale-draft refusal, persisted approval and frozen state after later missing-settlement refusal.                                                 |
-| Ordinary service/product/FOC refunds, zero-tender and cross-month combinations                                 | `payroll-close-sale-refunds.test.ts`, `payroll-close-refunds.test.ts`, four M1-17 ordinary-refund cases in `payroll-void-restored-spend.acceptance.test.ts` | Real service/product plus FOC and zero-value CARD tender, same/cross-month refund writers through calculate/approve; exact cent-rounded cash, five corrupted payout/reversal inventories per case, stale drafts and unchanged original approved month.                                                                                                                       |
-| Unused money-paid purchase voids, including active credit sharing                                              | `payroll-returned-purchase-void.acceptance.test.ts`                                                                                                         | NO_MOVEMENT/full money RETURNED, exact retained cash, frozen snapshots, independent consent/membership and corrupt attestation refusals, stale drafts and persisted approval.                                                                                                                                                                                                |
-| Restored private credit, later-shared credit, expired credit                                                   | `payroll-void-restored-spend.acceptance.test.ts`                                                                                                            | Deleted-holding snapshot and independent GRANT/SPEND/RESTORE/REMOVAL replay; exact opposite spend bases and retained collection; missing journals/cash refuses; persisted approval. Scope follows individual test variants, not every expiry/return combination.                                                                                                             |
-| Credit shared **during original spend**, owner or family-member spender                                        | Four `CP-005-M1-17 shared original ...` cases in `payroll-void-restored-spend.acceptance.test.ts`                                                           | Newly verified owner/member × NO_MOVEMENT/full money RETURNED after whole-sale usage restoration. Each verifies exact cash, eight corrupted independent inventories, stale rejection, recalculation/approval and frozen approved state after owner membership departure. Cross-month/expiry variants are not newly claimed.                                                  |
-| Session restoration followed by purchase void                                                                  | `payroll-void-restored-spend.acceptance.test.ts`                                                                                                            | Twelve session/whole-sale × active/expired-before/expired-after × NO_MOVEMENT/RETURNED cases plus four later-month cases; exact ordinals and values, corrupt inventories, stale rejection and immutable original approved month. Whole-sale usage here is fully session-covered.                                                                                             |
-| Spent or transferred purchases, including transfer-back/restored-after-transfer                                | `payroll-purchase-void-eligibility.acceptance.test.ts`                                                                                                      | Intentional writer refusal with unchanged sale/holding/journals/payroll/audit evidence, not a missing supported purchase-void workflow.                                                                                                                                                                                                                                      |
-| Legacy full-credit funding gaps                                                                                | `payroll-prospective-coverage.acceptance.test.ts`                                                                                                           | Approved prospective-only opening policy; historical gaps remain unavailable, missing prospective funding and later legacy-dependent activity refuse, coverage revisions invalidate drafts and approved history stays frozen.                                                                                                                                                |
-| Mixed or credit-funded RETURNED voids                                                                          | M1-16, **IN PROGRESS**                                                                                                                                      | November 2 user approved external-money-only return plus original-holding restoration. Eight credit/session same/cross-month cases and four mixed purchase/service/product cases pass bounded monthly acceptance. Credit-funded purchases, session-plus-cash without value credit and zero/FOC companions remain unaccepted. Refusals are safety boundaries, not completion. |
-| Membership/consent, void and close races                                                                       | M1-18, **TODO**                                                                                                                                             | Existing session/close lock tests do not accept the remaining M1 race orderings.                                                                                                                                                                                                                                                                                             |
+| Lifecycle / boundary                                                                                           | Current evidence                                                                                                                                            | Acceptance and remaining scope                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordinary sales, collections, source identity and configuration                                                 | `payroll-close-loader.acceptance.test.ts`, `payroll-close-store.acceptance.test.ts`                                                                         | Real persisted calculate/approve, missing capture refusal, stale inputs and frozen history; exact original source/split reconciliation.                                                                                                                                                                                                                                                                                                                         |
+| Private credit, ownership transfers and historical family sharing                                              | `payroll-close-value-loader.acceptance.test.ts`, `payroll-close-value-month.acceptance.test.ts`                                                             | Independent holding/balance/redemption/transfer/membership/consent replay; missing, duplicate, foreign and changed evidence refuses; cash excludes credit; persisted approval and frozen statements. Transferred purchase voids are not enabled.                                                                                                                                                                                                                |
+| Mixed session/credit usage, partial-line coverage, wholly credit-funded lines and later instalment collections | `payroll-close-unsupported.acceptance.test.ts`                                                                                                              | Real checkout and monthly approval, exact line GST and cash/debt separation, immutable funding, corrupted/missing evidence and stale drafts. Does not accept mixed returned voids.                                                                                                                                                                                                                                                                              |
+| Prepaid refunds                                                                                                | `prepaid-refund-settlement.acceptance.test.ts`, `prepaid-refund-month.acceptance.test.ts`, `payroll-close-prepaid-settlement.test.ts`                       | Real settlement journal/rollback and monthly calculate/approve with stale rejection and legacy capture refusal. The monthly fixture now independently runs PACKAGE and VALUE_PACKAGE writers, verifies exact retained cash, stale-draft refusal, persisted approval and frozen state after later missing-settlement refusal.                                                                                                                                    |
+| Ordinary service/product/FOC refunds, zero-tender and cross-month combinations                                 | `payroll-close-sale-refunds.test.ts`, `payroll-close-refunds.test.ts`, four M1-17 ordinary-refund cases in `payroll-void-restored-spend.acceptance.test.ts` | Real service/product plus FOC and zero-value CARD tender, same/cross-month refund writers through calculate/approve; exact cent-rounded cash, five corrupted payout/reversal inventories per case, stale drafts and unchanged original approved month.                                                                                                                                                                                                          |
+| Unused money-paid purchase voids, including active credit sharing                                              | `payroll-returned-purchase-void.acceptance.test.ts`                                                                                                         | NO_MOVEMENT/full money RETURNED, exact retained cash, frozen snapshots, independent consent/membership and corrupt attestation refusals, stale drafts and persisted approval.                                                                                                                                                                                                                                                                                   |
+| Restored private credit, later-shared credit, expired credit                                                   | `payroll-void-restored-spend.acceptance.test.ts`                                                                                                            | Deleted-holding snapshot and independent GRANT/SPEND/RESTORE/REMOVAL replay; exact opposite spend bases and retained collection; missing journals/cash refuses; persisted approval. Scope follows individual test variants, not every expiry/return combination.                                                                                                                                                                                                |
+| Credit shared **during original spend**, owner or family-member spender                                        | 24 `CP-005-M1-17 shared original ...` cases in `payroll-void-restored-spend.acceptance.test.ts`                                                             | Owner/member × same/cross-month × active/expired-before/expired-after restoration × NO_MOVEMENT/full money RETURNED. Exact credit/cash/bases, 272 corrupted-read refusals, stale rejection, persisted approval and frozen original/current history after membership departure. Races remain M1-18.                                                                                                                                                              |
+| Session restoration followed by purchase void                                                                  | `payroll-void-restored-spend.acceptance.test.ts`                                                                                                            | Twelve session/whole-sale × active/expired-before/expired-after × NO_MOVEMENT/RETURNED cases plus four later-month cases; exact ordinals and values, corrupt inventories, stale rejection and immutable original approved month. Whole-sale usage here is fully session-covered.                                                                                                                                                                                |
+| Spent or transferred purchases, including transfer-back/restored-after-transfer                                | `payroll-purchase-void-eligibility.acceptance.test.ts`                                                                                                      | Intentional writer refusal with unchanged sale/holding/journals/payroll/audit evidence, not a missing supported purchase-void workflow.                                                                                                                                                                                                                                                                                                                         |
+| Legacy full-credit funding gaps                                                                                | `payroll-prospective-coverage.acceptance.test.ts`                                                                                                           | Approved prospective-only opening policy; historical gaps remain unavailable, missing prospective funding and later legacy-dependent activity refuse, coverage revisions invalidate drafts and approved history stays frozen.                                                                                                                                                                                                                                   |
+| Mixed or credit-funded RETURNED voids                                                                          | M1-16, **DONE**; `payroll-close-unsupported.acceptance.test.ts`, `payroll-returned-purchase-void.acceptance.test.ts`                                        | User-approved external-money-only returns and original-holding restoration cover credit/session usage, session-plus-cash, mixed purchase/service/product and zero/FOC companions, and credit-funded purchase-only conversions with explicit VP_SPEND exclusion. Same/cross-month approval, independent corruption refusal, stale drafts and frozen history. Partial returns remain intentionally refused; no arbitrary Cartesian-product acceptance is claimed. |
+| Membership/consent, void and close races                                                                       | M1-18, **DONE**; `payroll-prepaid-races.acceptance.test.ts`                                                                                                 | 31 deterministic PostgreSQL-blocked race cases: lifecycle versus calculate/approve both orders, spend/revocation, restoration/purchase void, duplicate void, stale lifecycle requests, failed payout rollback and competing close revisions. Exact money, unique journals, persisted approval and immutable approved history. Focused 31/31 twice; consolidated 632 passed, 0 failed, 9 separately gated skips.                                                 |
 
 The new four cases use real family creation, explicit consent, optional member join,
 the `family:<id>` checkout tender, usage void/restoration and money-funded purchase

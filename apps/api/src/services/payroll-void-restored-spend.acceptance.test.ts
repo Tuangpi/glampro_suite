@@ -159,7 +159,17 @@ async function setup(tag: string): Promise<Fixture> {
               name: "545 for 600",
               price: "545",
               credit: "600",
-              validityDays: tag.includes("expired") ? 1 : null,
+              // Keep later-month restoration before expiry, then cross the actual
+              // frozen expiry timestamp before voiding the purchase.
+              validityDays: tag.includes("cross-month-expired-after")
+                ? Math.ceil(
+                    (Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth() + 1, 5) -
+                      Date.now()) /
+                      86400000,
+                  )
+                : tag.includes("expired")
+                  ? 1
+                  : null,
             },
           });
       const period = new Intl.DateTimeFormat("en-CA", {
@@ -901,153 +911,267 @@ for (const kind of ["service", "product"] as const)
     );
 
 for (const spender of ["owner", "member"] as const)
-  for (const cashDisposition of ["NO_MOVEMENT", "RETURNED"] as const)
-    test(
-      `CP-005-M1-17 shared original ${spender} spend restored then ${cashDisposition} purchase void`,
-      { skip: disabled },
-      tenantCase(`shared-spend-${spender}`, async (fixture) => {
-        const before = await loadMonth(fixture);
-        const prior = await calculateStoredPayrollClose(before.periodKey, 0);
-        await voidSale(
-          fixture.spendId,
-          { reason: "Restore shared original usage", cashDisposition: "NO_MOVEMENT" },
-          fixture.ownerId,
+  for (const crossMonth of [false, true])
+    for (const expiry of ["active", "expired-before-restore", "expired-after-restore"] as const)
+      for (const cashDisposition of ["NO_MOVEMENT", "RETURNED"] as const)
+        test(
+          `CP-005-M1-17 shared original ${spender} ${crossMonth ? "cross-month" : "same-month"} ${expiry} spend restored then ${cashDisposition} purchase void`,
+          { skip: disabled },
+          tenantCase(
+            `shared-spend-${crossMonth ? "cross-month" : "same-month"}-${expiry}-${spender}`,
+            async (fixture) => {
+              const original = await loadMonth(fixture);
+              let frozenOriginal: string | null = null;
+              if (crossMonth) {
+                await calculateStoredPayrollClose(original.periodKey, 0);
+                mock.timers.enable({ apis: ["Date"], now: new Date(original.endsAt) });
+                await approveStoredPayrollClose(
+                  original.periodKey,
+                  1,
+                  "Approve original shared spend",
+                );
+                frozenOriginal = payrollInputHash(
+                  (
+                    await prisma.payrollClose.findFirstOrThrow({
+                      where: { periodKey: original.periodKey },
+                    })
+                  ).state,
+                );
+                mock.timers.reset();
+                mock.timers.enable({
+                  apis: ["Date"],
+                  now: new Date(new Date(original.endsAt).getTime() + 86400000),
+                });
+              }
+              const holding = await prisma.customerValuePackageHolding.findFirstOrThrow({
+                where: { id: fixture.holdingId },
+              });
+              if (
+                expiry === "expired-before-restore" &&
+                holding.expiresAt!.getTime() >= Date.now()
+              ) {
+                mock.timers.reset();
+                mock.timers.enable({
+                  apis: ["Date"],
+                  now: new Date(holding.expiresAt!.getTime() + 1000),
+                });
+              }
+              const before = await loadMonth(fixture);
+              const prior = await calculateStoredPayrollClose(before.periodKey, 0);
+              await voidSale(
+                fixture.spendId,
+                { reason: "Restore shared original usage", cashDisposition: "NO_MOVEMENT" },
+                fixture.ownerId,
+              );
+              assert.equal(
+                (
+                  await prisma.customerValuePackageHolding.findFirstOrThrow({
+                    where: { id: fixture.holdingId },
+                  })
+                ).amountRemaining.toFixed(2),
+                "600.00",
+              );
+              if (expiry === "expired-after-restore") {
+                assert.ok(holding.expiresAt!.getTime() > Date.now());
+                mock.timers.reset();
+                mock.timers.enable({
+                  apis: ["Date"],
+                  now: new Date(holding.expiresAt!.getTime() + 1000),
+                });
+              }
+              await voidSale(
+                fixture.purchaseId,
+                {
+                  reason: "Cancel fully restored shared purchase",
+                  cashDisposition,
+                  ...(cashDisposition === "RETURNED" && {
+                    returnedCash: {
+                      reference: "M1-17 witnessed full return",
+                      payouts: [{ method: "CASH" as const, amount: 545 }],
+                    },
+                  }),
+                },
+                fixture.ownerId,
+              );
+              const inputs = await loadMonth(fixture);
+              assert.equal(
+                inputs.staff[0]!.collection,
+                crossMonth
+                  ? cashDisposition === "RETURNED"
+                    ? "-500.0000"
+                    : "0.0000"
+                  : cashDisposition === "RETURNED"
+                    ? "0.0000"
+                    : "500.0000",
+              );
+              assert.deepEqual(
+                inputs.staff[0]!.calculation.lines.filter(
+                  (row) => row.commissionType === "VP_SPEND",
+                )
+                  .map((row) => row.baseAmount)
+                  .sort(),
+                crossMonth ? ["-75.0000"] : ["-75.0000", "75.0000"],
+              );
+              assert.equal(payrollInputHash(await loadMonth(fixture)), payrollInputHash(inputs));
+              const currentClose = () =>
+                prisma.payrollClose.findFirstOrThrow({ where: { periodKey: inputs.periodKey } });
+              const priorHash = payrollInputHash((await currentClose()).state);
+              for (const corruption of [
+                "missing-consent",
+                "duplicate-spend",
+                "wrong-spend-family",
+                "wrong-spend-value",
+                "missing-membership",
+                "duplicate-membership",
+                "foreign-membership",
+                "missing-family",
+                "missing-restore",
+                "duplicate-restore",
+                ...(expiry !== "active" ? ["missing-grant-expiry", "wrong-restore-expiry"] : []),
+              ]) {
+                await assert.rejects(
+                  prisma.$transaction((tx) =>
+                    loadAuthoritativePayrollCloseInputs(
+                      new Proxy(tx, {
+                        get(target, property, receiver) {
+                          if (
+                            ![
+                              "prepaidBalanceEvent",
+                              "prepaidFamilyEvent",
+                              "prepaidFamily",
+                            ].includes(String(property))
+                          )
+                            return Reflect.get(target, property, receiver);
+                          const delegate = Reflect.get(target, property, receiver);
+                          return new Proxy(delegate, {
+                            get(model, method) {
+                              if (method !== "findMany") return Reflect.get(model, method);
+                              return async (...args: unknown[]) => {
+                                const rows = await model.findMany(...args);
+                                if (property === "prepaidFamily" && corruption === "missing-family")
+                                  return [];
+                                if (property === "prepaidFamilyEvent") {
+                                  if (corruption === "missing-membership") return [];
+                                  if (corruption === "duplicate-membership")
+                                    return [...rows, rows[0]];
+                                  if (corruption === "foreign-membership")
+                                    return rows.map((row: object) => ({
+                                      ...row,
+                                      tenantId: "foreign",
+                                    }));
+                                }
+                                if (property === "prepaidBalanceEvent") {
+                                  if (corruption === "missing-restore")
+                                    return rows.filter(
+                                      (row: { kind: string }) => row.kind !== "RESTORE",
+                                    );
+                                  if (corruption === "duplicate-restore")
+                                    return [
+                                      ...rows,
+                                      ...rows.filter(
+                                        (row: { kind: string }) => row.kind === "RESTORE",
+                                      ),
+                                    ];
+                                  if (corruption === "missing-grant-expiry")
+                                    return rows.map((row: { kind: string }) =>
+                                      row.kind === "GRANT" ? { ...row, expiresAt: null } : row,
+                                    );
+                                  if (corruption === "wrong-restore-expiry")
+                                    return rows.map((row: { kind: string }) =>
+                                      row.kind === "RESTORE"
+                                        ? { ...row, expiresAt: new Date("2030-01-01") }
+                                        : row,
+                                    );
+                                  if (corruption === "missing-consent")
+                                    return rows.filter(
+                                      (row: { kind: string }) => row.kind !== "SHARING",
+                                    );
+                                  if (corruption === "duplicate-spend")
+                                    return [
+                                      ...rows,
+                                      ...rows.filter(
+                                        (row: { kind: string }) => row.kind === "SPEND",
+                                      ),
+                                    ];
+                                  return rows.map((row: { kind: string }) =>
+                                    row.kind === "SPEND"
+                                      ? {
+                                          ...row,
+                                          ...(corruption === "wrong-spend-family" && {
+                                            sharedFamilyId: null,
+                                          }),
+                                          ...(corruption === "wrong-spend-value" && {
+                                            delta: new Prisma.Decimal(-89),
+                                          }),
+                                        }
+                                      : row,
+                                  );
+                                }
+                                return rows;
+                              };
+                            },
+                          });
+                        },
+                      }) as PayrollCloseTransaction,
+                      openPayrollClose(inputs.periodKey),
+                    ),
+                  ),
+                  /Authoritative payroll inputs unavailable/,
+                  corruption,
+                );
+                assert.equal(payrollInputHash((await currentClose()).state), priorHash);
+              }
+              mock.timers.reset();
+              mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+              await assert.rejects(
+                approveStoredPayrollClose(
+                  inputs.periodKey,
+                  prior.revision,
+                  "Reject stale shared spend",
+                ),
+                /changed|stale|recalculate/i,
+              );
+              const draft = await calculateStoredPayrollClose(inputs.periodKey, prior.revision);
+              const approved = await approveStoredPayrollClose(
+                inputs.periodKey,
+                draft.revision,
+                "Reviewed shared spend lifecycle",
+              );
+              assert.equal(approved.status, "APPROVED");
+              assert.equal(
+                payrollInputHash(approved.calculation),
+                payrollInputHash(draft.calculation),
+              );
+              const frozenHash = payrollInputHash((await currentClose()).state);
+              mock.timers.reset();
+              const membership = await prisma.prepaidFamilyMember.findFirstOrThrow({
+                where: { customerId: fixture.customerId },
+              });
+              await changePrepaidMembership(
+                fixture.customerId,
+                {
+                  expectedFamilyId: membership.familyId,
+                  familyId: null,
+                  confirmed: true,
+                  reason: "Leave after approved restored purchase",
+                },
+                fixture.ownerId,
+              );
+              assert.equal(payrollInputHash((await currentClose()).state), frozenHash);
+              if (frozenOriginal)
+                assert.equal(
+                  payrollInputHash(
+                    (
+                      await prisma.payrollClose.findFirstOrThrow({
+                        where: { periodKey: original.periodKey },
+                      })
+                    ).state,
+                  ),
+                  frozenOriginal,
+                );
+            },
+          ),
         );
-        await voidSale(
-          fixture.purchaseId,
-          {
-            reason: "Cancel fully restored shared purchase",
-            cashDisposition,
-            ...(cashDisposition === "RETURNED" && {
-              returnedCash: {
-                reference: "M1-17 witnessed full return",
-                payouts: [{ method: "CASH" as const, amount: 545 }],
-              },
-            }),
-          },
-          fixture.ownerId,
-        );
-        const inputs = await loadMonth(fixture);
-        assert.equal(
-          inputs.staff[0]!.collection,
-          cashDisposition === "RETURNED" ? "0.0000" : "500.0000",
-        );
-        assert.deepEqual(
-          inputs.staff[0]!.calculation.lines.filter((row) => row.commissionType === "VP_SPEND")
-            .map((row) => row.baseAmount)
-            .sort(),
-          ["-75.0000", "75.0000"],
-        );
-        assert.equal(payrollInputHash(await loadMonth(fixture)), payrollInputHash(inputs));
-        const priorHash = payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state);
-        for (const corruption of [
-          "missing-consent",
-          "duplicate-spend",
-          "wrong-spend-family",
-          "wrong-spend-value",
-          "missing-membership",
-          "duplicate-membership",
-          "foreign-membership",
-          "missing-family",
-        ]) {
-          await assert.rejects(
-            prisma.$transaction((tx) =>
-              loadAuthoritativePayrollCloseInputs(
-                new Proxy(tx, {
-                  get(target, property, receiver) {
-                    if (
-                      !["prepaidBalanceEvent", "prepaidFamilyEvent", "prepaidFamily"].includes(
-                        String(property),
-                      )
-                    )
-                      return Reflect.get(target, property, receiver);
-                    const delegate = Reflect.get(target, property, receiver);
-                    return new Proxy(delegate, {
-                      get(model, method) {
-                        if (method !== "findMany") return Reflect.get(model, method);
-                        return async (...args: unknown[]) => {
-                          const rows = await model.findMany(...args);
-                          if (property === "prepaidFamily" && corruption === "missing-family")
-                            return [];
-                          if (property === "prepaidFamilyEvent") {
-                            if (corruption === "missing-membership") return [];
-                            if (corruption === "duplicate-membership") return [...rows, rows[0]];
-                            if (corruption === "foreign-membership")
-                              return rows.map((row: object) => ({ ...row, tenantId: "foreign" }));
-                          }
-                          if (property === "prepaidBalanceEvent") {
-                            if (corruption === "missing-consent")
-                              return rows.filter((row: { kind: string }) => row.kind !== "SHARING");
-                            if (corruption === "duplicate-spend")
-                              return [
-                                ...rows,
-                                ...rows.filter((row: { kind: string }) => row.kind === "SPEND"),
-                              ];
-                            return rows.map((row: { kind: string }) =>
-                              row.kind === "SPEND"
-                                ? {
-                                    ...row,
-                                    ...(corruption === "wrong-spend-family" && {
-                                      sharedFamilyId: null,
-                                    }),
-                                    ...(corruption === "wrong-spend-value" && {
-                                      delta: new Prisma.Decimal(-89),
-                                    }),
-                                  }
-                                : row,
-                            );
-                          }
-                          return rows;
-                        };
-                      },
-                    });
-                  },
-                }) as PayrollCloseTransaction,
-                openPayrollClose(inputs.periodKey),
-              ),
-            ),
-            /Authoritative payroll inputs unavailable/,
-            corruption,
-          );
-          assert.equal(
-            payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state),
-            priorHash,
-          );
-        }
-        mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
-        await assert.rejects(
-          approveStoredPayrollClose(inputs.periodKey, prior.revision, "Reject stale shared spend"),
-          /changed|stale|recalculate/i,
-        );
-        const draft = await calculateStoredPayrollClose(inputs.periodKey, prior.revision);
-        const approved = await approveStoredPayrollClose(
-          inputs.periodKey,
-          draft.revision,
-          "Reviewed shared spend lifecycle",
-        );
-        assert.equal(approved.status, "APPROVED");
-        assert.equal(payrollInputHash(approved.calculation), payrollInputHash(draft.calculation));
-        const frozenHash = payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state);
-        mock.timers.reset();
-        const membership = await prisma.prepaidFamilyMember.findFirstOrThrow({
-          where: { customerId: fixture.customerId },
-        });
-        await changePrepaidMembership(
-          fixture.customerId,
-          {
-            expectedFamilyId: membership.familyId,
-            familyId: null,
-            confirmed: true,
-            reason: "Leave after approved restored purchase",
-          },
-          fixture.ownerId,
-        );
-        assert.equal(
-          payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state),
-          frozenHash,
-        );
-      }),
-    );
 
 for (const shared of [false, true]) {
   test(
