@@ -19,18 +19,27 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { mock, test } from "node:test";
 import pg from "pg";
+import { Prisma } from "../../generated/prisma/client.js";
 import { PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
-import { createSale, voidSale } from "./sale.service.js";
-import { createPrepaidFamily, sharePrepaid } from "./prepaid-family.service.js";
+import { createSale, voidSale, refundSale } from "./sale.service.js";
+import {
+  createPrepaidFamily,
+  changePrepaidMembership,
+  sharePrepaid,
+} from "./prepaid-family.service.js";
 import { voidPayrollSession } from "./payroll-session-void.js";
 import { loadAuthoritativePayrollCloseInputs } from "./payroll-close-loader.js";
 import { loadPayrollValueSpendHistory } from "./payroll-close-value-loader.js";
 import { openPayrollClose, payrollInputHash } from "./payroll-close-state.js";
 import { SALE_VOID_PURCHASE_HOLDINGS_ACTION } from "./sale-void-purchase-evidence.js";
 import { authorizeStoredPayrollCarry } from "./payroll-close-authorizations.js";
-import { calculateStoredPayrollClose, approveStoredPayrollClose } from "./payroll-close-store.js";
+import {
+  calculateStoredPayrollClose,
+  approveStoredPayrollClose,
+  type PayrollCloseTransaction,
+} from "./payroll-close-store.js";
 
 const disabled = process.env.RUN_CP005_ACCEPTANCE !== "true";
 const shares = (staffId: string) => [{ staffId, share: 10000 }];
@@ -102,6 +111,19 @@ async function setup(tag: string): Promise<Fixture> {
       const service = await prisma.service.create({
         data: { tenantId, name: "Credit service", memberPrice: "90", nonmemberPrice: "90" },
       });
+      const ordinary = tag.startsWith("ordinary-refund");
+      const product =
+        ordinary && tag.endsWith("product")
+          ? await prisma.product.create({
+              data: {
+                tenantId,
+                name: "Refund product",
+                memberPrice: "90",
+                nonmemberPrice: "90",
+                quantity: 10,
+              },
+            })
+          : null;
       const session = tag.startsWith("restored-session");
       if (session)
         await prisma.packageValuationActivation.create({
@@ -220,30 +242,88 @@ async function setup(tag: string): Promise<Fixture> {
         : await prisma.customerValuePackageHolding.findFirstOrThrow({
             where: { saleLine: { saleId: purchase.id } },
           });
+      let spenderId = customer.id;
+      let tenderHoldingId = holding.id;
+      if (tag.startsWith("shared-spend")) {
+        const family = await createPrepaidFamily(
+          customer.id,
+          { name: "Spend-time family", confirmed: true, reason: "Share before original usage" },
+          ownerId,
+        );
+        assert.ok(family);
+        tenderHoldingId = `family:${family.id}`;
+        await sharePrepaid(
+          customer.id,
+          holding.id,
+          {
+            familyId: family.id,
+            confirmed: true,
+            expectedUpdatedAt: holding.updatedAt.toISOString(),
+            reason: "Explicit spend-time consent",
+          },
+          ownerId,
+        );
+        if (tag.endsWith("member")) {
+          const member = await prisma.customer.create({
+            data: { tenantId, name: "Family spender" },
+          });
+          await changePrepaidMembership(
+            member.id,
+            {
+              expectedFamilyId: null,
+              familyId: family.id,
+              confirmed: true,
+              reason: "Join before original usage",
+            },
+            ownerId,
+          );
+          spenderId = member.id;
+        }
+      }
       const spend =
         tag === "unused-expired"
           ? null
           : await runAtOutlet(outlet.id, () =>
               createSale({
-                customerId: customer.id,
+                customerId: spenderId,
                 lines: [
                   {
-                    itemType: "SERVICE",
-                    itemId: service.id,
+                    itemType: product ? "PRODUCT" : "SERVICE",
+                    itemId: product?.id ?? service.id,
                     quantity: 1,
                     // A real credit spend carries performers: the redemption, not the sale
                     // commission, is what `VALUE_SPEND` captures.
-                    attribution: { sellers: shares(ownerId), performers: shares(ownerId) },
+                    attribution: {
+                      sellers: shares(ownerId),
+                      ...(!product && { performers: shares(ownerId) }),
+                    },
                   },
+                  ...(ordinary
+                    ? [
+                        {
+                          itemType: "SERVICE" as const,
+                          itemId: service.id,
+                          quantity: 1,
+                          discountPercent: 100,
+                          attribution: { sellers: shares(ownerId), performers: shares(ownerId) },
+                        },
+                      ]
+                    : []),
                 ],
                 payments: [
                   {
-                    method: session ? "PACKAGE" : "PREPAID_CREDIT",
-                    holdingId: holding.id,
+                    method: ordinary ? "CASH" : session ? "PACKAGE" : "PREPAID_CREDIT",
+                    ...(!ordinary && { holdingId: tenderHoldingId }),
                     amount: 90,
                   },
+                  ...(ordinary ? [{ method: "CARD" as const, amount: 0 }] : []),
                 ],
-                collection: { currency: "SGD", allocations: [] },
+                collection: {
+                  currency: "SGD",
+                  allocations: ordinary
+                    ? [{ paymentIndex: 0, linePosition: 0, grossCents: "9000" }]
+                    : [],
+                },
               }),
             );
       return {
@@ -662,6 +742,312 @@ test(
     );
   }),
 );
+
+for (const kind of ["service", "product"] as const)
+  for (const crossMonth of [false, true])
+    test(
+      `CP-005-M1-17 ${kind} plus FOC zero-tender refund ${crossMonth ? "cross-month" : "same-month"}`,
+      { skip: disabled },
+      tenantCase(`ordinary-refund-${kind}`, async (fixture) => {
+        const original = await loadMonth(fixture);
+        const prior = await calculateStoredPayrollClose(original.periodKey, 0);
+        let frozenOriginal: string | null = null;
+        if (crossMonth) {
+          mock.timers.enable({ apis: ["Date"], now: new Date(original.endsAt) });
+          await approveStoredPayrollClose(
+            original.periodKey,
+            prior.revision,
+            "Approve original ordinary receipt",
+          );
+          frozenOriginal = payrollInputHash(
+            (
+              await prisma.payrollClose.findFirstOrThrow({
+                where: { periodKey: original.periodKey },
+              })
+            ).state,
+          );
+          mock.timers.reset();
+          mock.timers.enable({
+            apis: ["Date"],
+            now: new Date(new Date(original.endsAt).getTime() + 86400000),
+          });
+        }
+        const before = await loadMonth(fixture);
+        const oldDraft = crossMonth
+          ? await calculateStoredPayrollClose(before.periodKey, 0)
+          : prior;
+        await refundSale(
+          fixture.spendId,
+          {
+            reason: "Return ordinary receipt with independently valued FOC",
+            restock: true,
+            payouts: [{ method: "CASH", amount: 90 }],
+          },
+          fixture.ownerId,
+        );
+        const inputs = await loadMonth(fixture);
+        assert.equal(inputs.staff[0]!.collection, crossMonth ? "-82.5700" : "500.0000");
+        assert.equal(payrollInputHash(await loadMonth(fixture)), payrollInputHash(inputs));
+        const beforeHash = payrollInputHash(
+          (await prisma.payrollClose.findFirstOrThrow({ where: { periodKey: inputs.periodKey } }))
+            .state,
+        );
+        for (const corruption of [
+          "missing-payout",
+          "wrong-payout",
+          "missing-reversal",
+          "duplicate-reversal",
+          "wrong-reversal-value",
+        ] as const) {
+          await assert.rejects(
+            prisma.$transaction((tx) =>
+              loadAuthoritativePayrollCloseInputs(
+                new Proxy(tx, {
+                  get(target, property, receiver) {
+                    if (property !== "saleRefund" && property !== "payrollSourceEvent")
+                      return Reflect.get(target, property, receiver);
+                    const delegate = Reflect.get(target, property, receiver);
+                    return new Proxy(delegate, {
+                      get(model, method) {
+                        if (method !== "findMany") return Reflect.get(model, method);
+                        return async (...args: unknown[]) => {
+                          const rows = await Reflect.apply(model.findMany, model, args);
+                          if (property === "saleRefund")
+                            return rows.map((row: object) => ({
+                              ...row,
+                              ...(corruption === "missing-payout" && { payouts: [] }),
+                              ...(corruption === "wrong-payout" && {
+                                payouts: [{ method: "CASH", amount: "89.00" }],
+                              }),
+                            }));
+                          if (corruption === "missing-reversal")
+                            return rows.filter(
+                              (row: { sourceType: string }) => row.sourceType !== "REVERSAL",
+                            );
+                          if (corruption === "duplicate-reversal")
+                            return [
+                              ...rows,
+                              ...rows.filter(
+                                (row: { sourceType: string }) => row.sourceType === "REVERSAL",
+                              ),
+                            ];
+                          return rows.map(
+                            (row: { sourceType: string; evidence: { lines?: object[] } }) =>
+                              row.sourceType === "REVERSAL" && corruption === "wrong-reversal-value"
+                                ? {
+                                    ...row,
+                                    evidence: {
+                                      ...row.evidence,
+                                      lines: row.evidence.lines?.map((line) => ({
+                                        ...line,
+                                        baseAmount: "-1.0000",
+                                      })),
+                                    },
+                                  }
+                                : row,
+                          );
+                        };
+                      },
+                    });
+                  },
+                }) as PayrollCloseTransaction,
+                openPayrollClose(inputs.periodKey),
+              ),
+            ),
+            /Authoritative payroll inputs unavailable/,
+            corruption,
+          );
+          assert.equal(
+            payrollInputHash(
+              (
+                await prisma.payrollClose.findFirstOrThrow({
+                  where: { periodKey: inputs.periodKey },
+                })
+              ).state,
+            ),
+            beforeHash,
+          );
+        }
+        mock.timers.reset();
+        mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+        await assert.rejects(
+          approveStoredPayrollClose(
+            inputs.periodKey,
+            oldDraft.revision,
+            "Reject stale refund draft",
+          ),
+          /changed|stale|recalculate/i,
+        );
+        const draft = await calculateStoredPayrollClose(inputs.periodKey, oldDraft.revision);
+        const approved = await approveStoredPayrollClose(
+          inputs.periodKey,
+          draft.revision,
+          "Reviewed ordinary refund lifecycle",
+        );
+        assert.equal(approved.status, "APPROVED");
+        assert.equal(payrollInputHash(approved.calculation), payrollInputHash(draft.calculation));
+        if (frozenOriginal)
+          assert.equal(
+            payrollInputHash(
+              (
+                await prisma.payrollClose.findFirstOrThrow({
+                  where: { periodKey: original.periodKey },
+                })
+              ).state,
+            ),
+            frozenOriginal,
+          );
+      }),
+    );
+
+for (const spender of ["owner", "member"] as const)
+  for (const cashDisposition of ["NO_MOVEMENT", "RETURNED"] as const)
+    test(
+      `CP-005-M1-17 shared original ${spender} spend restored then ${cashDisposition} purchase void`,
+      { skip: disabled },
+      tenantCase(`shared-spend-${spender}`, async (fixture) => {
+        const before = await loadMonth(fixture);
+        const prior = await calculateStoredPayrollClose(before.periodKey, 0);
+        await voidSale(
+          fixture.spendId,
+          { reason: "Restore shared original usage", cashDisposition: "NO_MOVEMENT" },
+          fixture.ownerId,
+        );
+        await voidSale(
+          fixture.purchaseId,
+          {
+            reason: "Cancel fully restored shared purchase",
+            cashDisposition,
+            ...(cashDisposition === "RETURNED" && {
+              returnedCash: {
+                reference: "M1-17 witnessed full return",
+                payouts: [{ method: "CASH" as const, amount: 545 }],
+              },
+            }),
+          },
+          fixture.ownerId,
+        );
+        const inputs = await loadMonth(fixture);
+        assert.equal(
+          inputs.staff[0]!.collection,
+          cashDisposition === "RETURNED" ? "0.0000" : "500.0000",
+        );
+        assert.deepEqual(
+          inputs.staff[0]!.calculation.lines.filter((row) => row.commissionType === "VP_SPEND")
+            .map((row) => row.baseAmount)
+            .sort(),
+          ["-75.0000", "75.0000"],
+        );
+        assert.equal(payrollInputHash(await loadMonth(fixture)), payrollInputHash(inputs));
+        const priorHash = payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state);
+        for (const corruption of [
+          "missing-consent",
+          "duplicate-spend",
+          "wrong-spend-family",
+          "wrong-spend-value",
+          "missing-membership",
+          "duplicate-membership",
+          "foreign-membership",
+          "missing-family",
+        ]) {
+          await assert.rejects(
+            prisma.$transaction((tx) =>
+              loadAuthoritativePayrollCloseInputs(
+                new Proxy(tx, {
+                  get(target, property, receiver) {
+                    if (
+                      !["prepaidBalanceEvent", "prepaidFamilyEvent", "prepaidFamily"].includes(
+                        String(property),
+                      )
+                    )
+                      return Reflect.get(target, property, receiver);
+                    const delegate = Reflect.get(target, property, receiver);
+                    return new Proxy(delegate, {
+                      get(model, method) {
+                        if (method !== "findMany") return Reflect.get(model, method);
+                        return async (...args: unknown[]) => {
+                          const rows = await model.findMany(...args);
+                          if (property === "prepaidFamily" && corruption === "missing-family")
+                            return [];
+                          if (property === "prepaidFamilyEvent") {
+                            if (corruption === "missing-membership") return [];
+                            if (corruption === "duplicate-membership") return [...rows, rows[0]];
+                            if (corruption === "foreign-membership")
+                              return rows.map((row: object) => ({ ...row, tenantId: "foreign" }));
+                          }
+                          if (property === "prepaidBalanceEvent") {
+                            if (corruption === "missing-consent")
+                              return rows.filter((row: { kind: string }) => row.kind !== "SHARING");
+                            if (corruption === "duplicate-spend")
+                              return [
+                                ...rows,
+                                ...rows.filter((row: { kind: string }) => row.kind === "SPEND"),
+                              ];
+                            return rows.map((row: { kind: string }) =>
+                              row.kind === "SPEND"
+                                ? {
+                                    ...row,
+                                    ...(corruption === "wrong-spend-family" && {
+                                      sharedFamilyId: null,
+                                    }),
+                                    ...(corruption === "wrong-spend-value" && {
+                                      delta: new Prisma.Decimal(-89),
+                                    }),
+                                  }
+                                : row,
+                            );
+                          }
+                          return rows;
+                        };
+                      },
+                    });
+                  },
+                }) as PayrollCloseTransaction,
+                openPayrollClose(inputs.periodKey),
+              ),
+            ),
+            /Authoritative payroll inputs unavailable/,
+            corruption,
+          );
+          assert.equal(
+            payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state),
+            priorHash,
+          );
+        }
+        mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+        await assert.rejects(
+          approveStoredPayrollClose(inputs.periodKey, prior.revision, "Reject stale shared spend"),
+          /changed|stale|recalculate/i,
+        );
+        const draft = await calculateStoredPayrollClose(inputs.periodKey, prior.revision);
+        const approved = await approveStoredPayrollClose(
+          inputs.periodKey,
+          draft.revision,
+          "Reviewed shared spend lifecycle",
+        );
+        assert.equal(approved.status, "APPROVED");
+        assert.equal(payrollInputHash(approved.calculation), payrollInputHash(draft.calculation));
+        const frozenHash = payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state);
+        mock.timers.reset();
+        const membership = await prisma.prepaidFamilyMember.findFirstOrThrow({
+          where: { customerId: fixture.customerId },
+        });
+        await changePrepaidMembership(
+          fixture.customerId,
+          {
+            expectedFamilyId: membership.familyId,
+            familyId: null,
+            confirmed: true,
+            reason: "Leave after approved restored purchase",
+          },
+          fixture.ownerId,
+        );
+        assert.equal(
+          payrollInputHash((await prisma.payrollClose.findFirstOrThrow()).state),
+          frozenHash,
+        );
+      }),
+    );
 
 for (const shared of [false, true]) {
   test(

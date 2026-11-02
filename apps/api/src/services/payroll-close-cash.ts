@@ -154,6 +154,31 @@ export function resolvePayrollCloseCash(
   const voidReturns = reversals.reconciliation?.voids?.returnedCash ?? [];
   for (const returned of raw.returnedCashSaleVoids ?? []) {
     for (const allocation of returned.allocations) {
+      if (allocation.cashAttribution) {
+        const original = raw.events.find((event) => event.id === allocation.originalEventId);
+        for (const part of allocation.cashAttribution.allocations) {
+          const collected = byId.get(part.id);
+          const attribution = attributions.find((row) => row.allocationId === part.id);
+          const collection = collections.reconciliation?.collections.find((row) =>
+            row.allocations.some((row) => row.id === part.id),
+          );
+          if (
+            (original && !collected) ||
+            (collected &&
+              (collection?.saleId !== returned.saleId ||
+                collected.saleLineId !== allocation.saleLineId ||
+                collected.itemType !== allocation.itemType ||
+                collected.netCents !== part.netCents ||
+                attribution?.outletId !== returned.outletId ||
+                payrollInputHash(attribution?.shares ?? []) !==
+                  payrollInputHash(
+                    [...part.shares].sort((a, b) => a.staffId.localeCompare(b.staffId)),
+                  )))
+          )
+            blockers.push({ code: "VOID_RETURN_CURRENT_COLLECTION_MISMATCH", sourceId: part.id });
+        }
+        continue;
+      }
       const collected = byId.get(allocation.id);
       const original = raw.events.find((event) => event.id === allocation.originalEventId);
       const attribution = attributions.find((row) => row.allocationId === allocation.id);

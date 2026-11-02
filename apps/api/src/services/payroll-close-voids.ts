@@ -66,6 +66,23 @@ const returnedSchema = voidSchema
           saleLineId: id,
           itemType: z.enum(["PACKAGE", "VALUE_PACKAGE", "SERVICE", "PRODUCT"]),
           shares: commissionSharesSchema,
+          /** Cash seller splits from the original receipts, independent of
+           * service performer splits. Preserve each allocation's rounding. */
+          cashAttribution: z
+            .object({
+              allocations: z
+                .array(
+                  z.object({
+                    id,
+                    netCents: cents,
+                    shares: commissionSharesSchema,
+                    evidence: z.unknown().refine((value) => value !== undefined && value !== null),
+                  }),
+                )
+                .min(1),
+              evidence: z.unknown().refine((value) => value !== undefined && value !== null),
+            })
+            .optional(),
           evidence: z.unknown().refine((value) => value !== undefined && value !== null),
         }),
       )
@@ -104,6 +121,11 @@ export function resolvePayrollCloseVoids(raw: PayrollCloseVoidRecords) {
     returned.flatMap((row) => row.allocations.map((part) => part.id)),
     returned.flatMap((row) => row.allocations.map((part) => part.originalEventId)),
     returned.flatMap((row) => row.payouts.map((part) => part.id)),
+    returned.flatMap((row) =>
+      row.allocations.flatMap(
+        (part) => part.cashAttribution?.allocations.map((cash) => cash.id) ?? [],
+      ),
+    ),
   ])
     if (new Set(keys).size !== keys.length)
       throw new Error("Duplicate payroll sale void evidence.");
@@ -121,6 +143,17 @@ export function resolvePayrollCloseVoids(raw: PayrollCloseVoidRecords) {
               .map((part) => ({
                 ...part,
                 shares: [...part.shares].sort((a, b) => a.staffId.localeCompare(b.staffId)),
+                ...(part.cashAttribution && {
+                  cashAttribution: {
+                    ...part.cashAttribution,
+                    allocations: [...part.cashAttribution.allocations]
+                      .sort((a, b) => a.id.localeCompare(b.id))
+                      .map((cash) => ({
+                        ...cash,
+                        shares: [...cash.shares].sort((a, b) => a.staffId.localeCompare(b.staffId)),
+                      })),
+                  },
+                }),
               })),
           }
         : {}),
@@ -172,7 +205,6 @@ export function resolvePayrollCloseVoids(raw: PayrollCloseVoidRecords) {
     }
     if (record.cashDisposition !== "RETURNED") continue;
     if (
-      new Set(record.reversals.map((part) => part.originalSourceType)).size !== 1 ||
       record.allocations.length !== record.reversals.length ||
       record.reversals.some(
         (part) =>
@@ -227,7 +259,18 @@ export function resolvePayrollCloseVoids(raw: PayrollCloseVoidRecords) {
         })
       )
         block("VOID_RETURN_ORIGINAL_ALLOCATION_MISMATCH", allocation.id);
-      staff.push(...expected);
+      if (allocation.cashAttribution) {
+        if (
+          !ordinary ||
+          allocation.cashAttribution.allocations.reduce(
+            (sum, part) => sum + BigInt(part.netCents),
+            0n,
+          ) !== BigInt(allocation.netCents)
+        )
+          block("VOID_RETURN_CASH_ATTRIBUTION_MISMATCH", allocation.id);
+        for (const part of allocation.cashAttribution.allocations)
+          staff.push(...allocatePayrollSplit(decimal(part.netCents), part.shares));
+      } else staff.push(...expected);
     }
     returnedCash.push({
       saleId: record.saleId,

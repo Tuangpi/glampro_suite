@@ -1,5 +1,25 @@
 # Commission & Payroll decisions
 
+## November 2, 2026 — M1-16 mixed/prepaid reversal policy
+
+- Explicit user approval: return **all external money actually collected**, restore
+  prepaid credit/session usage to its original holding, and never cash out prepaid
+  value. Fully prepaid-funded reversals restore usage with NO_MOVEMENT, no payout.
+- Mixed purchase/ordinary receipts and prepaid-funded usage may attest RETURNED
+  only for the full external-money portion. Positive, cent-exact actual payout
+  splits and a reference remain required; partial returns remain unsupported.
+- Preserve ordinary money-only service/product refund rules (ADR 0020 R1/P1).
+  An ordinary money-paid sale cannot substitute a returned void for a refund.
+- Independently reconcile original collection allocations, cash sellers, usage
+  restoration journals, source captures and exact reversals. Prepaid restoration
+  is not external cash and cannot create a second payout or commission source.
+- Existing purchase eligibility, immutable evidence, missing-history refusals,
+  stale approvals and approved-history protections remain. No historical backfill,
+  provider transfer, deployment or earnings activation is authorized.
+- Supersedes the November 1 purchase-only RETURNED restriction only for these
+  approved additional shapes. Implementation/acceptance is tracked in M1-16;
+  this policy decision alone does not accept any new writer or loader path.
+
 ## November 2, 2026 — legacy full-credit history and prospective approval
 
 - User-approved M1-15 policy: **keep legacy history unavailable; define a

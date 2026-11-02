@@ -412,11 +412,7 @@ export async function loadPayrollPackageRedemptionHistory(
       return unavailable();
     const saleCash =
       usage.status === "VOID" ? await loadSaleVoidCashConfirmation(tx, tenantId, usage.id) : null;
-    if (
-      saleCash &&
-      (!redemption.revertedAt || saleCash.confirmation.cashDisposition !== "NO_MOVEMENT")
-    )
-      return unavailable();
+    if (saleCash && !redemption.revertedAt) return unavailable();
     const original = {
       ...(saleCash && {
         saleVoid: {

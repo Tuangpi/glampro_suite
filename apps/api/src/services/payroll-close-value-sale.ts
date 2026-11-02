@@ -29,7 +29,7 @@ import {
   payrollMixedCreditFunding,
 } from "./payroll-full-credit-funding.js";
 import { resolvePayrollCloseSources } from "./payroll-close-sources.js";
-import type { PayrollNoCashSaleVoid } from "./payroll-close-voids.js";
+import type { PayrollNoCashSaleVoid, PayrollReturnedCashSaleVoid } from "./payroll-close-voids.js";
 import type { PayrollNoCashReversal } from "./payroll-close-reversals.js";
 import type { PayrollCloseTransaction } from "./payroll-close-store.js";
 
@@ -180,7 +180,14 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
   const sessionCount = redemptions.length - creditRedemptions.length;
   const coverage = sessionCount ? await loadPayrollSalePackageCoverage(tx, saleId, true) : null;
   const packageTender = coverage
-    ? verifyPayrollPackageTenders(sale, payments, coverage.lines, sessionCount, true)
+    ? verifyPayrollPackageTenders(
+        sale,
+        payments,
+        coverage.lines,
+        sessionCount,
+        true,
+        sale.status === "VOID",
+      )
     : null;
   const sessionFunding = coverage
     ? (payrollSessionCreditFunding(
@@ -190,6 +197,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         collections,
         coverage.lines,
         sessionCount,
+        sale.status === "VOID",
       ) ??
       (instalment
         ? // Checkout-only inventory: later collections append their own allocations and
@@ -554,6 +562,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
   if (originals.length !== ordinary.length + spendEvents.length + sessionCount) return fail();
   const noCashReversals: PayrollNoCashReversal[] = [];
   let noCashSaleVoid: PayrollNoCashSaleVoid | null = null;
+  let returnedCashSaleVoid: PayrollReturnedCashSaleVoid | null = null;
   const cashConfirmation =
     sale.status === "VOID" ? await loadSaleVoidCashConfirmation(tx, tenantId, saleId) : null;
   if (cashConfirmation) {
@@ -634,6 +643,14 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
           originalSourceId: original.sourceId,
           originalSourceType: "SALE_LINE",
         });
+      } else if (original.sourceType === "REDEMPTION") {
+        const restored = coverage?.evidence.histories
+          .flatMap((history) => history.voids)
+          .filter(
+            (row) => row.originalEventId === original.id && row.reversalEventId === reversal.id,
+          );
+        if (restored?.length !== 1) return fail();
+        // Monthly session integration supplies its independent no-cash reversal.
       } else return fail();
     }
     if (ordinaryReversals.length)
@@ -651,6 +668,85 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
         evidence: cashConfirmation,
         reversals: ordinaryReversals,
       };
+    if (cashConfirmation.confirmation.cashDisposition === "RETURNED") {
+      if (!noCashSaleVoid || outstanding.length || !externalCents) return fail();
+      const returned = cashConfirmation.confirmation.returned;
+      const returnedAllocations: PayrollReturnedCashSaleVoid["allocations"] = [];
+      for (const part of ordinaryReversals) {
+        const line = sale.lines.find((row) => row.id === part.originalSourceId)!;
+        const capture = captureSchema.parse(
+          events.find((row) => row.id === part.originalEventId)!.evidence,
+        );
+        const attribution = commissionAttributionSchema.parse(line.attribution);
+        const shares = line.itemType === "PRODUCT" ? attribution.sellers : attribution.performers;
+        const cashParts = allocations.filter((row) => row.saleLineId === line.id);
+        const totals = cashParts.reduce(
+          (sum, row) => ({
+            net: sum.net + row.netCents,
+            tax: sum.tax + row.taxCents,
+            gross: sum.gross + row.grossCents,
+          }),
+          { net: 0n, tax: 0n, gross: 0n },
+        );
+        // The original ordinary capture already reflects the external funded
+        // portion. Never use full catalogue value or VALUE_SPEND as cash.
+        if (
+          !shares ||
+          !attribution.sellers ||
+          !cashParts.length ||
+          capture.lines.some(
+            (row) =>
+              row.baseAmount !==
+              allocatePayrollSplit(
+                `${totals.net / 100n}.${(totals.net % 100n).toString().padStart(2, "0")}00`,
+                shares,
+              ).find((share) => share.staffId === row.staffId)?.amount,
+          )
+        )
+          return fail();
+        returnedAllocations.push({
+          id: `void-line:${line.id}`,
+          originalEventId: part.originalEventId,
+          saleLineId: line.id,
+          itemType: line.itemType as "SERVICE" | "PRODUCT",
+          netCents: totals.net.toString(),
+          taxCents: totals.tax.toString(),
+          grossCents: totals.gross.toString(),
+          shares,
+          cashAttribution: {
+            allocations: cashParts.map((row) => ({
+              id: row.id,
+              netCents: row.netCents.toString(),
+              shares: attribution.sellers!,
+              evidence: JSON.parse(JSON.stringify(row.evidence)),
+            })),
+            evidence: line.attribution,
+          },
+          evidence: JSON.parse(
+            JSON.stringify({ line, cashParts }, (_key, value) =>
+              typeof value === "bigint" ? value.toString() : value,
+            ),
+          ),
+        });
+      }
+      const total = (key: "netCents" | "taxCents" | "grossCents") =>
+        returnedAllocations.reduce((sum, row) => sum + BigInt(row[key]), 0n).toString();
+      if (
+        total("grossCents") !== externalCents.toString() ||
+        returned.grossCents !== externalCents.toString()
+      )
+        return fail();
+      returnedCashSaleVoid = {
+        ...noCashSaleVoid,
+        cashDisposition: "RETURNED",
+        netCents: total("netCents"),
+        taxCents: total("taxCents"),
+        grossCents: total("grossCents"),
+        allocations: returnedAllocations,
+        payouts: returned.payouts,
+      };
+      noCashSaleVoid = null;
+    }
   } else if (reversals.length) return fail();
   const parts = new Intl.DateTimeFormat("en", {
     timeZone: tenant.timeZone,
@@ -703,6 +799,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     ordinary,
     noCashReversals,
     noCashSaleVoid,
+    returnedCashSaleVoid,
     coverage,
     packageTender,
     creditPaymentIds: creditPayments.map((row) => row.id),

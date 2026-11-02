@@ -11,8 +11,8 @@
  * The cash question is one radio group rather than two checkboxes, because a void either
  * returned the money or it did not: `voidSaleSchema` refuses a request that says both or
  * neither, and the dialog should not be able to post one. Where the receipt is not a
- * purchase paid in money, the returned option is not offered at all — a service sale that
- * gave money back is refunded, not voided, and the server refuses it by name.
+ * purchase or prepaid-funded receipt, the returned option is not offered — an ordinary
+ * money-paid sale uses a refund. Prepaid usage restores separately and is never cash.
  */
 import { useState } from "react";
 import {
@@ -38,7 +38,7 @@ export interface VoidSaleDialogProps {
   paidAmount: string;
   /** The same figure as the salon prints it, so the dialog says what it is returning. */
   paidAmountLabel: string;
-  /** A purchase paid in money is the only receipt whose giving-back this till records. */
+  /** Eligible purchase or prepaid-funded usage with external money to return. */
   canReturnMoney: boolean;
   /** The write is in flight; every control freezes so one attempt stays one attempt. */
   isPending: boolean;
@@ -212,7 +212,8 @@ export default function VoidSaleDialog({
               />
               <span className="text-xs text-ink-muted">
                 The amount is the {paidAmountLabel} this sale collected — a returned void gives all
-                of it back, and the server refuses any other figure.
+                of it back, and the server refuses any other figure. Prepaid credit or sessions
+                restore to the original holding, never as a cash payout.
               </span>
             </label>
           </div>

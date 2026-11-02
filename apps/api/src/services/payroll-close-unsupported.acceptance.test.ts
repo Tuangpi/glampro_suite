@@ -274,6 +274,297 @@ const loadValueSale = (fixture: Fixture, saleId: string) =>
     fixture.ownerId,
   );
 
+for (const session of [false, true]) {
+  for (const external of [false, true]) {
+    for (const crossMonth of [false, true]) {
+      test(
+        `CP-005 M1-16 ${session ? "session/credit" : "credit"} ${external ? "RETURNED" : "NO_MOVEMENT"} ${crossMonth ? "cross-month" : "same-month"} restores prepaid without cash conversion`,
+        { skip: disabled },
+        tenantCase(`m116-${session}-${external}`, async (fixture) => {
+          const sale = await atOutlet(fixture, () =>
+            createSale({
+              customerId: fixture.customerId,
+              lines: [
+                ...(session
+                  ? [
+                      {
+                        itemType: "SERVICE" as const,
+                        itemId: fixture.sessionServiceId,
+                        quantity: 1,
+                        attribution: {
+                          sellers: shares(fixture.ownerId),
+                          performers: shares(fixture.staffId),
+                        },
+                      },
+                    ]
+                  : []),
+                {
+                  itemType: "SERVICE",
+                  itemId: fixture.creditServiceId,
+                  quantity: 1,
+                  attribution: {
+                    sellers: shares(fixture.ownerId),
+                    performers: shares(fixture.staffId),
+                  },
+                },
+              ],
+              payments: [
+                ...(session
+                  ? [
+                      {
+                        method: "PACKAGE" as const,
+                        holdingId: fixture.sessionHoldingId,
+                        amount: 10,
+                        performers: shares(fixture.staffId),
+                      },
+                    ]
+                  : []),
+                {
+                  method: "PREPAID_CREDIT",
+                  holdingId: fixture.creditHoldingId,
+                  amount: external ? 60 : 90,
+                },
+                ...(external ? [{ method: "CASH" as const, amount: 30 }] : []),
+              ],
+              collection: {
+                currency: "SGD",
+                allocations: external
+                  ? [
+                      {
+                        paymentIndex: session ? 2 : 1,
+                        linePosition: session ? 1 : 0,
+                        grossCents: "3000",
+                      },
+                    ]
+                  : [],
+              },
+            }),
+          );
+          const original = await loadMonth(fixture);
+          let frozenOriginal: string | null = null;
+          if (crossMonth) {
+            const originalDraft = await calculateStoredPayrollClose(original.periodKey, 0);
+            mock.timers.enable({ apis: ["Date"], now: new Date(original.endsAt) });
+            try {
+              frozenOriginal = payrollInputHash(
+                await approveStoredPayrollClose(
+                  original.periodKey,
+                  originalDraft.revision,
+                  "Approve original before later reversal",
+                ),
+              );
+            } finally {
+              mock.timers.reset();
+            }
+            mock.timers.enable({
+              apis: ["Date"],
+              now: new Date(new Date(original.endsAt).getTime() + 86400000),
+            });
+          }
+          try {
+            const before = await loadMonth(fixture);
+            const prior = await calculateStoredPayrollClose(before.periodKey, 0);
+            const creditBefore = await prisma.customerValuePackageHolding.findFirstOrThrow({
+              where: { id: fixture.creditHoldingId },
+            });
+            if (external) {
+              await assert.rejects(
+                voidSale(
+                  sale.id,
+                  {
+                    reason: "Refuse prepaid cash conversion",
+                    cashDisposition: "RETURNED",
+                    returnedCash: {
+                      reference: "M116 refusal",
+                      payouts: [{ method: "CASH", amount: 90 }],
+                    },
+                  },
+                  fixture.ownerId,
+                ),
+                /must equal what this sale collected/,
+              );
+              assert.equal(
+                (await prisma.sale.findFirstOrThrow({ where: { id: sale.id } })).status,
+                "COMPLETED",
+              );
+              assert.equal(
+                (
+                  await prisma.customerValuePackageHolding.findFirstOrThrow({
+                    where: { id: fixture.creditHoldingId },
+                  })
+                ).amountRemaining.toFixed(2),
+                creditBefore.amountRemaining.toFixed(2),
+              );
+            }
+            await voidSale(
+              sale.id,
+              {
+                reason: "Restore prepaid and return only actual money",
+                ...(external
+                  ? {
+                      cashDisposition: "RETURNED" as const,
+                      returnedCash: {
+                        reference: "M116 external return",
+                        payouts: [{ method: "CASH" as const, amount: 30 }],
+                      },
+                    }
+                  : { cashDisposition: "NO_MOVEMENT" as const }),
+              },
+              fixture.ownerId,
+            );
+            const allocated = await loadValueSale(fixture, sale.id);
+            assert.equal(
+              allocated.returnedCashSaleVoid?.grossCents ?? "0",
+              external ? "3000" : "0",
+            );
+            assert.equal(
+              (
+                await prisma.customerValuePackageHolding.findFirstOrThrow({
+                  where: { id: fixture.creditHoldingId },
+                })
+              ).amountRemaining.toFixed(2),
+              "600.00",
+            );
+            const inputs = await loadMonth(fixture);
+            assert.equal(
+              inputs.staff.find((row) => row.staff.id === fixture.ownerId)!.collection,
+              crossMonth ? (external ? "-27.5200" : "0.0000") : "591.7400",
+            );
+            assert.equal(
+              inputs.staff.find((row) => row.staff.id === fixture.staffId)!.collection,
+              "0.0000",
+            );
+            for (const corruption of [
+              "RESTORE",
+              "TENDER",
+              "REVERSAL",
+              "COLLECTION",
+              "PAYOUT",
+            ] as const) {
+              if (!external && ["COLLECTION", "PAYOUT"].includes(corruption)) continue;
+              await assert.rejects(
+                prisma.$transaction((tx) =>
+                  loadAuthoritativePayrollCloseInputs(
+                    new Proxy(tx, {
+                      get(target, property, receiver) {
+                        if (
+                          ![
+                            "prepaidBalanceEvent",
+                            "salePayment",
+                            "payrollSourceEvent",
+                            "commissionCollection",
+                            "auditLog",
+                          ].includes(String(property))
+                        )
+                          return Reflect.get(target, property, receiver);
+                        const delegate = Reflect.get(target, property, receiver);
+                        return new Proxy(delegate, {
+                          get(model, method) {
+                            if (method !== "findMany") return Reflect.get(model, method);
+                            return async (...args: unknown[]) => {
+                              const rows = await model.findMany(...args);
+                              return rows.filter(
+                                (row: {
+                                  kind?: string;
+                                  saleId?: string;
+                                  sourceType?: string;
+                                  targetId?: string;
+                                }) =>
+                                  !(
+                                    (corruption === "RESTORE" &&
+                                      property === "prepaidBalanceEvent" &&
+                                      row.saleId === sale.id &&
+                                      row.kind === "RESTORE") ||
+                                    (corruption === "TENDER" &&
+                                      property === "salePayment" &&
+                                      row.saleId === sale.id) ||
+                                    (corruption === "REVERSAL" &&
+                                      property === "payrollSourceEvent" &&
+                                      row.saleId === sale.id &&
+                                      row.sourceType === "REVERSAL") ||
+                                    (corruption === "COLLECTION" &&
+                                      property === "commissionCollection" &&
+                                      row.saleId === sale.id) ||
+                                    (corruption === "PAYOUT" &&
+                                      property === "auditLog" &&
+                                      row.targetId === sale.id)
+                                  ),
+                              );
+                            };
+                          },
+                        });
+                      },
+                    }) as PayrollCloseTransaction,
+                    openPayrollClose(inputs.periodKey),
+                  ),
+                ),
+                /Authoritative payroll inputs unavailable/,
+                corruption,
+              );
+              assert.equal(
+                (
+                  await prisma.payrollClose.findFirstOrThrow({
+                    where: { periodKey: inputs.periodKey },
+                  })
+                ).revision,
+                prior.revision,
+              );
+            }
+            mock.timers.reset();
+            mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+            try {
+              await assert.rejects(
+                approveStoredPayrollClose(
+                  inputs.periodKey,
+                  prior.revision,
+                  "Refuse stale pre-void draft",
+                ),
+                /changed|stale|recalculate/i,
+              );
+              const draft = await calculateStoredPayrollClose(inputs.periodKey, prior.revision);
+              const approved = await approveStoredPayrollClose(
+                inputs.periodKey,
+                draft.revision,
+                "Reviewed external return and prepaid restoration",
+              );
+              assert.equal(approved.status, "APPROVED");
+              await prisma.service.update({
+                where: { id: fixture.creditServiceId },
+                data: { nonmemberPrice: "999" },
+              });
+              assert.equal(
+                payrollInputHash(
+                  (
+                    await prisma.payrollClose.findFirstOrThrow({
+                      where: { periodKey: inputs.periodKey },
+                    })
+                  ).state,
+                ),
+                payrollInputHash(approved),
+              );
+              if (frozenOriginal)
+                assert.equal(
+                  payrollInputHash(
+                    (
+                      await prisma.payrollClose.findFirstOrThrow({
+                        where: { periodKey: original.periodKey },
+                      })
+                    ).state,
+                  ),
+                  frozenOriginal,
+                );
+            } finally {
+              mock.timers.reset();
+            }
+          } finally {
+            mock.timers.reset();
+          }
+        }),
+      );
+    }
+  }
+}
+
 /** Gate only the first real transaction after its tenant row lock. Both real
  * writers retain their production advisory/row locking and commit behavior.
  * Restore the wrapper before starting the contender; no production test hooks. */

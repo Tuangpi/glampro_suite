@@ -553,6 +553,8 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     noCashReversals.push(...value.noCashReversals.filter((row) => inMonth(row.occurredAt)));
     if (value.noCashSaleVoid && inMonth(value.noCashSaleVoid.occurredAt))
       noCashSaleVoids.push(value.noCashSaleVoid);
+    if (value.returnedCashSaleVoid && inMonth(value.returnedCashSaleVoid.occurredAt))
+      returnedCashSaleVoids.push(value.returnedCashSaleVoid);
   }
   for (const covered of saleCoverage.values()) {
     for (const history of covered.evidence.histories) {
@@ -561,7 +563,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
           (row) => row.id === restored.reversalEventId,
         )!;
         if (reversal.occurredAt < from || reversal.occurredAt >= to) continue;
-        if (operations.some((row) => row.sourceKey === reversal.sourceKey)) continue;
+        if (noCashReversals.some((row) => row.eventId === reversal.id)) continue;
         const inventoried = events.filter((row) => row.id === reversal.id);
         if (
           inventoried.length !== 1 ||
@@ -571,16 +573,17 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         const original = history.evidence.related.find(
           (row) => row.id === restored.originalEventId,
         )!;
-        operations.push({
-          tenantId,
-          sourceType: "REVERSAL",
-          sourceId: reversal.sourceId,
-          sourceKey: reversal.sourceKey,
-          saleId: reversal.saleId,
-          outletId: reversal.outletId,
-          occurredAt: reversal.occurredAt,
-          evidence: snapshot(restored),
-        });
+        if (!operations.some((row) => row.sourceKey === reversal.sourceKey))
+          operations.push({
+            tenantId,
+            sourceType: "REVERSAL",
+            sourceId: reversal.sourceId,
+            sourceKey: reversal.sourceKey,
+            saleId: reversal.saleId,
+            outletId: reversal.outletId,
+            occurredAt: reversal.occurredAt,
+            evidence: snapshot(restored),
+          });
         if (!events.some((row) => row.id === original.id)) lineage.set(original.id, original);
         noCashReversals.push({
           id: restored.snapshotId,

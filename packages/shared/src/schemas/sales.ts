@@ -758,7 +758,10 @@ export const voidSaleSchema = z
     cashDisposition: z.enum(VOID_SALE_CASH_DISPOSITIONS).optional(),
     /** The payouts that gave the money back — required by `RETURNED` and refused by
      * `NO_MOVEMENT`, so one request can never attest both. The total must equal what the
-     * sale collected; the server checks that, because a body could name any figure. */
+     * sale collected in external money, excluding prepaid credit/session tenders;
+     * those restore to their original holding and cannot be cashed out. The server
+     * checks the total because a body could name any figure. Ordinary money-only
+     * service/product sales still require the refund workflow. */
     returnedCash: z
       .object({
         /** Bank slip, voucher or till note that names this giving-back (3+ characters). */

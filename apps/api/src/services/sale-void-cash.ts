@@ -64,11 +64,15 @@ const centsOf = (amount: number): string | null => {
   return String(value);
 };
 const tenderedCents = (
-  payments: { amount: { mul(value: number): { toFixed(dp: number): string } } }[],
-) => payments.reduce((sum, row) => sum + BigInt(row.amount.mul(100).toFixed(0)), 0n);
-const moneyTendered = (payments: { method: string }[]) =>
-  payments.length > 0 &&
-  payments.every((row) => !(REDEMPTION_PAYMENT_METHODS as readonly string[]).includes(row.method));
+  payments: { method: string; amount: { mul(value: number): { toFixed(dp: number): string } } }[],
+) =>
+  payments
+    .filter(
+      (row) =>
+        (MONEY_PAYMENT_METHODS as readonly string[]).includes(row.method) ||
+        row.method === "PAYNOW",
+    )
+    .reduce((sum, row) => sum + BigInt(row.amount.mul(100).toFixed(0)), 0n);
 
 /** Bind the attestation to independent post-void operational records, not payroll
  * bases. Stable ID order and JSON normalization preserve dates/decimals/bigints. */
@@ -108,28 +112,36 @@ async function operationalEvidence(tx: PayrollCloseTransaction, tenantId: string
       (_key, value) => (typeof value === "bigint" ? value.toString() : value),
     ),
   );
-  return { sale, payments, evidence, hash: payrollInputHash(evidence) };
+  return { sale, payments, redemptions, evidence, hash: payrollInputHash(evidence) };
 }
 
-/** Binds the manager's returned-cash claim to the money the sale actually took.
- *
- * Only a purchase-only sale whose tenders are all external money can be represented:
- * the returned allocations the close loads are those same tenders' collection
- * allocations, one per receipt. A credit-funded or mixed sale returns part of its
- * consideration in another form, which this attestation cannot state. */
+function supportsReturnedCash({
+  sale,
+  payments,
+  redemptions,
+}: Awaited<ReturnType<typeof operationalEvidence>>) {
+  const purchase = sale.lines.some((line) => purchaseTypes.includes(line.itemType));
+  return (
+    sale.lines.length > 0 &&
+    sale.lines.every((line) => [...purchaseTypes, "SERVICE", "PRODUCT"].includes(line.itemType)) &&
+    payments.every((row) =>
+      [...MONEY_PAYMENT_METHODS, "PAYNOW", ...REDEMPTION_PAYMENT_METHODS].includes(row.method),
+    ) &&
+    (purchase || (redemptions.length > 0 && redemptions.every((row) => row.revertedAt !== null)))
+  );
+}
+
+/** Money returns never include prepaid consideration. Prepaid restoration is
+ * independently verified from its operational journals by the payroll loader. */
 function returnedPayouts(
   saleId: string,
   operational: Awaited<ReturnType<typeof operationalEvidence>>,
   returned: SaleVoidReturnedCash,
 ) {
-  const { sale, payments } = operational;
-  if (
-    !sale.lines.length ||
-    sale.lines.some((line) => !purchaseTypes.includes(line.itemType)) ||
-    !moneyTendered(payments)
-  )
+  const { payments } = operational;
+  if (!supportsReturnedCash(operational))
     throw conflict(
-      "Only a package or credit purchase paid entirely in money records a returned void here; return this sale's money through a refund instead.",
+      "A returned void requires a purchase or prepaid-funded usage; ordinary money-paid sales must use a refund. Only external money collected can be returned.",
       "VOID_RETURN_UNSUPPORTED_SALE",
     );
   const payouts = returned.payouts.map((payout, index) => {
@@ -228,15 +240,15 @@ export async function loadSaleVoidCashConfirmation(
   if (parsed.data.cashDisposition === "RETURNED") {
     // Re-derive the returned total from the surviving tenders, so an attestation that
     // was written or edited outside the void writer cannot overstate or understate it.
-    const { sale, payments } = operational;
+    const { payments } = operational;
     const attestedCents = parsed.data.returned.payouts.reduce(
       (sum, payout) => sum + BigInt(payout.grossCents),
       0n,
     );
     if (
-      !sale.lines.length ||
-      sale.lines.some((line) => !purchaseTypes.includes(line.itemType)) ||
-      !moneyTendered(payments) ||
+      !supportsReturnedCash(operational) ||
+      attestedCents === 0n ||
+      parsed.data.returned.payouts.some((payout) => payout.grossCents === "0") ||
       attestedCents !== tenderedCents(payments) ||
       BigInt(parsed.data.returned.grossCents) !== attestedCents
     )

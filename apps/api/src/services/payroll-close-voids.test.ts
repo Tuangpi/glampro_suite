@@ -616,3 +616,71 @@ test("ordinary returned void cannot also be a full sale refund", () => {
   assert.equal(result.cash, null);
   assert.ok(result.blockers.some((part) => part.code === "VOID_REFUND_CASH_EFFECT_CONFLICT"));
 });
+
+test("returned mixed purchase/ordinary sources reconcile independently, not one source type per sale", () => {
+  const input = returnedFixture();
+  const ordinary = ordinaryReturnedFixture();
+  const original = ordinary.lineageEvents[0];
+  Object.assign(original, {
+    id: "service-original",
+    sourceKey: "service-original",
+    sourceId: "service-line",
+  });
+  const reversal = ordinary.events[0];
+  Object.assign(reversal, {
+    id: "service-reversal",
+    sourceKey: "service-reversal",
+    sourceId: original.id,
+  });
+  (reversal.evidence as { originalEventId: string }).originalEventId = original.id;
+  for (const event of [original, reversal])
+    (event.evidence as { lines: { id: string }[] }).lines[0].id = `${event.id}-base`;
+  input.lineageEvents.push(original);
+  input.events.push(reversal);
+  const returned = input.returnedCashSaleVoids![0];
+  returned.reversals.push({
+    eventId: reversal.id,
+    originalEventId: original.id,
+    originalSourceId: original.sourceId,
+    originalSourceType: "SALE_LINE",
+  });
+  returned.allocations.push({
+    ...ordinary.returnedCashSaleVoids![0].allocations[0],
+    id: "service-return",
+    originalEventId: original.id,
+    saleLineId: original.sourceId,
+  });
+  Object.assign(returned, { netCents: "20000", taxCents: "1800", grossCents: "21800" });
+  returned.payouts = [{ id: "mixed-payout", method: "CASH", grossCents: "21800" }];
+  assert.equal(resolvePayrollCloseCash(input).cash!.salonCash, "-200.0000");
+  returned.allocations.pop();
+  assert.equal(resolvePayrollCloseCash(input).cash, null);
+});
+
+test("returned service cash uses original receipt sellers, not commission performers", () => {
+  const input = ordinaryReturnedFixture();
+  const allocation = input.returnedCashSaleVoids![0].allocations[0];
+  allocation.cashAttribution = {
+    allocations: [
+      {
+        id: "original-cash-allocation",
+        netCents: "10000",
+        shares: [{ staffId: "cash-seller", share: 10000 }],
+        evidence: { revision: 1 },
+      },
+    ],
+    evidence: { revision: 1 },
+  };
+  const before = structuredClone(input);
+  const result = resolvePayrollCloseCash(input);
+  assert.equal(result.status, "CASH_EVIDENCE_READY", JSON.stringify(result.blockers));
+  assert.deepEqual(result.cash!.staff, [{ staffId: "cash-seller", collection: "-100.0000" }]);
+  assert.deepEqual(input, before);
+  allocation.cashAttribution.allocations[0].netCents = "9999";
+  assert.equal(resolvePayrollCloseCash(input).cash, null);
+  allocation.cashAttribution.allocations[0].netCents = "10000";
+  allocation.cashAttribution.allocations.push(
+    structuredClone(allocation.cashAttribution.allocations[0]),
+  );
+  assert.throws(() => resolvePayrollCloseCash(input), /Duplicate/);
+});

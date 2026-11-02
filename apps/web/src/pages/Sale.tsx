@@ -31,6 +31,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MAX_SALE_LINES,
+  MONEY_PAYMENT_METHODS,
+  REDEMPTION_PAYMENT_METHODS,
   SALE_ITEM_KINDS,
   normalizeBarcode,
   type CustomerSummary,
@@ -496,15 +498,28 @@ export default function Sale() {
     }
   }
 
-  /** Whether this receipt is the shape a returned void can even describe: a purchase
-   * paid in money. A service sale that gave money back is refunded, not voided. */
+  // Prepaid tender is restored, never paid out. Sum cents rather than paidAmount,
+  // which includes prepaid consideration on a mixed receipt.
+  const voidExternalAmount = (
+    (receipt?.payments ?? []).reduce(
+      (sum, payment) =>
+        (MONEY_PAYMENT_METHODS as readonly string[]).includes(payment.method)
+          ? sum + Math.round(Number(payment.amount) * 100)
+          : sum,
+      0,
+    ) / 100
+  ).toFixed(2);
   const canReturnVoidMoney =
     receipt !== null &&
     receipt.lines.length > 0 &&
-    receipt.lines.every(
-      (line) => line.itemType === "PACKAGE" || line.itemType === "VALUE_PACKAGE",
+    receipt.lines.every((line) =>
+      ["PACKAGE", "VALUE_PACKAGE", "SERVICE", "PRODUCT"].includes(line.itemType),
     ) &&
-    Number(receipt.paidAmount) > 0;
+    (receipt.lines.some((line) => ["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType)) ||
+      receipt.payments.some((payment) =>
+        (REDEMPTION_PAYMENT_METHODS as readonly string[]).includes(payment.method),
+      )) &&
+    Number(voidExternalAmount) > 0;
 
   /**
    * Voids the receipt on screen (ADR 0016).
@@ -680,8 +695,8 @@ export default function Sale() {
               receiptLabel={
                 receipt.receiptNumber === null ? "This sale" : `Receipt #${receipt.receiptNumber}`
               }
-              paidAmount={receipt.paidAmount}
-              paidAmountLabel={formatPrice(receipt.paidAmount)}
+              paidAmount={voidExternalAmount}
+              paidAmountLabel={formatPrice(voidExternalAmount)}
               canReturnMoney={canReturnVoidMoney}
               isPending={voidSale.isPending}
               errorMessage={voidError}

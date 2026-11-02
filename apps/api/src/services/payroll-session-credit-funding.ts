@@ -20,6 +20,7 @@ export function payrollSessionCreditFunding(
   receipts: Parameters<typeof payrollMixedCreditFunding>[3],
   coverage: Parameters<typeof verifyPayrollPackageTenders>[2],
   redemptionCount: number,
+  verifiedWholeSaleVoid = false,
 ) {
   if (
     sale.paymentStatus !== "PAID" ||
@@ -28,7 +29,14 @@ export function payrollSessionCreditFunding(
     !redemptionCount
   )
     return null;
-  const tender = verifyPayrollPackageTenders(sale, payments, coverage, redemptionCount, true);
+  const tender = verifyPayrollPackageTenders(
+    sale,
+    payments,
+    coverage,
+    redemptionCount,
+    true,
+    verifiedWholeSaleVoid,
+  );
   const partial = coverage.some((row) => row.coveredQuantity > 0 && row.remainingQuantity > 0);
   const ordinary = lines.filter(
     (line) => (coverage.find((row) => row.saleLineId === line.id)?.remainingQuantity ?? 0) > 0,

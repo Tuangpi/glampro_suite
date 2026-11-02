@@ -1,5 +1,44 @@
 # Glampro Suite — progress
 
+## CP-005-M1-16 bounded returned-void implementation — November 2, 2026
+
+User approved external-money-only returns with original-holding prepaid restoration,
+no prepaid cash-out and unchanged ordinary money-sale refund rules. M1-16 is now
+IN PROGRESS alongside M1-17: **15 DONE, 2 IN PROGRESS (16/17), 2 TODO (18/19)**.
+Added mixed purchase/service/product and credit/session-credit returned-void loading,
+separate cash-seller attribution, session restoration integration and till external-
+money totals. Twelve new real-writer same/cross-month cases pass with 48 corrupt-read
+refusals, exact cash, stale rejection, persisted approval and immutable prior history.
+Final payroll/prepaid/HTTP regression: **522 tests, 516 passed, 0 failed, 6 gated skips**.
+Till tests **59/59**; API/web typechecks, affected ESLint and shared/API/web builds pass.
+An additional combined run including the older sale-service DB suite fails its
+cleanup hook against the immutable sale-economics trigger; this is not a passing
+combined run, and no trigger/test protection was disabled.
+Credit-funded purchases, session-plus-cash without value credit and zero/FOC
+companions remain unaccepted; M1-16/M1-17/M1 stay open. M1-18 was not started.
+Only the verified disposable database was used; no schema/dependency change,
+application-DB operation, provider transfer, activation, commit, push or deployment.
+Evidence and remaining gates: commission/payroll progress and acceptance matrix.
+
+## CP-005-M1-17 integrated acceptance — November 2, 2026
+
+Continued M1-17 without starting M1-16. Four new disposable-DB cases verify credit
+shared during the original owner/member spend, restoration, and money-funded
+purchase NO_MOVEMENT/full RETURNED through exact monthly calculation, 32 corrupt-read
+refusals, stale rejection, persisted approval and frozen history after membership
+departure. Added an explicit lifecycle matrix separating accepted paths from helper
+checks and required unaccepted M1-16 combinations. Added four real-writer ordinary
+service/product plus FOC and zero-tender same/cross-month refund cases, 20
+corruption refusals, stale rejection and immutable approved history. M1-17 remains
+IN PROGRESS; status is 15 DONE, 17 IN PROGRESS, 16/18/19 TODO. M1 remains open.
+Final consolidated payroll/prepaid/HTTP regression: 504 tests, 498 passed, zero
+failures, six separately gated
+CP-003/CP-004/browser skips; supplementary prepaid settlement/monthly/HTTP 17/17;
+API typecheck, affected ESLint and shared/API build pass. Only verified disposable
+PostgreSQL at `127.0.0.1:55485/payroll_close_test` was used. No production-code,
+schema, application-DB, activation, mounting, commit, push or deployment changes.
+Details: `docs/commission_payroll/PROGRESS.md` and `CLOSE_ACCEPTANCE.md`.
+
 ## CP-005 prepaid refund HTTP workflow — October 30, 2026
 
 CP-005 IN PROGRESS, M1 open. The manager-confirmed prepaid refund flow now has

@@ -103,7 +103,7 @@ export async function loadPayrollSalePackageCoverage(
       redemptions.length
   )
     return unavailable();
-  const histories = [];
+  const histories: Awaited<ReturnType<typeof loadPayrollPackageRedemptionHistory>>[] = [];
   for (const holdingId of [...new Set(redemptions.map((row) => row.holdingId!))].sort())
     histories.push(await loadPayrollPackageRedemptionHistory(tx, holdingId));
   const coverage = new Map<string, number>();
@@ -159,8 +159,16 @@ export async function loadPayrollSalePackageCoverage(
     sale.status === "VOID" &&
     (!redemptions.length ||
       redemptions.some((row) => !row.revertedAt) ||
-      sale.lines.some((line) => coverage.get(line.id) !== line.quantity) ||
-      events.some((row) => !["REDEMPTION", "CORRECTION", "REVERSAL"].includes(row.sourceType)))
+      (!allowCredit && sale.lines.some((line) => coverage.get(line.id) !== line.quantity)) ||
+      events.some(
+        (row) =>
+          ![
+            "REDEMPTION",
+            "CORRECTION",
+            "REVERSAL",
+            ...(allowCredit ? ["SALE_LINE", "VALUE_SPEND", "ORDINARY_COLLECTION"] : []),
+          ].includes(row.sourceType),
+      ))
   )
     return unavailable();
   const verifiedEvents = new Map(
@@ -170,10 +178,19 @@ export async function loadPayrollSalePackageCoverage(
       ),
     ),
   );
+  const sessionSourceIds = new Set(
+    histories.flatMap((history) => history.evidence.related.map((event) => event.id)),
+  );
   if (
     events.some(
       (event) =>
-        ["CORRECTION", "REVERSAL"].includes(event.sourceType) &&
+        // The value allocator independently verifies ordinary/value reversals;
+        // this loader must still refuse a missing or altered session reversal.
+        (event.sourceType === "CORRECTION" ||
+          (event.sourceType === "REVERSAL" &&
+            (!allowCredit ||
+              verifiedEvents.has(event.id) ||
+              sessionSourceIds.has(event.sourceId)))) &&
         (!verifiedEvents.has(event.id) ||
           recordHash(verifiedEvents.get(event.id)) !== recordHash(event)),
     )

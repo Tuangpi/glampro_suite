@@ -1,5 +1,9 @@
 import { Prisma } from "../../generated/prisma/client.js";
-import { commissionAttributionSchema, minimumPayrollPackageDeposit } from "@glampro_suite/shared";
+import {
+  MONEY_PAYMENT_METHODS,
+  commissionAttributionSchema,
+  minimumPayrollPackageDeposit,
+} from "@glampro_suite/shared";
 import { conflict } from "../lib/http-error.js";
 import { allocateCollection } from "../lib/commission-collection.js";
 import {
@@ -96,17 +100,8 @@ export async function loadPayrollPurchaseSaleVoid(
     new Set(events.map((row) => row.id)).size !== events.length
   )
     return fail();
-  // A returned void is representable only when every original commission source is an
-  // external collection — that is, a purchase paid entirely in money. The close's returned
-  // contract allows one original source type per void, so an ordinary line or a credit
-  // tender on the same sale cannot be stated here; the writer refuses those attestations.
   const returnedCash =
     cash.confirmation.cashDisposition === "RETURNED" ? cash.confirmation.returned : null;
-  if (
-    returnedCash &&
-    sale.lines.some((line) => !["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType))
-  )
-    return fail();
   const returnedAllocations: PayrollReturnedCashSaleVoid["allocations"] = [];
   const until = new Date(cash.confirmation.recordedAt);
   const during = (at: Date) => Number.isFinite(at.getTime()) && at >= sale.soldAt && at <= until;
@@ -515,7 +510,7 @@ export async function loadPayrollPurchaseSaleVoid(
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
         row.sessionId !== null ||
-        !["CASH", "CARD", "PAYNOW", "NETS", "BANK_TRANSFER"].includes(row.method) ||
+        ![...MONEY_PAYMENT_METHODS, "PAYNOW"].includes(row.method) ||
         !row.amount.isPositive() ||
         !row.amount.mul(100).isInteger() ||
         !during(row.createdAt) ||
@@ -543,6 +538,14 @@ export async function loadPayrollPurchaseSaleVoid(
     !sale.paidAmount?.mul(100).equals(upfrontGrossCents.toString()) ||
     upfrontGrossCents > purchaseGrossCents ||
     sale.paymentStatus !== (upfrontGrossCents === purchaseGrossCents ? "PAID" : "UNPAID")
+  )
+    return fail();
+  // SALE_LINE captures represent full ordinary economics, not partial receipt
+  // allocations. Require exact funding before using them as returned cash evidence.
+  if (
+    returnedCash &&
+    sale.lines.some((line) => ["SERVICE", "PRODUCT"].includes(line.itemType)) &&
+    upfrontGrossCents !== purchaseGrossCents
   )
     return fail();
   const collected = new Map<string, bigint>();
@@ -726,6 +729,44 @@ export async function loadPayrollPurchaseSaleVoid(
     )
       return fail();
     verifyPayrollOrdinaryVoidLine(line, sale.soldAt, original, rules, tenantId);
+    if (returnedCash) {
+      const value = packagePurchaseValue(
+        line.lineTotal.toFixed(2),
+        line.voucherDiscountAmount.toFixed(2),
+        line.taxAmount.toFixed(2),
+      );
+      const attribution = commissionAttributionSchema.parse(line.attribution);
+      const shares = line.itemType === "PRODUCT" ? attribution.sellers : attribution.performers;
+      if (!shares || value.grossCents === 0n) return fail();
+      const cashAllocations = receipts
+        .flatMap((receipt) => receipt.allocations)
+        .filter((part) => part.saleLineId === line.id);
+      if (
+        cashAllocations.reduce((sum, part) => sum + part.netCents, 0n) !== value.netCents ||
+        !attribution.sellers
+      )
+        return fail();
+      returnedAllocations.push({
+        id: `void-line:${line.id}`,
+        originalEventId: original.id,
+        saleLineId: line.id,
+        itemType: line.itemType as "SERVICE" | "PRODUCT",
+        netCents: value.netCents.toString(),
+        taxCents: value.taxCents.toString(),
+        grossCents: value.grossCents.toString(),
+        shares,
+        evidence: JSON.parse(JSON.stringify(line)),
+        cashAttribution: {
+          allocations: cashAllocations.map((part) => ({
+            id: part.id,
+            netCents: part.netCents.toString(),
+            shares: attribution.sellers!,
+            evidence: part.evidence,
+          })),
+          evidence: line.attribution,
+        },
+      });
+    }
     seenEvents.add(original.id);
     seenEvents.add(reversal.id);
     reversals.push({

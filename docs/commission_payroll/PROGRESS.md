@@ -1,5 +1,97 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — M1-16 bounded mixed/prepaid returned voids
+
+- Explicit user approval recorded in DECISIONS: return all external money actually
+  collected; restore prepaid usage to its original holding; never cash out prepaid
+  value; preserve ordinary money-sale refund rules. Fully prepaid reversals use
+  NO_MOVEMENT, not a zero-valued RETURNED payout. Partial money returns stay refused.
+- **M1-16 and M1-17 IN PROGRESS; 15 DONE, 2 IN PROGRESS, 2 TODO (18/19).**
+  This checkpoint supersedes the earlier same-day "16 not started" status below.
+  M1 remains open; no M1-18 race acceptance or M1-19 completion is claimed.
+- Writer/attestation re-derive only external-money tenders. Ordinary money-only
+  sales still refuse RETURNED; eligible prepaid usage requires operational restored
+  redemptions. Existing holdings/restoration writers supply original-holding
+  restoration; no provider payment is initiated. Version-1 attestations stay valid.
+- Mixed purchase/service/product loaders reconcile both COLLECTION and SALE_LINE
+  reversals with a full external return. Credit/session-credit usage reconciles
+  external ordinary captures separately from VALUE_SPEND/session restoration.
+  Cash follows original receipt sellers, not service commission performers, retaining
+  each receipt's rounding. Session reversals now keep their no-cash evidence even
+  when the value loader already inventoried the reversal operation.
+- Till return total is summed from external money tenders in cents, not paidAmount
+  (which includes prepaid consideration). Credit 60 + cash 30 offers only cash 30.
+- Twelve new disposable-DB acceptance cases: eight credit/session-credit cases
+  (full prepaid NO_MOVEMENT or mixed cash RETURNED, same/cross-month), plus four
+  mixed purchase/service/product cases (same/cross-month). Forty-eight independent
+  read omissions refuse (32 usage, 16 mixed purchase), without journal edits.
+  Money/prepaid conversion attempts roll back; stale drafts refuse; recalculation
+  and persisted approval succeed; later catalogue changes and later-month reversals
+  preserve approved snapshots. Usage holding amountRemaining returns to 600.00.
+  Retained same-month purchase net is 591.7400 for usage fixtures and 500.0000 for
+  mixed purchase fixtures; cross-month returns are -27.5200/-582.5700 respectively.
+- Verification: focused usage **8/8**, mixed purchases **4/4**, void helper **27/27**,
+  till **59/59**. Final payroll/prepaid/HTTP regression **522 tests, 516 passed,
+  0 failed, 6 separately gated skips**. API/web typechecks, affected ESLint and
+  shared/API/web builds pass. Numeric exit markers and logs:
+  `/tmp/m116-{focused,mixed,unit,payroll-final,web,types,web-types,lint,web-lint,build-api,build-web}.{log,exit}`.
+- Additional broad run including `sale.service.test.ts`: 573 test cases passed,
+  6 skipped, but command exit **1** because its cleanup hook tries to delete
+  protected original payroll sale economics. No successful combined-suite claim,
+  no disabled trigger, no test weakening or destructive cleanup workaround.
+  Evidence: `/tmp/m116-regression-final.{log,exit}`. The pg concurrent-query
+  deprecation warning also remains; no pg 9 compatibility fix is claimed.
+- Remaining M1-16: purchases funded by existing credit, session-plus-cash receipts
+  without value credit, zero/FOC companion lines, and broader sharing/expiry shapes
+  still require integrated reconciliation and acceptance. Some remain fail-closed;
+  safety refusals are not acceptance or approved exclusions. Existing purchase
+  eligibility still forbids spent/transferred purchases. Do not declare M1-16 DONE.
+- Verified target: `127.0.0.1:55485/payroll_close_test`, UTC, data directory
+  `/tmp/cp005-m1-14-n6d0gta5`. No application-DB operations, migrations, dependency
+  changes, provider calls, close-router mounting, activation, commit, push or deployment.
+
+## November 2, 2026 — CP-005-M1-17 integrated acceptance
+
+- M1-17 remains **IN PROGRESS**: 15 DONE, 1 IN PROGRESS (17), 3 TODO
+  (16, 18, 19). M1-16 was not started. M1 remains open.
+- Added the explicit lifecycle/corruption matrix at the top of CLOSE_ACCEPTANCE.
+  It distinguishes real monthly approval, helper/in-memory evidence, intentional
+  writer refusals and required unaccepted combinations. Ordinary refund real-writer
+  monthly combinations are now verified below; unresolved M1-16 shapes are not silently excluded. Races remain M1-18.
+- Four new real-writer cases in `payroll-void-restored-spend.acceptance.test.ts`
+  share credit before the original spend, use owner/member family tenders, restore
+  usage, then void the money-paid purchase with NO_MOVEMENT/full RETURNED. Exact
+  retained net is 500.0000/0.0000; spend/restoration bases are ±75.0000. These are
+  money-funded purchases, not M1-16 credit-funded returned voids.
+- Each case refuses eight independent corrupted reads (32 total): omitted consent,
+  duplicate spend, incorrect spend family/value, omitted/duplicate/foreign membership
+  events and omitted family. Prior persisted draft state stays unchanged. Stale
+  pre-restoration drafts refuse approval; recalculation/approval succeeds; later
+  owner membership departure leaves approved-state hashes unchanged.
+- Extended `prepaid-refund-month.acceptance.test.ts` across PACKAGE and VALUE_PACKAGE
+  so credit refunds independently pass exact monthly calculation, stale rejection,
+  recalculation/approval and immutable history after later missing-settlement refusal.
+- No production code changes were needed. Fixtures use real family writers and
+  `family:<id>` checkout tender; corruptions substitute reads without journal edits.
+- Verified target before writes: PostgreSQL 18.6, UTC, database
+  `127.0.0.1:55485/payroll_close_test`, data directory
+  `/tmp/cp005-m1-14-n6d0gta5`. No application-database operations or migrations.
+- Four further cases cover service/product plus FOC and a zero CARD tender, real
+  refunds in the same/later month, 20 payout/reversal corruptions, exact cent-rounded
+  cash, stale rejection, persisted approval and unchanged original approved month.
+- Verification: focused **8/8**, final consolidated payroll/prepaid/HTTP regression
+  **504 tests / 498 passed / 0 failed / 6 skipped**, additional prepaid settlement/monthly/HTTP **17/17**.
+  Six skips are separately gated CP-003/CP-004/browser suites, not enabled CP-005
+  acceptance. API typecheck, affected-file ESLint and shared/API build pass.
+  Logs and numeric exit markers: `/tmp/m117-{focused,regression-final,settlements,types,lint,build}.{log,exit}`.
+- The run emits a pg concurrent-query deprecation warning; tests pass, but no
+  future pg 9 compatibility change is claimed.
+- Initial fixture attempts failed on the Prisma import and private-holding tender
+  for shared credit; corrected to the repository's generated Prisma client and
+  family tender. The recorded passing runs include both fixes.
+- No dependency/schema change, provider call, mounting, browser acceptance,
+  activation, commit, push or deployment. No external TK2610 task became ready.
+
 ## November 2, 2026 — CP-005-M1-15 prospective boundary
 
 - M1-15 is **DONE under the explicitly approved prospective-only policy**.

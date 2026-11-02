@@ -1531,6 +1531,7 @@ describe("voiding a rung-up sale", () => {
       receipt({
         totalAmount: "225.00",
         paidAmount: "225.00",
+        payments: [{ sessionId: null, method: "CASH", amount: "225.00" }],
         lines: [
           {
             id: "l1",
@@ -1591,6 +1592,48 @@ describe("voiding a rung-up sale", () => {
     // The service receipt on screen: giving the money back is a refund, not a void, so the
     // dialog does not pretend the till can record it either way.
     expect(within(dialog).queryByRole("radio", { name: /I returned the/ })).not.toBeInTheDocument();
+  });
+
+  it("returns only external cash on a prepaid-funded receipt, not paidAmount", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    post.mockResolvedValueOnce(
+      receipt({
+        totalAmount: "90.00",
+        paidAmount: "90.00",
+        payments: [
+          { sessionId: null, method: "PREPAID_CREDIT", amount: "60.00" },
+          { sessionId: null, method: "CASH", amount: "30.00" },
+        ],
+      }),
+    );
+    await ringUpAReceipt(user);
+    post.mockResolvedValueOnce(receipt({ status: "VOID" }));
+    await user.click(screen.getByRole("button", { name: "Void sale" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.type(
+      within(dialog).getByLabelText("Reason for voiding this sale"),
+      "Restore prepaid and return cash",
+    );
+    await user.click(within(dialog).getByRole("radio", { name: /I returned the S\$30\.00/ }));
+    expect(
+      within(dialog).queryByRole("radio", { name: /I returned the S\$90\.00/ }),
+    ).not.toBeInTheDocument();
+    await user.type(
+      within(dialog).getByLabelText("Reference for the returned money"),
+      "External cash slip",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Void it" }));
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/sales/sale-1/void", {
+        reason: "Restore prepaid and return cash",
+        cashDisposition: "RETURNED",
+        returnedCash: {
+          reference: "External cash slip",
+          payouts: [{ method: "CASH", amount: 30 }],
+        },
+      }),
+    );
   });
 
   it("offers no void action to a cashier", async () => {

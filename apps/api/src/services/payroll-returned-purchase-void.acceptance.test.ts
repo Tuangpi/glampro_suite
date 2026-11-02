@@ -533,6 +533,188 @@ test(
   }),
 );
 
+for (const itemType of ["SERVICE", "PRODUCT"] as const) {
+  for (const crossMonth of [false, true]) {
+    test(
+      `CP-005 M1-16 mixed purchase/${itemType} ${crossMonth ? "cross-month" : "same-month"} returns external cash with exact source inventory`,
+      { skip: disabled },
+      tenantCase(`m116-${itemType}`, async (fixture) => {
+        const purchaseLine = await prisma.saleLine.findFirstOrThrow({
+          where: { saleId: fixture.purchaseId },
+        });
+        const ordinaryId =
+          itemType === "SERVICE"
+            ? fixture.serviceId
+            : (
+                await prisma.product.create({
+                  data: {
+                    tenantId: fixture.tenantId,
+                    name: "M116 product",
+                    memberPrice: "90",
+                    nonmemberPrice: "90",
+                    quantity: 10,
+                  },
+                })
+              ).id;
+        const mixed = await runAtOutlet(fixture.outletId, () =>
+          createSale({
+            customerId: fixture.customerId,
+            lines: [
+              {
+                itemType: "VALUE_PACKAGE",
+                itemId: purchaseLine.itemId,
+                quantity: 1,
+                attribution: { sellers: shares(fixture.ownerId) },
+              },
+              {
+                itemType,
+                itemId: ordinaryId,
+                quantity: 1,
+                attribution: {
+                  sellers: shares(fixture.ownerId),
+                  ...(itemType === "SERVICE" ? { performers: shares(fixture.ownerId) } : {}),
+                },
+              },
+            ],
+            payments: [{ method: "CASH", amount: 635 }],
+            collection: {
+              currency: "SGD",
+              allocations: [
+                { paymentIndex: 0, linePosition: 0, grossCents: "54500" },
+                { paymentIndex: 0, linePosition: 1, grossCents: "9000" },
+              ],
+            },
+          }),
+        );
+        const original = await loadMonth(fixture);
+        let frozenOriginal: string | null = null;
+        if (crossMonth) {
+          const draft = await calculateStoredPayrollClose(original.periodKey, 0);
+          mock.timers.enable({ apis: ["Date"], now: new Date(original.endsAt) });
+          try {
+            frozenOriginal = payrollInputHash(
+              await approveStoredPayrollClose(
+                original.periodKey,
+                draft.revision,
+                "Approve before later mixed return",
+              ),
+            );
+          } finally {
+            mock.timers.reset();
+          }
+          mock.timers.enable({
+            apis: ["Date"],
+            now: new Date(new Date(original.endsAt).getTime() + 86400000),
+          });
+        }
+        try {
+          const before = await loadMonth(fixture);
+          const prior = await calculateStoredPayrollClose(before.periodKey, 0);
+          await voidSale(
+            mixed.id,
+            {
+              reason: "Return complete mixed receipt",
+              cashDisposition: "RETURNED",
+              returnedCash: {
+                reference: "M116 mixed return",
+                payouts: [{ method: "CASH", amount: 635 }],
+              },
+            },
+            fixture.ownerId,
+          );
+          const inputs = await loadMonth(fixture);
+          assert.equal(resolvedCash(inputs).cash!.salonCash, crossMonth ? "-582.5700" : "500.0000");
+          const loaded = await prisma.$transaction((tx) =>
+            loadPayrollPurchaseSaleVoid(tx, fixture.tenantId, mixed.id, "Asia/Singapore"),
+          );
+          assert.equal(loaded.saleVoid.cashDisposition, "RETURNED");
+          assert.deepEqual(loaded.saleVoid.reversals.map((row) => row.originalSourceType).sort(), [
+            "COLLECTION",
+            "SALE_LINE",
+          ]);
+          for (const corruption of [
+            "salePayment",
+            "commissionCollection",
+            "payrollSourceEvent",
+            "auditLog",
+          ] as const) {
+            await assert.rejects(
+              prisma.$transaction((tx) =>
+                loadPayrollPurchaseSaleVoid(
+                  new Proxy(tx, {
+                    get(target, property, receiver) {
+                      if (property !== corruption) return Reflect.get(target, property, receiver);
+                      return new Proxy(target[corruption], {
+                        get(delegate, method) {
+                          if (method === "findMany") return async () => [];
+                          return Reflect.get(delegate, method);
+                        },
+                      });
+                    },
+                  }) as PayrollCloseTransaction,
+                  fixture.tenantId,
+                  mixed.id,
+                  "Asia/Singapore",
+                ),
+              ),
+              /Authoritative payroll inputs unavailable/,
+              corruption,
+            );
+          }
+          mock.timers.reset();
+          mock.timers.enable({ apis: ["Date"], now: new Date(inputs.endsAt) });
+          try {
+            await assert.rejects(
+              approveStoredPayrollClose(
+                inputs.periodKey,
+                prior.revision,
+                "Refuse stale mixed draft",
+              ),
+              /changed|stale|recalculate/i,
+            );
+            const draft = await calculateStoredPayrollClose(inputs.periodKey, prior.revision);
+            const approved = await approveStoredPayrollClose(
+              inputs.periodKey,
+              draft.revision,
+              "Reviewed mixed cash return",
+            );
+            assert.equal(approved.status, "APPROVED");
+            await prisma.service.update({
+              where: { id: fixture.serviceId },
+              data: { nonmemberPrice: "999" },
+            });
+            assert.equal(
+              payrollInputHash(
+                (
+                  await prisma.payrollClose.findFirstOrThrow({
+                    where: { periodKey: inputs.periodKey },
+                  })
+                ).state,
+              ),
+              payrollInputHash(approved),
+            );
+            if (frozenOriginal)
+              assert.equal(
+                payrollInputHash(
+                  (
+                    await prisma.payrollClose.findFirstOrThrow({
+                      where: { periodKey: original.periodKey },
+                    })
+                  ).state,
+                ),
+                frozenOriginal,
+              );
+          } finally {
+            mock.timers.reset();
+          }
+        } finally {
+          mock.timers.reset();
+        }
+      }),
+    );
+  }
+}
+
 test(
   "CP-005 an ordinary sale cannot claim a returned void",
   { skip: disabled },
