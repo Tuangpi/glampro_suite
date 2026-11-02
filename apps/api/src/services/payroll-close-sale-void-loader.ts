@@ -48,7 +48,10 @@ export function verifyPayrollOrdinaryVoidLine(
   )
     return fail();
   const gross = line.lineTotal.minus(line.voucherDiscountAmount);
-  const foc = gross.isZero() ? resolvePayrollFocEconomics(line, soldAt, 0) : null;
+  const foc =
+    line.itemType === "SERVICE" && gross.isZero()
+      ? resolvePayrollFocEconomics(line, soldAt, 0)
+      : null;
   if (
     gross.isNegative() ||
     line.taxAmount.isNegative() ||

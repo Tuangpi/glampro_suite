@@ -218,12 +218,24 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
           where: { tenantId, saleId, itemType: "VALUE_PACKAGE" },
         })
       : 0;
+    const sessionCashVoid =
+      usageCount > 0 &&
+      sales.some((sale) => sale.id === saleId && sale.status === "VOID") &&
+      (await tx.salePayment.count({
+        where: {
+          tenantId,
+          saleId,
+          method: { notIn: ["PACKAGE", "PREPAID_CREDIT"] },
+          amount: { gt: 0 },
+        },
+      })) > 0;
     if (
       creditCount ||
+      sessionCashVoid ||
       payments.some((row) => row.saleId === saleId && row.method === "PREPAID_CREDIT") ||
       events.some((row) => row.saleId === saleId && row.sourceType === "VALUE_SPEND")
     ) {
-      if (!creditCount)
+      if (!creditCount && !sessionCashVoid)
         unavailable(
           usageCount ? "PACKAGE_TENDER_UNCONFIRMED" : "PREPAID_PAYMENT_WORKFLOW_NOT_LOADED",
         );
@@ -718,7 +730,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     sale: (typeof sales)[number],
   ) => {
     const existing =
-      packagePurchases.get(line.id) ?? purchaseVoids.get(sale.id)?.packagePurchases.get(line.id);
+      packagePurchases.get(line.id) ??
+      purchaseVoids.get(sale.id)?.packagePurchases.get(line.id) ??
+      valueSales.get(sale.id)?.purchaseVoid?.packagePurchases.get(line.id);
     if (existing) return existing;
     if (sale.status !== "COMPLETED") unavailable("PACKAGE_PURCHASE_SALE_UNCONFIRMED");
     const holdings = await tx.customerPackageHolding.findMany({
@@ -732,7 +746,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const valuePurchases = new Map<string, ReturnType<typeof verifyPayrollValuePurchase>>();
   const loadValuePurchase = async (line: (typeof sales)[number]["lines"][number]) => {
     const existing =
-      valuePurchases.get(line.id) ?? purchaseVoids.get(line.saleId)?.valuePurchases.get(line.id);
+      valuePurchases.get(line.id) ??
+      purchaseVoids.get(line.saleId)?.valuePurchases.get(line.id) ??
+      valueSales.get(line.saleId)?.purchaseVoid?.valuePurchases.get(line.id);
     if (existing) return existing;
     const holdings = await tx.customerValuePackageHolding.findMany({
       where: { tenantId, saleLineId: line.id },
@@ -760,7 +776,11 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         continue;
       }
       if (line.itemType === "VALUE_PACKAGE") {
-        if (sale.status !== "COMPLETED" && !purchaseVoids.has(sale.id))
+        if (
+          sale.status !== "COMPLETED" &&
+          !purchaseVoids.has(sale.id) &&
+          !valueSales.get(sale.id)?.purchaseVoid
+        )
           unavailable("VALUE_PURCHASE_SALE_UNCONFIRMED");
         await loadValuePurchase(line);
         continue;
@@ -780,9 +800,10 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
         continue;
       }
       const gross = line.lineTotal.minus(line.voucherDiscountAmount);
-      const foc = gross.isZero()
-        ? resolvePayrollFocEconomics(line, sale.soldAt, line.quantity - quantity)
-        : null;
+      const foc =
+        line.itemType === "SERVICE" && gross.isZero()
+          ? resolvePayrollFocEconomics(line, sale.soldAt, line.quantity - quantity)
+          : null;
       if (foc && !line.taxAmount.isZero()) unavailable("FOC_OPERATIONAL_TAX_MISMATCH");
       const event = events.find(
         (row) => row.sourceType === "SALE_LINE" && row.sourceId === line.id,
@@ -1157,7 +1178,9 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       }
       if (line?.itemType !== "VALUE_PACKAGE") continue;
       if (
-        (sale.status !== "COMPLETED" && !purchaseVoids.has(sale.id)) ||
+        (sale.status !== "COMPLETED" &&
+          !purchaseVoids.has(sale.id) &&
+          !valueSales.get(sale.id)?.purchaseVoid) ||
         collection.occurredAt < sale.soldAt
       )
         unavailable("VALUE_PURCHASE_SALE_UNCONFIRMED");
@@ -1252,7 +1275,20 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
       allocations,
     });
   }
-  if ([...packagePurchases.keys()].some((id) => !packageCollections.has(id)))
+  if (
+    [...packagePurchases.keys()].some(
+      (id) =>
+        !packageCollections.has(id) &&
+        ![...valueSales.values()].some(
+          (value) =>
+            value.creditPaymentIds.length &&
+            value.evidence.sale.lines.some((line) => line.id === id) &&
+            value.evidence.sale.lines.every((line) =>
+              ["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType),
+            ),
+        ),
+    )
+  )
     unavailable("PACKAGE_COLLECTION_REQUIRED");
   const sources = {
     ...common,

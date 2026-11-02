@@ -1,5 +1,58 @@
 # Glampro Suite — progress
 
+## November 2, 2026 — M1-16 DONE
+
+- Completed session-plus-cash and credit-funded PACKAGE/VALUE_PACKAGE purchase
+  void reconciliation and same/cross-month real-writer monthly acceptance.
+- User-approved purchase-only credit conversion excludes VP_SPEND commission;
+  exact external cash and original-holding restoration remain independently required.
+- Verification: 19/19 focused; payroll/prepaid/HTTP regression **577 tests,
+  571 passed, 0 failed, 6 gated skips**. API typecheck, affected lint/format,
+  shared/API build and diff checks pass. Logs: `/tmp/m116-policy-*`.
+- Separate sale-service regression reproduced the older immutable sale-economics
+  cleanup-hook failure; unresolved, with no protections disabled.
+- **16 DONE, 1 IN PROGRESS (M1-17), 2 TODO (18/19); overall M1 remains OPEN.**
+  This supersedes the earlier same-day blocker/status checkpoints below.
+
+## November 2, 2026 — M1-16 session/cash acceptance and purchase policy blocker
+
+- Verification: 11/11 focused; 569 payroll/prepaid/HTTP tests, 563 passed,
+  0 failed, 6 gated skips. API types, affected lint/format and shared/API build pass.
+
+- Accepted two same/cross-month session-plus-cash RETURNED void cases, without
+  value credit: exact external money, restored sessions, corruption refusal,
+  rollback, stale drafts and immutable monthly approvals.
+- Credit-funded purchase-only checkout has no service performers for VP_SPEND.
+  Real-writer regression proves missing attribution and safe restoration/refusal,
+  not acceptance. An explicit earnings/attribution policy is needed to finish.
+- M1-16 remains IN PROGRESS; M1-17 and overall M1 remain open. See the newest
+  commission/payroll progress and acceptance checkpoint for details.
+
+## November 2, 2026 — M1-16 FOC purchase companion follow-up
+
+- M1-16 is IN PROGRESS, not TODO. Added four same/cross-month FOC-service
+  purchase companion cases, with/without a zero external tender. FOC list-price
+  commission evidence is reconciled independently from zero companion cash.
+- Exact external returns, rollback, missing evidence refusals, stale drafts and
+  immutable monthly approvals are covered. Credit-funded purchases and
+  session-plus-cash without value credit remain unaccepted. M1-16/17 and M1 stay
+  open. Details: `docs/commission_payroll/PROGRESS.md` and `CLOSE_ACCEPTANCE.md`.
+- Verification: focused 47/47; payroll/prepaid/HTTP regression 566 tests,
+  560 passed, 0 failed, 6 gated skips. API types, affected lint/formatting and
+  shared/API build pass. Logs: `/tmp/m116-foc-regression-final.{log,exit}`.
+
+## CP-005-M1-16 follow-up — zero-product and zero-tender companions
+
+Six additional real-writer same/cross-month returned purchase-void cases pass:
+zero-priced product, zero external tender, and both together. Zero products keep
+SALE_LINE/reversal evidence without creating cash; zero tenders retain their rows
+without requiring collection receipts. FOC services remain a separate open shape.
+Current payroll/prepaid/HTTP regression: **528 tests, 522 passed, 0 failed, 6 gated
+skips**. Focused returned-void/helpers **43/43**, API typecheck, affected ESLint and
+shared/API builds pass. M1-16/M1-17 remain IN PROGRESS; M1-18/19 and overall M1 remain
+open. Credit-funded purchases and session-plus-cash without value credit remain
+unaccepted. See the commission/payroll progress and acceptance matrix for scope.
+
 ## CP-005-M1-16 bounded returned-void implementation — November 2, 2026
 
 User approved external-money-only returns with original-holding prepaid restoration,

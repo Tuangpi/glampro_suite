@@ -2008,19 +2008,32 @@ async function captureValueSpend(
         : null,
     );
   const first = performers[0] ?? null;
-  const shares =
-    first && performers.every((row) => JSON.stringify(row) === JSON.stringify(first))
+  const purchaseOnly =
+    sourceLines.length > 0 &&
+    sourceLines.every((line) => ["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType));
+  const purchaseSellers = purchaseOnly
+    ? sourceLines.map((line) => commissionAttributionSchema.parse(line.attribution).sellers ?? null)
+    : [];
+  const excludedShares =
+    purchaseSellers[0] &&
+    purchaseSellers.every((row) => JSON.stringify(row) === JSON.stringify(purchaseSellers[0]))
+      ? purchaseSellers[0]
+      : null;
+  const shares = purchaseOnly
+    ? excludedShares
+    : first && performers.every((row) => JSON.stringify(row) === JSON.stringify(first))
       ? first
       : null;
   const snapshot = {
     version: 1,
     purchase: holding.payrollPurchaseSnapshot,
-    baseAmount,
+    baseAmount: purchaseOnly ? "0.0000" : baseAmount,
     spentBefore,
     spentNow: amount.toFixed(2),
     performers: shares,
     sourceSaleId: sourceSale.id,
     postingStatus: "PENDING_RELEASE",
+    ...(purchaseOnly ? { commissionPolicy: "PURCHASE_CONVERSION_EXCLUDED" } : {}),
   };
   await appendPayrollSource(tx, {
     sourceKey: `value-spend:${redemptionId}`,
@@ -2030,7 +2043,8 @@ async function captureValueSpend(
     occurredAt: at,
     reason: "Original paid-to-credit ratio draw",
     commissionType: "VP_SPEND",
-    baseAmount,
+    baseAmount: purchaseOnly ? "0.0000" : baseAmount,
+    ...(purchaseOnly ? { mode: "EXCLUDE" as const } : {}),
     units: "1.0000",
     shares,
     itemId: holding.valuePackageId,

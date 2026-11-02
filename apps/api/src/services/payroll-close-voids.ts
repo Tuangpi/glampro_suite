@@ -10,6 +10,7 @@ import {
   type PayrollCloseSourceRecords,
 } from "./payroll-close-sources.js";
 import { payrollInputHash } from "./payroll-close-state.js";
+import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 
 const id = z.string().trim().min(1).max(128);
 const cents = z.string().regex(/^(0|[1-9]\d*)$/);
@@ -37,7 +38,7 @@ const voidSchema = z.object({
         originalSourceType: z.enum(["SALE_LINE", "COLLECTION"]),
       }),
     )
-    .min(1),
+    .min(0),
 });
 export type PayrollNoCashSaleVoid = z.input<typeof voidSchema>;
 const returnedSchema = voidSchema
@@ -169,6 +170,20 @@ export function resolvePayrollCloseVoids(raw: PayrollCloseVoidRecords) {
     staff: { staffId: string; amount: string }[];
   }[] = [];
   for (const record of records) {
+    // An all-credit purchase has no cash/ordinary captures. It still needs a
+    // separately inventoried VALUE_SPEND reversal; empty arbitrary voids refuse.
+    if (
+      !record.reversals.length &&
+      !all.some(
+        (event) =>
+          event.saleId === record.saleId &&
+          event.sourceType === "VALUE_SPEND" &&
+          raw.events.some(
+            (reversal) => reversal.sourceType === "REVERSAL" && reversal.sourceId === event.id,
+          ),
+      )
+    )
+      block("VOID_SOURCE_INVENTORY_MISMATCH", record.id);
     if (!sources.sources) block("VOID_SOURCE_RECONCILIATION_UNAVAILABLE", record.id);
     if (
       record.occurredAt < new Date(sources.startsAt) ||
@@ -233,12 +248,38 @@ export function resolvePayrollCloseVoids(raw: PayrollCloseVoidRecords) {
       const parsed = z
         .object({ lines: z.array(payrollBaseLineSchema).min(1) })
         .safeParse(original?.evidence);
-      const expected = allocatePayrollSplit(decimal(allocation.netCents), allocation.shares);
+      const foc = allocation.itemType === "SERVICE" && allocation.grossCents === "0";
+      let baseAmount = decimal(allocation.netCents);
+      if (foc) {
+        const evidence = z
+          .object({
+            id,
+            saleId: id,
+            itemId: id,
+            itemType: z.literal("SERVICE"),
+            quantity: z.number().int().positive(),
+            payrollEconomics: z.unknown(),
+          })
+          .safeParse(allocation.evidence);
+        try {
+          if (
+            !evidence.success ||
+            !original ||
+            evidence.data.id !== allocation.saleLineId ||
+            evidence.data.saleId !== record.saleId
+          )
+            throw new Error("Missing independent FOC economics");
+          baseAmount = resolvePayrollFocEconomics(evidence.data, original.occurredAt).baseAmount;
+        } catch {
+          block("VOID_RETURN_ORIGINAL_ALLOCATION_MISMATCH", allocation.id);
+        }
+      }
+      const expected = allocatePayrollSplit(baseAmount, allocation.shares);
       const ordinary = ["SERVICE", "PRODUCT"].includes(allocation.itemType);
       const type = {
         PACKAGE: "PKG_SALE",
         VALUE_PACKAGE: "VP_SALE",
-        SERVICE: "SVC",
+        SERVICE: foc ? "FOC" : "SVC",
         PRODUCT: "PRD",
       }[allocation.itemType];
       if (
@@ -270,7 +311,7 @@ export function resolvePayrollCloseVoids(raw: PayrollCloseVoidRecords) {
           block("VOID_RETURN_CASH_ATTRIBUTION_MISMATCH", allocation.id);
         for (const part of allocation.cashAttribution.allocations)
           staff.push(...allocatePayrollSplit(decimal(part.netCents), part.shares));
-      } else staff.push(...expected);
+      } else staff.push(...allocatePayrollSplit(decimal(allocation.netCents), allocation.shares));
     }
     returnedCash.push({
       saleId: record.saleId,

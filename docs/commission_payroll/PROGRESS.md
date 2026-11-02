@@ -1,5 +1,138 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — M1-16 final purchase-conversion acceptance
+
+- **M1-16 DONE; M1-17 IN PROGRESS; M1 overall OPEN.** Current checklist:
+  **16 DONE, 1 IN PROGRESS (17), 2 TODO (18/19)**. This checkpoint supersedes
+  the earlier same-day attribution blocker and IN PROGRESS status.
+- Final payroll/prepaid/HTTP regression: **577 tests, 571 passed, 0 failed,
+  6 separately gated skips**. Final focused M1-16 matrix/policy run: **19/19**.
+  API typecheck, affected ESLint, formatting, shared/API build and diff checks pass.
+  Evidence: `/tmp/m116-policy-{focused-final,regression-final,types-final,lint-final,build-final}.{log,exit}`.
+- A separately executed regression including `sale.service.test.ts` failed in its
+  pre-existing fixture cleanup: deleting frozen sale-line economics violates
+  `Original payroll sale economics are immutable`. Reproduced, not resolved;
+  no immutable-data protection was disabled. See `/tmp/m116-policy-regression.log`.
+- Bounded acceptance is not a Cartesian product of sharing/expiry, transfer,
+  partial returns or race combinations. M1-17/18 retain those separate gates.
+
+- The user resolved the purchase-only attribution blocker: exclude credit
+  conversions from VP_SPEND commission, while reconciling credit and cash.
+  New checkout freezes explicit PURCHASE_CONVERSION_EXCLUDED/EXCLUDE zero-base
+  audit lines. Original sellers identify those excluded lines; no commission is
+  earned on converted credit. Legacy missing evidence still refuses.
+- Eight additional real-writer cases: PACKAGE and VALUE_PACKAGE purchase-only
+  receipts, fully credit-funded NO_MOVEMENT or credit-plus-30.00 RETURNED, each
+  same/cross-month. Exact cash -27.5200 in the later month; same-month retained
+  collection 591.7400; original funding holding restored to 600.00. Each case
+  verifies missing restoration/tender/reversal evidence, plus collection/payout
+  when cash exists; missing purchase snapshot and stripped exclusion policy also
+  refuse. Stale drafts, persisted approval and original approved history are checked.
+- Two session-plus-cash cases independently cover 90.00 returned and session
+  restoration without value credit. Existing mixed purchase/service/product,
+  zero-product/zero-tender and FOC companion acceptance remains in place.
+- Focused usage/purchase/policy acceptance: **19/19**; final regression evidence
+  is recorded above. No production operations,
+  schema/dependency changes, history backfills, commit or deployment.
+- M1-17 integrated sharing/expiry combinations, M1-18 races and M1-19 final review
+  remain separate. Overall M1 stays open; this supersedes the earlier blocker.
+
+## November 2, 2026 — M1-16 session/cash accepted; purchase attribution blocked
+
+Verification: focused M1-16 usage/blocker tests **11/11**; full payroll/prepaid/HTTP
+regression **569 tests, 563 passed, 0 failed, 6 gated skips**. API typecheck,
+affected ESLint/formatting, shared/API build and diff checks pass. Logs and exit
+markers: `/tmp/m116-complete-{focused,regression,types,lint,build}.{log,exit}`.
+The older sale-service cleanup-hook failure was not rerun or resolved.
+
+- Session-plus-cash without value credit now reconciles in same/cross-month
+  RETURNED voids. Complete original tenders reserve session-covered quantities;
+  independently allocated external receipts must exactly fund every uncovered
+  gross cent. Restored sessions never create cash or synthetic credit funding.
+- Two additional real-writer cases verify 90.00 returned, 5 sessions restored,
+  same-month retained collection 591.7400, cross-month cash -82.5700, distinct
+  seller/performer attribution, wrong-return rollback, missing tender/collection/
+  reversal/attestation/session-restoration refusals, stale drafts, persisted
+  approval and unchanged approved original history. Existing session-credit
+  variants now also test missing session-restoration snapshots independently.
+- A real purchase-only credit checkout exposes a business-policy blocker:
+  `captureValueSpend` draws VP_SPEND performers only from SERVICE lines. A
+  PACKAGE-only receipt has sellers but no service performers, so its immutable
+  source is UNAVAILABLE with STAFF_ATTRIBUTION and no earnings lines. Voiding
+  restores all 100.00 credit to the original holding (600.00 balance) but does
+  not reconstruct the missing original earnings contract. Both monthly reads
+  correctly refuse. This regression is safety evidence, NOT accepted scope.
+- Finishing credit-funded purchases needs explicit policy: exclude purchase-only
+  credit conversion from VP_SPEND earnings, attribute it to purchase sellers, or
+  require a new explicit attribution contract. Do not pick an earnings policy
+  silently, backfill immutable captures, or mark the item DONE from this refusal.
+- **M1-16 remains IN PROGRESS, blocked on that decision; M1-17 and M1 stay open.**
+  Broader lifecycle sharing/expiry acceptance remains explicit under M1-17, races
+  under M1-18, and final review under M1-19. No production operations, migrations,
+  dependencies, commits or deployment.
+
+## November 2, 2026 — M1-16 FOC purchase companions
+
+- M1-16 remains **IN PROGRESS**, not TODO. Four additional real-writer cases
+  cover a value-package purchase plus a fully discounted service, with/without a
+  zero external tender, in the same month and across months.
+- Returned-void reconciliation independently verifies frozen FOC operational
+  economics and the original FOC capture. Its nonzero list-price commission base
+  is never converted into cash: the companion has zero returned cash and no
+  fabricated collection allocation. Nonzero money still requires collection evidence.
+- Each case covers exact external return, incorrect-return rollback, four
+  independent read omissions, missing FOC economics refusal, stale approval,
+  persisted recalculation/approval and unchanged prior approved history.
+- Credit-funded purchases, session-plus-cash without value credit and broader
+  sharing/expiry combinations remain unaccepted. This is bounded FOC-companion
+  acceptance, not completion of M1-16, M1-17 or M1. No schema/dependency changes
+  or production operations.
+- Verification: final focused suites **47/47**; full payroll/prepaid/HTTP
+  regression **566 tests, 560 passed, 0 failed, 6 gated skips**. API typecheck,
+  affected ESLint, shared/API build, affected formatting and `git diff --check`
+  pass. Logs: `/tmp/m116-foc-{focused-final,regression-final,types,lint,build}.log`
+  with matching `.exit` files. An intermediate run failed four new assertions
+  because the cash-attestation integrity check refused missing FOC economics
+  earlier than the expected FOC-specific check; final tests accept either precise
+  refusal without weakening the missing-evidence requirement.
+
+## November 2, 2026 — M1-16 zero-product/zero-tender follow-up
+
+- Six additional real-writer cases cover same/cross-month purchase returns with a
+  zero-priced product, a zero external CARD tender, and both. The existing mixed
+  fixture now supplies ten cases; this follows the earlier twelve-case checkpoint,
+  not a claim that all M1-16 shapes are accepted.
+- Decimal `isPositive()` includes positive zero. Purchase-void evidence now counts
+  collections using strictly greater-than-zero tenders while retaining and
+  validating zero tender records. Zero tenders never get collection allocations.
+- Zero-priced PRODUCT is not a FOC SERVICE. Monthly and shared ordinary-void
+  checks now restrict FOC economics to services. A zero product retains its exact
+  SALE_LINE/reversal and zero returned allocation; only this zero-money product
+  case may have no original collection in current-month cash reconciliation.
+  Nonzero allocations still require their original collection evidence.
+- Each new case verifies exact external totals, cash reconciliation (same month
+  500.0000 retained from the fixture's separate purchase; cross-month -500.0000 for
+  zero-product returns or -582.5700 for paid-product returns), one collection,
+  no fabricated cash allocation for the zero product, and two source reversals.
+  Incorrect-return attempts roll back sale/holding removal and create no cash
+  attestation. Twenty-four additional independent read-omission refusals, stale
+  approval rejection, persisted recalculation/approval, and immutable original
+  cross-month approval are exercised by the six cases.
+- Verification: focused returned-purchase/helper suites **43/43**. Final payroll,
+  prepaid and HTTP regression **528 tests, 522 passed, 0 failed, 6 gated skips**.
+  API typecheck, affected ESLint and shared/API builds pass. Evidence:
+  `/tmp/m116-next-{focused,regression,types,lint,build}.{log,exit}`. Initial four
+  zero-shape cases were run red before the loader fixes.
+- Remaining: credit-funded purchases, session-plus-cash without value credit,
+  FOC-service companions and broader sharing/expiry combinations. The completed
+  zero-product/tender slice does not accept zero-valued prepaid purchase lines,
+  zero prepaid tenders or FOC services. M1-16/17 stay IN PROGRESS; 18/19 remain TODO;
+  M1 remains open. The earlier sale-service cleanup-hook failure is not resolved
+  or rerun by this scoped regression.
+- The verified disposable target remains `127.0.0.1:55485/payroll_close_test`, data
+  directory `/tmp/cp005-m1-14-n6d0gta5`, UTC. No schema/dependency changes, production
+  data operations, disabled protections, commit, push or deployment.
+
 ## November 2, 2026 — M1-16 bounded mixed/prepaid returned voids
 
 - Explicit user approval recorded in DECISIONS: return all external money actually

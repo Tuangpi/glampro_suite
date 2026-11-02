@@ -6,6 +6,7 @@ import { payrollCreditInstalmentFunding } from "./payroll-credit-instalment-fund
 import { loadPayrollSalePackageCoverage } from "./payroll-close-sale-coverage.js";
 import { verifyPayrollPackageTenders } from "./payroll-close-package-tender.js";
 import { z } from "zod";
+import { Prisma } from "../../generated/prisma/client.js";
 import {
   allocatePayrollSplit,
   commissionAttributionSchema,
@@ -24,6 +25,7 @@ import { resolvePayrollFocEconomics } from "./payroll-close-foc.js";
 import { verifyOrdinaryPayrollRateProvenance } from "./payroll-close-rate-provenance.js";
 import { resolvePayrollCloseCash } from "./payroll-close-cash.js";
 import { loadSaleVoidCashConfirmation } from "./sale-void-cash.js";
+import { loadPayrollPurchaseSaleVoid } from "./payroll-close-purchase-void-loader.js";
 import {
   payrollFullCreditFunding,
   payrollMixedCreditFunding,
@@ -108,6 +110,251 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
       }),
       tx.commissionRule.findMany({ where: { tenantId }, orderBy: { id: "asc" } }),
     ]);
+  if (
+    sale &&
+    sale.lines.length &&
+    sale.lines.every((line) => ["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType))
+  ) {
+    if (
+      sale.tenantId !== tenantId ||
+      sale.collectionCurrency !== "SGD" ||
+      !sale.customerId ||
+      !sale.outletId ||
+      !["COMPLETED", "VOID"].includes(sale.status) ||
+      sale.paymentStatus !== "PAID" ||
+      !sale.paidAmount.equals(sale.totalAmount) ||
+      refunds.length ||
+      outstanding.length ||
+      !payments.length ||
+      sale.lines.some((line) => line.tenantId !== tenantId || line.saleId !== saleId) ||
+      payments.some(
+        (row) =>
+          row.tenantId !== tenantId ||
+          row.saleId !== saleId ||
+          row.sessionId !== null ||
+          row.amount.isNegative() ||
+          !row.amount.mul(100).isInteger(),
+      ) ||
+      !payments
+        .reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0))
+        .equals(sale.totalAmount) ||
+      !sale.lines
+        .reduce(
+          (sum, row) => sum.plus(row.lineTotal).minus(row.voucherDiscountAmount),
+          new Prisma.Decimal(0),
+        )
+        .equals(sale.totalAmount) ||
+      !sale.lines
+        .reduce((sum, row) => sum.plus(row.taxAmount), new Prisma.Decimal(0))
+        .equals(sale.taxAmount) ||
+      events.some(
+        (row) =>
+          row.tenantId !== tenantId ||
+          row.saleId !== saleId ||
+          row.outletId !== sale.outletId ||
+          !["COLLECTION", "VALUE_SPEND", ...(sale.status === "VOID" ? ["REVERSAL"] : [])].includes(
+            row.sourceType,
+          ),
+      ) ||
+      [payments, redemptions, events, collections].some(
+        (rows) => new Set(rows.map((row) => row.id)).size !== rows.length,
+      )
+    )
+      return fail();
+    const histories: Awaited<ReturnType<typeof loadPayrollValueSpendHistory>>[] = [];
+    for (const holdingId of [...new Set(redemptions.map((row) => row.holdingId))]) {
+      if (!holdingId) return fail();
+      histories.push(await loadPayrollValueSpendHistory(tx, holdingId));
+    }
+    if (
+      !redemptions.length ||
+      redemptions.some((row) => row.itemType !== "VALUE_PACKAGE") ||
+      !payments
+        .filter((row) => row.method === "PREPAID_CREDIT")
+        .reduce((sum, row) => sum.plus(row.amount), new Prisma.Decimal(0))
+        .equals(
+          redemptions.reduce((sum, row) => sum.plus(row.amount ?? 0), new Prisma.Decimal(0)),
+        ) ||
+      redemptions.some(
+        (row) =>
+          !histories.some((history) =>
+            history.verified.some((part) => part.redemptionId === row.id),
+          ),
+      )
+    )
+      return fail();
+    const spendEvents = events.filter((row) => row.sourceType === "VALUE_SPEND");
+    if (
+      spendEvents.length !== redemptions.length ||
+      redemptions.some((row) => {
+        const history = histories.find((part) => part.evidence.holding.id === row.holdingId);
+        const original = history?.evidence.redemptions.find((part) => part.id === row.id);
+        const event = spendEvents.find((part) => part.sourceId === row.id);
+        const independent = history?.evidence.related.find((part) => part.id === event?.id);
+        return (
+          !original ||
+          !event ||
+          !independent ||
+          hash(original) !== hash(row) ||
+          hash(independent) !== hash(event)
+        );
+      })
+    )
+      return fail();
+    const external = payments.filter(
+      (row) => row.method !== "PREPAID_CREDIT" && !row.amount.isZero(),
+    );
+    if (
+      external.some(
+        (row) =>
+          ![
+            "CASH",
+            "CARD",
+            "BANK_TRANSFER",
+            "CHEQUE",
+            "OTHER",
+            "PAYNOW_SGQR",
+            "NETS",
+            "GRABPAY",
+            "ATOME",
+            "PAYNOW",
+          ].includes(row.method),
+      ) ||
+      collections.length !== external.length ||
+      collections.some(
+        (receipt) =>
+          !external.some(
+            (row) =>
+              row.id === receipt.sourceId &&
+              row.amount.mul(100).equals(receipt.grossCents.toString()),
+          ),
+      )
+    )
+      return fail();
+    const loaded =
+      sale.status === "VOID"
+        ? await loadPayrollPurchaseSaleVoid(tx, tenantId, saleId, tenant.timeZone)
+        : null;
+    const cashByStaff = new Map<string, Prisma.Decimal>();
+    let cashNet = 0n;
+    const collected = new Map<string, bigint>();
+    for (const receipt of collections) {
+      const payment = external.find((row) => row.id === receipt.sourceId);
+      if (
+        !payment ||
+        receipt.tenantId !== tenantId ||
+        receipt.saleId !== saleId ||
+        receipt.currency !== "SGD" ||
+        receipt.sourceType !== "SALE_PAYMENT" ||
+        receipt.occurredAt.getTime() !== payment.createdAt.getTime()
+      )
+        return fail();
+      const expected = allocateCollection(
+        receipt.grossCents,
+        sale.lines.map((line) => ({
+          lineId: line.id,
+          purchase: packagePurchaseValue(
+            line.lineTotal.toFixed(2),
+            line.voucherDiscountAmount.toFixed(2),
+            line.taxAmount.toFixed(2),
+          ),
+          collectedGrossCents: collected.get(line.id) ?? 0n,
+        })),
+        receipt.allocations.map((part) => ({
+          lineId: part.saleLineId,
+          grossCents: part.grossCents,
+        })),
+      );
+      for (const part of receipt.allocations) {
+        const delta = expected.find((row) => row.lineId === part.saleLineId);
+        if (
+          !delta ||
+          part.tenantId !== tenantId ||
+          part.collectionId !== receipt.id ||
+          part.netCents !== delta.netCents ||
+          part.taxCents !== delta.taxCents
+        )
+          return fail();
+        collected.set(part.saleLineId, (collected.get(part.saleLineId) ?? 0n) + part.grossCents);
+      }
+    }
+    for (const receipt of collections)
+      for (const part of receipt.allocations) {
+        const line = sale.lines.find((row) => row.id === part.saleLineId);
+        const attribution = commissionAttributionSchema.safeParse(line?.attribution);
+        if (!attribution.success || !attribution.data.sellers) return fail();
+        cashNet += part.netCents;
+        for (const share of allocatePayrollSplit(
+          new Prisma.Decimal(part.netCents.toString()).div(100).toFixed(4),
+          attribution.data.sellers,
+        ))
+          cashByStaff.set(
+            share.staffId,
+            (cashByStaff.get(share.staffId) ?? new Prisma.Decimal(0)).plus(share.amount),
+          );
+      }
+    const collection = new Prisma.Decimal(cashNet.toString()).div(100).toFixed(4);
+    const noCashReversals: PayrollNoCashReversal[] = [];
+    for (const history of histories)
+      for (const restored of history.restorations) {
+        if (!redemptions.some((row) => row.id === restored.redemptionId)) continue;
+        const original = events.find((row) => row.id === restored.eventId);
+        const reversal = events.find((row) => row.id === restored.reversalEventId);
+        if (!original || !reversal) return fail();
+        noCashReversals.push({
+          id: restored.restorationBalanceId,
+          tenantId,
+          eventId: reversal.id,
+          originalEventId: original.id,
+          originalSourceId: original.sourceId,
+          originalSourceType: "VALUE_SPEND",
+          saleId,
+          outletId: sale.outletId,
+          occurredAt: reversal.occurredAt,
+          currency: "SGD",
+          netCents: "0",
+          taxCents: "0",
+          grossCents: "0",
+          evidence: restored,
+        });
+      }
+    return {
+      earningsActive: false as const,
+      ordinary: [],
+      noCashReversals,
+      noCashSaleVoid: loaded?.saleVoid.cashDisposition === "NO_MOVEMENT" ? loaded.saleVoid : null,
+      returnedCashSaleVoid:
+        loaded?.saleVoid.cashDisposition === "RETURNED" ? loaded.saleVoid : null,
+      coverage: null,
+      packageTender: null,
+      creditPaymentIds: payments
+        .filter((row) => row.method === "PREPAID_CREDIT")
+        .map((row) => row.id),
+      laterOperations: [],
+      // Monthly loading independently replays every operational collection.
+      cash: {
+        salonCash: collection,
+        staff: [...cashByStaff].map(([staffId, amount]) => ({
+          staffId,
+          collection: amount.toFixed(4),
+        })),
+        outlets: [{ outletId: sale.outletId, collection }],
+      },
+      purchaseVoid: loaded,
+      evidence: {
+        sale,
+        payments,
+        redemptions,
+        events,
+        collections,
+        histories,
+        rules,
+        cashAttributions: [],
+        cashConfirmation: null,
+        outstanding,
+      },
+    };
+  }
   if (
     !sale ||
     sale.tenantId !== tenantId ||
@@ -217,7 +464,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
   // Later cash posts against the frozen contract that explained the original split.
   // A session-covered receipt names it through the session contract instead.
   const laterFunding = instalmentFunding ?? (instalment ? sessionFunding : null);
-  if (coverage && !sessionFunding) {
+  if (coverage && creditRedemptions.length && !sessionFunding) {
     if (instalment) refuse("VALUE_SALE_INSTALMENT_SESSION_COVERAGE_UNCONFIRMED");
     return fail();
   }
@@ -268,7 +515,7 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     ]),
   );
   if (
-    !creditCents ||
+    (!creditCents && !sessionCount) ||
     creditPayments.some((row) => !row.amount.isPositive()) ||
     creditCents !== creditRedemptions.reduce((sum, row) => sum + cents(row.amount!), 0n) ||
     externalCents + creditCents + BigInt(packageTender?.grossCents ?? "0") !==
@@ -390,6 +637,21 @@ export async function loadPayrollValueSaleAllocation(tx: PayrollCloseTransaction
     }
   }
   const mixedFunding = payrollMixedCreditFunding(sale, sale.lines, payments, collections);
+  if (!creditRedemptions.length) {
+    // Session-only consideration is independently reserved by coverage/tenders.
+    // Every uncovered cent must be externally collected, and covered units must
+    // never receive cash allocations. No synthetic credit funding is introduced.
+    for (const line of sale.lines) {
+      const part = coverage?.lines.find((row) => row.saleLineId === line.id);
+      if (!part) return fail();
+      const gross = purchaseByLine.get(line.id)!.grossCents;
+      const quantity = BigInt(line.quantity);
+      const covered = BigInt(part.coveredQuantity);
+      const reserved =
+        (gross / quantity) * covered + (covered < gross % quantity ? covered : gross % quantity);
+      if ((collected.get(line.id) ?? 0n) !== gross - reserved) return fail();
+    }
+  }
   const ordinary = [];
   for (const line of sale.lines) {
     if (coverage?.lines.find((row) => row.saleLineId === line.id)?.remainingQuantity === 0) {

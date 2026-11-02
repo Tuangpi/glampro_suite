@@ -186,7 +186,15 @@ export function resolvePayrollCloseCash(
         row.allocations.some((part) => part.id === allocation.id),
       );
       if (
-        (original && !collected) ||
+        (original &&
+          !collected &&
+          !(
+            original.sourceType === "SALE_LINE" &&
+            ["PRODUCT", "SERVICE"].includes(allocation.itemType) &&
+            allocation.netCents === "0" &&
+            allocation.taxCents === "0" &&
+            allocation.grossCents === "0"
+          )) ||
         (collected &&
           (collection?.saleId !== returned.saleId ||
             collected.itemType !== allocation.itemType ||

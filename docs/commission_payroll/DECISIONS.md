@@ -1,5 +1,21 @@
 # Commission & Payroll decisions
 
+## November 2, 2026 — purchase-only credit conversion commission policy
+
+- User explicitly chose: **exclude purchase-only credit conversion from VP_SPEND
+  commission; still reconcile credit restoration and external cash**.
+- Prospective PACKAGE/VALUE_PACKAGE-only checkout freezes
+  `PURCHASE_CONVERSION_EXCLUDED`, zero VP_SPEND base and EXCLUDE mode. Original
+  purchase sellers identify the excluded audit lines, not earned spend commission.
+  Current bounded writer requires consistent seller attribution across those lines.
+- Operational credit draw/restoration, original holding ratio and grant/removal
+  histories remain required. External cash alone funds collection commission and
+  returned payouts. Fully credit-funded voids use NO_MOVEMENT; no zero RETURNED.
+- Historical unavailable sources are not repaired. Ordinary service credit spends
+  retain their original performer and paid-to-credit commission economics.
+- This resolves the attribution blocker recorded in the earlier same-day progress
+  checkpoint; completion still requires the final acceptance/regression evidence.
+
 ## November 2, 2026 — M1-16 mixed/prepaid reversal policy
 
 - Explicit user approval: return **all external money actually collected**, restore

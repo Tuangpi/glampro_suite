@@ -6,8 +6,8 @@
  * These cases prove the real writers on a disposable database:
  *
  * 1. The void writer binds the returned payouts to the tenders it can still see, refusing
- *    a figure that is not exactly what the sale collected and a sale whose consideration
- *    was not all money (an ordinary line, or credit).
+ *    a figure that is not exactly the external money collected. Mixed ordinary purchase
+ *    companions preserve their sources, including zero products and zero tenders.
  * 2. The loader re-derives that total from the surviving tenders, so an attestation edited
  *    outside the writer refuses instead of overstating a return.
  * 3. A fully returned purchase nets to zero cash while its commission base and its
@@ -533,12 +533,22 @@ test(
   }),
 );
 
-for (const itemType of ["SERVICE", "PRODUCT"] as const) {
+for (const { itemType, zeroProduct, zeroTender, foc = false } of [
+  { itemType: "SERVICE", zeroProduct: false, zeroTender: false, foc: false },
+  { itemType: "SERVICE", zeroProduct: false, zeroTender: false, foc: true },
+  { itemType: "SERVICE", zeroProduct: false, zeroTender: true, foc: true },
+  { itemType: "PRODUCT", zeroProduct: false, zeroTender: false },
+  { itemType: "PRODUCT", zeroProduct: true, zeroTender: false },
+  { itemType: "PRODUCT", zeroProduct: false, zeroTender: true },
+  { itemType: "PRODUCT", zeroProduct: true, zeroTender: true },
+] as const) {
   for (const crossMonth of [false, true]) {
     test(
-      `CP-005 M1-16 mixed purchase/${itemType} ${crossMonth ? "cross-month" : "same-month"} returns external cash with exact source inventory`,
+      `CP-005 M1-16 mixed purchase/${itemType}${foc ? " FOC" : ""}${zeroProduct ? " zero-product" : ""}${zeroTender ? " zero-tender" : ""} ${crossMonth ? "cross-month" : "same-month"} returns external cash with exact source inventory`,
       { skip: disabled },
       tenantCase(`m116-${itemType}`, async (fixture) => {
+        const zeroCompanion = zeroProduct || foc;
+        const returnedAmount = zeroCompanion ? 545 : 635;
         const purchaseLine = await prisma.saleLine.findFirstOrThrow({
           where: { saleId: fixture.purchaseId },
         });
@@ -550,8 +560,8 @@ for (const itemType of ["SERVICE", "PRODUCT"] as const) {
                   data: {
                     tenantId: fixture.tenantId,
                     name: "M116 product",
-                    memberPrice: "90",
-                    nonmemberPrice: "90",
+                    memberPrice: zeroProduct ? "0" : "90",
+                    nonmemberPrice: zeroProduct ? "0" : "90",
                     quantity: 10,
                   },
                 })
@@ -570,18 +580,24 @@ for (const itemType of ["SERVICE", "PRODUCT"] as const) {
                 itemType,
                 itemId: ordinaryId,
                 quantity: 1,
+                ...(foc ? { discountPercent: 100 } : {}),
                 attribution: {
                   sellers: shares(fixture.ownerId),
                   ...(itemType === "SERVICE" ? { performers: shares(fixture.ownerId) } : {}),
                 },
               },
             ],
-            payments: [{ method: "CASH", amount: 635 }],
+            payments: [
+              { method: "CASH", amount: returnedAmount },
+              ...(zeroTender ? [{ method: "CARD" as const, amount: 0 }] : []),
+            ],
             collection: {
               currency: "SGD",
               allocations: [
                 { paymentIndex: 0, linePosition: 0, grossCents: "54500" },
-                { paymentIndex: 0, linePosition: 1, grossCents: "9000" },
+                ...(zeroCompanion
+                  ? []
+                  : [{ paymentIndex: 0, linePosition: 1, grossCents: "9000" }]),
               ],
             },
           }),
@@ -610,6 +626,34 @@ for (const itemType of ["SERVICE", "PRODUCT"] as const) {
         try {
           const before = await loadMonth(fixture);
           const prior = await calculateStoredPayrollClose(before.periodKey, 0);
+          if (zeroCompanion || zeroTender) {
+            await assert.rejects(
+              voidSale(
+                mixed.id,
+                {
+                  reason: "Reject incorrect external return",
+                  cashDisposition: "RETURNED",
+                  returnedCash: {
+                    reference: "Incorrect zero companion return",
+                    payouts: [{ method: "CASH", amount: returnedAmount + 1 }],
+                  },
+                },
+                fixture.ownerId,
+              ),
+              /must equal what this sale collected/,
+            );
+            assert.equal(
+              (await prisma.sale.findFirstOrThrow({ where: { id: mixed.id } })).status,
+              "COMPLETED",
+            );
+            assert.equal(
+              await prisma.customerValuePackageHolding.count({
+                where: { saleLine: { saleId: mixed.id } },
+              }),
+              1,
+            );
+            assert.equal(await prisma.auditLog.count({ where: { action, targetId: mixed.id } }), 0);
+          }
           await voidSale(
             mixed.id,
             {
@@ -617,21 +661,75 @@ for (const itemType of ["SERVICE", "PRODUCT"] as const) {
               cashDisposition: "RETURNED",
               returnedCash: {
                 reference: "M116 mixed return",
-                payouts: [{ method: "CASH", amount: 635 }],
+                payouts: [{ method: "CASH", amount: returnedAmount }],
               },
             },
             fixture.ownerId,
           );
           const inputs = await loadMonth(fixture);
-          assert.equal(resolvedCash(inputs).cash!.salonCash, crossMonth ? "-582.5700" : "500.0000");
+          assert.equal(
+            resolvedCash(inputs).cash!.salonCash,
+            crossMonth ? (zeroCompanion ? "-500.0000" : "-582.5700") : "500.0000",
+          );
           const loaded = await prisma.$transaction((tx) =>
             loadPayrollPurchaseSaleVoid(tx, fixture.tenantId, mixed.id, "Asia/Singapore"),
           );
           assert.equal(loaded.saleVoid.cashDisposition, "RETURNED");
+          if (loaded.saleVoid.cashDisposition === "RETURNED") {
+            assert.equal(loaded.saleVoid.grossCents, String(returnedAmount * 100));
+            const ordinary = loaded.saleVoid.allocations.find((row) => row.itemType === itemType)!;
+            assert.equal(ordinary.grossCents, zeroCompanion ? "0" : "9000");
+            assert.equal(ordinary.cashAttribution?.allocations.length ?? 0, zeroCompanion ? 0 : 1);
+          }
+          assert.equal(loaded.payments.length, zeroTender ? 2 : 1);
+          assert.equal(loaded.receipts.length, 1);
           assert.deepEqual(loaded.saleVoid.reversals.map((row) => row.originalSourceType).sort(), [
             "COLLECTION",
             "SALE_LINE",
           ]);
+          if (foc) {
+            const capture = loaded.events.find((row) => row.sourceType === "SALE_LINE")!;
+            const evidence = capture.evidence as {
+              lines: { commissionType: string; baseAmount: string }[];
+            };
+            assert.equal(evidence.lines[0].commissionType, "FOC");
+            assert.equal(evidence.lines[0].baseAmount, "90.0000");
+            // A nonzero FOC commission base is not a cash allocation. Its frozen
+            // operational economics are still mandatory, independently of capture.
+            await assert.rejects(
+              prisma.$transaction((tx) =>
+                loadPayrollPurchaseSaleVoid(
+                  new Proxy(tx, {
+                    get(target, property, receiver) {
+                      if (property !== "sale") return Reflect.get(target, property, receiver);
+                      return new Proxy(target.sale, {
+                        get(delegate, method) {
+                          if (method === "findFirst")
+                            return async (...args: Parameters<typeof delegate.findFirst>) => {
+                              const sale = (await delegate.findFirst(
+                                ...args,
+                              )) as typeof loaded.sale;
+                              return {
+                                ...sale,
+                                lines: sale.lines.map((line) => ({
+                                  ...line,
+                                  payrollEconomics: null,
+                                })),
+                              };
+                            };
+                          return Reflect.get(delegate, method);
+                        },
+                      });
+                    },
+                  }) as PayrollCloseTransaction,
+                  fixture.tenantId,
+                  mixed.id,
+                  "Asia/Singapore",
+                ),
+              ),
+              /SALE_VOID_CASH_UNCONFIRMED|FOC_OPERATIONAL_LIST_PRICE_NOT_LOADED/,
+            );
+          }
           for (const corruption of [
             "salePayment",
             "commissionCollection",

@@ -24,6 +24,7 @@ const sourceSchema = z.object({
     performers: commissionSharesSchema,
     sourceSaleId: z.string().min(1),
     postingStatus: z.literal("PENDING_RELEASE"),
+    commissionPolicy: z.literal("PURCHASE_CONVERSION_EXCLUDED").optional(),
   }),
 });
 const fail = (): never => {
@@ -108,22 +109,32 @@ export function verifyPayrollValueSpend(input: {
   )
     return fail();
   const services = sale.lines.filter((row) => row.itemType === "SERVICE");
-  if (!services.length) return fail();
-  for (const service of services) {
+  const purchaseOnly =
+    sale.lines.length > 0 &&
+    sale.lines.every((row) => ["PACKAGE", "VALUE_PACKAGE"].includes(row.itemType));
+  if (
+    (!services.length && !purchaseOnly) ||
+    purchaseOnly !== (source.commissionPolicy === "PURCHASE_CONVERSION_EXCLUDED")
+  )
+    return fail();
+  for (const service of purchaseOnly ? sale.lines : services) {
     const attribution = commissionAttributionSchema.safeParse(service.attribution);
     if (
       !attribution.success ||
-      !attribution.data.performers ||
-      payrollInputHash(attribution.data.performers) !== payrollInputHash(source.performers)
+      !(purchaseOnly ? attribution.data.sellers : attribution.data.performers) ||
+      payrollInputHash(purchaseOnly ? attribution.data.sellers : attribution.data.performers) !==
+        payrollInputHash(source.performers)
     )
       return fail();
   }
-  const baseAmount = payrollValuePackageSpend(
-    input.purchase.paidNet,
-    input.purchase.credit,
-    input.spentBefore,
-    source.spentNow,
-  );
+  const baseAmount = purchaseOnly
+    ? "0.0000"
+    : payrollValuePackageSpend(
+        input.purchase.paidNet,
+        input.purchase.credit,
+        input.spentBefore,
+        source.spentNow,
+      );
   const bases = allocatePayrollSplit(baseAmount, source.performers);
   const units = allocatePayrollSplit("1.0000", source.performers);
   if (
@@ -133,7 +144,7 @@ export function verifyPayrollValueSpend(input: {
     lines.some(
       (row) =>
         row.commissionType !== "VP_SPEND" ||
-        row.mode !== "FOLLOW_PLAN" ||
+        row.mode !== (purchaseOnly ? "EXCLUDE" : "FOLLOW_PLAN") ||
         row.fixedCommission !== undefined ||
         (row.productCategory ?? null) !== null ||
         row.baseAmount !== bases.find((part) => part.staffId === row.staffId)?.amount ||

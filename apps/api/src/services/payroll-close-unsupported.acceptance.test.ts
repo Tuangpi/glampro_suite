@@ -8,6 +8,7 @@ import {
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, mock, test } from "node:test";
+import pg from "pg";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
 import { createSale, voidSale } from "./sale.service.js";
@@ -50,8 +51,27 @@ const atOutlet = <T>(fixture: Fixture, work: () => Promise<T>) =>
 function tenantCase(tag: string, work: (fixture: Fixture) => Promise<void>) {
   return async () => {
     assertDisposableTarget();
-    const fixture = await setup(tag);
-    await runAsTenant(fixture.tenantId, () => work(fixture), fixture.ownerId);
+    // Align only the valuation SQL clock with simulated POS time; writers and
+    // independent journals still run against the disposable database.
+    const query = pg.Client.prototype.query;
+    const clock = tag.startsWith("m116-purchase")
+      ? mock.method(pg.Client.prototype, "query", function (this: pg.Client, ...args: unknown[]) {
+          const config = args[0] as { text?: string; values?: unknown[] } | undefined;
+          if (config?.text?.includes("clock_timestamp() AT TIME ZONE 'UTC'"))
+            args[0] = {
+              ...config,
+              text: "SELECT $1::timestamp(3) AS at",
+              values: [new Date().toISOString()],
+            };
+          return Reflect.apply(query, this, args);
+        })
+      : null;
+    try {
+      const fixture = await setup(tag);
+      await runAsTenant(fixture.tenantId, () => work(fixture), fixture.ownerId);
+    } finally {
+      clock?.mock.restore();
+    }
   };
 }
 
@@ -274,40 +294,81 @@ const loadValueSale = (fixture: Fixture, saleId: string) =>
     fixture.ownerId,
   );
 
-for (const session of [false, true]) {
+for (const shape of [
+  "credit",
+  "session/credit",
+  "session/cash",
+  "credit/package",
+  "credit/value",
+] as const) {
+  const session = shape === "session/credit" || shape === "session/cash";
+  const purchaseOnly = shape === "credit/package" || shape === "credit/value";
+  const credit = shape !== "session/cash";
   for (const external of [false, true]) {
     for (const crossMonth of [false, true]) {
+      if (!credit && !external) continue;
+      const externalAmount = credit ? 30 : 90;
       test(
-        `CP-005 M1-16 ${session ? "session/credit" : "credit"} ${external ? "RETURNED" : "NO_MOVEMENT"} ${crossMonth ? "cross-month" : "same-month"} restores prepaid without cash conversion`,
+        `CP-005 M1-16 ${shape} ${external ? "RETURNED" : "NO_MOVEMENT"} ${crossMonth ? "cross-month" : "same-month"} restores prepaid without cash conversion`,
         { skip: disabled },
-        tenantCase(`m116-${session}-${external}`, async (fixture) => {
+        tenantCase(`m116-${purchaseOnly ? "purchase" : session}-${external}`, async (fixture) => {
+          if (purchaseOnly)
+            await prisma.packageValuationActivation.create({
+              data: {
+                tenantId: fixture.tenantId,
+                actorId: fixture.ownerId,
+                policyVersion: 1,
+                currency: "SGD",
+                reason: "Credit purchase void acceptance",
+                activatedAt: new Date("2026-01-01"),
+              },
+            });
+          const packageHolding = await prisma.customerPackageHolding.findFirstOrThrow({
+            where: { id: fixture.sessionHoldingId },
+          });
+          const valueHolding = await prisma.customerValuePackageHolding.findFirstOrThrow({
+            where: { id: fixture.creditHoldingId },
+          });
+          const purchaseAmount = shape === "credit/value" ? 545 : 100;
           const sale = await atOutlet(fixture, () =>
             createSale({
               customerId: fixture.customerId,
-              lines: [
-                ...(session
-                  ? [
-                      {
-                        itemType: "SERVICE" as const,
-                        itemId: fixture.sessionServiceId,
-                        quantity: 1,
-                        attribution: {
-                          sellers: shares(fixture.ownerId),
-                          performers: shares(fixture.staffId),
-                        },
+              lines: purchaseOnly
+                ? [
+                    {
+                      itemType: shape === "credit/value" ? "VALUE_PACKAGE" : "PACKAGE",
+                      itemId:
+                        shape === "credit/value"
+                          ? valueHolding.valuePackageId
+                          : packageHolding.packageId,
+                      quantity: 1,
+                      attribution: { sellers: shares(fixture.ownerId) },
+                    },
+                  ]
+                : [
+                    ...(session
+                      ? [
+                          {
+                            itemType: "SERVICE" as const,
+                            itemId: fixture.sessionServiceId,
+                            quantity: 1,
+                            attribution: {
+                              sellers: shares(fixture.ownerId),
+                              performers: shares(fixture.staffId),
+                            },
+                          },
+                        ]
+                      : []),
+                    {
+                      itemType: "SERVICE",
+                      itemId: fixture.creditServiceId,
+                      quantity: 1,
+                      attribution: {
+                        sellers: shares(fixture.ownerId),
+                        performers: shares(fixture.staffId),
                       },
-                    ]
-                  : []),
-                {
-                  itemType: "SERVICE",
-                  itemId: fixture.creditServiceId,
-                  quantity: 1,
-                  attribution: {
-                    sellers: shares(fixture.ownerId),
-                    performers: shares(fixture.staffId),
-                  },
-                },
-              ],
+                    },
+                  ],
               payments: [
                 ...(session
                   ? [
@@ -319,21 +380,26 @@ for (const session of [false, true]) {
                       },
                     ]
                   : []),
-                {
-                  method: "PREPAID_CREDIT",
-                  holdingId: fixture.creditHoldingId,
-                  amount: external ? 60 : 90,
-                },
-                ...(external ? [{ method: "CASH" as const, amount: 30 }] : []),
+                ...(credit
+                  ? [
+                      {
+                        method: "PREPAID_CREDIT" as const,
+                        holdingId: fixture.creditHoldingId,
+                        amount:
+                          (purchaseOnly ? purchaseAmount : 90) - (external ? externalAmount : 0),
+                      },
+                    ]
+                  : []),
+                ...(external ? [{ method: "CASH" as const, amount: externalAmount }] : []),
               ],
               collection: {
                 currency: "SGD",
                 allocations: external
                   ? [
                       {
-                        paymentIndex: session ? 2 : 1,
+                        paymentIndex: Number(session) + Number(credit),
                         linePosition: session ? 1 : 0,
-                        grossCents: "3000",
+                        grossCents: String(externalAmount * 100),
                       },
                     ]
                   : [],
@@ -341,6 +407,22 @@ for (const session of [false, true]) {
             }),
           );
           const original = await loadMonth(fixture);
+          if (purchaseOnly) {
+            const capture = await prisma.payrollSourceEvent.findFirstOrThrow({
+              where: { saleId: sale.id, sourceType: "VALUE_SPEND" },
+            });
+            const evidence = capture.evidence as {
+              sourceSnapshot: { commissionPolicy: string };
+              lines: { mode: string; baseAmount: string }[];
+            };
+            assert.equal(evidence.sourceSnapshot.commissionPolicy, "PURCHASE_CONVERSION_EXCLUDED");
+            assert.ok(evidence.lines.length > 0);
+            assert.ok(
+              evidence.lines.every(
+                (line) => line.mode === "EXCLUDE" && line.baseAmount === "0.0000",
+              ),
+            );
+          }
           let frozenOriginal: string | null = null;
           if (crossMonth) {
             const originalDraft = await calculateStoredPayrollClose(original.periodKey, 0);
@@ -367,6 +449,9 @@ for (const session of [false, true]) {
             const creditBefore = await prisma.customerValuePackageHolding.findFirstOrThrow({
               where: { id: fixture.creditHoldingId },
             });
+            const sessionBefore = await prisma.customerPackageHolding.findFirstOrThrow({
+              where: { id: fixture.sessionHoldingId },
+            });
             if (external) {
               await assert.rejects(
                 voidSale(
@@ -376,7 +461,7 @@ for (const session of [false, true]) {
                     cashDisposition: "RETURNED",
                     returnedCash: {
                       reference: "M116 refusal",
-                      payouts: [{ method: "CASH", amount: 90 }],
+                      payouts: [{ method: "CASH", amount: externalAmount + 10 }],
                     },
                   },
                   fixture.ownerId,
@@ -395,6 +480,20 @@ for (const session of [false, true]) {
                 ).amountRemaining.toFixed(2),
                 creditBefore.amountRemaining.toFixed(2),
               );
+              assert.equal(
+                (
+                  await prisma.customerPackageHolding.findFirstOrThrow({
+                    where: { id: fixture.sessionHoldingId },
+                  })
+                ).quantityRemaining,
+                sessionBefore.quantityRemaining,
+              );
+              assert.equal(
+                await prisma.auditLog.count({
+                  where: { targetId: sale.id, action: "sale.void.cash-disposition" },
+                }),
+                0,
+              );
             }
             await voidSale(
               sale.id,
@@ -405,7 +504,7 @@ for (const session of [false, true]) {
                       cashDisposition: "RETURNED" as const,
                       returnedCash: {
                         reference: "M116 external return",
-                        payouts: [{ method: "CASH" as const, amount: 30 }],
+                        payouts: [{ method: "CASH" as const, amount: externalAmount }],
                       },
                     }
                   : { cashDisposition: "NO_MOVEMENT" as const }),
@@ -415,7 +514,7 @@ for (const session of [false, true]) {
             const allocated = await loadValueSale(fixture, sale.id);
             assert.equal(
               allocated.returnedCashSaleVoid?.grossCents ?? "0",
-              external ? "3000" : "0",
+              external ? String(externalAmount * 100) : "0",
             );
             assert.equal(
               (
@@ -427,8 +526,16 @@ for (const session of [false, true]) {
             );
             const inputs = await loadMonth(fixture);
             assert.equal(
+              (
+                await prisma.customerPackageHolding.findFirstOrThrow({
+                  where: { id: fixture.sessionHoldingId },
+                })
+              ).quantityRemaining,
+              5,
+            );
+            assert.equal(
               inputs.staff.find((row) => row.staff.id === fixture.ownerId)!.collection,
-              crossMonth ? (external ? "-27.5200" : "0.0000") : "591.7400",
+              crossMonth ? (external ? (credit ? "-27.5200" : "-82.5700") : "0.0000") : "591.7400",
             );
             assert.equal(
               inputs.staff.find((row) => row.staff.id === fixture.staffId)!.collection,
@@ -440,8 +547,15 @@ for (const session of [false, true]) {
               "REVERSAL",
               "COLLECTION",
               "PAYOUT",
+              "SESSION_RESTORE",
+              "PURCHASE_HOLDING",
+              "PURCHASE_POLICY",
             ] as const) {
               if (!external && ["COLLECTION", "PAYOUT"].includes(corruption)) continue;
+              if (!credit && corruption === "RESTORE") continue;
+              if (!session && corruption === "SESSION_RESTORE") continue;
+              if (!purchaseOnly && ["PURCHASE_HOLDING", "PURCHASE_POLICY"].includes(corruption))
+                continue;
               await assert.rejects(
                 prisma.$transaction((tx) =>
                   loadAuthoritativePayrollCloseInputs(
@@ -454,6 +568,7 @@ for (const session of [false, true]) {
                             "payrollSourceEvent",
                             "commissionCollection",
                             "auditLog",
+                            "commissionRedemptionSnapshot",
                           ].includes(String(property))
                         )
                           return Reflect.get(target, property, receiver);
@@ -463,12 +578,30 @@ for (const session of [false, true]) {
                             if (method !== "findMany") return Reflect.get(model, method);
                             return async (...args: unknown[]) => {
                               const rows = await model.findMany(...args);
+                              if (
+                                corruption === "PURCHASE_POLICY" &&
+                                property === "payrollSourceEvent"
+                              )
+                                return rows.map(
+                                  (row: {
+                                    saleId?: string;
+                                    sourceType?: string;
+                                    evidence: { sourceSnapshot?: Record<string, unknown> };
+                                  }) => {
+                                    if (row.saleId !== sale.id || row.sourceType !== "VALUE_SPEND")
+                                      return row;
+                                    const changed = structuredClone(row);
+                                    delete changed.evidence.sourceSnapshot?.commissionPolicy;
+                                    return changed;
+                                  },
+                                );
                               return rows.filter(
                                 (row: {
                                   kind?: string;
                                   saleId?: string;
                                   sourceType?: string;
                                   targetId?: string;
+                                  eventType?: string;
                                 }) =>
                                   !(
                                     (corruption === "RESTORE" &&
@@ -487,7 +620,13 @@ for (const session of [false, true]) {
                                       row.saleId === sale.id) ||
                                     (corruption === "PAYOUT" &&
                                       property === "auditLog" &&
-                                      row.targetId === sale.id)
+                                      row.targetId === sale.id) ||
+                                    (corruption === "PURCHASE_HOLDING" &&
+                                      property === "auditLog" &&
+                                      row.targetId === sale.id) ||
+                                    (corruption === "SESSION_RESTORE" &&
+                                      property === "commissionRedemptionSnapshot" &&
+                                      row.eventType === "VOID")
                                   ),
                               );
                             };
@@ -564,6 +703,69 @@ for (const session of [false, true]) {
     }
   }
 }
+
+test(
+  "CP-005 M1-16 purchase-only credit spend explicitly excludes commission and restores original holding",
+  { skip: disabled },
+  tenantCase("m116-purchase-policy", async (fixture) => {
+    await prisma.packageValuationActivation.create({
+      data: {
+        tenantId: fixture.tenantId,
+        actorId: fixture.ownerId,
+        policyVersion: 1,
+        currency: "SGD",
+        reason: "Purchase conversion acceptance",
+        activatedAt: new Date("2026-01-01"),
+      },
+    });
+    const original = await prisma.customerPackageHolding.findFirstOrThrow({
+      where: { id: fixture.sessionHoldingId },
+    });
+    const purchase = await atOutlet(fixture, () =>
+      createSale({
+        customerId: fixture.customerId,
+        lines: [
+          {
+            itemType: "PACKAGE",
+            itemId: original.packageId,
+            quantity: 1,
+            attribution: { sellers: shares(fixture.ownerId) },
+          },
+        ],
+        payments: [{ method: "PREPAID_CREDIT", holdingId: fixture.creditHoldingId, amount: 100 }],
+        collection: { currency: "SGD", allocations: [] },
+      }),
+    );
+    const event = await prisma.payrollSourceEvent.findFirstOrThrow({
+      where: { saleId: purchase.id, sourceType: "VALUE_SPEND" },
+    });
+    const evidence = event.evidence as {
+      status: string;
+      missingEvidence: string[];
+      lines: unknown[];
+    };
+    assert.equal(evidence.status, "CAPTURED");
+    assert.deepEqual(evidence.missingEvidence, []);
+    await loadMonth(fixture);
+    await voidSale(
+      purchase.id,
+      {
+        reason: "Restore purchase consideration without cashing out credit",
+        cashDisposition: "NO_MOVEMENT",
+      },
+      fixture.ownerId,
+    );
+    assert.equal(
+      (
+        await prisma.customerValuePackageHolding.findFirstOrThrow({
+          where: { id: fixture.creditHoldingId },
+        })
+      ).amountRemaining.toFixed(2),
+      "600.00",
+    );
+    await loadMonth(fixture);
+  }),
+);
 
 /** Gate only the first real transaction after its tenant row lock. Both real
  * writers retain their production advisory/row locking and commit behavior.

@@ -87,7 +87,7 @@ export async function loadPayrollPurchaseSaleVoid(
     !Number.isFinite(sale.soldAt.getTime()) ||
     sale.soldAt > sale.voidedAt ||
     !sale.lines.length ||
-    redemptions.length ||
+    redemptions.some((row) => row.itemType !== "VALUE_PACKAGE" || !row.revertedAt) ||
     sale.lines.some(
       (line) =>
         line.tenantId !== tenantId ||
@@ -108,6 +108,19 @@ export async function loadPayrollPurchaseSaleVoid(
   const packagePurchases = new Map<string, ReturnType<typeof verifyPayrollPackagePurchase>>();
   const valuePurchases = new Map<string, ReturnType<typeof verifyPayrollValuePurchase>>();
   const journals: unknown[] = [];
+  const creditHistories = [];
+  for (const holdingId of [...new Set(redemptions.map((row) => row.holdingId))]) {
+    if (!holdingId) return fail();
+    const history = await loadPayrollValueSpendHistory(tx, holdingId);
+    if (
+      redemptions
+        .filter((row) => row.holdingId === holdingId)
+        .some((row) => !history.restorations.some((restored) => restored.redemptionId === row.id))
+    )
+      return fail();
+    creditHistories.push(history);
+  }
+  journals.push(...creditHistories);
   for (const line of sale.lines.filter((row) =>
     ["PACKAGE", "VALUE_PACKAGE"].includes(row.itemType),
   )) {
@@ -510,19 +523,29 @@ export async function loadPayrollPurchaseSaleVoid(
         row.tenantId !== tenantId ||
         row.saleId !== saleId ||
         row.sessionId !== null ||
-        ![...MONEY_PAYMENT_METHODS, "PAYNOW"].includes(row.method) ||
-        !row.amount.isPositive() ||
+        ![...MONEY_PAYMENT_METHODS, "PAYNOW", "PREPAID_CREDIT"].includes(row.method) ||
+        row.amount.isNegative() ||
         !row.amount.mul(100).isInteger() ||
         !during(row.createdAt) ||
         row.createdAt > sale.voidedAt!,
     ) ||
-    receipts.length !== payments.length
+    // Decimal.isPositive() includes positive zero. The writer records zero tenders
+    // but deliberately creates no collection for them.
+    receipts.length !==
+      payments.filter((row) => row.method !== "PREPAID_CREDIT" && row.amount.greaterThan(0)).length
   )
     return fail();
-  const upfrontGrossCents = payments.reduce(
-    (sum, row) => sum + BigInt(row.amount.mul(100).toFixed(0)),
-    0n,
-  );
+  const creditGrossCents = payments
+    .filter((row) => row.method === "PREPAID_CREDIT")
+    .reduce((sum, row) => sum + BigInt(row.amount.mul(100).toFixed(0)), 0n);
+  if (
+    creditGrossCents !==
+    redemptions.reduce((sum, row) => sum + BigInt(row.amount?.mul(100).toFixed(0) ?? "0"), 0n)
+  )
+    return fail();
+  const upfrontGrossCents = payments
+    .filter((row) => row.method !== "PREPAID_CREDIT")
+    .reduce((sum, row) => sum + BigInt(row.amount.mul(100).toFixed(0)), 0n);
   const purchaseGrossCents = sale.lines.reduce(
     (sum, line) =>
       sum +
@@ -535,9 +558,12 @@ export async function loadPayrollPurchaseSaleVoid(
   );
   if (
     !sale.totalAmount?.mul(100).equals(purchaseGrossCents.toString()) ||
-    !sale.paidAmount?.mul(100).equals(upfrontGrossCents.toString()) ||
-    upfrontGrossCents > purchaseGrossCents ||
-    sale.paymentStatus !== (upfrontGrossCents === purchaseGrossCents ? "PAID" : "UNPAID")
+    !sale.paidAmount?.mul(100).equals((upfrontGrossCents + creditGrossCents).toString()) ||
+    upfrontGrossCents + creditGrossCents > purchaseGrossCents ||
+    sale.paymentStatus !==
+      (upfrontGrossCents + creditGrossCents === purchaseGrossCents ? "PAID" : "UNPAID") ||
+    (creditGrossCents > 0n &&
+      sale.lines.some((line) => !["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType)))
   )
     return fail();
   // SALE_LINE captures represent full ordinary economics, not partial receipt
@@ -554,6 +580,24 @@ export async function loadPayrollPurchaseSaleVoid(
     seenEvents = new Set<string>();
   const counts = new Map<string, number>();
   const reversals: PayrollNoCashSaleVoid["reversals"] = [];
+  for (const redemption of redemptions) {
+    const history = creditHistories.find(
+      (row) => row.evidence.holding.id === redemption.holdingId,
+    )!;
+    const restored = history.restorations.find((row) => row.redemptionId === redemption.id)!;
+    for (const id of [restored.eventId, restored.reversalEventId]) {
+      const event = events.find((row) => row.id === id);
+      const independent = history.evidence.related.find((row) => row.id === id);
+      if (
+        !event ||
+        !independent ||
+        payrollInputHash(JSON.parse(JSON.stringify(event))) !==
+          payrollInputHash(JSON.parse(JSON.stringify(independent)))
+      )
+        return fail();
+      seenEvents.add(id);
+    }
+  }
   for (const receipt of receipts) {
     const payment = payments.find((row) => row.id === receipt.sourceId);
     if (
@@ -562,6 +606,7 @@ export async function loadPayrollPurchaseSaleVoid(
       receipt.saleId !== saleId ||
       receipt.currency !== "SGD" ||
       receipt.sourceType !== "SALE_PAYMENT" ||
+      payment.method === "PREPAID_CREDIT" ||
       seenPayments.has(payment.id) ||
       receipt.grossCents <= 0n ||
       !payment.amount.mul(100).equals(receipt.grossCents.toString()) ||
@@ -737,7 +782,7 @@ export async function loadPayrollPurchaseSaleVoid(
       );
       const attribution = commissionAttributionSchema.parse(line.attribution);
       const shares = line.itemType === "PRODUCT" ? attribution.sellers : attribution.performers;
-      if (!shares || value.grossCents === 0n) return fail();
+      if (!shares) return fail();
       const cashAllocations = receipts
         .flatMap((receipt) => receipt.allocations)
         .filter((part) => part.saleLineId === line.id);
@@ -756,15 +801,17 @@ export async function loadPayrollPurchaseSaleVoid(
         grossCents: value.grossCents.toString(),
         shares,
         evidence: JSON.parse(JSON.stringify(line)),
-        cashAttribution: {
-          allocations: cashAllocations.map((part) => ({
-            id: part.id,
-            netCents: part.netCents.toString(),
-            shares: attribution.sellers!,
-            evidence: part.evidence,
-          })),
-          evidence: line.attribution,
-        },
+        ...(cashAllocations.length && {
+          cashAttribution: {
+            allocations: cashAllocations.map((part) => ({
+              id: part.id,
+              netCents: part.netCents.toString(),
+              shares: attribution.sellers!,
+              evidence: part.evidence,
+            })),
+            evidence: line.attribution,
+          },
+        }),
       });
     }
     seenEvents.add(original.id);
@@ -882,5 +929,7 @@ export async function loadPayrollPurchaseSaleVoid(
     evidence,
     packagePurchases,
     valuePurchases,
+    creditHistories,
+    redemptions,
   };
 }
