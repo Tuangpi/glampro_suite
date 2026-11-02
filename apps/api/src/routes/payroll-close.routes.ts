@@ -48,7 +48,7 @@ const adjustment = revision.extend({
 });
 const payout = reasoned.extend({ reference: z.string().trim().min(1).max(128) });
 const opening = reasoned.extend(
-  payrollOpeningCarrySchema.pick({ staff: true, evidence: true }).shape,
+  payrollOpeningCarrySchema.pick({ staff: true, evidence: true, coverage: true }).shape,
 );
 const settlement = reasoned.extend(
   payrollCarrySettlementSchema.pick({

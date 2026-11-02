@@ -72,6 +72,13 @@ export async function loadStoredPayrollCarry(
   if (openings.length > 1 || openings.some((row) => row.periodKey > periodKey))
     throw conflict("Payroll month precedes or conflicts with the authorized opening.");
   const opening = openings.find((row) => row.periodKey === periodKey);
+  const coverageOpening = openings[0]
+    ? resolvePayrollOpeningCarry(
+        openings[0].payload as unknown as PayrollOpeningCarry,
+        tenantId,
+        openings[0].periodKey,
+      )
+    : null;
   if (
     opening &&
     (await tx.payrollClose.count({ where: { tenantId, periodKey: { lt: periodKey } } }))
@@ -97,10 +104,17 @@ export async function loadStoredPayrollCarry(
   const settlements = validateSettlements
     ? resolvePayrollCarrySettlements(settlementPayloads, tenantId, periodKey, resolved.carry.staff)
     : settlementPayloads;
-  return { carry, resolved: resolved.carry, settlements };
+  return {
+    carry,
+    resolved: resolved.carry,
+    settlements,
+    // Retain the original boundary on subsequent months too. This changes no
+    // source query or lineage requirement, and never synthesizes legacy inputs.
+    coverage: coverageOpening?.coverage ? coverageOpening : null,
+  };
 }
 
-type OpeningRequest = Pick<PayrollOpeningCarry, "staff" | "evidence">;
+type OpeningRequest = Pick<PayrollOpeningCarry, "staff" | "evidence" | "coverage">;
 type SettlementRequest = Pick<
   PayrollCarrySettlement,
   "staffId" | "balanceHash" | "components" | "fallbackWriteOff" | "evidence"
@@ -197,6 +211,7 @@ export async function authorizeStoredPayrollCarry(
           {
             staff: input.staff,
             evidence: input.evidence,
+            ...(input.coverage !== undefined ? { coverage: input.coverage } : {}),
             ...metadata,
             timeZone: tenant.timeZone,
             effectiveAt: salonDayBounds(`${periodKey}-01`, tenant.timeZone).from.toISOString(),

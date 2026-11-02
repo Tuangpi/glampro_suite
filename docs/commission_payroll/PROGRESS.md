@@ -1,5 +1,39 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — CP-005-M1-15 prospective boundary
+
+- M1-15 is **DONE under the explicitly approved prospective-only policy**.
+  M1-14 stays complete. Current checklist: 15 DONE, 1 IN PROGRESS (17),
+  3 TODO (16, 18, 19). No M1-16 implementation was started. M1 remains open.
+- Reviewed the private credit allocation boundary and prospective full-credit
+  decisions, historical input contract, funding helper, sale loader and acceptance
+  coverage. Prospective immutable `fullCreditFunding` proves zero external bases;
+  it is not authorization to reconstruct missing historical checkout evidence.
+- DECISIONS.md explicitly prohibits inferring zero ordinary bases from unavailable
+  allocation evidence, repairing missing history, or using current data as a
+  historical substitute. The user explicitly selected: keep legacy history
+  unavailable and define a prospective coverage/opening boundary for approval.
+- Reused the owner-authorized first-close opening, complete staff/debt inventory,
+  salon-local boundary and pre-boundary approval rules. Optional strict `coverage`
+  declares `PROSPECTIVE_ONLY`, `legacyHistory: UNAVAILABLE` and a reviewed inventory
+  reference. It cannot supply a separate cutoff or claim repaired history. Existing
+  opening records remain compatible; no historical policy is silently attached.
+- Freeze the original authorization, reference and revision into authoritative
+  monthly inputs, including subsequent months. Coverage evidence changes invalidate
+  drafts. Timezone/boundary mismatch refuses. No source query, missing-allocation
+  refusal, lineage requirement or approved snapshot is bypassed or rewritten.
+- Real checkout fixtures plus a read-only legacy funding omission verify direct
+  legacy refusal, pre-boundary close refusal, prospective zero-cash calculation and
+  approval, missing prospective contract refusal, stale coverage rejection and
+  later legacy restoration refusal without rewriting approved history. The legacy
+  gap is a substituted read, not a historical-data backfill or a legacy writer.
+- Verification: payroll service regression **479 tests, 473 passed, 0 failed,
+  6 skipped**; API typecheck, affected-file ESLint and shared/API build passed.
+  Logs `/tmp/m115-{regression,types,lint,build}.log` and matching `.exit` files.
+  Disposable PostgreSQL 18 at `127.0.0.1:55485/payroll_close_test`, cluster
+  `/tmp/cp005-m1-14-n6d0gta5`, UTC. No schema changes, production data writes,
+  deployment, mounting, browser acceptance, commit or push.
+
 ## November 2, 2026 — CP-005-M1-14 completion
 
 - M1-14 is **DONE within the reconciled writer scope**. Checklist: **14 DONE,

@@ -1,5 +1,44 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 2, 2026 — M1-15 prospective-only coverage
+
+Approved policy keeps legacy full-credit allocation gaps unavailable; it does not
+repair historical funding. Owner-authorized first-close opening may now explicitly
+declare `coverage: { policy: "PROSPECTIVE_ONLY", legacyHistory: "UNAVAILABLE",
+inventoryReference }`. Existing opening authorization rules supply the salon-local
+boundary, complete staff/debt inventory, authenticated actor and pre-boundary
+approval. No schema migration or retroactive policy assignment is performed.
+
+`payroll-prospective-coverage.acceptance.test.ts` uses real checkout purchases and
+spends on disposable PostgreSQL, with a substituted read omitting only the immutable
+legacy funding contract. It proves direct legacy refusal, pre-boundary refusal,
+prospective zero-cash calculation/approval, missing covered funding refusal,
+coverage-revision stale approval, immutable approved history and later legacy
+restoration refusal. It does not claim an operational legacy writer or backfill.
+Separate holdings avoid mixing mocked future POS time with the legacy holding's
+database-timestamped restoration journal; no SQL-clock interception is used here.
+
+Coverage is frozen into authoritative monthly inputs, not used to filter source
+queries. Post-boundary activity that depends on unavailable legacy evidence still
+blocks. Reference text remains owner attestation, not automated verification of an
+external inventory document. Browser/mounted HTTP, production and race acceptance
+are not claimed. M1-16 was not started.
+
+Verification: **479 payroll service tests; 473 passed, 0 failed, 6 skipped**.
+API typecheck, affected-file ESLint and shared/API build passed. Logs and exit
+markers: `/tmp/m115-{regression,types,lint,build}.{log,exit}`.
+
+```sh
+cd /home/tuangpi/Documents/Aridient/Glampros/glampro_suite/apps/api
+DATABASE_URL=postgresql://postgres@127.0.0.1:55485/payroll_close_test \
+  TZ=UTC RUN_CP005_ACCEPTANCE=true node --import tsx --test --test-concurrency=1 \
+  src/services/payroll-*.test.ts
+```
+
+Target verified as PostgreSQL 18, UTC, disposable data directory
+`/tmp/cp005-m1-14-n6d0gta5`; fixtures are synthetic and retained. This entry
+supersedes earlier M1-15 TODO claims only under the approved prospective-only scope.
+
 ## November 2 completion — M1-14
 
 M1-14's used/transferred scope is reconciled with the operational writers. Spent

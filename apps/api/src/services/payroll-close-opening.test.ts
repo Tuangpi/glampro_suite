@@ -24,6 +24,46 @@ function fixture(): PayrollOpeningCarry {
   };
 }
 
+test("prospective coverage explicitly preserves unavailable legacy history and its inventory reference", () => {
+  const opening = fixture();
+  opening.coverage = {
+    policy: "PROSPECTIVE_ONLY",
+    legacyHistory: "UNAVAILABLE",
+    inventoryReference: "Reviewed cutover inventory 2026-09",
+  };
+  const resolved = resolvePayrollOpeningCarry(opening, "salon", "2026-09");
+  assert.deepEqual(resolved.coverage, opening.coverage);
+  const before = payrollInputHash(resolved);
+  opening.coverage.inventoryReference = "Revised cutover inventory";
+  assert.notEqual(
+    payrollInputHash(resolvePayrollOpeningCarry(opening, "salon", "2026-09")),
+    before,
+  );
+  assert.equal(resolved.coverage!.inventoryReference, "Reviewed cutover inventory 2026-09");
+});
+
+test("prospective coverage refuses repaired history, arbitrary boundaries and missing inventory references", () => {
+  for (const coverage of [
+    { policy: "RECONSTRUCT", legacyHistory: "UNAVAILABLE", inventoryReference: "Reviewed" },
+    { policy: "PROSPECTIVE_ONLY", legacyHistory: "AVAILABLE", inventoryReference: "Reviewed" },
+    { policy: "PROSPECTIVE_ONLY", legacyHistory: "UNAVAILABLE", inventoryReference: "" },
+    {
+      policy: "PROSPECTIVE_ONLY",
+      legacyHistory: "UNAVAILABLE",
+      inventoryReference: "Reviewed",
+      startsAt: "2026-09-15",
+    },
+  ]) {
+    assert.throws(() =>
+      resolvePayrollOpeningCarry(
+        { ...fixture(), coverage } as PayrollOpeningCarry,
+        "salon",
+        "2026-09",
+      ),
+    );
+  }
+});
+
 test("explicit first-close evidence retains exact fallback debt and departed staff", () => {
   const opening = fixture();
   const result = resolvePayrollCloseCarry({

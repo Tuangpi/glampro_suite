@@ -7,6 +7,13 @@ const id = z.string().trim().min(1).max(128);
 const nonpositive = payrollDecimalSchema.refine(
   (value) => !/[1-9]/.test(value) || value.startsWith("-"),
 );
+/** Explicit cutover policy, not permission to omit activity from a covered month.
+ * The effective boundary and approval identity come from the persisted opening. */
+export const payrollProspectiveCoverageSchema = z.strictObject({
+  policy: z.literal("PROSPECTIVE_ONLY"),
+  legacyHistory: z.literal("UNAVAILABLE"),
+  inventoryReference: z.string().trim().min(3).max(1000),
+});
 export const payrollOpeningCarrySchema = z.object({
   id,
   tenantId: id,
@@ -18,6 +25,7 @@ export const payrollOpeningCarrySchema = z.object({
    * complete opening debt inventory. These assertions are not authentication. */
   firstClose: z.literal(true),
   completeInventory: z.literal(true),
+  coverage: payrollProspectiveCoverageSchema.optional(),
   approval: z.object({
     actorId: id,
     at: z.iso.datetime(),

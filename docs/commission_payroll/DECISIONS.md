@@ -1,5 +1,29 @@
 # Commission & Payroll decisions
 
+## November 2, 2026 — legacy full-credit history and prospective approval
+
+- User-approved M1-15 policy: **keep legacy history unavailable; define a
+  prospective coverage/opening boundary for approval**. This is not permission to
+  reconstruct historical funding, infer zero bases or backfill live data.
+- Reuse persisted first-close owner authorization: the effective instant is the
+  salon-local first day of the selected month; approval must occur by that instant.
+  Complete reviewed staff/debt inventory includes departed staff and explicit zero
+  balances. Opening may not replace earlier close history or an approved period.
+- An explicit optional coverage declaration records `PROSPECTIVE_ONLY`,
+  `legacyHistory: UNAVAILABLE` and a reviewed inventory reference. Existing openings
+  are not retroactively labelled. Reference text is an owner attestation, not
+  independent verification of the referenced external document.
+- Original opening authorization/coverage is frozen in each covered month's inputs.
+  Changing its revision/reference invalidates drafts; approved snapshots stay fixed.
+  No arbitrary mid-month cutoff or silent operational/source exclusion is allowed.
+- Historical full-credit allocation gaps remain unavailable on direct loading.
+  Prospective periods require complete existing source reconciliation, including
+  pre-boundary purchases/holdings and any later reversals, refunds or collections.
+  If those dependencies lack evidence, the covered month refuses rather than
+  hiding the activity or treating opening balances as reconstructed source history.
+- This resolves M1-15 by an approved prospective-only policy and bounded acceptance,
+  not by adding historical monetary availability, mounted API/UI or release approval.
+
 ### CP-005 returned-money purchase voids (November 1, 2026)
 
 - A void that gave the customer their money back is attested, not inferred. The manager

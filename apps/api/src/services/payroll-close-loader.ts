@@ -373,7 +373,10 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     carry,
     resolved: carryResult,
     settlements,
+    coverage,
   } = await loadStoredPayrollCarry(tx, tenantId, periodKey);
+  if (coverage && (coverage.timeZone !== tenant.timeZone || new Date(coverage.effectiveAt) > from))
+    unavailable("PROSPECTIVE_COVERAGE_BOUNDARY_UNCONFIRMED");
 
   const operations: PayrollCloseInputRecords["inventoryOperations"] = [];
   const noCashReversals: NonNullable<PayrollCloseInputRecords["noCashReversals"]> = [];
@@ -1381,6 +1384,7 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
     resolved: result.inputs.evidence,
     authoritative: {
       version: 1,
+      ...(coverage ? { prospectiveCoverage: snapshot(coverage) } : {}),
       operations: snapshot({ sales, payments, outstanding, refunds }),
       valuePurchases: snapshot([...valuePurchases].sort(([a], [b]) => a.localeCompare(b))),
       packageHistory: snapshot([...packageHistory].sort(([a], [b]) => a.localeCompare(b))),
