@@ -7,6 +7,7 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import PayrollCarry from "./PayrollCarry";
+import PayrollReport from "./PayrollReport";
 
 interface CloseView {
   periodKey: string;
@@ -278,6 +279,7 @@ export default function PayrollClose({
           {canWrite && isOwner && !approved && (
             <PayrollCarry key={period} period={period} disabled={busy} />
           )}
+          {approved && <PayrollReport key={period} period={period} />}
           {approved && isOwner && (
             <div className="space-y-3">
               <h3 className="font-semibold">Frozen exports</h3>

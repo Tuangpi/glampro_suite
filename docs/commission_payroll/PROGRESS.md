@@ -1,5 +1,47 @@
 # Commission & Payroll progress
 
+## November 3, 2026 — CP-006 M2 DONE: period report and base-line source drill-down
+
+**CP-006 IN PROGRESS; M1 and M2 DONE. Not release and not earnings activation.** An
+approved month can now be reviewed in the app: frozen period totals, a per-staff
+breakdown, and a filtered, paginated drill-down from each statement to its stored base
+lines and to the source record captured when each line was posted. Managers may read this
+report because it carries no salary; the salary/take-home boundary stays with the
+owner-only exports.
+
+- New API model `payroll-report.ts`. `payrollPeriodReport` projects the frozen export model
+  (`frozenPayrollExportModel`) into period meta, whole-month totals and one row per staff
+  member: commission, incentive, collection, base-line count, four-decimal base and unit
+  totals, outlets, commission types and the business-date span. Reusing the export model
+  is deliberate — the report, the workbook and the payslips cannot disagree about a cent,
+  and an unapproved month is refused with the same 409.
+- `selectPayrollStatementLines` filters one staff member's frozen lines through
+  `filterPayrollBaseLines`, now shared with the ledger export (`payrollExportLedger` keeps
+  its cross-staff business-date order), so a downloaded CSV and the on-screen drill-down
+  select the same rows. Defaults are page 1 / 100 lines with a 500 cap; `matching` totals
+  cover every match rather than the visible page, so a paged view still reconciles.
+- The source drill-down reads `PayrollSourceEvent` rows by the line's source key inside the
+  same verified transaction and exposes identity only (`sourceType`, `sourceId`, `saleId`,
+  `occurredAt`). No amount is re-read from the source, so a later void or refund cannot
+  change approved money; a line with no captured event, or an event that does not parse,
+  degrades to `source: null` instead of failing the report or inventing a link.
+- Routes: `GET /api/payroll-close/:period/report` and
+  `GET /api/payroll-close/:period/statements/:staffId/lines`, both `SUPER_ADMIN` and
+  `MANAGER` (staff and cashier 403, anonymous 401, store never opened for them), the
+  drill-down query validated before the store opens, and 409 for a month without an
+  approved snapshot.
+- Web: `PayrollReport.tsx` shows the frozen totals and staff table for an approved month to
+  the owner and managers; `PayrollStatementLines.tsx` renders the drill-down with
+  outlet/type/status filters and paging, printing decimal strings exactly as frozen rather
+  than converting them to floats.
+- Verification (executed): API suite **1433 tests / 1166 pass / 0 fail / 267 skipped**
+  (11 new model tests, 5 new HTTP tests); web suite **996 / 991 pass**, and the five misses
+  are the same pre-existing `PayrollPlans.test.tsx` 5 s timeouts, unrelated to this change.
+  API and web typecheck, workspace ESLint, Prettier and the web production build all exit 0. No browser acceptance of these panels or of the M1 exports was performed, and the
+  source column was verified against stubbed events rather than a live sale.
+- Not done: customer holding payment/session history, MTD/POS progress, own-data staff
+  self-service, gift-card base capture (optional) and browser/manual export acceptance.
+
 ## November 3, 2026 — CP-006 M1 DONE: frozen payroll exports (workbook, payslips, filtered ledger)
 
 **CP-006 IN PROGRESS; M1 DONE. Not release and not earnings activation.** An approved

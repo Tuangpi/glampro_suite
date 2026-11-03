@@ -13,6 +13,12 @@ import {
 } from "./payroll-close-authorizations.js";
 import { resolvePayrollCarrySettlements } from "./payroll-close-settlements.js";
 import {
+  attachPayrollLineSources,
+  payrollPeriodReport,
+  selectPayrollStatementLines,
+  type PayrollStatementLineQuery,
+} from "./payroll-report.js";
+import {
   adjustPayrollClose,
   approvePayrollClose,
   calculatePayrollClose,
@@ -288,6 +294,63 @@ export async function readStoredPayrollClose(period: string) {
     return structuredClone(
       (await verifiedPayrollClose(tx, periodKey))?.state ?? openPayrollClose(periodKey),
     );
+  });
+}
+
+/**
+ * CP-006 period report: frozen totals and the per-staff breakdown of the approved month.
+ *
+ * Managers may read it because it carries commission, incentives, collections and base
+ * amounts only — never salary or take-home. The same transaction verifies the stored
+ * snapshot so a newer draft can never appear here.
+ */
+export async function readStoredPayrollReport(period: string) {
+  const scope = context();
+  const periodKey = payrollPeriodKeySchema.parse(period);
+  return prisma.$transaction(async (tx) => {
+    await lockCommissionConfiguration(tx, scope.tenantId);
+    await actor(tx, false);
+    const verified = await verifiedPayrollClose(tx, periodKey);
+    if (!verified) throw conflict("Approve payroll before reporting on frozen statements.");
+    return payrollPeriodReport(verified.state);
+  });
+}
+
+/**
+ * CP-006 drill-down: one staff member's frozen base lines plus the captured source
+ * reference for each line.
+ *
+ * The frozen statement stays the source of truth for money; the source event supplies
+ * identity only (type, ID, sale ID, occurrence) and is resolved in the same transaction
+ * so a line cannot be paired with a different period's evidence.
+ */
+export async function readStoredPayrollStatementLines(
+  period: string,
+  staffId: string,
+  query: PayrollStatementLineQuery,
+) {
+  const scope = context();
+  const periodKey = payrollPeriodKeySchema.parse(period);
+  const target = z.string().trim().min(1).max(128).parse(staffId);
+  return prisma.$transaction(async (tx) => {
+    await lockCommissionConfiguration(tx, scope.tenantId);
+    await actor(tx, false);
+    const verified = await verifiedPayrollClose(tx, periodKey);
+    if (!verified) throw conflict("Approve payroll before reporting on frozen statements.");
+    const selection = selectPayrollStatementLines(verified.state, target, query);
+    const events = selection.sourceKeys.length
+      ? await tx.payrollSourceEvent.findMany({
+          where: { sourceKey: { in: selection.sourceKeys } },
+          select: {
+            sourceKey: true,
+            sourceType: true,
+            sourceId: true,
+            saleId: true,
+            occurredAt: true,
+          },
+        })
+      : [];
+    return attachPayrollLineSources(selection, events);
   });
 }
 

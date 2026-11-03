@@ -1210,8 +1210,8 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
 
 ## CP-006 — Reports, exports and progress workflows
 
-- Status: **IN PROGRESS** — **M1 frozen exports DONE** as of November 3, 2026; M2–M5 TODO
-  and CP-006 not accepted.
+- Status: **IN PROGRESS** — **M1 frozen exports and M2 period report/drill-down DONE** as of
+  November 3, 2026; M3–M5 TODO and CP-006 not accepted.
 - Dependencies: CP-005.
 - Expected result: period summary, statement/base-line drill-down to source,
   customer holding payment/session history, true Excel summary + per-staff sheets,
@@ -1226,7 +1226,8 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
   disclosed; relevant API/UI tests, build/typecheck/lint pass.
 - Coverage: FR-PAY-05, FR-RPT-01–FR-RPT-06, FR-POS-09, report/MTD UI;
   FR-BAS-10 explicitly tracked as optional.
-- Evidence: `PROGRESS.md` (November 3, 2026 — CP-006 M1 frozen payroll exports).
+- Evidence: `PROGRESS.md` (November 3, 2026 — CP-006 M1 frozen payroll exports; November 3,
+  2026 — CP-006 M2 period report and base-line drill-down).
 
 ### CP-006-M1 — Frozen payroll exports: DONE
 
@@ -1279,11 +1280,51 @@ MTD/POS progress and self-service are separate milestones below.
 - [x] DONE — **Documentation.** `PROGRESS.md` records the artefacts, refusals and
       executed verification.
 
+### CP-006-M2 — Period report and base-line drill-down: DONE
+
+**Status snapshot — November 3, 2026: 6 DONE, 0 IN PROGRESS; M2 DONE; CP-006 still IN
+PROGRESS.** Scope is FR-RPT-01–FR-RPT-03's reporting half: frozen period totals, the
+per-staff breakdown and the drill-down to source. Customer holding history, MTD/POS
+progress and own-data self-service remain separate milestones.
+
+- [x] DONE — **Frozen period report model.** `payroll-report.ts` projects the frozen export
+      model into period meta, whole-month totals and one row per staff member (commission,
+      incentive, collection, line count, four-decimal base and unit totals, outlets, types,
+      business-date span). Salary, fixed overtime, levy and take-home are absent from the
+      projection, so the report stays readable by a manager while the salary boundary
+      remains owner-only. An unapproved or missing snapshot is refused with the same 409
+      the exports use.
+- [x] DONE — **Shared base-line filtering.** `filterPayrollBaseLines` moved into
+      `payroll-export-data.ts` and is used by both `payrollExportLedger` and the drill-down,
+      so the downloaded CSV and the on-screen lines cannot disagree about rows or order.
+      The reversed-range refusal (`400`) is unchanged.
+- [x] DONE — **Pagination and aggregate completeness.** Page/limit (default 1/100, cap 500)
+      with `total`, `pages` and `matching` totals computed over every match rather than the
+      visible page; an out-of-range page returns no lines but still reports the real total.
+- [x] DONE — **Source drill-down.** Base lines resolve to the captured `PayrollSourceEvent`
+      row whose `sourceKey` matches the posted line key, in the same verified transaction,
+      exposing identity only (`sourceType`, `sourceId`, `saleId`, `occurredAt`). Frozen
+      amounts are never re-read from the source, so a later void or refund cannot change an
+      approved statement; a missing or unparseable event degrades to `source: null` rather
+      than failing the report or inventing a link.
+- [x] DONE — **Routes and refusals.** `GET /:period/report` and
+      `GET /:period/statements/:staffId/lines` are `SUPER_ADMIN`/`MANAGER` only (staff and
+      cashier 403, anonymous 401, store never opened for them), the drill-down query is the
+      strict `payrollStatementLineQuerySchema` validated before the store opens (422), and
+      an unknown staff member answers 404.
+- [x] DONE — **Web report and drill-down.** `PayrollReport.tsx` renders the frozen totals and
+      staff table for an approved month to owner and managers; `PayrollStatementLines.tsx`
+      renders filtered, paged base lines with the source reference, keeping decimal strings
+      exactly as frozen instead of formatting them into floats.
+- [x] DONE — **Verification.** API suite **1433 tests / 1166 pass / 0 fail / 267 skipped**
+      (11 new model tests, 5 new HTTP tests); web suite **996 / 991 pass**, the five misses
+      being the same pre-existing `PayrollPlans.test.tsx` 5 s timeouts reproduced on a clean
+      `HEAD` worktree in M1. API and web typecheck, workspace ESLint, Prettier and the web
+      production build all exit 0. No browser acceptance was executed, and the source
+      column was exercised with stubbed events rather than a live sale.
+
 ### CP-006 — remaining milestones: TODO
 
-- [ ] TODO — **Period summary and drill-down to source** (FR-RPT-01–FR-RPT-03):
-      summary totals with statement and base-line drill-down to the originating
-      records, tenant/outlet isolation, filtering and pagination completeness.
 - [ ] TODO — **Customer holding payment/session history** (FR-RPT-04/FR-RPT-05) with
       package-value reporting reconciled to the existing valuation and receivables kept
       separate.

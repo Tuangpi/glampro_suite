@@ -6,6 +6,37 @@ const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), downloadFile: vi.
 vi.mock("@/lib/api", () => ({ ...mocks, getErrorMessage: (e: Error) => e.message }));
 import PayrollClose from "./PayrollClose";
 
+/** Frozen report the approved-month tests receive for `/report`. */
+function report() {
+  return {
+    periodKey: "2026-09",
+    currency: "SGD",
+    timeZone: "Asia/Singapore",
+    calculation: { version: "1", inputHash: "hash", calculatedAt: "2026-10-01" },
+    approval: { at: "2026-10-01", reason: "Reviewed" },
+    totals: {
+      staff: 1,
+      lines: 1,
+      commission: "12.30",
+      incentive: "0.00",
+      collection: "0.0000",
+      baseAmount: "123.0000",
+      units: "1.0000",
+    },
+    staff: [
+      {
+        staff: { id: "staff-r", name: "Rita Report", disabled: false },
+        payroll: { commission: "12.30", incentive: "0.00", collection: "0.0000" },
+        lines: 1,
+        baseAmount: "123.0000",
+        units: "1.0000",
+        outlets: ["outlet"],
+        commissionTypes: ["SVC"],
+      },
+    ],
+  };
+}
+
 function state() {
   return {
     periodKey: "2026-09",
@@ -32,10 +63,27 @@ function state() {
 }
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.get.mockResolvedValue(state());
+  mocks.get.mockImplementation((url: string) =>
+    Promise.resolve(url.endsWith("/report") ? report() : state()),
+  );
   mocks.post.mockResolvedValue({});
   mocks.downloadFile.mockResolvedValue("payroll-2026-09.xlsx");
 });
+/** Approved months additionally fetch the frozen period report. */
+function approvedState(overrides: Record<string, unknown> = {}) {
+  mocks.get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.endsWith("/report")
+        ? report()
+        : {
+            ...state(),
+            status: "APPROVED",
+            approval: { at: "2026-10-01", reason: "Reviewed" },
+            ...overrides,
+          },
+    ),
+  );
+}
 function mount(isOwner = true, canWrite = true) {
   render(
     <QueryClientProvider
@@ -85,11 +133,7 @@ it("managers cannot approve or record payouts; read-only users cannot mutate", a
   expect(screen.queryByRole("button", { name: "Calculate payroll" })).not.toBeInTheDocument();
 });
 it("approved months are immutable and payout recording is a separate owner action", async () => {
-  mocks.get.mockResolvedValue({
-    ...state(),
-    status: "APPROVED",
-    approval: { at: "2026-10-01", reason: "Reviewed" },
-  });
+  approvedState();
   mount();
   const user = await load();
   expect(screen.queryByRole("button", { name: "Calculate payroll" })).not.toBeInTheDocument();
@@ -132,12 +176,7 @@ it("adjustments carry a revision and reason but never a client actor", async () 
 });
 
 it("a confirmed payout cannot be recorded twice", async () => {
-  mocks.get.mockResolvedValue({
-    ...state(),
-    status: "APPROVED",
-    approval: { at: "2026-10-01", reason: "Reviewed" },
-    payout: { at: "2026-10-02", reference: "BANK-123" },
-  });
+  approvedState({ payout: { at: "2026-10-02", reference: "BANK-123" } });
   mount();
   await load();
   expect(screen.getByText("Payout recorded: BANK-123")).toBeInTheDocument();
@@ -153,11 +192,7 @@ it("only an approved owner month offers frozen exports, never a draft", async ()
 });
 
 it("managers cannot download frozen exports even when a month is approved", async () => {
-  mocks.get.mockResolvedValue({
-    ...state(),
-    status: "APPROVED",
-    approval: { at: "2026-10-01", reason: "Reviewed" },
-  });
+  approvedState();
   mount(false);
   await load();
   expect(screen.queryByRole("button", { name: "Download workbook" })).not.toBeInTheDocument();
@@ -165,11 +200,7 @@ it("managers cannot download frozen exports even when a month is approved", asyn
 });
 
 it("frozen exports download the approved snapshot and report the filename", async () => {
-  mocks.get.mockResolvedValue({
-    ...state(),
-    status: "APPROVED",
-    approval: { at: "2026-10-01", reason: "Reviewed" },
-  });
+  approvedState();
   mount();
   const user = await load();
 

@@ -35,6 +35,16 @@ let storedClose: {
   status: string;
   state: PayrollCloseState;
 } | null = null;
+/** Source events the drill-down may resolve; reset per test. */
+let sourceEvents: {
+  sourceKey: string;
+  sourceType: string;
+  sourceId: string;
+  saleId: string;
+  occurredAt: Date;
+}[] = [];
+/** Every `sourceKey IN (...)` list the store asked for, so tenant scoping stays visible. */
+let sourceLookups: string[][] = [];
 /** Snapshots the store snapshot as approved or draft so export gating can be exercised. */
 function storePayrollClose(approved: boolean) {
   const state = approved ? approvedPayrollExportState() : calculatedPayrollExportState();
@@ -109,6 +119,12 @@ before(async () => {
             ? { stateHash: payrollInputHash(storedClose.state), state: storedClose.state }
             : null,
       },
+      payrollSourceEvent: {
+        findMany: async (args: { where: { sourceKey: { in: string[] } } }) => {
+          sourceLookups.push(args.where.sourceKey.in);
+          return sourceEvents.filter((event) => args.where.sourceKey.in.includes(event.sourceKey));
+        },
+      },
     });
   });
   await new Promise<void>((resolve) => {
@@ -122,6 +138,8 @@ beforeEach(() => {
   status = "ACTIVE";
   transactions = 0;
   storedClose = null;
+  sourceEvents = [];
+  sourceLookups = [];
 });
 after(async () => {
   for (const restore of restorers.reverse()) restore();
@@ -307,6 +325,134 @@ test("ledger export validates filters before the store is opened", async () => {
     (await request(exportPath("ledger.csv", "?from=2026-09-30&to=2026-09-01"))).status,
     400,
     "reversed date range is a bad request",
+  );
+  assert.equal(transactions, 1);
+});
+
+const REPORT = "/2026-09/report";
+const linesPath = (staffId: string, query = "") => `/2026-09/statements/${staffId}/lines${query}`;
+
+test("the period report and drill-down are management-only and open no store for others", async () => {
+  storePayrollClose(true);
+  for (const globalRole of ["STAFF", "CASHIER"] as const) {
+    role = globalRole;
+    assert.equal((await request(REPORT)).status, 403, globalRole);
+    assert.equal((await request(linesPath("staff-a"))).status, 403, globalRole);
+  }
+  assert.equal((await request(REPORT, undefined, null)).status, 401);
+  assert.equal((await request(linesPath("staff-a"), undefined, null)).status, 401);
+  assert.equal(transactions, 0);
+});
+
+test("report reads refuse a month that has no approved snapshot", async () => {
+  assert.equal((await request(REPORT)).status, 409);
+  storePayrollClose(false);
+  assert.equal((await request(REPORT)).status, 409);
+  assert.equal(
+    (await request(linesPath("staff-a"))).status,
+    409,
+    "a calculated draft is not reportable",
+  );
+  assert.equal(transactions, 3);
+});
+
+test("the approved report returns frozen totals, breakdowns and never salary", async () => {
+  storePayrollClose(true);
+  const response = await request(REPORT);
+  assert.equal(response.status, 200);
+  assert.match(String(response.headers.get("content-type")), /application\/json/);
+  const text = await response.text();
+  const { data } = JSON.parse(text) as {
+    data: {
+      periodKey: string;
+      totals: Record<string, string | number>;
+      staff: { staff: { id: string }; payroll: Record<string, string> }[];
+      approval: { at: string; reason: string };
+    };
+  };
+  assert.equal(data.periodKey, "2026-09");
+  assert.equal(data.totals.staff, 2);
+  assert.equal(data.totals.lines, 3);
+  assert.equal(data.totals.baseAmount, "2400.7500");
+  assert.equal(data.totals.units, "6.0000");
+  assert.deepEqual(
+    data.staff.map((row) => row.staff.id),
+    ["staff-a", "staff-b"],
+  );
+  assert.ok(data.approval.at, "the approval the report belongs to stays visible");
+  for (const field of ["basicSalary", "takeHome", "fixedOvertime", "levy"])
+    assert.ok(!text.includes(field), `report must not expose ${field}`);
+  role = "MANAGER";
+  assert.equal((await request(REPORT)).status, 200, "managers may read commission figures");
+  assert.equal(transactions, 2);
+});
+
+test("drill-down filters, paginates and attaches the captured source record", async () => {
+  storePayrollClose(true);
+  sourceEvents = [
+    {
+      sourceKey: "line-a-1",
+      sourceType: "SALE_LINE",
+      sourceId: "sale-line-1",
+      saleId: "sale-1",
+      occurredAt: new Date("2026-09-05T04:00:00.000Z"),
+    },
+  ];
+  const first = await request(linesPath("staff-a", "?limit=1&page=1"));
+  assert.equal(first.status, 200);
+  const page = (await first.json()) as {
+    data: {
+      staff: { id: string; name: string };
+      total: number;
+      pages: number;
+      matching: { lines: number; baseAmount: string };
+      lines: { line: { id: string }; source: { sourceType: string; saleId: string } | null }[];
+    };
+  };
+  assert.equal(page.data.staff.id, "staff-a");
+  assert.equal(page.data.total, 2);
+  assert.equal(page.data.pages, 2);
+  assert.equal(page.data.matching.lines, 2);
+  assert.equal(page.data.matching.baseAmount, "2150.5000");
+  assert.equal(page.data.lines.length, 1);
+  assert.equal(page.data.lines[0]!.line.id, "line-a-1");
+  assert.equal(page.data.lines[0]!.source?.sourceType, "SALE_LINE");
+  assert.equal(page.data.lines[0]!.source?.saleId, "sale-1");
+  assert.deepEqual(sourceLookups, [["line-a-1"]], "only the visible page is looked up");
+
+  const second = await request(linesPath("staff-a", "?limit=1&page=2"));
+  const secondPage = (await second.json()) as typeof page;
+  assert.equal(secondPage.data.lines[0]!.line.id, "line-a-2");
+  assert.equal(secondPage.data.lines[0]!.source, null, "no captured event stays null");
+
+  const byType = await request(linesPath("staff-a", "?commissionType=PRD"));
+  const typed = (await byType.json()) as typeof page;
+  assert.equal(typed.data.total, 1, "the filter only keeps the PRD line");
+  assert.equal(typed.data.lines[0]!.line.id, "line-a-2");
+
+  const byOutlet = await request(linesPath("staff-a", "?outletId=outlet-b"));
+  assert.equal(((await byOutlet.json()) as typeof page).data.total, 1);
+  assert.equal((await request(linesPath("staff-z"))).status, 404);
+});
+
+test("drill-down refuses unknown filters before the store is opened", async () => {
+  storePayrollClose(true);
+  for (const query of [
+    "?staffId=staff-b",
+    "?commissionType=NOPE",
+    "?status=OPEN",
+    "?limit=0",
+    "?limit=501",
+    "?page=0",
+    "?from=2026-09-31",
+    "?actorId=forged",
+  ])
+    assert.equal((await request(linesPath("staff-a", query))).status, 422, query);
+  assert.equal(transactions, 0);
+  assert.equal(
+    (await request(linesPath("staff-a", "?from=2026-09-30&to=2026-09-01"))).status,
+    400,
+    "a reversed range is a bad request, not an empty report",
   );
   assert.equal(transactions, 1);
 });

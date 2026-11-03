@@ -9,6 +9,8 @@ import { forbidden } from "../lib/http-error.js";
 import {
   readStoredPayrollClose,
   readStoredPayrollStatement,
+  readStoredPayrollReport,
+  readStoredPayrollStatementLines,
   calculateStoredPayrollClose,
   approveStoredPayrollClose,
   adjustStoredPayrollClose,
@@ -32,6 +34,10 @@ import {
   payrollLedgerQuerySchema,
   type PayrollLedgerQuery,
 } from "../services/payroll-export-data.js";
+import {
+  payrollStatementLineQuerySchema,
+  type PayrollStatementLineQuery,
+} from "../services/payroll-report.js";
 
 /** This boundary never accepts source records, a loader, or a calculation snapshot.
  * Response projections omit raw inputs and protect salary information. */
@@ -122,6 +128,29 @@ payrollCloseRouter.get(
   owner,
   handle((req) => readStoredPayrollCarry(period(req))),
 );
+/**
+ * CP-006 report reads: management-visible frozen figures and a base-line drill-down.
+ * Neither route can return salary, and both refuse a month that is not an approved
+ * snapshot with the same 409 the exports use.
+ */
+payrollCloseRouter.get(
+  "/:period/report",
+  management,
+  handle((req) => readStoredPayrollReport(period(req))),
+);
+payrollCloseRouter.get(
+  "/:period/statements/:staffId/lines",
+  management,
+  validate(payrollStatementLineQuerySchema, "query"),
+  handle((req) =>
+    readStoredPayrollStatementLines(
+      period(req),
+      String(req.params.staffId),
+      validated<PayrollStatementLineQuery>(req, "query"),
+    ),
+  ),
+);
+
 /** CP-006 frozen exports: owner-only, approved snapshots only, salon-wide. */
 payrollCloseRouter.get(
   "/:period/exports/workbook.xlsx",

@@ -126,26 +126,53 @@ export function payrollPayslipLines(staff: PayrollExportStaff) {
   ];
 }
 
+/** Base-line filters shared by the ledger export and the report drill-down. */
+export type PayrollBaseLineFilters = Omit<PayrollLedgerQuery, "staffId">;
+
+/** A reversed range is refused even when nothing matches, never silently empty. */
+function assertPayrollBaseLineRange(filters: PayrollBaseLineFilters) {
+  if (filters.from && filters.to && filters.from > filters.to)
+    throw badRequest("The ledger from date must not be after the to date.");
+}
+
+/**
+ * Filters and orders frozen base lines by business date then line ID.
+ *
+ * Shared so a downloaded ledger and the drill-down on screen can never disagree about
+ * which lines a filter selects. Callers parse their own query schema first.
+ */
+export function filterPayrollBaseLines(
+  lines: readonly PayrollBaseLine[],
+  filters: PayrollBaseLineFilters = {},
+): PayrollBaseLine[] {
+  assertPayrollBaseLineRange(filters);
+  return lines
+    .filter(
+      (line) =>
+        (!filters.outletId || line.outletId === filters.outletId) &&
+        (!filters.commissionType || line.commissionType === filters.commissionType) &&
+        (!filters.status || line.status === filters.status) &&
+        (!filters.from || line.businessDate >= filters.from) &&
+        (!filters.to || line.businessDate <= filters.to),
+    )
+    .sort((a, b) => a.businessDate.localeCompare(b.businessDate) || a.id.localeCompare(b.id));
+}
+
 /** Frozen base lines across staff, filtered and ordered by business date then line ID. */
 export function payrollExportLedger(
   model: PayrollExportModel,
   query: PayrollLedgerQuery = {},
 ): PayrollExportLedgerRow[] {
   const filters = payrollLedgerQuerySchema.parse(query);
-  if (filters.from && filters.to && filters.from > filters.to)
-    throw badRequest("The ledger from date must not be after the to date.");
+  assertPayrollBaseLineRange(filters);
   return model.staff
+    .filter((staff) => !filters.staffId || staff.staff.id === filters.staffId)
     .flatMap((staff) =>
-      staff.lines.map((line) => ({ staffId: staff.staff.id, staffName: staff.staff.name, line })),
-    )
-    .filter(
-      (row) =>
-        (!filters.staffId || row.staffId === filters.staffId) &&
-        (!filters.outletId || row.line.outletId === filters.outletId) &&
-        (!filters.commissionType || row.line.commissionType === filters.commissionType) &&
-        (!filters.status || row.line.status === filters.status) &&
-        (!filters.from || row.line.businessDate >= filters.from) &&
-        (!filters.to || row.line.businessDate <= filters.to),
+      filterPayrollBaseLines(staff.lines, filters).map((line) => ({
+        staffId: staff.staff.id,
+        staffName: staff.staff.name,
+        line,
+      })),
     )
     .sort(
       (a, b) =>
