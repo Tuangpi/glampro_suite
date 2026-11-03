@@ -5,6 +5,7 @@ import "dotenv/config";
 import assert from "node:assert/strict";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { CustomerHoldingHistory } from "@glampro_suite/shared";
 import { after, before, describe, it } from "node:test";
 
 /**
@@ -81,7 +82,7 @@ async function seed(): Promise<void> {
     // way the real seed does it — `isCore` derived from the shared constant.
     for (const [index, code] of MODULE_CODES.entries()) {
       const isCore = (CORE_MODULE_CODES as readonly string[]).includes(code);
-      await prisma.module.upsert({
+      const module = await prisma.module.upsert({
         where: { code },
         update: { isCore },
         create: {
@@ -92,6 +93,11 @@ async function seed(): Promise<void> {
           sortOrder: index,
         },
       });
+      // Salon A bought packages: the holding-history read is behind that entitlement.
+      if (code === "packages")
+        await prisma.tenantModule.create({
+          data: { tenantId: TENANTS.a, moduleId: module.id },
+        });
     }
 
     const service = await prisma.service.create({
@@ -453,6 +459,63 @@ describe(
       const response = await request("GET", "/api/customers/no-such-customer/holdings", token);
       assert.equal(response.status, 404);
       assert.equal((await envelope(response)).code, "CUSTOMER_NOT_FOUND");
+    });
+
+    it("serves the holding history with unvalued, credit and receivable buckets apart", async () => {
+      const response = await request(
+        "GET",
+        `/api/customers/${IDS.customer}/holding-history`,
+        token,
+      );
+      assert.equal(response.status, 200);
+      const report = await dataOf<CustomerHoldingHistory>(response);
+      // No frozen purchase snapshots exist in this fixture, so the live package is
+      // reported as unvalued sessions rather than as a known zero value.
+      assert.equal(report.active.gross, "0.00");
+      assert.deepEqual(report.active.holdings, 0);
+      assert.deepEqual(report.unvalued.active, { holdings: 1, sessionsRemaining: 3 });
+      assert.deepEqual(report.unvalued.expired, { holdings: 1, sessionsRemaining: 2 });
+      // Credit is its own liability, and an empty credit holding is exhausted, not active.
+      assert.deepEqual(report.credit, {
+        active: { holdings: 1, remaining: "42.50" },
+        expired: { holdings: 0, remaining: "0.00" },
+      });
+      assert.deepEqual(report.receivable, {
+        sales: 0,
+        holdings: 0,
+        sourceSaleOutstanding: "0.00",
+      });
+      assert.deepEqual(report.holdings.map((row) => row.status).sort(), [
+        "ACTIVE",
+        "ACTIVE",
+        "EXHAUSTED",
+        "EXHAUSTED",
+        "EXPIRED",
+      ]);
+      const unvalued = report.holdings.find(
+        (row) => row.value === null && row.kind === "SESSIONS",
+      )!;
+      assert.deepEqual(unvalued.missingEvidence, ["ORIGINAL_PURCHASE_EVIDENCE"]);
+      // A customer history is not a payroll statement: no salary field crosses the wire.
+      assert.equal(JSON.stringify(report).includes("Salary"), false);
+    });
+
+    it("protects the holding history and never crosses salons", async () => {
+      assert.equal(
+        (await request("GET", `/api/customers/${IDS.customer}/holding-history`)).status,
+        401,
+      );
+      const foreign = await request(
+        "GET",
+        `/api/customers/${IDS.foreignCustomer}/holding-history`,
+        token,
+      );
+      assert.equal(foreign.status, 404);
+      assert.equal((await envelope(foreign)).code, "CUSTOMER_NOT_FOUND");
+      assert.equal(
+        (await request("GET", "/api/customers/no-such-customer/holding-history", token)).status,
+        404,
+      );
     });
   },
 );

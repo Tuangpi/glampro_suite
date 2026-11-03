@@ -3,19 +3,21 @@
 ## Quick status navigation
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
-- **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **IN PROGRESS**; M1 frozen exports DONE as of November 3, 2026. Period summary/drill-down, holding history, MTD/POS progress and self-service remain TODO.
+- **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **IN PROGRESS**; M1 frozen exports, M2 period report/drill-down and M3 customer holding history DONE as of November 3, 2026. MTD/POS progress, own-data staff self-service and browser/manual acceptance remain TODO.
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
 
 ## Workflow
 
-Current continuation — November 3, 2026: **CP-006 IN PROGRESS; M1 DONE.** Approved
-monthly closes now export owner-only frozen artefacts — an Excel workbook (summary,
-one sheet per staff member and the full base ledger), per-staff payslip PDFs and a
-filtered base-ledger CSV — re-read from the stored approved snapshot on every request
-and refused with 409 before approval. The remaining CP-006 milestones (period summary
-and source drill-down, customer holding history, MTD/POS progress, own-data
-self-service, package-value reporting) are still TODO, so CP-006 is not accepted and
+Current continuation — November 3, 2026: **CP-006 IN PROGRESS; M1, M2 and M3 DONE.**
+An approved monthly close exports owner-only frozen artefacts (Excel workbook,
+per-staff payslip PDFs, filtered base-ledger CSV) and is reviewed in the app as frozen
+period totals, a per-staff breakdown and a filtered drill-down to each base line and
+its captured source. A customer profile now also carries a holding history: purchases,
+captured payments, session and credit usage, and what is left — with unused session
+value, value-package credit, expired-unused value and source-sale receivables reported
+in separate buckets. The remaining CP-006 milestones (MTD/POS progress, own-data staff
+self-service, browser/manual acceptance) are still TODO, so CP-006 is not accepted and
 CP-007 remains gated on it.
 
 Previous continuation — November 3, 2026: **CP-003A DONE** for the local supported
@@ -1210,8 +1212,9 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
 
 ## CP-006 — Reports, exports and progress workflows
 
-- Status: **IN PROGRESS** — **M1 frozen exports and M2 period report/drill-down DONE** as of
-  November 3, 2026; M3–M5 TODO and CP-006 not accepted.
+- Status: **IN PROGRESS** — **M1 frozen exports, M2 period report/drill-down and M3 customer
+  holding history DONE** as of November 3, 2026; MTD/POS progress, own-data staff
+  self-service and acceptance remain TODO and CP-006 is not accepted.
 - Dependencies: CP-005.
 - Expected result: period summary, statement/base-line drill-down to source,
   customer holding payment/session history, true Excel summary + per-staff sheets,
@@ -1227,7 +1230,8 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
 - Coverage: FR-PAY-05, FR-RPT-01–FR-RPT-06, FR-POS-09, report/MTD UI;
   FR-BAS-10 explicitly tracked as optional.
 - Evidence: `PROGRESS.md` (November 3, 2026 — CP-006 M1 frozen payroll exports; November 3,
-  2026 — CP-006 M2 period report and base-line drill-down).
+  2026 — CP-006 M2 period report and base-line drill-down; November 3, 2026 — CP-006 M3
+  customer holding history).
 
 ### CP-006-M1 — Frozen payroll exports: DONE
 
@@ -1323,19 +1327,63 @@ progress and own-data self-service remain separate milestones.
       production build all exit 0. No browser acceptance was executed, and the source
       column was exercised with stubbed events rather than a live sale.
 
+### CP-006-M3 — Customer holding history: DONE
+
+**Status snapshot — November 3, 2026: 6 DONE, 0 IN PROGRESS; M3 DONE; CP-006 still IN
+PROGRESS.** Scope is FR-RPT-06's customer half and the "customer holding
+payment/session history" item of the CP-006 expected result. It supersedes an earlier
+TODO line that attributed holding history to FR-RPT-04/FR-RPT-05; `REQUIREMENTS.md`
+assigns FR-RPT-04–FR-RPT-05 to the MTD overview and own-data self-service instead.
+
+- [x] DONE — **Contract.** `packages/shared/src/schemas/customer-holding-history.ts`
+      describes one row per holding (sessions or credit, status, purchase date, expiry,
+      remaining value, captured payments, session/credit usage, named evidence gaps) plus
+      separated buckets: active unused session value, expired-unused value, value-package
+      credit (active and expired), unvalued legacy counts and source-sale receivables.
+      Money stays a two-place decimal string on the wire, like every other `Decimal`.
+- [x] DONE — **Read model.** `buildCustomerHoldingHistory` is pure and reuses
+      `packageRangeValue` on the frozen purchase snapshot and remaining ordinals — the same
+      arithmetic `/reports/package-valuation` totals company-wide — so a customer view
+      cannot drift from the company report. Corrupted ordinals, a valuation that disagrees
+      with the holding balance, an unreadable snapshot and a credit balance above its grant
+      are named in `missingEvidence` and downgraded to unvalued instead of being silently
+      valued; a legacy holding reports its sessions with `value: null`, never a known zero.
+- [x] DONE — **Loader and boundaries.** `customerHoldingHistory` reads holdings, frozen
+      snapshots, remaining ordinals, collection allocations, redemptions, refund events and
+      source-sale balances in one `RepeatableRead` transaction. Expiry is judged from the
+      holding against the server clock and nothing is written, so a pending expiry reads as
+      expired while `PackageValuationState.expired` stays untouched. Refunds come from
+      `PayrollSourceEvent` (`PACKAGE_REFUND`, `VALUE_PACKAGE_REFUND`); receivables come only
+      from the sales that created these holdings and are never divided across lines; credit
+      is its own liability and is never added to package value.
+- [x] DONE — **Route.** `GET /api/customers/:id/holding-history` sits behind `auth`,
+      `customers` and `packages`: 401 anonymous, 403 without the packages entitlement, 404
+      `CUSTOMER_NOT_FOUND` for an unknown or another salon's customer. The read carries no
+      salary field, so the owner-only salary boundary is untouched.
+- [x] DONE — **Web panel.** `CustomerHoldingHistoryPanel.tsx` on the customer profile
+      (rendered only when `packages` is entitled) shows the four separated totals and then
+      each holding with its payments, usage, reversals and evidence gaps; money is formatted
+      for display while the stored figures keep their precision.
+- [x] DONE — **Verification.** 12 new pure model tests, 4 new database tests and 2 new HTTP
+      tests (26 passing with the existing customers route suite re-run); web: 4 new panel
+      tests plus the existing `CustomerProfile` suite (11 passing together). API and web
+      typecheck, workspace ESLint, Prettier and the web production build all exit 0; full
+      suite counts are recorded in `PROGRESS.md`.
+
 ### CP-006 — remaining milestones: TODO
 
-- [ ] TODO — **Customer holding payment/session history** (FR-RPT-04/FR-RPT-05) with
-      package-value reporting reconciled to the existing valuation and receivables kept
-      separate.
-- [ ] TODO — **MTD/POS progress** (FR-POS-09) clearly labelled as estimated and
-      reconciling to the same frozen inputs and rules; no claim of acceptance until the
+- [ ] TODO — **MTD/POS progress** (FR-RPT-04 and FR-POS-09) clearly labelled as estimated
+      and reconciling to the same frozen inputs and rules; no claim of acceptance until the
       CP-006 integration is tested.
-- [ ] TODO — **Own-data staff self-service** (FR-RPT-06): a staff member's own frozen
+- [ ] TODO — **Own-data staff self-service** (FR-RPT-05): a staff member's own frozen
       statements only, with the existing salary-redaction boundary preserved.
-- [ ] TODO — **Browser/manual acceptance of the exports**: opening the workbook in a
-      spreadsheet application, printing a payslip PDF and downloading a filtered ledger
-      from the mounted web app. FR-BAS-10 gift-card base capture remains optional.
+- [ ] TODO — **Browser/manual acceptance** of the exports and reports: opening the workbook
+      in a spreadsheet application, printing a payslip PDF, downloading a filtered ledger,
+      and reading the period report, drill-down and holding history from the mounted web app.
+      FR-BAS-10 gift-card base capture remains optional.
+- Note — FR-RPT-06's company-wide half was already delivered by CP-005
+  (`GET /api/reports/package-valuation`, `apps/web/src/pages/Reports.tsx`); M3 adds the
+  per-customer half without changing that report's buckets or recalculation.
 
 ## CP-007 — Cutover, reconciliation and release verification
 

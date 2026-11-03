@@ -1,5 +1,58 @@
 # Commission & Payroll progress
 
+## November 3, 2026 — CP-006 M3 DONE: customer holding history with separated value buckets
+
+**CP-006 IN PROGRESS; M1, M2 and M3 DONE. Not release and not earnings activation.** A
+customer profile now answers the question the reports could not: what did this customer
+buy, what did they pay and use, and what is still unused, expired or owed. Unused session
+value, unused credit, expired-unused value and source-sale receivables are reported in
+separate buckets, so nothing is added together that should not be.
+
+- New shared contract `packages/shared/src/schemas/customer-holding-history.ts`: one row
+  per holding (sessions or credit, status, purchase date, expiry, evaluated remaining
+  value, captured payments, session/credit usage including reversals, and named evidence
+  gaps) beside separated totals — active unused session value, expired-unused value,
+  value-package credit (active and expired), unvalued legacy counts and source-sale
+  receivables. Money is a two-place decimal string, payments stay exact cents.
+- `buildCustomerHoldingHistory` is a pure function, so the bucket rules are unit-tested
+  without a database. It values remaining sessions with `packageRangeValue` over the frozen
+  purchase snapshot and the remaining ordinals — the same arithmetic
+  `/reports/package-valuation` totals company-wide — so the customer view cannot drift from
+  the company report. Nothing is recalculated from today's catalogue, collected cash or the
+  holding balance alone.
+- Gaps are named rather than smoothed over: a legacy holding with no snapshot reports its
+  sessions with `value: null` and `ORIGINAL_PURCHASE_EVIDENCE`; an unreadable snapshot, an
+  ordinal set outside the grant, a valuation that disagrees with `quantityRemaining`, and a
+  credit balance above its grant each appear in `missingEvidence` and downgrade the row to
+  unvalued instead of inventing a figure.
+- `customerHoldingHistory` loads the whole picture in one `RepeatableRead` transaction
+  (holdings, snapshots, ordinals, collection allocations, redemptions, refund events,
+  outstanding balances). Expiry is judged from the holding against the server clock and
+  nothing is written, so a pending expiry reads as expired while
+  `PackageValuationState.expired` stays untouched; a voided draw stays visible with its
+  `revertedAt`. Refunds are read from `PayrollSourceEvent` (`PACKAGE_REFUND`,
+  `VALUE_PACKAGE_REFUND`), credit is its own liability and never joins package value, and
+  receivables come only from the sales that created these holdings — the 900.00 owed on an
+  unrelated sale of the same customer is ignored, and nothing is divided across lines.
+- Route `GET /api/customers/:id/holding-history` behind `auth`, `customers` and `packages`:
+  401 anonymous, 403 without the packages entitlement, 404 `CUSTOMER_NOT_FOUND` for an
+  unknown or another salon's customer. It carries no salary field.
+- Web: `CustomerHoldingHistoryPanel.tsx` on the customer profile (only when `packages` is
+  entitled) shows the four separated totals and then each holding with payments, usage,
+  reversals and evidence gaps, keeping stored precision on the wire and formatting only for
+  display.
+- Verification (executed): API suite **1451 tests / 1184 pass / 0 fail / 267 skipped**,
+  including 12 new pure model tests, 4 new database tests and 2 new HTTP tests. Web suite
+  **1000 / 988 pass**; the 12 misses are the known `PayrollPlans.test.tsx` 5-second
+  timeouts, which reproduce only under full-suite load and pass 24/24 when that file is run
+  alone. API and web typecheck, workspace ESLint, Prettier and the web production build all
+  exit 0.
+- Not done: MTD/POS progress (FR-RPT-04, FR-POS-09), own-data staff self-service
+  (FR-RPT-05), gift-card base capture (optional) and browser/manual acceptance of the
+  exports and reports. An earlier TODO mislabelled holding history as FR-RPT-04/FR-RPT-05;
+  `REQUIREMENTS.md` assigns those to MTD/self-service and FR-RPT-06 to unused package value
+  and unpaid balances, which is what this milestone covers per customer.
+
 ## November 3, 2026 — CP-006 M2 DONE: period report and base-line source drill-down
 
 **CP-006 IN PROGRESS; M1 and M2 DONE. Not release and not earnings activation.** An

@@ -87,6 +87,8 @@ export const queryKeys = {
     ownedSessionPackages: (id: string) => ["customers", "detail", id, "session-packages"] as const,
     sessionPackageTransfers: (id: string) =>
       ["customers", "detail", id, "session-package-transfers"] as const,
+    /** Purchases, payments, usage and what is left, as one reconciled report (FR-RPT-06). */
+    holdingHistory: (id: string) => ["customers", "detail", id, "holding-history"] as const,
     prepaidTransfers: (id: string) => ["customers", "detail", id, "prepaid-transfers"] as const,
   },
 

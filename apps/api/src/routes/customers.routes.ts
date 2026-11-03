@@ -79,6 +79,7 @@ import {
 } from "../services/session-transfer.service.js";
 import { getPayrollHoldingDetail } from "../services/payroll-holding-detail.js";
 import { getPayrollValueHoldingDetail } from "../services/payroll-value-holding-detail.js";
+import { customerHoldingHistory } from "../services/customer-holding-history.js";
 
 /**
  * Customers — handoff screen 07.
@@ -482,6 +483,22 @@ customersRouter.get(
     try {
       const { id } = validated<{ id: string }>(req, "params");
       res.status(200).json({ data: await getCustomerHoldings(id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+customersRouter.get(
+  "/:id/holding-history",
+  auth,
+  requireModule("customers"),
+  requireModule("packages"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res.status(200).json({ data: await customerHoldingHistory(id) });
     } catch (error) {
       next(error);
     }

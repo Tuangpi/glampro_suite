@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CustomerPhoto, CustomerPurchase, CustomerVisit } from "@glampro_suite/shared";
 import CustomerAvatar from "@/components/customers/CustomerAvatar";
 import CustomerArchivePanel from "@/components/customers/CustomerArchivePanel";
+import CustomerHoldingHistoryPanel from "@/components/customers/CustomerHoldingHistoryPanel";
 import CustomerPrepaidPanel from "@/components/customers/CustomerPrepaidPanel";
 import CustomerSessionPackagesPanel from "@/components/customers/CustomerSessionPackagesPanel";
 import CustomerFormDrawer from "@/components/customers/CustomerFormDrawer";
@@ -123,6 +124,7 @@ function Profile({ id }: { id: string }) {
       </section>
       <CustomerPrepaidPanel customerId={id} />
       <CustomerSessionPackagesPanel customerId={id} />
+      <CustomerHoldingHistoryPanel customerId={id} />
       <History id={id} kind="visits" />
       <History id={id} kind="purchases" />
       <Treatments id={id} />
