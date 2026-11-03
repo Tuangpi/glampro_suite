@@ -730,14 +730,13 @@ test(
         // usage coverage. Exercise real draw/capture writers on the isolated DB.
         mock.timers.reset();
         // A recipient draw must follow the independently journalled transfer.
-        // The transfer uses the real DB clock; midnight becomes historical on
-        // November 2 and would otherwise mask the intended missing-capture check.
-        mock.timers.enable({
-          apis: ["Date"],
-          now: new Date(
-            Math.max(Date.parse("2026-11-02T00:00:00Z"), Date.parse(transfer.createdAt) + 1),
-          ),
-        });
+        // The transfer event is stamped by the database clock, not this mock, so every
+        // recipient instant below is pulled forward when the wall clock has overtaken it —
+        // otherwise a draw would sort before its own transfer and ownership would refuse it.
+        let recipientAt = new Date(
+          Math.max(Date.parse("2026-11-02T00:00:00Z"), Date.parse(transfer.createdAt) + 1),
+        );
+        mock.timers.enable({ apis: ["Date"], now: recipientAt });
         await prisma.$transaction(
           async (tx) => {
             const usage = await runAtOutlet(outlet.id, () =>
@@ -944,10 +943,16 @@ test(
           [4, 1],
         ] as const) {
           mock.timers.reset();
-          mock.timers.enable({
-            apis: ["Date"],
-            now: new Date(`2026-${day === 4 ? "12" : "11"}-0${day}T00:00:00Z`),
-          });
+          // Same database-clock hazard as the transfer above, plus a monotonic floor: a
+          // fixed midnight would sit before the transfer on the day it is created, so each
+          // synthetic usage is nudged past the previous recipient instant instead.
+          recipientAt = new Date(
+            Math.max(
+              Date.parse(`2026-${day === 4 ? "12" : "11"}-0${day}T00:00:00Z`),
+              recipientAt.getTime() + 1,
+            ),
+          );
+          mock.timers.enable({ apis: ["Date"], now: recipientAt });
           const usageId = await prisma.$transaction(
             async (tx) => {
               const usage = await runAtOutlet(outlet.id, () =>

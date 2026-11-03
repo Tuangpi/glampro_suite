@@ -8,13 +8,16 @@
 
 ## Workflow
 
-Current continuation — November 3, 2026: **CP-003A IN PROGRESS** — the historical
-impact preview now returns posted-versus-saved-rule money from the same engine and
-authoritative snapshot as the monthly close, with `UNAVAILABLE`/`null` whenever any
-evidence gap remains. See the CP-003A checklist and PROGRESS.md; missing-evidence
-matrix, refund/outlet/fractional money cases and authenticated browser acceptance
-are still open. CP-006/CP-007 remain separate gates. The dated continuations below
-are historical; their status statements do not override the checklist.
+Current continuation — November 3, 2026: **CP-003A DONE** for the local supported
+scope (not release, not earnings activation). The historical impact preview returns
+posted-versus-saved-rule money from the same engine and authoritative snapshot as the
+monthly close, and `UNAVAILABLE`/`null` whenever any evidence gap remains. The three
+remaining checklist items are closed: a per-family missing/contradictory-evidence
+matrix with explicit authoritative zeros, the refund/reversal/fractional-unit/
+negative-balance/outlet money cases, and authenticated browser acceptance of the
+monetary states including stale-money refusal. CP-006/CP-007 remain separate gates.
+The dated continuations below are historical; their status statements do not override
+the checklist.
 
 Previous continuation — November 2, 2026: **CP-005 M1–M5 DONE** for local acceptance.
 See APPLICATION_CLOSE_ACCEPTANCE.md for the final browser/money/performance review
@@ -449,9 +452,17 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-003A — Authoritative historical monetary preview
 
-- Status: **IN PROGRESS** (November 3, 2026). Dependencies CP-003/CP-004/CP-005
-  are DONE locally, so the gate is now actionable; it is not DONE and not a release
-  or earnings-activation claim.
+- Status: **DONE** (November 3, 2026, local supported scope). Dependencies
+  CP-003/CP-004/CP-005 are DONE locally. Not a release or earnings-activation claim.
+  Verified November 3, 2026 on the disposable `55485/payroll_close_test` cluster:
+  CP-003A evidence/money acceptance **8/8**, original preview acceptance **1/1**,
+  authenticated Chrome money acceptance **6/6**, CP-003 configuration/lifecycle
+  **7/7**, CP-003 Chrome configuration acceptance **18/18**, all sixteen gated CP-005
+  API suites **216/216 with no skips** and the CP-005 Chrome suite **10/10**; API and
+  web typecheck, ESLint and Prettier pass. The acceptance run also found and fixed a
+  live contract defect: the web impact schema required a numeric
+  `calculationVersion` while the API sends the calculator label (`"cp-005-v2"`), so
+  every `AVAILABLE` preview rendered as an error in the browser.
 - Expected result: authorized server-owned historical rate-free inputs, explicit
   complete coverage, frozen opening carry, scoped group metrics and configuration
   revisions, integrated into historical monetary impact preview. Follow
@@ -495,12 +506,36 @@ Existing implementation and reference tests need verification, not automatic cre
       money only for the version it was calculated for — a rule diff, an unsaved draft,
       a different version or a revision change never inherits posted money, and the
       "not a historical payroll impact calculation" disclaimer is gone.
-- [ ] Missing/contradictory-evidence matrix per family, including explicit
-      authoritative zero versus missing inputs.
-- [ ] Refund/reversal, fractional fixed-unit, negative-balance and outlet-scoped
-      preview money cases.
-- [ ] Authenticated browser acceptance of the monetary states, including stale-money
+- [x] Missing/contradictory-evidence matrix per family, including explicit
+      authoritative zero versus missing inputs. `payroll-historical-preview-evidence.acceptance.test.ts`
+      proves a payable month becomes `UNAVAILABLE`/`impact: null` with exactly the
+      family code once one capture is injected (unknown family
+      `SOURCE_WORKFLOW_NOT_LOADED`, prepaid refund without settlement
+      `PREPAID_SETTLEMENT_MISSING`, contradictory redemption evidence
+      `SOURCE_EVIDENCE_INVALID`), that a missing opening carry refuses the identical
+      empty month (`APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED`) while an
+      explicitly authorized zero returns `AVAILABLE` with `0.00` totals, and that a
+      zero-rate rule posts evidence-backed zero rows (real collections, `0.00` money)
+      rather than standing in for absent evidence.
+- [x] Refund/reversal, fractional fixed-unit, negative-balance and outlet-scoped
+      preview money cases. The same suite asserts a 50/50 split line credits `0.5000`
+      units and `1.00` at two dollars per unit, a same-month sale plus refund nets
+      `0.0000`, a prior-month refund carries `-1.0000` units / `-100.0000` base while
+      money stays `0.00` (the engine carries the balance, it never pays negative
+      money), two branches pool into one staff month (`200.0000` base, `20.00`), the
+      same month is refused under an outlet context, and a disabled staff member keeps
+      their posted money while a frozen close keeps the flags it was calculated with.
+      Every case deep-equals the posted statement result and the close's input hash.
+- [x] Authenticated browser acceptance of the monetary states, including stale-money
       refusal after revision/permission changes.
+      `payroll-preview-money-browser.acceptance.test.ts` (`RUN_CP003A_BROWSER_ACCEPTANCE=true`)
+      signs in as the owner in Chrome and asserts the exact rendered money (salon
+      `S$40.00`, per-staff `S$10.00`, `change S$0.00`) and the live money-source
+      label; a server-side revision bump then shows the stale-revision refusal with
+      no money left in the panel, the reloaded revision shows version 2 at `S$50.00`
+      with `+S$10.00`, permission loss and a blocked request both clear the money and
+      recover on retry, and a calculated month renders the frozen-close money source
+      at the same posted total.
 
 ## CP-004 — Transactional capture and package workflows
 

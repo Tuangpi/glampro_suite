@@ -45,7 +45,7 @@ function posted(
     inputSource: "FROZEN_CLOSE",
     impact: {
       currency: "SGD",
-      calculationVersion: 1,
+      calculationVersion: "cp-005-v2",
       inputHash: "hash",
       afterVersion: version,
       rows: [

@@ -6,7 +6,9 @@ const money = z.string().regex(/^-?(0|[1-9]\d{0,11})\.\d{2}$/);
 /** The server's impact payload: the posted month valued under the saved rules. */
 export const impactSchema = z.object({
   currency: z.string(),
-  calculationVersion: z.number().int(),
+  /** The calculator contract that produced the money, e.g. `"cp-005-v2"`. It is a
+   * label rather than a counter, and it is part of the hashed input snapshot. */
+  calculationVersion: z.string().min(1),
   inputHash: z.string(),
   afterVersion: z.object({
     id: z.string(),

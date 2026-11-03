@@ -61,7 +61,7 @@ function available() {
     },
     impact: {
       currency: "SGD",
-      calculationVersion: 1,
+      calculationVersion: "cp-005-v2",
       inputHash: "hash",
       afterVersion: {
         id: "v2",

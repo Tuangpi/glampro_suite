@@ -67,11 +67,21 @@ test(
         await prisma.tenant.create({
           data: { id: tenantId, slug: tenantId, name: "Browser fixture" },
         });
-        await prisma.module.upsert({
-          where: { code: "staff" },
-          update: {},
-          create: { code: "staff", name: "Staff", category: "Core", isCore: true },
-        });
+        // The staff form's department checkboxes come from `/api/departments`, which
+        // `departments.routes.ts` guards with the `catalogue` module — so a fixture that
+        // only upserts `staff` leaves that picker refusing with `MODULE_UNKNOWN` and the
+        // drawer silently renders "no departments yet". Both rows are core in the real
+        // seed (`prisma/seed.ts`), so this mirrors production rather than widening access.
+        for (const [code, name] of [
+          ["catalogue", "Catalogue"],
+          ["staff", "Staff"],
+        ] as const) {
+          await prisma.module.upsert({
+            where: { code },
+            update: {},
+            create: { code, name, category: "Core", isCore: true },
+          });
+        }
       });
       const outlet = await scope(async () => {
         for (const [id, globalRole] of [

@@ -1,5 +1,81 @@
 # Glampro Suite — progress
 
+## November 3, 2026 — CP-003A DONE: evidence matrix, money cases, browser money acceptance
+
+CP-003A's three open checklist items are closed on the disposable
+`55485/payroll_close_test` cluster, and the browser work found and fixed a live
+client-side defect. Local supported scope only: no release, no earnings activation,
+no migration, dependency change, commit or push.
+
+- New opt-in `apps/api/src/services/payroll-historical-preview-evidence.acceptance.test.ts`
+  (`RUN_CP003A_PREVIEW_ACCEPTANCE=true`, **8/8**). One injected capture turns an
+  otherwise payable month into `UNAVAILABLE` with `impact: null` and exactly one
+  blocker per family (`SOURCE_WORKFLOW_NOT_LOADED`, `PREPAID_SETTLEMENT_MISSING`,
+  `SOURCE_EVIDENCE_INVALID`) while configuration blockers stay empty. An authorized
+  empty month is `AVAILABLE` at `0.00` and the identical month without opening
+  evidence refuses by name; a zero-rate plan returns evidence-backed `0.00` rows.
+  Money cases deep-equal the posted statements and input hash: fractional fixed units
+  (`0.5000`), same-month refund (`0.0000`), prior-month refund carried as `-1.0000`
+  units / `-100.0000` base, outlet pooling across two branches (`200.0000`), an
+  outlet-context refusal, and a disabled staff member whose posted money is unchanged.
+- New opt-in `apps/api/src/services/payroll-preview-money-browser.acceptance.test.ts`
+  (`RUN_CP003A_BROWSER_ACCEPTANCE=true`, **6/6**) drives authenticated Chrome against
+  four real sales: `S$40.00` salon total with four `S$10.00` rows and the live
+  money-source label; a server-side revision bump leaves no money in the panel; the
+  reloaded revision shows version 2 at `S$50.00` / `+S$10.00`; permission loss and a
+  blocked request both clear the money and recover; a calculated month renders the
+  frozen-close money source at the same posted total.
+- Defect fixed: the web impact schema required a numeric `calculationVersion` while
+  the API sends the calculator label `"cp-005-v2"`, so **every** `AVAILABLE` preview
+  failed client validation and the page showed "Unable to check historical inputs.
+  [expected number …]". CP-003's Chrome suite never caught it because those months
+  were always `UNAVAILABLE`. `apps/web/src/components/settings/payroll-impact.ts` now
+  binds the string the API sends, and the three web fixtures use `"cp-005-v2"`.
+- `apps/api/src/test-support/payroll-close-fixture.ts` gained an opt-in `periodKey`
+  (default `2026-09`, unchanged behaviour) that derives the audited setup date and the
+  mid-month activity date, so browser acceptance can use the real
+  last-completed-month window instead of mocking `Date` in the process that also
+  drives `Browser.wait`.
+
+Verification: CP-003A API acceptance **8/8** plus the original preview acceptance
+**1/1**, Chrome money acceptance **6/6**, CP-003 configuration/lifecycle **7/7**,
+CP-003 Chrome configuration acceptance **18/18**, all sixteen gated CP-005 API suites
+**216/216 with no skips**, CP-005 Chrome suite **10/10**, API and web typecheck exit
+0, focused web unit tests **37/37**, ESLint and Prettier clean on every touched file.
+The `55485` cluster was stopped again with its data retained; `55473` was left as
+found. Docs updated: `docs/commission_payroll/TASKS.md` (CP-003A DONE),
+`docs/commission_payroll/PROGRESS.md`, `docs/commission_payroll/HISTORICAL_INPUTS.md`.
+
+## November 3, 2026 — CP-003A preview and CP-003/CP-005 acceptance re-verification
+
+Re-ran the opt-in payroll acceptance suites against the two disposable PostgreSQL
+clusters. CP-003A historical preview acceptance **1/1**, CP-003 configuration plus
+concurrent lifecycle acceptance **7/7**, CP-003 authenticated Chrome acceptance
+**18/18**, all sixteen gated CP-005 API suites **216/216** and the CP-005 Chrome suite
+**10/10** pass with no skips; API typecheck exits 0. No application code changed; two
+opt-in fixtures were made deterministic.
+
+- The Chrome fixture seeded only the `staff` module, so the staff drawer's department
+  picker (`/api/departments`, guarded by `catalogue` in `departments.routes.ts`)
+  refused with `MODULE_UNKNOWN` and rendered "no departments yet". Both rows are core
+  in `prisma/seed.ts`, so the fixture now upserts `catalogue` beside `staff`.
+- `payroll-close-loader.acceptance.test.ts` stamped the package transfer with the
+  database clock and then mocked fixed November midnights for the recipient draws, so
+  once the wall clock passed `2026-11-03T00:00Z` the ownership verifier refused a draw
+  that sorted before its own transfer (`PACKAGE_OWNERSHIP_UNCONFIRMED`). The mocked
+  recipient instants now start at or after the transfer and rise monotonically.
+  `verifyPayrollPackageOwnership` is unchanged — the identical rows pass as soon as the
+  draw follows the transfer.
+
+CP-003A remains **IN PROGRESS**: the missing-versus-authoritative-zero evidence matrix,
+the refund/reversal, fractional fixed-unit, negative-balance and outlet-scoped money
+cases, and authenticated browser acceptance of the monetary states are still open
+checklist items. Prettier, ESLint and API typecheck pass on the touched files; the
+CP-003 Chrome run rewrote only disposable fixture tenants, and the `55485` cluster is
+stopped again with its data retained (restart with
+`pg_ctl -D /tmp/cp005-preview-pg -o "-p 55485 -k /tmp -c timezone=UTC" start`). The
+pre-existing `55473` cluster was left as found.
+
 ## November 2, 2026 — CP-005 M5 final local acceptance
 
 **M1–M5 / CP-005 DONE for local supported scope, not release/cutover.**

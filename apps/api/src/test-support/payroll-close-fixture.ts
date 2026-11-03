@@ -21,6 +21,8 @@ export async function payrollCloseFixture(
     plans?: ReturnType<typeof payrollPlanDefinitionSchema.parse>[];
     receiptsPerStaff?: number;
     alternateNewStarters?: boolean;
+    /** Reviewed month. Defaults to the September every CP-005 acceptance asserts. */
+    periodKey?: string;
   } = {},
 ) {
   const url = new URL(process.env.DATABASE_URL!);
@@ -31,7 +33,15 @@ export async function payrollCloseFixture(
     SELECT current_setting('data_directory') AS directory, current_setting('TimeZone') AS timezone`;
   assert.match(identity.directory, /^\/tmp\/cp005-/);
   assert.equal(identity.timezone, "UTC");
-  mock.timers.enable({ apis: ["Date"], now: new Date("2026-08-15T00:00:00Z") });
+  // The month under review, and the audited setup/activity instants relative to it:
+  // configuration is stamped a month before the month starts, activity mid-month.
+  const periodKey = options.periodKey ?? "2026-09";
+  const [periodYear, periodMonth] = periodKey.split("-").map(Number);
+  const setupDate = new Date(Date.UTC(periodYear!, periodMonth! - 2, 15))
+    .toISOString()
+    .slice(0, 10);
+  const activityDate = `${periodKey}-15`;
+  mock.timers.enable({ apis: ["Date"], now: new Date(`${setupDate}T00:00:00Z`) });
   const tenantId = `cp005-m45-${randomUUID()}`;
   const ids = Array.from({ length: size }, () => randomUUID());
   const [ownerId, managerId, staffId, cashierId] = ids;
@@ -89,7 +99,7 @@ export async function payrollCloseFixture(
               revision: 1,
               actorId: ownerId,
               reason: "Reviewed synthetic historical configuration",
-              createdAt: new Date("2026-08-15T00:00:00Z"),
+              createdAt: new Date(`${setupDate}T00:00:00Z`),
             },
           });
       }
@@ -102,13 +112,13 @@ export async function payrollCloseFixture(
           revision: 1,
           actorId: ownerId,
           reason: "Reviewed synthetic historical settings",
-          createdAt: new Date("2026-08-15T00:00:00Z"),
+          createdAt: new Date(`${setupDate}T00:00:00Z`),
         },
       });
       if (options.authorizeOpening !== false)
         await authorizeStoredPayrollCarry(
           "OPENING",
-          "2026-09",
+          periodKey,
           0,
           {
             staff: ids.map((id) => ({
@@ -156,7 +166,7 @@ export async function payrollCloseFixture(
             expectedRevision: planIndex,
             staffIds: ids.filter((_, index) => index % definitions.length === planIndex),
             planId: plan.id,
-            fromDate: "2026-08-15",
+            fromDate: setupDate,
             reason: "Reviewed synthetic assignments",
           });
         }
@@ -177,7 +187,7 @@ export async function payrollCloseFixture(
           },
         });
         mock.timers.reset();
-        mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-15T00:00:00Z") });
+        mock.timers.enable({ apis: ["Date"], now: new Date(`${activityDate}T00:00:00Z`) });
         for (let receipt = 0; receipt < (options.receiptsPerStaff ?? 1); receipt++)
           for (const id of ids)
             await runAtOutlet(outlet.id, () =>

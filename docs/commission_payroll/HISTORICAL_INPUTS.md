@@ -2,9 +2,9 @@
 
 CP-003 investigation checkpoint — October 27, 2026; scope split approved October
 28, 2026. This contract gates CP-003A, not configuration-only CP-003 acceptance.
-The authoritative adapter and impact preview described under "Implemented
-integration (November 3, 2026)" now exist; CP-003A remains IN PROGRESS because the
-evidence families and browser acceptance below are not fully accepted.
+The authoritative adapter, impact preview and the evidence/money acceptance described
+below now exist, so CP-003A is DONE for the local supported scope (November 3, 2026);
+release and earnings activation remain separate gates.
 
 ## Implemented integration (November 3, 2026)
 
@@ -34,10 +34,43 @@ preview then computes money for the same snapshot:
   `change` is rounded once from unrounded sums, and salon totals are summed before
   rounding.
 
-Still open for CP-003A: the contradictory/missing-evidence matrix beyond the current
-refusals, refunds/reversal and fractional fixed-unit money cases, explicit
-authoritative-zero versus missing-input coverage, outlet-scoped preview semantics,
-and authenticated browser acceptance of the monetary states.
+## Evidence and money acceptance (November 3, 2026)
+
+`payroll-historical-preview-evidence.acceptance.test.ts`
+(`RUN_CP003A_PREVIEW_ACCEPTANCE=true`) closes the family matrix, the explicit-zero
+distinction and the money cases; `payroll-preview-money-browser.acceptance.test.ts`
+(`RUN_CP003A_BROWSER_ACCEPTANCE=true`) closes authenticated browser acceptance of the
+monetary states.
+
+- **Missing versus contradictory, per family.** A month that is `AVAILABLE` is made
+  `UNAVAILABLE` by one injected capture, with `impact: null`, `inputSource: null` and
+  exactly one blocker: `SOURCE_WORKFLOW_NOT_LOADED` (unknown capture family),
+  `PREPAID_SETTLEMENT_MISSING` (refund capture whose settlement is absent) and
+  `SOURCE_EVIDENCE_INVALID` (redemption capture whose evidence contradicts itself).
+  Configuration blockers stay empty, so the refusal names the money family.
+- **Authoritative zero is asserted, never inferred.** Two identical empty months
+  differ only in their opening-carry authorization: the authorized month is
+  `AVAILABLE` at `0.00`, the other refuses by name
+  (`APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED`). A zero-rate plan returns
+  `AVAILABLE` rows of `0.00` over real collection records and non-zero bases. The
+  three states — evidence-backed zero, missing activity inside a complete month, and
+  missing evidence — are therefore distinguishable and tested.
+- **Money equals posted money.** Fractional units (`0.5000` of a two-dollar unit),
+  same-month sale-plus-refund (`0.0000`), prior-month refund (`rawBase -100.0000`,
+  `units -1.0000`, `amount 0.00`, carried forward), outlet pooling across two branches
+  (`200.0000` base) and disabled/departed staff all deep-equal the posted statement,
+  the row total, the salon sum and the close's `inputHash`. A negative balance is
+  carried by base or units; the engine never pays negative money, so the preview shows
+  the carry rather than a negative total.
+- **Stale money is refused.** In authenticated Chrome the rendered `S$40.00` is
+  asserted, then a revision change shows `Plan changed. Reload before previewing.`
+  with no money left in the panel, permission loss and a blocked request both clear
+  it, and a calculated month renders the frozen-close money source at the same posted
+  total. Money is salon-wide: an outlet context is refused.
+
+Still open beyond CP-003A, and not claimed here: historical backfill, CP-004
+implementation, earnings activation, release acceptance and any performance budget
+for the preview.
 
 ## Existing evidence and limits
 
@@ -100,18 +133,25 @@ synthetic monetary adapter just to make a preview available.
   (preview row `before` deep-equals the posted statement result; totals sum).
 - Cover disabled/departed staff, outlet-scoped membership, fractional fixed units,
   refunds, negative balances, plan/component changes and exact-money boundaries.
-  **Status: partially covered** — a plan change (version 2 draft) and the
-  frozen-close reload are asserted; disabled/departed staff, refunds, fractional
-  fixed units, negative balances and outlet-scoped preview are not.
+  **Status: verified** — fractional units (`0.5000`), same-month refund (`0.0000`),
+  prior-month refund carried as `-1.0000` units / `-100.0000` base, outlet pooling
+  across two branches, a disabled staff member, a plan change (version 2 draft) and
+  the frozen-close reload are all asserted against posted statements and totals.
+  Departed-staff configuration evidence stays unit-covered by
+  `payroll-preview-inputs.test.ts` (assignment timeline and pre-close staff audits).
 - Each missing evidence family and incomplete/contradictory coverage fails closed;
   explicit authoritative zero inputs are tested separately from missing inputs.
-  **Status: partially covered** — each current loader refusal becomes a visible
-  blocker with `UNAVAILABLE`/`impact: null`; the full family matrix and explicit
-  authoritative-zero case remain open.
+  **Status: verified** — a payable month becomes `UNAVAILABLE`/`impact: null` with
+  exactly one family blocker for an unknown capture family, a refund capture without
+  its settlement and contradictory redemption evidence, while an authorized empty
+  month is `AVAILABLE` at `0.00` and the identical month without opening evidence is
+  refused by name.
 - Revision/context/permission changes and request failures cannot display a stale
   monetary result. Browser authorization acceptance is a separate remaining gate.
-  **Status: revision and permission covered** by the CP-003 acceptance/browser
-  tests; stale-money and monetary browser acceptance remain open.
+  **Status: verified** — CP-003 covers revision/permission in the configuration
+  suite, and `payroll-preview-money-browser.acceptance.test.ts` proves it for money in
+  authenticated Chrome: the rendered total disappears on a revision bump, permission
+  loss and a blocked request, and never reappears without a fresh check.
 
 Money is therefore available only for a month whose complete authoritative inputs
 and configuration evidence load without a gap. Missing or contradictory evidence

@@ -1,5 +1,84 @@
 # Commission & Payroll progress
 
+## November 3, 2026 — CP-003A DONE: evidence matrix, money cases and browser money acceptance
+
+**CP-003A DONE for the local supported scope; not release, not earnings activation.**
+The three items that had kept the historical impact preview IN PROGRESS are closed,
+and the acceptance work surfaced one real client-side defect that is now fixed.
+
+- New opt-in `payroll-historical-preview-evidence.acceptance.test.ts`
+  (`RUN_CP003A_PREVIEW_ACCEPTANCE=true`, disposable `55485/payroll_close_test`)
+  covers eight cases. Missing/contradictory evidence is now proven family by family:
+  a payable month (rows `10.00` each, `20.00` total) is first asserted `AVAILABLE`,
+  then one injected capture turns the _same_ month into `UNAVAILABLE` with
+  `impact: null`, `inputSource: null` and exactly one blocker code —
+  `SOURCE_WORKFLOW_NOT_LOADED` (unknown capture family),
+  `PREPAID_SETTLEMENT_MISSING` (refund capture with no settlement) and
+  `SOURCE_EVIDENCE_INVALID` (redemption capture whose evidence contradicts itself) —
+  while `configuration.blockers` stays empty, so the blocker names the money family
+  rather than a settings gap.
+- Explicit authoritative zero is separated from missing inputs, not inferred. Two
+  identical empty months differ only in whether the opening carry was authorized: the
+  authorized one returns `AVAILABLE` with `0.00` totals, the other returns
+  `UNAVAILABLE` with `APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED`. A
+  zero-rate plan separately returns `AVAILABLE` rows of `0.00` over two real
+  collection records and `100.0000` bases, so a zero that comes from complete
+  evidence is visibly different from a zero that stands in for absent evidence.
+- Money cases are statements, not hand-written figures. Each case builds its own
+  month through `createSale`/`refundSale`, then deep-equals every preview row's
+  `before` with the posted statement from `calculateStoredPayrollClose` for the same
+  month, checks the row total against `payrollImpactTotal`, the salon total against
+  the sum, and the preview `inputHash` against the close's frozen hash.
+  - Fractional fixed units: one unit split 50/50 against a `FIXED_PER_UNIT` two-dollar
+    component credits `0.5000` units, `50.0000` base and `1.00`.
+  - Same-month reversal: a sale refunded inside the month nets `rawBase 0.0000`,
+    `units 0.0000`, `0.00` — both evidence rows stay in the month.
+  - Negative balance: a prior-month sale refunded in the month is `rawBase
+-100.0000`, `units -1.0000` with `amount 0.00` and `carryUnitsOut -1.0000`; the
+    flat-rate variant carries `base -100.0000`. The engine carries the negative
+    balance forward and never pays negative money, and the month's money is not
+    silently netted away.
+  - Outlet scope: two branches pool into one staff month (`200.0000` base, `2.0000`
+    units, `20.00`), and the same plan preview is refused under an outlet context
+    (`company context`), so preview money is salon-wide.
+  - Disabled staff: disabling the account leaves the posted money and the row
+    untouched (only `disabled: true` changes), and a frozen close keeps the flags it
+    was calculated with instead of restating today's account status.
+- New opt-in `payroll-preview-money-browser.acceptance.test.ts`
+  (`RUN_CP003A_BROWSER_ACCEPTANCE=true`, Chrome + Vite on `55173`, four real sales)
+  signs in as the owner and asserts the rendered money itself: salon `S$40.00`,
+  four rows at `S$10.00`, `change S$0.00`, and `Money source: authoritative inputs,
+not yet frozen by a close.` A server-side draft bump then shows
+  `Plan changed. Reload before previewing.` with **no** money left in the panel;
+  reloading and re-checking renders version 2 at `S$50.00` with `+S$10.00` while the
+  posted month stays `S$40.00`. Permission loss and a blocked request both clear the
+  money and recover on retry, and a calculated month renders `Money source: the
+month's frozen approved calculation.` at the same posted total. Its first run
+  exposed the defect below.
+- Fixed contract defect found by that browser acceptance: `payroll-impact.ts`
+  validated `calculationVersion` as `z.number().int()` while
+  `payroll-historical-preview.ts` sends `PAYROLL_CALCULATION_VERSION`
+  (`"cp-005-v2"`). Every `AVAILABLE` response therefore failed client validation and
+  the panel showed "Unable to check historical inputs. [expected number …]"; the
+  CP-003 Chrome suite never saw it because its months were always `UNAVAILABLE`. The
+  web schema now binds the string label it actually receives, and the three web
+  fixtures use `"cp-005-v2"` so the unit tests exercise the real wire shape.
+- `payroll-close-fixture.ts` gained an opt-in `periodKey` (default `2026-09`) that
+  derives the audited setup date (previous month, 15th) and the mid-month activity
+  date, so the browser acceptance can exercise the _real_ last-completed-month
+  window instead of mocking `Date` inside the process that also drives
+  `Browser.wait`. Defaults are unchanged, which is why the CP-005 suites below are a
+  straight regression of the same fixture.
+
+Verification (disposable `55485/payroll_close_test`, UTC, `DOTENV_CONFIG_PATH=/dev/null`):
+CP-003A evidence/money acceptance **8/8**, original preview acceptance **1/1**,
+Chrome money acceptance **6/6**, CP-003 configuration/lifecycle **7/7**, CP-003
+Chrome configuration acceptance **18/18**, all sixteen gated CP-005 API suites
+**216/216 with no skips**, CP-005 Chrome suite **10/10**, API typecheck exit 0, web
+typecheck exit 0, focused web unit tests **37/37**, ESLint exit 0 on every touched
+file and Prettier clean. No application database migration, dependency change,
+commit or push; the `55485` cluster was stopped again with its data retained.
+
 ## November 3, 2026 — CP-003A historical impact preview returns real money
 
 **CP-003A IN PROGRESS; not DONE, not release, not earnings activation.** The
@@ -82,6 +161,29 @@ the monthly close. Missing evidence still returns `UNAVAILABLE`/`impact: null`.
   (including explicit authoritative zero), refund/reversal, fractional fixed unit,
   negative balance and outlet-scoped preview money, and authenticated browser
   acceptance of the monetary states.
+
+- Re-verification, later on November 3, 2026, on the same disposable clusters:
+  CP-003A preview acceptance **1/1** `/tmp/cp003a-run2.log` (and `/tmp/cp003a-run1.log`),
+  CP-003 configuration + concurrent lifecycle acceptance **7/7**
+  `/tmp/cp003-acceptance.log`, CP-003 authenticated Chrome acceptance **18/18**
+  `/tmp/cp003-browser3.log`, all sixteen gated CP-005 API suites **216/216 with 0
+  skipped in 5m40s** `/tmp/cp005-full.log` and the CP-005 Chrome suite **10/10**
+  `/tmp/cp005-browser.log`. Two opt-in fixtures were fixed; no application code
+  changed.
+  - `payroll-preview-browser.acceptance.test.ts` seeded only the `staff` module, so the
+    staff drawer's department picker (`/api/departments`, guarded by `catalogue`) was
+    refused with `MODULE_UNKNOWN` and rendered "no departments yet"; the fixture now
+    upserts `catalogue` beside `staff`, as `prisma/seed.ts` does.
+  - `payroll-close-loader.acceptance.test.ts` mixed a database-clock transfer stamp with
+    fixed November midnights, so after the wall clock passed `2026-11-03T00:00Z` the
+    ownership verifier refused a draw that sorted before its own transfer
+    (`PACKAGE_OWNERSHIP_UNCONFIRMED`, previously `/tmp/loader-solo.log`, isolated in
+    `/tmp/ownership-proof.txt`). The mocked recipient instants now start at or after the
+    transfer and rise monotonically; `verifyPayrollPackageOwnership` is untouched, and
+    the transfer table's append-only trigger correctly refused a backdating shortcut.
+    Prettier, ESLint and `npm run typecheck --workspace @glampro_suite/api` exit 0.
+    The `55485` cluster was stopped afterwards with its data retained; the pre-existing
+    `55473` cluster was left as found. The three CP-003A checklist items above stay open.
 
 ## November 2, 2026 — CP-005 M5 final local acceptance
 

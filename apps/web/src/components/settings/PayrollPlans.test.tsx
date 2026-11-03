@@ -465,7 +465,7 @@ it("carries posted money from the readiness check into the rule version comparis
           evidenceInventory: { collectionCount: 0, legacyEarningsCount: 0 },
           impact: {
             currency: "SGD",
-            calculationVersion: 1,
+            calculationVersion: "cp-005-v2",
             inputHash: "hash",
             afterVersion: {
               id: "v1",
