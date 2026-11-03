@@ -1,5 +1,88 @@
 # Commission & Payroll progress
 
+## November 3, 2026 — CP-003A historical impact preview returns real money
+
+**CP-003A IN PROGRESS; not DONE, not release, not earnings activation.** The
+historical preview now reports posted money beside what the plan's latest saved
+rules would pay, produced by the same engine and the same authoritative snapshot as
+the monthly close. Missing evidence still returns `UNAVAILABLE`/`impact: null`.
+
+- Shared `commission-payroll/impact.ts` is the only impact calculator
+  (`previewPayrollImpact`, `previewScopedPayrollImpact`, `payrollImpactTotal`,
+  `payrollImpactTotals`); the duplicate in `period.ts` is gone. `change` is rounded
+  once from unrounded commission+incentive sums and salon totals are summed before
+  rounding, so rows and footer agree to the cent. The preview swaps only the plan
+  definition over the authoritative input; bases, carry and group metrics are never
+  re-derived. The scoped variant uses the statement engine so a preview matches a
+  calculated month, not an unpartitioned plan run.
+- `payroll-historical-preview.ts`: `readPayrollHistoricalInputs` prefers the frozen
+  close's stored calculation (a live reload could disagree with an approved
+  statement) and otherwise hashes the loader snapshot with `payrollInputHash`, so
+  `impact.inputHash` is exactly the hash the next calculation would freeze. Only the
+  loader's 409 evidence refusal becomes sorted blocker codes; every other failure
+  still surfaces instead of masquerading as missing money.
+- `readPayrollHistoricalPreview` returns `AVAILABLE` money only when inputs, hash,
+  the latest version and every configuration/staff blocker are present; otherwise
+  `UNAVAILABLE`, `impact: null`, `inputSource: null`. Staff resolved to the plan
+  with no authoritative activity are listed by name — no zero statement is invented.
+- Web `PayrollHistoricalPreview.tsx` validates a discriminated `AVAILABLE`/
+  `UNAVAILABLE` response (exact decimal-string money, no floats), renders
+  before/after/change per staff with the salon totals footer, names the money source
+  (frozen close versus live loader) and keeps every blocker visible. Its blocker
+  labels were realigned with the codes the loader and configuration resolver actually
+  emit (`APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED`, `SOURCES_UNAVAILABLE`,
+  `CARRY_UNAVAILABLE`, `GROUPS_UNAVAILABLE`), replacing three labels nothing emitted
+  any more; an unmapped code still shows its raw name. `PayrollPlans` no longer claims
+  the preview is unavailable.
+- Posted money is no longer confined to the preview. `payroll-impact.ts` and
+  `PayrollImpactTable.tsx` hold the one impact schema, source labels, signed-money
+  formatting and per-staff/salon-total table, so the readiness check and the plan's
+  rule version comparison cannot drift on amounts. `PayrollHistoricalPreview` publishes
+  `{periodKey, inputSource, impact}` through a stable callback keyed by plan revision,
+  and `PayrollVersionComparison` renders it only when the selected version is
+  `impact.afterVersion`; a rule diff, an unsaved draft, another version or a bumped
+  revision states why no money is shown instead, and the stale "this is not a
+  historical payroll impact calculation" disclaimer is gone. A refetch never briefly
+  withdraws money that is still on screen, and a month that cannot be valued publishes
+  `null` so the comparison reports it rather than staying silent.
+- New opt-in acceptance `payroll-historical-preview.acceptance.test.ts`
+  (`RUN_CP003A_PREVIEW_ACCEPTANCE=true`) calculates a real month over the disposable
+  `55485/payroll_close_test` data and proves: preview rows deep-equal the posted
+  statements (not approximately), row totals sum to the posted sum, the preview
+  `inputHash` equals the close's frozen hash, a frozen month reloads through
+  `FROZEN_CLOSE` with identical money, and a version-2 draft raises `afterTotal`
+  while `before` stays exactly posted. It is read-only: one reviewed draft save, no
+  close revision or frozen-hash change.
+- Verification: shared **305/305** `/tmp/shared-all-cp003a.log`; full API **1,358
+  tests, 1,103 passed, 0 failed, 255 opt-in skips**, exit 0 `/tmp/api-all-cp003a.log`;
+  payroll-focused API **641 tests, 432 passed, 0 failed, 209 skips**
+  `/tmp/api-payroll-all.log`; CP-003A acceptance **1/1** `/tmp/cp003a-preview.log`,
+  re-run **1/1** after the final UI edits `/tmp/cp003a-preview2.log`; CP-003 lifecycle
+  acceptance **1/1** `/tmp/pc-acc7.log`; preview-input helpers **7/7**
+  `/tmp/api-preview-inputs.log`. Web serial **987/987 in 111 files**, exit 0 on the
+  final run (`/tmp/web-full-m7.log`; an earlier serial run of the same work,
+  **982/982**, is `/tmp/web-all-cp003a-serial2.log`) plus focused settings UI
+  **108/108 in 15 files** `/tmp/web-settings.log`. Workspace typecheck
+  `/tmp/typecheck-cp003a2.log` and `/tmp/tc2.log`, workspace lint
+  `/tmp/lint-cp003a.log`, `eslint src/components/settings/` `/tmp/web-lint4.log`, the
+  shared build and the full `npm run build` `/tmp/build-cp003a.log` exit 0; Prettier
+  clean on changed files.
+- Two earlier parallel web runs (`/tmp/web-all-cp003a.log`,
+  `/tmp/web-all-cp003a-2.log`) reported 5,000 ms timeouts in `PayrollPlans.test.tsx`
+  while the full API suite was also running. They are not suppressed or explained
+  away: the same file passes **23/23** alone (`/tmp/web-plans2.log`, slowest test
+  3,230 ms) and inside the serial suite, which is the recorded convention.
+- Only verified disposable clusters were used: PostgreSQL 18 at `127.0.0.1:55485`
+  (`payroll_close_test`) and `127.0.0.1:55473` (`payroll_configuration_test`), UTC,
+  role `postgres`. The `55485` cluster was stopped after the final run with its data
+  retained (`pg_ctl -D /tmp/cp005-preview-pg` brings it back on the same port); the
+  pre-existing `55473` cluster was left exactly as found. No application database,
+  migration, dependency, provider payment, earnings activation, deployment or commit
+  was touched. CP-003A remains open for the missing/contradictory-evidence matrix
+  (including explicit authoritative zero), refund/reversal, fractional fixed unit,
+  negative balance and outlet-scoped preview money, and authenticated browser
+  acceptance of the monetary states.
+
 ## November 2, 2026 — CP-005 M5 final local acceptance
 
 **M1–M5 and CP-005 DONE for local supported scope; not production release.**

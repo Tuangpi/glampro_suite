@@ -10,6 +10,7 @@ function response() {
   return {
     status: "UNAVAILABLE",
     earningsActive: false,
+    inputSource: null,
     impact: null,
     planId: "hair",
     planRevision: 1,
@@ -18,9 +19,11 @@ function response() {
     startsAt: "2026-08-31T16:00:00.000Z",
     endsAt: "2026-09-30T16:00:00.000Z",
     blockers: [
-      "AUTHORITATIVE_RATE_FREE_BASES_UNAVAILABLE",
-      "FROZEN_CARRY_INPUTS_UNAVAILABLE",
-      "AUTHORITATIVE_GROUP_METRICS_UNAVAILABLE",
+      "APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED",
+      "SOURCES_UNAVAILABLE",
+      "CARRY_UNAVAILABLE",
+      "GROUPS_UNAVAILABLE",
+      "STAFF_COLLECTION_MISMATCH",
     ],
     configuration: {
       assignmentRevision: 3,
@@ -39,6 +42,56 @@ function response() {
       ],
     },
     evidenceInventory: { collectionCount: 2, legacyEarningsCount: 5 },
+  };
+}
+/** Money-bearing response: posted money plus what the saved rules would pay. */
+function available() {
+  const base = response();
+  return {
+    ...base,
+    status: "AVAILABLE" as const,
+    inputSource: "FROZEN_CLOSE" as const,
+    blockers: [],
+    configuration: {
+      ...base.configuration,
+      blockers: [],
+      // The server rolls per-staff gaps into the top-level blockers, so a money
+      // bearing response never carries one.
+      staff: base.configuration.staff.map((row) => ({ ...row, blockers: [] })),
+    },
+    impact: {
+      currency: "SGD",
+      calculationVersion: 1,
+      inputHash: "hash",
+      afterVersion: {
+        id: "v2",
+        versionNo: 2,
+        status: "DRAFT",
+        effectiveFrom: "2026-11-01",
+      },
+      rows: [
+        {
+          staffId: "amy",
+          staffName: "Amy",
+          disabled: false,
+          assignedVersion: { id: "v1", versionNo: 1 },
+          beforeTotal: "120.00",
+          afterTotal: "135.50",
+          change: "15.50",
+        },
+        {
+          staffId: "bob",
+          staffName: "Bob",
+          disabled: true,
+          assignedVersion: { id: "v1", versionNo: 1 },
+          beforeTotal: "80.00",
+          afterTotal: "75.00",
+          change: "-5.00",
+        },
+      ],
+      staffWithoutActivity: [{ staffId: "cat", staffName: "Cat", disabled: false }],
+      totals: { before: "200.00", after: "210.50", change: "10.50" },
+    },
   };
 }
 function mount() {
@@ -71,9 +124,14 @@ it("loads only on request and explains authoritative evidence gaps without a pay
     { expectedRevision: 1 },
   );
   expect(screen.getByText(/Historical impact unavailable/)).toBeInTheDocument();
+  expect(screen.getByText(/approved prior close or a persisted opening carry/)).toBeInTheDocument();
   expect(screen.getByText(/Complete historical commission bases/)).toBeInTheDocument();
   expect(screen.getByText(/Frozen carry balances/)).toBeInTheDocument();
   expect(screen.getByText(/Authoritative group incentive metrics/)).toBeInTheDocument();
+  // An unmapped code keeps its raw name instead of disappearing from the gap list.
+  expect(
+    screen.getByText("Unresolved input requirement: STAFF_COLLECTION_MISMATCH"),
+  ).toBeInTheDocument();
   expect(screen.getByText(/Pre-close audited salon settings/)).toBeInTheDocument();
   expect(screen.getByText(/Amy \(currently disabled\)/)).toHaveTextContent("Published version 1");
   expect(screen.getByText(/Pre-close audited staff settings/)).toBeInTheDocument();
@@ -119,9 +177,18 @@ it("rejects mismatched revisions and unexpected monetary responses", async () =>
   mount();
   await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Plan changed");
-  mocks.get.mockResolvedValueOnce({ ...response(), impact: { totalChange: "0" } });
+  // Money must arrive as exact decimal strings; a float total is refused rather than
+  // rendered, and an UNAVAILABLE claim can never smuggle a monetary block.
+  mocks.get.mockResolvedValueOnce({
+    ...available(),
+    impact: { ...available().impact, totals: { before: 200, after: 210.5, change: 10.5 } },
+  });
   await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
   await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText(/Calendar month:/)).not.toBeInTheDocument();
+  mocks.get.mockResolvedValueOnce({ ...response(), impact: { totalChange: "0" } });
+  await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
+  await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(3));
   expect(screen.queryByText(/Calendar month:/)).not.toBeInTheDocument();
 });
 
@@ -156,4 +223,68 @@ it("disables checks and hides results during configuration refresh or save", asy
   rerender(view("hair", 1, true));
   expect(screen.getByRole("button", { name: "Check historical inputs" })).toBeDisabled();
   expect(screen.queryByText(/Calendar month:/)).not.toBeInTheDocument();
+});
+
+it("shows posted money against saved rules with the money source, and keeps gaps out", async () => {
+  mocks.get.mockResolvedValue(available());
+  mount();
+  await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
+  expect(await screen.findByText("Historical commission impact")).toBeInTheDocument();
+  const summary = screen.getByText(/Posted 2026-09 commission/);
+  expect(summary).toHaveTextContent("S$200.00");
+  expect(summary).toHaveTextContent("version 2");
+  expect(summary).toHaveTextContent("S$210.50");
+  expect(summary).toHaveTextContent("+S$10.50");
+  expect(screen.getByText(/Money source/)).toHaveTextContent("frozen approved calculation");
+  expect(screen.getByRole("row", { name: /Amy/ })).toHaveTextContent("S$120.00");
+  expect(screen.getByRole("row", { name: /Amy/ })).toHaveTextContent("S$135.50");
+  expect(screen.getByRole("row", { name: /Amy/ })).toHaveTextContent("+S$15.50");
+  expect(screen.getByRole("row", { name: /Bob/ })).toHaveTextContent("S$75.00");
+  expect(screen.getByRole("row", { name: /Bob/ })).toHaveTextContent("-S$5.00");
+  expect(screen.getByRole("row", { name: /Bob/ })).toHaveTextContent("currently disabled");
+  expect(screen.getByRole("row", { name: /Salon total/ })).toHaveTextContent("S$200.00");
+  expect(screen.getByRole("row", { name: /Salon total/ })).toHaveTextContent("S$210.50");
+  expect(screen.getByRole("row", { name: /Salon total/ })).toHaveTextContent("+S$10.50");
+  // A staff member without authoritative activity is named, never given a zero.
+  expect(screen.getByText(/Cat/)).toHaveTextContent("no zero");
+  expect(screen.queryByText(/Historical impact unavailable/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Unresolved input requirement/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Preview only/)).toHaveTextContent("records nothing");
+});
+
+it("publishes the posted money for other plan views only after a completed check", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const onResult = vi.fn();
+  const view = (planId: string, revision: number) => (
+    <QueryClientProvider client={client}>
+      <PayrollHistoricalPreview
+        key={`${planId}-${revision}`}
+        planId={planId}
+        revision={revision}
+        disabled={false}
+        onResult={onResult}
+      />
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view("hair", 1));
+  // Nothing is published before the owner asks for the check.
+  expect(onResult).not.toHaveBeenCalled();
+  mocks.get.mockResolvedValue(available());
+  await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
+  await screen.findByText("Historical commission impact");
+  // Exact decimal strings travel unchanged, so a second view cannot re-round the money.
+  expect(onResult).toHaveBeenCalledExactlyOnceWith("hair", 1, {
+    periodKey: "2026-09",
+    inputSource: "FROZEN_CLOSE",
+    impact: available().impact,
+  });
+  // A month that cannot be valued withdraws the money instead of leaving it on screen.
+  mocks.get.mockResolvedValue(response());
+  await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
+  await screen.findByText(/Historical impact unavailable/);
+  expect(onResult).toHaveBeenLastCalledWith("hair", 1, null);
+  expect(onResult).toHaveBeenCalledTimes(2);
+  // Another plan or revision reports nothing until its own check completes.
+  rerender(view("tp", 2));
+  expect(onResult).toHaveBeenCalledTimes(2);
 });

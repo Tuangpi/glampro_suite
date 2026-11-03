@@ -2,6 +2,7 @@ export * from "./contracts.js";
 export * from "./component.js";
 export * from "./stage.js";
 export * from "./period.js";
+export * from "./impact.js";
 export * from "./allocation.js";
 export * from "./collection.js";
 export * from "./package-purchase.js";

@@ -8,10 +8,17 @@
 
 ## Workflow
 
-Current continuation — November 2, 2026: **CP-005 M1–M5 DONE** for local acceptance.
+Current continuation — November 3, 2026: **CP-003A IN PROGRESS** — the historical
+impact preview now returns posted-versus-saved-rule money from the same engine and
+authoritative snapshot as the monthly close, with `UNAVAILABLE`/`null` whenever any
+evidence gap remains. See the CP-003A checklist and PROGRESS.md; missing-evidence
+matrix, refund/outlet/fractional money cases and authenticated browser acceptance
+are still open. CP-006/CP-007 remain separate gates. The dated continuations below
+are historical; their status statements do not override the checklist.
+
+Previous continuation — November 2, 2026: **CP-005 M1–M5 DONE** for local acceptance.
 See APPLICATION_CLOSE_ACCEPTANCE.md for the final browser/money/performance review
-and PROGRESS.md for executed verification. CP-003A/006/007 remain separate gates. The dated continuations below
-are historical; their M1-open/remainder statements do not override the checklist.
+and PROGRESS.md for executed verification.
 
 Latest continuation — November 1, 2026 (active-sharing credit purchase voids):
 hash-verified pre-deletion snapshots retain explicit sharing consent, and the loader
@@ -334,9 +341,10 @@ Existing implementation and reference tests need verification, not automatic cre
   implemented with join-date validation, captured assignment revision and rollback
   coverage. Mandatory plan/join-date enforcement is still incomplete; this does
   not satisfy FR-ASN-01. See DECISIONS and PROGRESS.
-- Remaining: authoritative last-closed-month impact preview; outlet-scoped plan
-  assignment semantics; staff create/edit requirement enforcement and remaining
-  API/UI/browser acceptance. Metadata editing, opt-in create→payroll continuation,
+- Remaining: outlet-scoped plan assignment semantics; staff create/edit requirement
+  enforcement and remaining API/UI/browser acceptance. The authoritative
+  last-closed-month impact preview is now implemented under CP-003A (money only when
+  every evidence gate clears). Metadata editing, opt-in create→payroll continuation,
   staff edit payroll panel, keyed rule-version comparison and paginated audit
   retrieval are now implemented; see PROGRESS for verification and limits. Resume CP-003;
   do not start CP-004 merely because this checkpoint passes focused tests.
@@ -441,9 +449,9 @@ Existing implementation and reference tests need verification, not automatic cre
 
 ## CP-003A — Authoritative historical monetary preview
 
-- Status: **TODO** (deferred by user approval October 28, 2026).
-- Dependencies: CP-003, CP-004, CP-005.
-- Scheduling: after CP-005, before CP-007 release acceptance.
+- Status: **IN PROGRESS** (November 3, 2026). Dependencies CP-003/CP-004/CP-005
+  are DONE locally, so the gate is now actionable; it is not DONE and not a release
+  or earnings-activation claim.
 - Expected result: authorized server-owned historical rate-free inputs, explicit
   complete coverage, frozen opening carry, scoped group metrics and configuration
   revisions, integrated into historical monetary impact preview. Follow
@@ -457,6 +465,42 @@ Existing implementation and reference tests need verification, not automatic cre
   UNAVAILABLE/null until all evidence gates pass; never fabricate prior history.
 - Coverage: historical monetary portions of FR-SET-10–FR-SET-12, impact/full-run
   equality and historical TC-25 integration. Remains a must-have release gate.
+
+### CP-003A checklist
+
+- [x] Shared `commission-payroll/impact.ts` is the single impact calculator
+      (`previewPayrollImpact`, `previewScopedPayrollImpact`, `payrollImpactTotal`,
+      `payrollImpactTotals`); the duplicate in `period.ts` is removed. `change` is
+      rounded once from unrounded sums and totals are summed before rounding.
+- [x] `payroll-historical-preview.ts` loads authoritative inputs, prefers the frozen
+      close's stored snapshot, hashes a live snapshot with `payrollInputHash`, and turns
+      only the loader's 409 evidence refusal into blocker codes.
+- [x] `readPayrollHistoricalPreview` returns money only when inputs, hash, latest
+      version and every configuration/staff blocker are absent; otherwise
+      `UNAVAILABLE`/`impact: null`/`inputSource: null`. Staff with no authoritative
+      activity are named, never given an invented zero statement.
+- [x] Opt-in acceptance `payroll-historical-preview.acceptance.test.ts`
+      (`RUN_CP003A_PREVIEW_ACCEPTANCE=true`, disposable `55485/payroll_close_test`)
+      proves preview rows deep-equal the posted statements, totals match the posted sum,
+      the preview `inputHash` equals the close's frozen hash, a frozen month reloads
+      through `FROZEN_CLOSE` with identical money, and a version-2 draft raises
+      `afterTotal` while `before` stays posted. Read-only.
+- [x] Web preview consumes the discriminated `AVAILABLE`/`UNAVAILABLE` response with
+      exact decimal-string money, per-staff before/after/change, salon totals, the money
+      source label and the unchanged blocker list; `PayrollPlans` copy no longer claims
+      the preview is unavailable.
+- [x] One money rendering (`PayrollImpactTable` + `payroll-impact.ts`) is shared by the
+      readiness check and the rule version comparison: the check publishes its result
+      through a stable callback keyed by plan revision, and the comparison shows the
+      money only for the version it was calculated for — a rule diff, an unsaved draft,
+      a different version or a revision change never inherits posted money, and the
+      "not a historical payroll impact calculation" disclaimer is gone.
+- [ ] Missing/contradictory-evidence matrix per family, including explicit
+      authoritative zero versus missing inputs.
+- [ ] Refund/reversal, fractional fixed-unit, negative-balance and outlet-scoped
+      preview money cases.
+- [ ] Authenticated browser acceptance of the monetary states, including stale-money
+      refusal after revision/permission changes.
 
 ## CP-004 — Transactional capture and package workflows
 

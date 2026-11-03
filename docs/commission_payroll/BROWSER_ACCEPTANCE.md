@@ -22,7 +22,39 @@ November 2, 2026, before its effective boundary. Synthetic signed access tokens 
 auth/me; this is not login/2FA/token-refresh acceptance. No response mocks.
 Detailed acceptance and retained release boundaries: APPLICATION_CLOSE_ACCEPTANCE.md.
 
-## Earlier CP-003 configuration acceptance
+## CP-003A preview-money acceptance — November 3, 2026
+
+`apps/api/src/services/payroll-historical-preview.acceptance.test.ts` is an opt-in,
+non-browser acceptance that requires a migrated disposable database but no Chrome.
+Use only `127.0.0.1:55485/payroll_close_test` with PostgreSQL 18, UTC and role
+`postgres`, `NODE_ENV=test`, a synthetic `JWT_SECRET`, and
+`RUN_CP003A_PREVIEW_ACCEPTANCE=true`. From the repository root:
+
+```sh
+RUN_CP003A_PREVIEW_ACCEPTANCE=true NODE_ENV=test LOG_LEVEL=error \
+  JWT_SECRET=... DATABASE_URL=postgresql://postgres@127.0.0.1:55485/payroll_close_test \
+  node --import tsx --test \
+  apps/api/src/services/payroll-historical-preview.acceptance.test.ts
+```
+
+It builds a real month (2026-09 with the clock fixed at 2026-10-05), reads the
+historical preview, then calculates and freezes the same month through the close,
+and asserts that each preview row's `before` result deep-equals the posted
+statement result for that staff, that the preview totals equal the posted sum, and
+that the preview `inputHash` equals the frozen calculation's `inputHash`. It then
+reloads the preview with the month frozen and requires `FROZEN_CLOSE` with identical
+money, saves a version-2 draft with a reason and requires `afterTotal` to rise while
+`before` stays exactly posted, and finally asserts the check was read-only (one
+audit row for the reviewed draft, unchanged close revision and frozen hash).
+
+This proves preview/posted money equality and the frozen-snapshot contract at the
+service boundary. It is **not** authenticated browser acceptance: the monetary
+states of the preview UI, stale-money refusal after revision/permission changes and
+the missing-evidence matrix remain open under CP-003A. The web states that
+acceptance must cover: the `AVAILABLE` summary with per-staff rows and salon totals,
+the `UNAVAILABLE` blocker list with no money, and the rule version comparison, which
+repeats the same money for the version it was calculated for and withholds it for a
+different version, an unsaved draft or a bumped plan revision.
 
 The opt-in test at
 `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/apps/api/src/services/payroll-preview-browser.acceptance.test.ts`

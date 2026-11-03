@@ -267,7 +267,13 @@ test(
         assert.equal(preview.status, "UNAVAILABLE");
         assert.equal(preview.impact, null);
         assert.equal(preview.earningsActive, false);
-        assert.ok(preview.blockers.includes("AUTHORITATIVE_RATE_FREE_BASES_UNAVAILABLE"));
+        // Empty synthetic salon: no approved prior close (opening carry is unprovable)
+        // and no pre-close salon settings audit. Both gaps must name themselves instead
+        // of being reported as a zero commission total.
+        assert.ok(
+          preview.blockers.includes("APPROVED_PREVIOUS_CLOSE_OR_PERSISTED_OPENING_REQUIRED"),
+        );
+        assert.ok(preview.blockers.includes("HISTORICAL_SALON_SETTINGS_UNAVAILABLE"));
         assert.equal(await prisma.payrollConfigurationEvent.count(), previewAuditCount);
         await assert.rejects(readPayrollHistoricalPreview(first.id, 99), /changed/);
         await assert.rejects(
@@ -1141,6 +1147,8 @@ test(
         const previewBody = (await previewResponse.json()).data;
         assert.equal(previewBody.status, "UNAVAILABLE");
         assert.equal(previewBody.impact, null);
+        assert.equal(previewBody.inputSource, null);
+        assert.ok(previewBody.blockers.length > 0);
         assert.equal(previewBody.planRevision, previewPlan.revision);
         assert.equal(JSON.stringify(previewBody).includes("basicSalary"), false);
         assert.equal(

@@ -1,10 +1,43 @@
 # Historical preview evidence contract
 
 CP-003 investigation checkpoint — October 27, 2026; scope split approved October
-28, 2026. This contract now gates CP-003A, not configuration-only CP-003 acceptance.
-It defines minimum evidence before integration, not an implemented persistence
-format or approval to begin CP-004. Historical readiness remains `UNAVAILABLE` with
-`impact: null`. No authoritative complete monetary-input source is established.
+28, 2026. This contract gates CP-003A, not configuration-only CP-003 acceptance.
+The authoritative adapter and impact preview described under "Implemented
+integration (November 3, 2026)" now exist; CP-003A remains IN PROGRESS because the
+evidence families and browser acceptance below are not fully accepted.
+
+## Implemented integration (November 3, 2026)
+
+`payroll-close-loader.ts` loads the month's authoritative, rate-free inputs and
+refuses with a 409 naming every gate it could not clear. `payroll-historical-preview.ts`
+turns only that refusal into readiness blockers; any other failure surfaces. The
+preview then computes money for the same snapshot:
+
+- **Frozen close wins.** When the month already has a verified calculation, the
+  preview reuses that stored input snapshot and its `inputHash`. A source reload
+  could disagree with an approved statement, so it is never substituted.
+- **Live months are hashed, not re-derived.** Without a frozen calculation the
+  loader snapshot is hashed with `payrollInputHash`, so `impact.inputHash` is the
+  exact hash the next calculation of that month would freeze. A test asserts the
+  equality.
+- **One calculator.** `@glampro_suite/shared` `commission-payroll/impact.ts` swaps
+  only the plan definition over the _same_ authoritative input and reuses the
+  statement/scope engine, so a preview row equals the posted statement for that
+  staff. Component bases, carry and group metrics are never re-derived or defaulted
+  by the preview.
+- **Gaps and money never mix.** `readPayrollHistoricalPreview` returns money only
+  when inputs, hash, latest version and every configuration/staff blocker are
+  absent. Otherwise it returns `status: "UNAVAILABLE"`, `impact: null` and
+  `inputSource: null`. Staff resolved to the plan without authoritative activity
+  are named separately; no zero statement is invented.
+- **Money is exact.** Amounts cross the wire as decimal strings, each row's
+  `change` is rounded once from unrounded sums, and salon totals are summed before
+  rounding.
+
+Still open for CP-003A: the contradictory/missing-evidence matrix beyond the current
+refusals, refunds/reversal and fractional fixed-unit money cases, explicit
+authoritative-zero versus missing-input coverage, outlet-scoped preview semantics,
+and authenticated browser acceptance of the monetary states.
 
 ## Existing evidence and limits
 
@@ -63,16 +96,27 @@ synthetic monetary adapter just to make a preview available.
 
 - Same complete inputs through preview and the full staff-period engine produce
   equal component working lines, incentives, totals, carry and write-offs.
+  **Status: verified per staff statement** by the opt-in CP-003A acceptance test
+  (preview row `before` deep-equals the posted statement result; totals sum).
 - Cover disabled/departed staff, outlet-scoped membership, fractional fixed units,
   refunds, negative balances, plan/component changes and exact-money boundaries.
+  **Status: partially covered** — a plan change (version 2 draft) and the
+  frozen-close reload are asserted; disabled/departed staff, refunds, fractional
+  fixed units, negative balances and outlet-scoped preview are not.
 - Each missing evidence family and incomplete/contradictory coverage fails closed;
   explicit authoritative zero inputs are tested separately from missing inputs.
+  **Status: partially covered** — each current loader refusal becomes a visible
+  blocker with `UNAVAILABLE`/`impact: null`; the full family matrix and explicit
+  authoritative-zero case remain open.
 - Revision/context/permission changes and request failures cannot display a stale
   monetary result. Browser authorization acceptance is a separate remaining gate.
+  **Status: revision and permission covered** by the CP-003 acceptance/browser
+  tests; stale-money and monetary browser acceptance remain open.
 
-Until an authoritative source satisfies this contract, historical monetary
-calculation and full-run equality remain unavailable. Under the October 28, 2026
-approval, CP-003 configuration is reviewed separately; CP-003A follows CP-004 source
-capture and CP-005 frozen statements/carry and remains required before CP-007 release
-acceptance. No historical backfill, CP-004 implementation or earnings activation is
-authorized by this document.
+Money is therefore available only for a month whose complete authoritative inputs
+and configuration evidence load without a gap. Missing or contradictory evidence
+still returns `UNAVAILABLE`/`null`; the preview does not backfill history. Under the
+October 28, 2026 approval, CP-003 configuration is reviewed separately; CP-003A
+builds on CP-004 source capture and CP-005 frozen statements/carry and remains
+required before CP-007 release acceptance. No historical backfill, CP-004
+implementation or earnings activation is authorized by this document.

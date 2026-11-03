@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -168,10 +168,10 @@ it("navigates audit pages using server totals rather than truncating history", a
   );
   expect(await screen.findByRole("button", { name: "Previous audit page" })).toBeEnabled();
 });
-it("uses the shared exact calculator and discloses historical preview is unavailable", async () => {
+it("uses the shared exact calculator and explains the historical preview", async () => {
   mount();
   expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
-  expect(screen.getByText(/Historical impact preview is not available/)).toBeInTheDocument();
+  expect(screen.getByText(/compares the last completed salon month/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Check historical inputs" })).toBeInTheDocument();
   expect(
     screen.getByRole("img", { name: "Commission method comparison chart" }),
@@ -445,4 +445,66 @@ it("updates the chart and calculator together when selecting a tenure stage", as
   await user.selectOptions(screen.getByLabelText("Calculator stage"), "new");
   expect(screen.getByText("Calculated commission: S$160.00")).toBeInTheDocument();
   expect(screen.getByText(/Commission vs base, New staff stage/)).toBeInTheDocument();
+});
+
+it("carries posted money from the readiness check into the rule version comparison", async () => {
+  mocks.get.mockImplementation(async (url: string) =>
+    url === "/payroll-configuration/plans/hair/historical-preview"
+      ? {
+          status: "AVAILABLE",
+          earningsActive: false,
+          inputSource: "FROZEN_CLOSE",
+          planId: "hair",
+          planRevision: 1,
+          periodKey: "2026-09",
+          timeZone: "Asia/Singapore",
+          startsAt: "2026-08-31T16:00:00.000Z",
+          endsAt: "2026-09-30T16:00:00.000Z",
+          blockers: [],
+          configuration: { assignmentRevision: 0, settingsRevision: 0, blockers: [], staff: [] },
+          evidenceInventory: { collectionCount: 0, legacyEarningsCount: 0 },
+          impact: {
+            currency: "SGD",
+            calculationVersion: 1,
+            inputHash: "hash",
+            afterVersion: {
+              id: "v1",
+              versionNo: 1,
+              status: "DRAFT",
+              effectiveFrom: "2026-10-27",
+            },
+            rows: [
+              {
+                staffId: "amy",
+                staffName: "Amy",
+                disabled: false,
+                assignedVersion: { id: "v1", versionNo: 1 },
+                beforeTotal: "120.00",
+                afterTotal: "130.50",
+                change: "10.50",
+              },
+            ],
+            staffWithoutActivity: [],
+            totals: { before: "120.00", after: "130.50", change: "10.50" },
+          },
+        }
+      : configuration(),
+  );
+  mount();
+  await screen.findByText("Calculated commission: S$546.40");
+  // Money reaches the comparison only through a completed check, never from a rule diff.
+  expect(
+    screen.queryByRole("region", { name: "Posted money under the selected version" }),
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
+  const money = await screen.findByRole("region", {
+    name: "Posted money under the selected version",
+  });
+  expect(money).toHaveTextContent("Posted 2026-09 commission: S$120.00");
+  expect(money).toHaveTextContent("change +S$10.50");
+  expect(money).toHaveTextContent("the month's frozen approved calculation");
+  expect(money).toHaveTextContent(
+    "not the difference between the two rule versions selected above",
+  );
+  expect(within(money).getByRole("row", { name: /Salon total/ })).toHaveTextContent("+S$10.50");
 });

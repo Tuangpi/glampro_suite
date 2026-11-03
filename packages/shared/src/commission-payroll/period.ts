@@ -12,7 +12,7 @@ import {
   type PayrollPlanDefinition,
 } from "./contracts.js";
 import { calculatePayrollComponent, type PayrollComponentResult } from "./component.js";
-import { add, cmp, exact, fixed, neg, percent, sum, ZERO } from "./decimal.js";
+import { add, cmp, exact, fixed, percent, sum, ZERO } from "./decimal.js";
 import { payrollMonthEnd, payrollTenureMonth, resolvePayrollStage } from "./stage.js";
 
 export interface PayrollCarryBalance {
@@ -378,29 +378,4 @@ function syntheticResult(
     carryUnitsOut: "0.0000",
     working: [],
   };
-}
-
-/** Preview and actual runs share the exact same calculation entry point. */
-export function previewPayrollImpact(
-  inputs: PayrollStaffPeriodInput[],
-  definition: PayrollPlanDefinition,
-) {
-  const draft = payrollPlanDefinitionSchema.parse(definition);
-  const rows = inputs.map((input) => {
-    if (!input.plan) throw new Error("Impact preview requires an assigned plan.");
-    const before = calculatePayrollStaffPeriod(input);
-    const after = calculatePayrollStaffPeriod({
-      ...input,
-      plan: { ...input.plan, definition: draft },
-    });
-    const total = (result: PayrollStaffPeriodResult) =>
-      add(exact(result.commissionTotal), exact(result.incentiveTotal));
-    return {
-      staffId: input.staffId,
-      before,
-      after,
-      change: fixed(add(total(after), neg(total(before))), 2),
-    };
-  });
-  return { rows, totalChange: fixed(sum(rows.map((row) => exact(row.change))), 2) };
 }

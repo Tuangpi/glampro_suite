@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   hairPayrollExample,
@@ -25,6 +25,7 @@ import Select from "@/components/ui/Select";
 import PayrollDefinitionEditor from "./PayrollDefinitionEditor";
 import PayrollVersionComparison from "./PayrollVersionComparison";
 import PayrollHistoricalPreview from "./PayrollHistoricalPreview";
+import type { PayrollPostedMoney } from "./payroll-impact";
 import {
   PayrollProfileForm,
   PayrollSalonSettingsForm,
@@ -112,6 +113,17 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
   const [units, setUnits] = useState("1");
   const [stageKey, setStageKey] = useState("std");
   const [advanced, setAdvanced] = useState<string | null>(null);
+  // Posted money is published by the readiness check, keyed by the revision it was
+  // calculated for, so a saved draft can never inherit the previous rules' money.
+  const [postedMoney, setPostedMoney] = useState<Record<string, PayrollPostedMoney | null>>({});
+  const recordPostedMoney = useCallback(
+    (planId: string, revision: number, money: PayrollPostedMoney | null) =>
+      setPostedMoney((current) => {
+        const key = `${planId}-${revision}`;
+        return current[key] === money ? current : { ...current, [key]: money };
+      }),
+    [],
+  );
   const mutation = useMutation({
     mutationFn: ({ url, body }: { url: string; body: unknown }) => post(url, body),
   });
@@ -731,6 +743,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                 key={plan.id}
                 versions={plan.versions}
                 draft={draft?.definition}
+                postedMoney={postedMoney[`${plan.id}-${plan.revision}`]}
               />
               {plan.versions.map((v, index) => (
                 <div key={v.id} className="my-2 border-b pb-2">
@@ -880,8 +893,9 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
           ))}
         </details>
         <p>
-          Historical impact preview is not available until authoritative monthly inputs and closed
-          payroll periods are integrated. Calculator values are simulations, not historical payroll.
+          The historical impact preview compares the last completed salon month&apos;s posted
+          commission with the plan&apos;s latest saved rules. It never changes posted money, and
+          unsaved edits are not included.
         </p>
         {canEdit && !data.outletId && plan && (
           <PayrollHistoricalPreview
@@ -889,6 +903,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
             planId={plan.id}
             revision={plan.revision}
             disabled={mutation.isPending || query.isFetching}
+            onResult={recordPostedMoney}
           />
         )}
       </div>

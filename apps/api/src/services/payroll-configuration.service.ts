@@ -33,6 +33,10 @@ import {
   payrollPreviewWindow,
   resolvePayrollPreviewConfiguration,
 } from "./payroll-preview-inputs.js";
+import {
+  readPayrollHistoricalInputs,
+  resolvePayrollHistoricalImpact,
+} from "./payroll-historical-preview.js";
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 type Json = Parameters<Transaction["payrollConfigurationEvent"]["create"]>[0]["data"]["payload"];
@@ -517,7 +521,10 @@ export async function savePayrollSettings(raw: PayrollSettingsWrite) {
     return event(tx, "SETTINGS", "company", expectedRevision, reason, payload);
   }, true);
 }
-/** Read-only readiness inventory. Incomplete legacy evidence must not become a zero total. */
+/** Read-only historical preview. Money exists only when complete authoritative
+ * month inputs exist: the frozen calculation when the month is already calculated,
+ * otherwise the same loader the monthly close uses. Every unmet evidence gate keeps
+ * the response UNAVAILABLE with no money at all. */
 export async function readPayrollHistoricalPreview(id: string, expectedRevision: number) {
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 1)
     throw badRequest("Invalid plan revision.");
@@ -571,8 +578,42 @@ export async function readPayrollHistoricalPreview(id: string, expectedRevision:
           OR: [{ occurredAt }, { occurredAt: null, createdAt: occurredAt }],
         },
       });
+      const loaded = await readPayrollHistoricalInputs(tx, window.periodKey);
+      // The rules under review are the plan's latest saved version; staff keep the
+      // version they were actually assigned for the month.
+      const version = plan.versions[0] ?? null;
+      const staff = configuration.staff.map((row) => ({
+        staffId: row.staffId,
+        staffName: row.staffName,
+        disabled: row.disabled,
+        version: { id: row.version.id, versionNo: row.version.versionNo },
+      }));
+      // Historical configuration evidence gates the money as well: a preview must
+      // never mix a computed total with a stated gap in the same month.
+      const gaps = [
+        ...loaded.blockers,
+        ...configuration.blockers,
+        ...configuration.staff.flatMap((row) => row.blockers),
+        ...(loaded.inputs && !version ? ["HISTORICAL_PLAN_VERSION_UNAVAILABLE"] : []),
+      ];
+      const impact =
+        loaded.inputs && loaded.inputHash && version && !gaps.length
+          ? resolvePayrollHistoricalImpact({
+              planId: id,
+              inputs: loaded.inputs,
+              inputHash: loaded.inputHash,
+              afterVersion: {
+                id: version.id,
+                versionNo: version.versionNo,
+                status: version.status,
+                effectiveFrom: version.effectiveFrom,
+                definition: payrollPlanDefinitionSchema.parse(version.definition),
+              },
+              staff,
+            })
+          : null;
       return {
-        status: "UNAVAILABLE" as const,
+        status: impact ? ("AVAILABLE" as const) : ("UNAVAILABLE" as const),
         earningsActive: false,
         planId: id,
         planRevision: plan.revision,
@@ -580,19 +621,29 @@ export async function readPayrollHistoricalPreview(id: string, expectedRevision:
         timeZone: window.timeZone,
         startsAt: window.from.toISOString(),
         endsAt: window.to.toISOString(),
-        configuration,
+        /** FROZEN_CLOSE reuses the month's own calculation; the loader hash is the
+         * snapshot the next calculation would freeze. */
+        inputSource: impact ? loaded.source : null,
+        configuration: {
+          assignmentRevision: configuration.assignmentRevision,
+          settingsRevision: configuration.settingsRevision,
+          blockers: configuration.blockers,
+          staff: configuration.staff.map((row) => ({
+            staffId: row.staffId,
+            staffName: row.staffName,
+            disabled: row.disabled,
+            joinDate: row.joinDate,
+            staffRevision: row.staffRevision,
+            version: { id: row.version.id, versionNo: row.version.versionNo },
+            blockers: row.blockers,
+          })),
+        },
         evidenceInventory: { collectionCount, legacyEarningsCount },
-        // Collections lack category/outlet/fixed-award evidence. Legacy earnings are
-        // rate-bearing and may already be paid. Neither is a complete rate-free base.
-        blockers: [
-          "AUTHORITATIVE_RATE_FREE_BASES_UNAVAILABLE",
-          "FROZEN_CARRY_INPUTS_UNAVAILABLE",
-          "AUTHORITATIVE_GROUP_METRICS_UNAVAILABLE",
-        ],
-        impact: null,
+        impact,
+        blockers: [...new Set(gaps)].sort(),
       };
     },
-    { isolationLevel: "RepeatableRead" },
+    { isolationLevel: "RepeatableRead", timeout: 30000 },
   );
 }
 
