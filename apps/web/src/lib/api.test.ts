@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthUser } from "@glampro_suite/shared";
 
-import api, { getPaginated } from "@/lib/api";
+import api, { downloadFile, getPaginated } from "@/lib/api";
 import { clearSession, getRefreshToken, setSession } from "@/lib/auth-storage";
 
 /** Annotated so `globalRole` stays a `GlobalRole` union instead of widening. */
@@ -203,6 +203,72 @@ describe("replay safety", () => {
 
     expect(countFor("/auth/refresh")).toBe(1);
     expect(countFor("/customers")).toBe(2); // original + exactly one replay
+  });
+});
+
+describe("downloadFile", () => {
+  const create = vi.fn(() => "blob:frozen-export");
+  const revoke = vi.fn();
+  /** What the anchor looked like at the moment the browser was asked to save it. */
+  let clicked: { href: string | null; download: string; attached: boolean }[] = [];
+
+  beforeEach(() => {
+    create.mockClear();
+    revoke.mockClear();
+    clicked = [];
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: create, revokeObjectURL: revoke }));
+    // jsdom has no download machinery: record the anchor instead of navigating.
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      clicked.push({
+        href: this.getAttribute("href"),
+        download: this.download,
+        attached: document.body.contains(this),
+      });
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("fetches the export as a blob under the filename the server chose", async () => {
+    let responseType: string | undefined;
+    handler = async (config) => {
+      responseType = config.responseType;
+      return {
+        ...respond(config, 200, new Blob(["frozen"])),
+        headers: { "content-disposition": 'attachment; filename="payroll-2026-09.xlsx"' },
+      };
+    };
+
+    await expect(
+      downloadFile("/payroll-close/2026-09/exports/ledger.csv", { staffId: "staff-a" }),
+    ).resolves.toBe("payroll-2026-09.xlsx");
+
+    // A salary export must never be decoded as JSON text on the way in, and the
+    // filter has to reach the server: the CSV is filtered, not filtered client-side.
+    expect(responseType).toBe("blob");
+    expect(calls.at(-1)?.url).toBe("/payroll-close/2026-09/exports/ledger.csv?staffId=staff-a");
+    expect(create).toHaveBeenCalledWith(expect.any(Blob));
+    expect(clicked).toEqual([
+      { href: "blob:frozen-export", download: "payroll-2026-09.xlsx", attached: true },
+    ]);
+    // The anchor must not survive the click, and the object URL must be released.
+    expect(document.querySelectorAll("a")).toHaveLength(0);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(revoke).toHaveBeenCalledWith("blob:frozen-export");
+  });
+
+  it("falls back to the caller's name when the server sends no disposition", async () => {
+    handler = async (config) => respond(config, 200, new Blob(["frozen"]));
+
+    await expect(
+      downloadFile("/payroll-close/2026-09/exports/payslips.pdf", undefined, "payroll"),
+    ).resolves.toBe("payroll");
+    expect(clicked[0]?.download).toBe("payroll");
   });
 });
 

@@ -22,6 +22,16 @@ import {
   payrollCloseView,
   payrollCommissionStatementView,
 } from "../services/payroll-close-view.js";
+import {
+  readPayrollLedgerExport,
+  readPayrollPayslipsExport,
+  readPayrollWorkbookExport,
+  type PayrollExportFile,
+} from "../services/payroll-export.service.js";
+import {
+  payrollLedgerQuerySchema,
+  type PayrollLedgerQuery,
+} from "../services/payroll-export-data.js";
 
 /** This boundary never accepts source records, a loader, or a calculation snapshot.
  * Response projections omit raw inputs and protect salary information. */
@@ -39,6 +49,20 @@ const handle =
 const management = requireRole("SUPER_ADMIN", "MANAGER");
 const owner = requireRole("SUPER_ADMIN");
 const writable = requireWritableTenant();
+const download =
+  (fn: (req: Parameters<RequestHandler>[0]) => Promise<PayrollExportFile>): RequestHandler =>
+  (req, res, next) => {
+    void fn(req)
+      .then((file) => {
+        // Salary exports must not be cached or sniffed by proxies/browsers.
+        res.setHeader("Content-Type", file.contentType);
+        res.setHeader("Content-Disposition", `attachment; filename="${file.filename}"`);
+        res.setHeader("Cache-Control", "no-store");
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.send(file.body);
+      })
+      .catch(next);
+  };
 const revision = z.strictObject({ expectedRevision: z.number().int().safe().nonnegative() });
 const reasoned = revision.extend({ reason: z.string().trim().min(3).max(1000) });
 const adjustment = revision.extend({
@@ -97,6 +121,25 @@ payrollCloseRouter.get(
   "/:period/carry",
   owner,
   handle((req) => readStoredPayrollCarry(period(req))),
+);
+/** CP-006 frozen exports: owner-only, approved snapshots only, salon-wide. */
+payrollCloseRouter.get(
+  "/:period/exports/workbook.xlsx",
+  owner,
+  download((req) => readPayrollWorkbookExport(period(req))),
+);
+payrollCloseRouter.get(
+  "/:period/exports/payslips.pdf",
+  owner,
+  download((req) => readPayrollPayslipsExport(period(req))),
+);
+payrollCloseRouter.get(
+  "/:period/exports/ledger.csv",
+  owner,
+  validate(payrollLedgerQuerySchema, "query"),
+  download((req) =>
+    readPayrollLedgerExport(period(req), validated<PayrollLedgerQuery>(req, "query")),
+  ),
 );
 payrollCloseRouter.post(
   "/:period/calculate",

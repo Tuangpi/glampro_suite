@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { PayrollAdjustment, PayrollStatement } from "@glampro_suite/shared";
-import { get, post, getErrorMessage } from "@/lib/api";
+import type { PayrollAdjustment, PayrollStatement, QueryParams } from "@glampro_suite/shared";
+import { downloadFile, get, post, getErrorMessage } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -23,6 +23,9 @@ interface CloseView {
   payout: { at: string; reference: string } | null;
 }
 
+/** Frozen artefacts CP-006 exposes; kept in step with the API export routes. */
+type PayrollExportKind = "workbook.xlsx" | "payslips.pdf" | "ledger.csv";
+
 /** Salon-wide close; the server enforces roles and independently redacts salaries. */
 export default function PayrollClose({
   canWrite,
@@ -37,6 +40,7 @@ export default function PayrollClose({
   const [reason, setReason] = useState("");
   const [reference, setReference] = useState("");
   const [staffId, setStaffId] = useState("");
+  const [ledgerStaffId, setLedgerStaffId] = useState("");
   const [kind, setKind] = useState<PayrollAdjustment["kind"]>("ADDITION");
   const [amount, setAmount] = useState("");
   const [error, setError] = useState("");
@@ -51,6 +55,16 @@ export default function PayrollClose({
   const mutation = useMutation({
     mutationFn: ({ action, body }: { action: string; body: object }) =>
       post(`/payroll-close/${period}/${action}`, body),
+  });
+  /** Frozen exports: the server renders them from the approved snapshot on each request. */
+  const download = useMutation({
+    mutationFn: ({ kind, query }: { kind: PayrollExportKind; query?: QueryParams }) =>
+      downloadFile(`/payroll-close/${period}/exports/${kind}`, query, `payroll-${period}`),
+    onSuccess: (filename) => {
+      setError("");
+      setNotice(`Downloaded ${filename}.`);
+    },
+    onError: (cause) => setError(getErrorMessage(cause)),
   });
   async function act(action: "calculate" | "approve" | "payout" | "adjustments") {
     setError("");
@@ -90,7 +104,7 @@ export default function PayrollClose({
       await client.invalidateQueries({ queryKey: ["payroll-close", period] });
     }
   }
-  const busy = mutation.isPending || query.isFetching;
+  const busy = mutation.isPending || query.isFetching || download.isPending;
   const approved = state?.status === "APPROVED";
   return (
     <Card title="Monthly payroll close">
@@ -263,6 +277,47 @@ export default function PayrollClose({
           )}
           {canWrite && isOwner && !approved && (
             <PayrollCarry key={period} period={period} disabled={busy} />
+          )}
+          {approved && isOwner && (
+            <div className="space-y-3">
+              <h3 className="font-semibold">Frozen exports</h3>
+              <p>
+                Downloads are rendered by the server from the approved snapshot, never from a newer
+                draft.
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <Button disabled={busy} onClick={() => download.mutate({ kind: "workbook.xlsx" })}>
+                  Download workbook
+                </Button>
+                <Button disabled={busy} onClick={() => download.mutate({ kind: "payslips.pdf" })}>
+                  Download payslips
+                </Button>
+                <Select
+                  label="Ledger staff filter"
+                  value={ledgerStaffId}
+                  disabled={busy}
+                  onChange={(e) => setLedgerStaffId(e.target.value)}
+                  placeholder="All staff"
+                  options={
+                    state.calculation?.statements.map((row) => ({
+                      value: row.staff.id,
+                      label: row.staff.name,
+                    })) ?? []
+                  }
+                />
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    download.mutate({
+                      kind: "ledger.csv",
+                      query: ledgerStaffId ? { staffId: ledgerStaffId } : undefined,
+                    })
+                  }
+                >
+                  Download ledger
+                </Button>
+              </div>
+            </div>
           )}
         </>
       )}

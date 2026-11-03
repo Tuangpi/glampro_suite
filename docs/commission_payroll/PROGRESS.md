@@ -1,5 +1,66 @@
 # Commission & Payroll progress
 
+## November 3, 2026 — CP-006 M1 DONE: frozen payroll exports (workbook, payslips, filtered ledger)
+
+**CP-006 IN PROGRESS; M1 DONE. Not release and not earnings activation.** An approved
+monthly close now produces three owner-only frozen artefacts: an Excel workbook, one
+payslip PDF per staff member and a filtered base-ledger CSV. Every request re-reads the
+stored approved snapshot inside the payroll store's verified transaction, so an export
+can never mix in a newer draft, and a close that is not approved is refused rather than
+exported.
+
+- New API modules: `payroll-export-data.ts` (frozen model, ledger filters, CSV, escaping,
+  filenames), `payroll-export-xlsx.ts` (ExcelJS workbook), `payroll-export-pdf.ts`
+  (PDFKit payslips), `payroll-export.service.ts` (period → attachment) and
+  `payroll-export.test-helper.ts` (fixtures built through the real
+  `open → adjust → calculate → approve` transition, salon-local month boundaries, so the
+  export tests exercise the same state machine the routes do). Dependencies added:
+  `exceljs`, `pdfkit`, `@types/pdfkit`. Shared `commission-payroll/decimal.ts` is now
+  exported so export totals use exactly the statement arithmetic.
+- `frozenPayrollExportModel` refuses unless `status === "APPROVED"` with a stored
+  calculation and approval (`409 Approve payroll before exporting frozen statements.`)
+  and copies statement payroll/result/lines instead of recalculating. Salon totals are
+  summed from those frozen rows with exact decimals — never re-derived — which is what
+  makes TC-20 ("workbook and PDF contents equal frozen statements") checkable.
+- Workbook: a summary sheet (period, frozen `calculation.version`/`inputHash`, approval,
+  reconciliation totals), one sheet per staff member and the full base ledger. Money
+  cells are numeric, totals are written from the frozen totals rather than as formulas,
+  and sheet names carry the staff id so two staff with one name cannot overwrite each
+  other. Payslip PDFs render one page per staff member with every statement line and the
+  final take-home, using explicit margins/widths so layout does not drift; an approved
+  close with no statements still renders a valid PDF. The ledger CSV honours `staffId`,
+  `outletId`, `commissionType`, `status`, `from` and `to` through the strict
+  `payrollLedgerQuerySchema` and keeps the UTF-8 BOM and CRLF rows.
+- Spreadsheet injection refused: `spreadsheetText`/`csvText` neutralise values a
+  spreadsheet would evaluate as formulas (staff names, adjustment reasons, payout
+  references), asserted in the model tests and in the rendered workbook.
+- Routes in `payroll-close.routes.ts`: `GET /api/payroll-close/:period/exports/`
+  `{workbook.xlsx,payslips.pdf,ledger.csv}` behind `SUPER_ADMIN` only (manager, staff and
+  cashier all 403, anonymous 401, and the store is never opened for them), with the ledger
+  query validated before the store is opened, and `Content-Type`,
+  `Content-Disposition`, `Cache-Control: no-store` and
+  `X-Content-Type-Options: nosniff` on every download.
+- Web: `downloadFile` in `apps/web/src/lib/api.ts` fetches the attachment as a blob,
+  takes the filename from `Content-Disposition` (falling back to a caller name) and
+  revokes the object URL once the browser has taken it. Settings → Payroll close shows a
+  "Frozen exports" panel only for an owner viewing an approved month, with a ledger staff
+  filter; drafts and managers never render the controls, and a failed download surfaces
+  the server message instead of a silent no-op.
+- Verification: API `payroll-close.http`/`payroll-export-data`/`payroll-export-render`
+  **27/27** (role gating 401/403, 409 for non-approved and missing closes, download
+  headers, BOM, formula escaping, workbook shape/totals, payslip text, empty-close PDF);
+  focused web `PayrollClose` **9/9** including approval/owner gating of the export panel
+  and the ledger filter, plus `lib/api` **11/11** for the blob download path. API
+  typecheck, web typecheck, ESLint on every touched file and Prettier all exit 0.
+  The full web suite reported **987/992** with five `PayrollPlans.test.tsx` tests hitting
+  the 5 s default timeout under full-suite load; that file passes **24/24** in isolation,
+  and a clean `HEAD` worktree produced exactly the same five timeouts (**982/987**), so
+  they are pre-existing and load-induced rather than caused by these exports. No assertion
+  or timeout was weakened to get there.
+- Gaps: no browser/manual acceptance of the generated workbook or a printed payslip yet,
+  and CP-006's reports, drill-down, holding history, MTD/POS progress and self-service
+  remain TODO — CP-006 is not accepted and CP-007 stays gated on it.
+
 ## November 3, 2026 — CP-003A DONE: evidence matrix, money cases and browser money acceptance
 
 **CP-003A DONE for the local supported scope; not release, not earnings activation.**

@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), downloadFile: vi.fn() }));
 vi.mock("@/lib/api", () => ({ ...mocks, getErrorMessage: (e: Error) => e.message }));
 import PayrollClose from "./PayrollClose";
 
@@ -34,6 +34,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.get.mockResolvedValue(state());
   mocks.post.mockResolvedValue({});
+  mocks.downloadFile.mockResolvedValue("payroll-2026-09.xlsx");
 });
 function mount(isOwner = true, canWrite = true) {
   render(
@@ -141,4 +142,64 @@ it("a confirmed payout cannot be recorded twice", async () => {
   await load();
   expect(screen.getByText("Payout recorded: BANK-123")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Record actual payout" })).not.toBeInTheDocument();
+});
+
+it("only an approved owner month offers frozen exports, never a draft", async () => {
+  mount();
+  await load();
+  expect(screen.queryByRole("button", { name: "Download workbook" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Download payslips" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Download ledger" })).not.toBeInTheDocument();
+});
+
+it("managers cannot download frozen exports even when a month is approved", async () => {
+  mocks.get.mockResolvedValue({
+    ...state(),
+    status: "APPROVED",
+    approval: { at: "2026-10-01", reason: "Reviewed" },
+  });
+  mount(false);
+  await load();
+  expect(screen.queryByRole("button", { name: "Download workbook" })).not.toBeInTheDocument();
+  expect(mocks.downloadFile).not.toHaveBeenCalled();
+});
+
+it("frozen exports download the approved snapshot and report the filename", async () => {
+  mocks.get.mockResolvedValue({
+    ...state(),
+    status: "APPROVED",
+    approval: { at: "2026-10-01", reason: "Reviewed" },
+  });
+  mount();
+  const user = await load();
+
+  await user.click(screen.getByRole("button", { name: "Download workbook" }));
+  await waitFor(() =>
+    expect(mocks.downloadFile).toHaveBeenCalledWith(
+      "/payroll-close/2026-09/exports/workbook.xlsx",
+      undefined,
+      "payroll-2026-09",
+    ),
+  );
+  expect(await screen.findByRole("status")).toHaveTextContent("Downloaded payroll-2026-09.xlsx");
+
+  await user.click(screen.getByRole("button", { name: "Download payslips" }));
+  await waitFor(() =>
+    expect(mocks.downloadFile).toHaveBeenCalledWith(
+      "/payroll-close/2026-09/exports/payslips.pdf",
+      undefined,
+      "payroll-2026-09",
+    ),
+  );
+
+  await user.selectOptions(screen.getByLabelText("Ledger staff filter"), "staff");
+  await user.click(screen.getByRole("button", { name: "Download ledger" }));
+  await waitFor(() =>
+    expect(mocks.downloadFile).toHaveBeenCalledWith(
+      "/payroll-close/2026-09/exports/ledger.csv",
+      { staffId: "staff" },
+      "payroll-2026-09",
+    ),
+  );
+  expect(mocks.post).not.toHaveBeenCalled();
 });

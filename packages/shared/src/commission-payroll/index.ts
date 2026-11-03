@@ -1,4 +1,6 @@
 export * from "./contracts.js";
+/** Exact decimal arithmetic, shared so reports total money identically to statements. */
+export * from "./decimal.js";
 export * from "./component.js";
 export * from "./stage.js";
 export * from "./period.js";

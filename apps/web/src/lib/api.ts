@@ -190,6 +190,37 @@ export async function get<T>(url: string, params?: QueryParams): Promise<T> {
   return extractData<T>(response.data);
 }
 
+/** The filename the server chose in `Content-Disposition`, or a caller-supplied fallback. */
+function attachmentFilename(disposition: unknown, fallback: string): string {
+  const match = /filename="?([^";]+)"?/i.exec(String(disposition ?? ""));
+  return match?.[1] ?? fallback;
+}
+
+/**
+ * Downloads an attachment through the authenticated client and hands it to the browser.
+ *
+ * Exports are personal salary data, so the blob is revoked as soon as the browser has
+ * taken it: nothing stays reachable through an object URL after the click.
+ */
+export async function downloadFile(
+  url: string,
+  params?: QueryParams,
+  fallbackName = "download",
+): Promise<string> {
+  const response = await api.get<Blob>(url + buildQueryString(params), { responseType: "blob" });
+  const objectUrl = URL.createObjectURL(response.data);
+  const filename = attachmentFilename(response.headers["content-disposition"], fallbackName);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.rel = "noopener";
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+  return filename;
+}
+
 /**
  * GET returning a `PaginatedResponse`, normalised from any supported shape.
  *

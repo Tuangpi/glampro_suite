@@ -3,12 +3,22 @@
 ## Quick status navigation
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
+- **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **IN PROGRESS**; M1 frozen exports DONE as of November 3, 2026. Period summary/drill-down, holding history, MTD/POS progress and self-service remain TODO.
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
 
 ## Workflow
 
-Current continuation — November 3, 2026: **CP-003A DONE** for the local supported
+Current continuation — November 3, 2026: **CP-006 IN PROGRESS; M1 DONE.** Approved
+monthly closes now export owner-only frozen artefacts — an Excel workbook (summary,
+one sheet per staff member and the full base ledger), per-staff payslip PDFs and a
+filtered base-ledger CSV — re-read from the stored approved snapshot on every request
+and refused with 409 before approval. The remaining CP-006 milestones (period summary
+and source drill-down, customer holding history, MTD/POS progress, own-data
+self-service, package-value reporting) are still TODO, so CP-006 is not accepted and
+CP-007 remains gated on it.
+
+Previous continuation — November 3, 2026: **CP-003A DONE** for the local supported
 scope (not release, not earnings activation). The historical impact preview returns
 posted-versus-saved-rule money from the same engine and authoritative snapshot as the
 monthly close, and `UNAVAILABLE`/`null` whenever any evidence gap remains. The three
@@ -19,7 +29,7 @@ monetary states including stale-money refusal. CP-006/CP-007 remain separate gat
 The dated continuations below are historical; their status statements do not override
 the checklist.
 
-Previous continuation — November 2, 2026: **CP-005 M1–M5 DONE** for local acceptance.
+Earlier continuation — November 2, 2026: **CP-005 M1–M5 DONE** for local acceptance.
 See APPLICATION_CLOSE_ACCEPTANCE.md for the final browser/money/performance review
 and PROGRESS.md for executed verification.
 
@@ -1200,7 +1210,8 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
 
 ## CP-006 — Reports, exports and progress workflows
 
-- Status: **TODO**.
+- Status: **IN PROGRESS** — **M1 frozen exports DONE** as of November 3, 2026; M2–M5 TODO
+  and CP-006 not accepted.
 - Dependencies: CP-005.
 - Expected result: period summary, statement/base-line drill-down to source,
   customer holding payment/session history, true Excel summary + per-staff sheets,
@@ -1215,6 +1226,75 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
   disclosed; relevant API/UI tests, build/typecheck/lint pass.
 - Coverage: FR-PAY-05, FR-RPT-01–FR-RPT-06, FR-POS-09, report/MTD UI;
   FR-BAS-10 explicitly tracked as optional.
+- Evidence: `PROGRESS.md` (November 3, 2026 — CP-006 M1 frozen payroll exports).
+
+### CP-006-M1 — Frozen payroll exports: DONE
+
+**Status snapshot — November 3, 2026: 9 DONE, 0 IN PROGRESS; M1 DONE; CP-006 IN
+PROGRESS.** Scope is the three approved-snapshot artefacts and their owner gate. It
+does not accept the CP-006 completion check: reports, drill-down, holding history,
+MTD/POS progress and self-service are separate milestones below.
+
+- [x] DONE — **Frozen export model.** `payroll-export-data.ts` builds
+      `frozenPayrollExportModel` from the stored close only, so exports never mix a
+      newer draft; a non-approved close without approval is refused with 409
+      (`Approve payroll before exporting frozen statements.`). Statement money is
+      copied, not recalculated, and totals are summed from the frozen statements with
+      exact decimal arithmetic.
+- [x] DONE — **Excel workbook (TC-20).** `payroll-export-xlsx.ts` writes a summary
+      sheet (period, frozen calculation hash/version, approval, reconciliation
+      totals), one sheet per staff member (name + staff id so duplicate names cannot
+      collide) and the full base ledger. Money cells are numeric; totals are the
+      frozen numbers rather than formulas, so the workbook reconciles wherever it is
+      opened.
+- [x] DONE — **Payslip PDFs.** `payroll-export-pdf.ts` renders one readable page per
+      staff member with every statement line (basic salary, fixed overtime,
+      commission, incentive, unpaid leave, deductions, adjustments, take home) using
+      explicit margins/widths for deterministic layout; an approved close with no
+      statements still produces a valid PDF.
+- [x] DONE — **Filtered base-ledger CSV.** `payrollLedgerCsv` supports `staffId`,
+      `outletId`, `commissionType`, `status`, `from` and `to` through the strict
+      `payrollLedgerQuerySchema` (unknown keys and malformed filters are refused), and
+      writes UTF-8 BOM + CRLF so Excel opens it correctly.
+- [x] DONE — **Spreadsheet/formula escaping.** `spreadsheetText`/`csvText` neutralise
+      cells and CSV fields that would otherwise be evaluated as formulas (staff names,
+      reasons, references), proven in both the model and the rendered workbook.
+- [x] DONE — **Owner-only download routes.** The three `GET /:period/exports/` routes
+      (`workbook.xlsx`, `payslips.pdf`, `ledger.csv`) sit behind `SUPER_ADMIN` only
+      (manager/staff/cashier 403, anonymous 401, store never opened), validate the ledger
+      query before the store is opened, and send `Content-Type`, `Content-Disposition`,
+      `Cache-Control: no-store` and `X-Content-Type-Options: nosniff`. Unapproved or
+      missing closes answer 409.
+- [x] DONE — **Web download controls.** `apps/web/src/lib/api.ts` gains
+      `downloadFile` (blob GET, server filename from `Content-Disposition`, object URL
+      revoked after the click); Settings → Payroll close shows a "Frozen exports" panel
+      only for an owner viewing an approved month, with a ledger staff filter.
+      Drafts and managers never see the controls.
+- [x] DONE — **Verification.** API suite **1417 tests / 1150 pass / 0 fail / 267 skipped**
+      (includes the 27 export model/render/HTTP tests); web suite **987/992** — the five
+      misses are `PayrollPlans.test.tsx` 5 s timeouts that reproduce identically in a clean
+      `HEAD` worktree (**982/987**), so they are pre-existing and unrelated. API and web
+      typecheck, workspace ESLint and Prettier all exit 0. No browser/manual acceptance of
+      the generated workbook or printed payslips was executed.
+- [x] DONE — **Documentation.** `PROGRESS.md` records the artefacts, refusals and
+      executed verification.
+
+### CP-006 — remaining milestones: TODO
+
+- [ ] TODO — **Period summary and drill-down to source** (FR-RPT-01–FR-RPT-03):
+      summary totals with statement and base-line drill-down to the originating
+      records, tenant/outlet isolation, filtering and pagination completeness.
+- [ ] TODO — **Customer holding payment/session history** (FR-RPT-04/FR-RPT-05) with
+      package-value reporting reconciled to the existing valuation and receivables kept
+      separate.
+- [ ] TODO — **MTD/POS progress** (FR-POS-09) clearly labelled as estimated and
+      reconciling to the same frozen inputs and rules; no claim of acceptance until the
+      CP-006 integration is tested.
+- [ ] TODO — **Own-data staff self-service** (FR-RPT-06): a staff member's own frozen
+      statements only, with the existing salary-redaction boundary preserved.
+- [ ] TODO — **Browser/manual acceptance of the exports**: opening the workbook in a
+      spreadsheet application, printing a payslip PDF and downloading a filtered ledger
+      from the mounted web app. FR-BAS-10 gift-card base capture remains optional.
 
 ## CP-007 — Cutover, reconciliation and release verification
 
