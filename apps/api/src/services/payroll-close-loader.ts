@@ -940,20 +940,38 @@ export const loadAuthoritativePayrollCloseInputs: PayrollCloseLoader = async (tx
   const packageHistory = new Map<string, unknown>();
   const cashAttributions: PayrollCloseInputRecords["cashAttributions"] = [];
   const normalizedCollections: PayrollCloseInputRecords["sources"]["collections"] = [];
-  for (const collection of collections) {
-    const sale = await tx.sale.findFirstOrThrow({
-      where: { tenantId, id: collection.saleId },
-      include: { lines: true },
+  // Load complete histories once, not once per monthly receipt. Do not restrict
+  // this query to the month: prior instalments prove cumulative exact-cent tax.
+  const collectionHistories = new Map<string, typeof collections>();
+  const collectionSaleIds = [...new Set(collections.map((row) => row.saleId))];
+  if (collectionSaleIds.length) {
+    const history = await tx.commissionCollection.findMany({
+      where: { tenantId, saleId: { in: collectionSaleIds } },
+      include: { allocations: { orderBy: { id: "asc" } } },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
+    for (const receipt of history) {
+      const rows = collectionHistories.get(receipt.saleId) ?? [];
+      rows.push(receipt);
+      collectionHistories.set(receipt.saleId, rows);
+    }
+  }
+  const collectionSales = new Map(sales.map((sale) => [sale.id, sale]));
+  for (const collection of collections) {
+    const sale =
+      collectionSales.get(collection.saleId) ??
+      (await tx.sale.findFirstOrThrow({
+        where: { tenantId, id: collection.saleId },
+        include: { lines: true },
+      }));
+    collectionSales.set(sale.id, sale);
     if (!sale.outletId || sale.collectionCurrency !== "SGD")
       unavailable("COLLECTION_SALE_SCOPE_UNCONFIRMED");
     // Replay cumulative exact-cent tax allocation from the operational purchase,
     // including prior-month instalments. Gross equality alone cannot prove net cash.
-    const history = await tx.commissionCollection.findMany({
-      where: { tenantId, saleId: sale.id },
-      include: { allocations: { orderBy: { id: "asc" } } },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    });
+    const history = collectionHistories.get(sale.id) ?? [];
+    if (!history.some((receipt) => receipt.id === collection.id))
+      unavailable("COLLECTION_HISTORY_UNCONFIRMED");
     const collected = new Map<string, bigint>();
     for (const receipt of history) {
       const expected = allocateCollection(

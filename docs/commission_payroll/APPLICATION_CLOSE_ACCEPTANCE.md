@@ -2,7 +2,7 @@
 
 ## November 2, 2026 status
 
-**M4 DONE. M5 IN PROGRESS, not final release acceptance.** M1–M4 are accepted.
+**M1–M5 DONE for local CP-005 acceptance, not final release acceptance.**
 The application now mounts the close router and Settings → Payroll close screen.
 This is local integration, not deployment, legacy earnings cutover, real payment
 execution or activation of another commission posting path.
@@ -78,23 +78,114 @@ cleanup initially raced profile writes; it now waits for child exit before remov
   `/tmp/cp005-m3-apyc3kkj`, was written. Historical configuration time is controlled
   during fixture setup only; browser and HTTP transitions use the real clock.
 
-## M5 remaining gates — do not mark complete yet
+## M5 final local acceptance — November 2, 2026
 
-1. Extend mounted browser acceptance to manager draft calculation/adjustment,
-   stale-source refusal/recalculation and
-   opening/settlement actions. Existing service/HTTP/component tests cover these
-   individually; that is not equivalent to their complete mounted browser flows.
-2. Review the final money matrix against the newly mounted response contracts,
-   including plan/component and manual adjustment explanations, not just selected
-   assertions or demo inputs. Preserve approved snapshots and audit counts.
-3. Broaden documented monthly performance beyond one flat-plan/50 receipts to
-   representative active plan/stage/band/source volume. MTD <500 ms remains a
-   CP-006/CP-007 requirement because the MTD endpoint is not part of this close
-   integration. Do not report the monthly timing as MTD acceptance.
-4. Run the final focused and broad checks after the remaining acceptance work,
-   then record M5's exact scope. CP-003A historical full-run equality, CP-006
-   exports/reports/MTD/self-service UI and CP-007 release/cutover gates remain
-   separate; mounting close does not complete them or authorize production writes.
+The four former M5 remainder gates are closed within CP-005's supported scope.
+The M4 counts/timing above are historical evidence, not the expanded M5 results.
+
+### Mounted browser flows
+
+`payroll-close-browser.acceptance.test.ts`: **10/10**, no failures/skips,
+`/tmp/m5-final-browser.{log,exit}`. Real Chrome, Vite, createApp and PostgreSQL;
+no mocked responses. Manager calculates, adds a reasoned adjustment and recalculates
+without salary/take-home or owner carry/approval controls. A further real historical
+checkout changes source receipts after calculation: owner approval refuses, persisted
+close and audit count are byte-for-byte unchanged, manager recalculates and the
+owner sees commission rise by exactly 10.00 while the 12.30 adjustment survives
+(take-home 2,032.30). Only historical checkout setup uses a controlled Date; browser
+actions use the real clock.
+
+Owner approval freezes results; separate payout confirmation creates no new tender.
+Read failure hides cached salary and retry restores the frozen result. Branch scope,
+staff/cashier denial and manager direct owner-write denial remain covered.
+
+A separate tenant exercises **future December 2026** opening authorization at the
+real November 2 clock. An incomplete inventory refuses with zero authorization
+rows. Complete opening includes all staff/zeros and component debt -25.1234 with
+-1.0000 units; the owner explicitly writes off that component. Reauthorizing opening
+to -30.5678 makes the old disposition stale; mounted owner review/reauthorization
+repairs it. Four immutable authorization rows retain owner/reason and revisions
+1/2 per kind; there are no close-transition events or earnings in this tenant.
+The September approved tenant retains its six close events.
+
+### Final money-matrix review
+
+Review basis: REQUIREMENTS.md acceptance cases, DECISIONS.md, the M1 supported
+lifecycle matrix/final review, M2 correction acceptance and M3 carry/plan-switch
+acceptance in CLOSE_ACCEPTANCE.md. The new mounted contract matrix supplements,
+not replaces, those real-writer and pure-engine suites. It does not claim CP-007
+release-level TC acceptance or CP-003A historical full-run equality.
+
+`routes/payroll-close-matrix.acceptance.test.ts`: **1/1**, no failures/skips,
+`/tmp/m5-final-focused.{log,exit}`. Independent hand-computed expectations, not a
+second call to the implementation under test:
+
+| At SGD 2,000 base / 20 units per staff | Senior | New starter |
+| -------------------------------------- | ------ | ----------- |
+| Flat 10%                               | 200.00 | 200.00      |
+| Whole tier                             | 240.00 | 160.00      |
+| Slice tier                             | 165.00 | 110.00      |
+| Mixed whole/slice tier                 | 180.00 | 120.00      |
+| Fixed 3.25 per unit                    | 65.00  | 65.00       |
+
+Every one of 50 statements checks method, active tenure stage, exact four-decimal
+base/units, two-decimal component amount and working explanation. Each plan also
+has a 50%-base 1% component capped at 7.50 and a two-level salon-cash incentive
+awarding 50.00. Actual collection stays 2,000.0000, independent of commission bases.
+Manager outputs omit salary-derived fields and raw inputs.
+
+All five manual adjustment kinds are posted by the manager and preserve authenticated
+actor and reasons. Owner matrix: 2,000 salary + 207.50 plan commission - 5.50 manual
+commission adjustment + 50 incentive + 20.20 overtime + 30.30 addition - 10.10 unpaid
+leave - 4.40 deduction = **2,288.00 take-home**. Levy 100 is excluded from take-home
+but included in payroll/sales **119.40%**; the alert is true. Frozen reads retain the
+calculation hash; attempted recalculation refuses without adding to the **10** audit
+events. Payments remain 1,000, earnings remain zero.
+
+| Retained money family                                                                         | Acceptance / mounted-contract conclusion                                                                                                                                     |
+| --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Ordinary, GST, splits, FOC, session/value package sale/redemption, instalments, refunds/voids | M1 authoritative source suites retain exact independent cash/base reconciliation and missing-evidence refusals; projection exposes earned results, never loader inventories. |
+| Approved-month corrections and operational cash                                               | M2 lifecycle/session suites retain actual occurrence and next-open commission posting separately; frozen prior history is unchanged.                                         |
+| Negative base/units, fallback debt, mapping/write-off and plan/version changes                | M3 real-writer suite retains four-/ten-decimal debt and source-time economics; mounted owner carry flow now covers authorization and stale repair.                           |
+| Methods, stages, caps, incentives and manual adjustments                                      | Expanded mounted HTTP matrix above checks all five methods, both stages, independent expected money, explanations, actor/reason and frozen/audit invariants.                 |
+| Historical missing economics, spent/transferred purchase voids, partial returns               | Accepted policy refusals remain; no new policy exception or inferred history was introduced.                                                                                 |
+
+### Representative monthly timing
+
+- 50 staff, **1,000 real completed cash service receipts** (20 per staff), **5 active
+  published plan versions**, **10 plan components**, two active tenure cohorts,
+  three bands per tier component, stage-rate overrides, caps and salon-cash incentives.
+  Each plan has 10 assigned staff, five in each cohort. Real assignment/publication,
+  checkout and default loader are used; salary/history fixtures are synthetic.
+- Three successive authenticated manager calculations, including transaction,
+  default DB loading, calculation, snapshot/audit writes, response projection and
+  response read: optimized samples **7,163.3 / 8,029.9 / 7,927.9 ms**, all below
+  **10 seconds**, `/tmp/m5-matrix-optimized.{log,exit}`. Final focused rerun samples
+  **7,265.8 / 8,057.3 / 8,086.4 ms** (`/tmp/m5-final-focused2.{log,exit}`) are
+  recorded in PROGRESS.md. Setup excluded; local environment as documented above. This is a
+  bounded monthly sample, not a production sizing, maximum-plan or throughput claim.
+- MTD **<500 ms remains unaccepted** under CP-006/CP-007; no MTD endpoint was measured.
+
+Earlier expanded-cohort samples passed at 6.74–7.74 seconds, but rechecks failed
+at 15,608.6 ms with overlapping API jobs and 13,654.5 ms in isolation. The 10-second
+assertion was not relaxed. The loader queried each receipt's sale and complete
+collection history independently. It now batches complete tenant/sale histories
+and reuses loaded sales; prior instalments, deterministic receipt order, cumulative
+exact-cent tax replay and independent monthly inventories remain intact. A new
+regression verifies query shape and missing-history refusal. This is not a general
+throughput or maximum-volume guarantee.
+
+### Scope and final verification
+
+Final enabled payroll regression and broad API, web/shared, lint, typecheck, build
+and formatting evidence are recorded in the latest PROGRESS.md checkpoint.
+Initial empty-action settlement fixture and later malformed test-title edit were
+rejected by validation; corrected fixtures/syntax passed reruns. No policy guard,
+assertion or database constraint was disabled.
+
+CP-003A historical full-run equality, CP-006 exports/reports/MTD/self-service UI and
+CP-007 release/cutover remain separately gated. CP-005 completion does not authorize
+production writes, activation, provider payments or deployment.
 
 The disposable PostgreSQL cluster was shut down after verification.
 

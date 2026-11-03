@@ -10,12 +10,17 @@ directory, `NODE_ENV=test`, synthetic JWT_SECRET and
 port 55175 must be free. No schema migration or application DB access is performed.
 Run the test with `node --import tsx --test` from the repository root.
 
-Final run: 8/8 including seven subcases, `/tmp/m4-browser.{log,exit}`. It covers
-owner calculate/adjust/approve/payout, missing reason refusal, frozen results,
-manager salary redaction and direct owner-action refusal, failed read/retry, outlet
-scope refusal, staff/cashier denial. Synthetic signed access tokens bootstrap real
+M5 final run: **10/10** including nine subcases,
+`/tmp/m5-final-browser.{log,exit}`. It covers manager draft calculate/adjust,
+missing reason refusal, real added-receipt stale approval/rollback/recalculation,
+owner approve/payout and immutable history, manager salary redaction and direct
+owner-action refusal, failed read/retry, outlet scope refusal, staff/cashier denial,
+and complete future opening/debt write-off/stale authorization repair.
+Historical checkout/configuration setup uses a controlled Date; browser transitions
+use the real clock. Future December 2026 opening authorization is exercised on
+November 2, 2026, before its effective boundary. Synthetic signed access tokens bootstrap real
 auth/me; this is not login/2FA/token-refresh acceptance. No response mocks.
-Detailed boundaries and unaccepted M5 paths: APPLICATION_CLOSE_ACCEPTANCE.md.
+Detailed acceptance and retained release boundaries: APPLICATION_CLOSE_ACCEPTANCE.md.
 
 ## Earlier CP-003 configuration acceptance
 

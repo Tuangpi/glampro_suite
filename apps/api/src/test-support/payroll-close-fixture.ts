@@ -13,7 +13,16 @@ import {
 } from "../services/payroll-configuration.service.js";
 
 /** Historical configuration is synthetic; monthly HTTP inputs still use the real loader. */
-export async function payrollCloseFixture(size = 4, withSales = false) {
+export async function payrollCloseFixture(
+  size = 4,
+  withSales = false,
+  options: {
+    authorizeOpening?: boolean;
+    plans?: ReturnType<typeof payrollPlanDefinitionSchema.parse>[];
+    receiptsPerStaff?: number;
+    alternateNewStarters?: boolean;
+  } = {},
+) {
   const url = new URL(process.env.DATABASE_URL!);
   assert.equal(url.hostname, "127.0.0.1");
   assert.equal(url.port, "55485");
@@ -42,6 +51,7 @@ export async function payrollCloseFixture(size = 4, withSales = false) {
         data: { tenantId, name: "Acceptance branch", slug: "branch" },
       });
       for (const [index, id] of ids.entries()) {
+        const joinDate = options.alternateNewStarters && index % 2 ? "2026-08-01" : "2020-01-01";
         await prisma.user.create({
           data: {
             id,
@@ -60,14 +70,11 @@ export async function payrollCloseFixture(size = 4, withSales = false) {
                     ? "CASHIER"
                     : "STAFF",
             twoFactorEnabled: true,
-            startDate: new Date("2020-01-01"),
+            startDate: new Date(joinDate),
           },
         });
         for (const [kind, payload] of [
-          [
-            "STAFF",
-            { joinDate: "2020-01-01", stageEndOverride: null, commissionRole: "NON_COMMISSION" },
-          ],
+          ["STAFF", { joinDate, stageEndOverride: null, commissionRole: "NON_COMMISSION" }],
           [
             "PROFILE",
             { basicSalary: "2000.00", fixedOvertime: "0", levy: "100", salesAlertPct: "50" },
@@ -98,27 +105,24 @@ export async function payrollCloseFixture(size = 4, withSales = false) {
           createdAt: new Date("2026-08-15T00:00:00Z"),
         },
       });
-      await authorizeStoredPayrollCarry(
-        "OPENING",
-        "2026-09",
-        0,
-        {
-          staff: ids.map((id) => ({
-            staffId: id,
-            carryForward: [],
-            fallbackCarryCommission: "0.0000000000",
-          })),
-          evidence: { inventoryReference: "Reviewed complete synthetic M4 opening inventory" },
-        },
-        "Reviewed synthetic opening inventory",
-      );
+      if (options.authorizeOpening !== false)
+        await authorizeStoredPayrollCarry(
+          "OPENING",
+          "2026-09",
+          0,
+          {
+            staff: ids.map((id) => ({
+              staffId: id,
+              carryForward: [],
+              fallbackCarryCommission: "0.0000000000",
+            })),
+            evidence: { inventoryReference: "Reviewed complete synthetic M4 opening inventory" },
+          },
+          "Reviewed synthetic opening inventory",
+        );
       if (withSales) {
-        const plan = await createPayrollPlan({
-          name: "Acceptance service plan",
-          description: "Synthetic flat ten percent",
-          positions: [],
-          outletIds: [],
-          definition: payrollPlanDefinitionSchema.parse({
+        const definitions = options.plans ?? [
+          payrollPlanDefinitionSchema.parse({
             stages: [],
             components: [
               {
@@ -134,19 +138,28 @@ export async function payrollCloseFixture(size = 4, withSales = false) {
             ],
             incentives: [],
           }),
-          reason: "Reviewed synthetic plan",
-        });
-        await publishPayrollDraft(plan.id, {
-          expectedRevision: plan.revision,
-          reason: "Reviewed synthetic publication",
-        });
-        await assignPayrollPlan({
-          expectedRevision: 0,
-          staffIds: ids,
-          planId: plan.id,
-          fromDate: "2026-08-15",
-          reason: "Reviewed synthetic assignments",
-        });
+        ];
+        for (const [planIndex, definition] of definitions.entries()) {
+          const plan = await createPayrollPlan({
+            name: "Acceptance service plan",
+            description: "Synthetic flat ten percent",
+            positions: [],
+            outletIds: [],
+            definition,
+            reason: "Reviewed synthetic plan",
+          });
+          await publishPayrollDraft(plan.id, {
+            expectedRevision: plan.revision,
+            reason: "Reviewed synthetic publication",
+          });
+          await assignPayrollPlan({
+            expectedRevision: planIndex,
+            staffIds: ids.filter((_, index) => index % definitions.length === planIndex),
+            planId: plan.id,
+            fromDate: "2026-08-15",
+            reason: "Reviewed synthetic assignments",
+          });
+        }
         for (const code of ["sales", "catalogue"]) {
           const enabled = await prisma.module.upsert({
             where: { code },
@@ -165,27 +178,28 @@ export async function payrollCloseFixture(size = 4, withSales = false) {
         });
         mock.timers.reset();
         mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-15T00:00:00Z") });
-        for (const id of ids)
-          await runAtOutlet(outlet.id, () =>
-            createSale({
-              lines: [
-                {
-                  itemType: "SERVICE",
-                  itemId: service.id,
-                  quantity: 1,
-                  attribution: {
-                    sellers: [{ staffId: id, share: 10000 }],
-                    performers: [{ staffId: id, share: 10000 }],
+        for (let receipt = 0; receipt < (options.receiptsPerStaff ?? 1); receipt++)
+          for (const id of ids)
+            await runAtOutlet(outlet.id, () =>
+              createSale({
+                lines: [
+                  {
+                    itemType: "SERVICE",
+                    itemId: service.id,
+                    quantity: 1,
+                    attribution: {
+                      sellers: [{ staffId: id, share: 10000 }],
+                      performers: [{ staffId: id, share: 10000 }],
+                    },
                   },
+                ],
+                payments: [{ method: "CASH", amount: 100 }],
+                collection: {
+                  currency: "SGD",
+                  allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "10000" }],
                 },
-              ],
-              payments: [{ method: "CASH", amount: 100 }],
-              collection: {
-                currency: "SGD",
-                allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "10000" }],
-              },
-            }),
-          );
+              }),
+            );
       }
     });
   } finally {

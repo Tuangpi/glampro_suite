@@ -6,16 +6,18 @@ import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import { createApp } from "../app.js";
 import { env } from "../lib/env.js";
 import { prisma } from "../lib/prisma.js";
+import { runAtOutlet } from "../lib/tenant-context.js";
 import { signAccessToken } from "../lib/tokens.js";
 import { Browser } from "../test-support/chrome-browser.js";
 import { payrollCloseFixture } from "../test-support/payroll-close-fixture.js";
+import { createSale } from "./sale.service.js";
 
 test(
-  "M4 mounted payroll close in Chrome: reasoned adjustments, approval, frozen history, payout and permissions",
+  "M5 mounted payroll close in Chrome: manager drafts, stale sources, carry authorization, frozen history and permissions",
   { skip: process.env.RUN_CP005_BROWSER_ACCEPTANCE !== "true", timeout: 180000 },
   async (t) => {
     const origin = "http://127.0.0.1:55175";
@@ -71,12 +73,13 @@ test(
         id: string,
         role: "SUPER_ADMIN" | "MANAGER" | "STAFF" | "CASHIER",
         outletId?: string,
+        tenantId = f.tenantId,
       ) => {
         const token = signAccessToken({
           id,
           email: `${id}@example.test`,
           globalRole: role,
-          tenantId: f.tenantId,
+          tenantId,
           realm: "web",
           tokenVersion: 0,
         }).token;
@@ -93,19 +96,26 @@ test(
         );
         await browser.wait(text(outletId ? "Select “All outlets" : "Monthly payroll close"));
       };
-      const load = async () => {
-        await fill("Payroll month", "2026-09");
+      const load = async (period = "2026-09") => {
+        await fill("Payroll month", period);
         await click("Load month");
         await browser.wait(text("revision"));
       };
       await t.test(
-        "owner loads authoritative draft; missing reason makes no write; adjustment persists",
+        "manager calculates and adjusts a draft without salary or owner controls",
         async () => {
-          await navigate(f.ownerId, "SUPER_ADMIN");
+          await navigate(f.managerId, "MANAGER");
           await load();
           await click("Calculate payroll");
           await browser.wait(text("Close Staff"));
-          await click("Approve payroll");
+          assert.equal(
+            await browser.evaluate(
+              `Boolean(${button("Approve payroll")} || ${button("Load carry evidence")})`,
+            ),
+            false,
+          );
+          assert.equal(await browser.evaluate(text("2000.00")), false);
+          await click("Add adjustment");
           await browser.wait(text("Enter a reason"));
           assert.equal(await f.scope(() => prisma.payrollCloseEvent.count()), 1);
           await browser.evaluate(
@@ -116,7 +126,60 @@ test(
           await click("Add adjustment");
           await browser.wait(text("revision 2"));
           await click("Calculate payroll");
+          await browser.wait(text("revision 3"));
+          assert.equal(await browser.evaluate(text("2022.30")), false);
+          await navigate(f.ownerId, "SUPER_ADMIN");
+          await load();
           await browser.wait(text("2022.30"));
+        },
+      );
+      await t.test(
+        "changed authoritative source refuses approval without writes; recalculation preserves the manager adjustment",
+        async () => {
+          const before = await f.scope(() => prisma.payrollClose.findFirstOrThrow());
+          const audits = await f.scope(() => prisma.payrollCloseEvent.count());
+          // Historical checkout fixture only; all browser transitions use the real clock.
+          mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-16T00:00:00Z") });
+          try {
+            await f.scope(async () => {
+              const outlet = await prisma.outlet.findFirstOrThrow();
+              const service = await prisma.service.findFirstOrThrow();
+              await runAtOutlet(outlet.id, () =>
+                createSale({
+                  lines: [
+                    {
+                      itemType: "SERVICE",
+                      itemId: service.id,
+                      quantity: 1,
+                      attribution: {
+                        sellers: [{ staffId: f.staffId, share: 10000 }],
+                        performers: [{ staffId: f.staffId, share: 10000 }],
+                      },
+                    },
+                  ],
+                  payments: [{ method: "CASH", amount: 100 }],
+                  collection: {
+                    currency: "SGD",
+                    allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "10000" }],
+                  },
+                }),
+              );
+            });
+          } finally {
+            mock.timers.reset();
+          }
+          await fill("Payroll action reason", "Reviewed stale-source attempt");
+          await click("Approve payroll");
+          await browser.wait(text("Payroll inputs changed. Recalculate before approval."));
+          assert.deepEqual(await f.scope(() => prisma.payrollClose.findFirstOrThrow()), before);
+          assert.equal(await f.scope(() => prisma.payrollCloseEvent.count()), audits);
+          await navigate(f.managerId, "MANAGER");
+          await load();
+          await click("Calculate payroll");
+          await browser.wait(text("revision 4"));
+          await navigate(f.ownerId, "SUPER_ADMIN");
+          await load();
+          await browser.wait(text("2032.30"));
         },
       );
       await t.test(
@@ -133,7 +196,7 @@ test(
           await click("Record actual payout");
           await browser.wait(text("No funds were transferred"));
           await browser.wait(text("Payout recorded: SYNTHETIC-BROWSER-BANK"));
-          assert.equal(await f.scope(() => prisma.salePayment.count()), 4);
+          assert.equal(await f.scope(() => prisma.salePayment.count()), 5);
         },
       );
       await t.test(
@@ -156,7 +219,7 @@ test(
           );
           assert.equal(
             await browser.evaluate(
-              "fetch('/api/payroll-close/2026-09/approve',{method:'POST',headers:{Authorization:'Bearer '+localStorage.getItem('glampro.accessToken'),'Content-Type':'application/json'},body:JSON.stringify({expectedRevision:5,reason:'Forbidden attempt'})}).then(r=>r.status)",
+              "fetch('/api/payroll-close/2026-09/approve',{method:'POST',headers:{Authorization:'Bearer '+localStorage.getItem('glampro.accessToken'),'Content-Type':'application/json'},body:JSON.stringify({expectedRevision:6,reason:'Forbidden attempt'})}).then(r=>r.status)",
             ),
             403,
           );
@@ -167,14 +230,14 @@ test(
         async () => {
           await navigate(f.ownerId, "SUPER_ADMIN");
           await load();
-          await browser.wait(text("2022.30"));
+          await browser.wait(text("2032.30"));
           await browser.send("Network.setBlockedURLs", { urls: ["*payroll-close/2026-09"] });
           await click("Load month");
           await browser.wait(`Boolean(${button("Retry payroll")})`);
-          assert.equal(await browser.evaluate(text("2022.30")), false);
+          assert.equal(await browser.evaluate(text("2032.30")), false);
           await browser.send("Network.setBlockedURLs", { urls: [] });
           await click("Retry payroll");
-          await browser.wait(text("2022.30"));
+          await browser.wait(text("2032.30"));
         },
       );
       await t.test(
@@ -222,8 +285,120 @@ test(
             403,
           );
         });
-      assert.equal(await f.scope(() => prisma.payrollCloseEvent.count()), 5);
+      assert.equal(await f.scope(() => prisma.payrollCloseEvent.count()), 6);
       assert.equal(await f.scope(() => prisma.employeeCommission.count()), 0);
+      await t.test(
+        "owner authorizes complete future opening, settles exact debt and repairs stale disposition through mounted UI",
+        async () => {
+          const frozen = await f.scope(() => prisma.payrollClose.findFirstOrThrow());
+          const carry = await payrollCloseFixture(4, false, { authorizeOpening: false });
+          await navigate(carry.ownerId, "SUPER_ADMIN", undefined, carry.tenantId);
+          await load("2026-12");
+          await click("Load carry evidence");
+          await browser.wait(text("No approved previous close or authorized opening"));
+          const inventory = (base: string) =>
+            carry.ids.map((id) => ({
+              staffId: id,
+              carryForward:
+                id === carry.staffId
+                  ? [{ componentKey: "old_service", base, units: "-1.0000" }]
+                  : [],
+              fallbackCarryCommission: "0.0000000000",
+            }));
+          const confirm = async () =>
+            browser.evaluate(
+              "[...document.querySelectorAll('label')].find(l=>l.textContent.includes('I reviewed the complete inventory')).querySelector('input').click()",
+            );
+          const evidence = async () => {
+            await fill(
+              "Carry authorization reason",
+              "Reviewed complete browser inventory and debt",
+            );
+            await fill("Carry evidence reference", "SYNTHETIC-M5-CARRY");
+            await confirm();
+          };
+          await fill(
+            "Reviewed opening inventory (JSON)",
+            JSON.stringify(inventory("-25.1234").slice(1)),
+          );
+          await evidence();
+          await click("Authorize opening inventory");
+          await browser.wait(
+            text("Opening inventory must explicitly include every salon staff member"),
+          );
+          assert.equal(await carry.scope(() => prisma.payrollCarryAuthorization.count()), 0);
+          await fill("Reviewed opening inventory (JSON)", JSON.stringify(inventory("-25.1234")));
+          await evidence();
+          await click("Authorize opening inventory");
+          await browser.wait(text("Carry authorization saved"));
+          const select = async (label: string, value: string) => {
+            await browser.wait(`${field(label)} && !${field(label)}.disabled`);
+            await browser.evaluate(
+              `${field(label)}.value=${JSON.stringify(value)};${field(label)}.dispatchEvent(new Event('change',{bubbles:true}));`,
+            );
+          };
+          await select("Carry settlement staff", carry.staffId);
+          await select("Source carry component", "old_service");
+          await evidence();
+          await click("Authorize debt settlement");
+          await browser.wait(text("Carry authorization saved"));
+          await browser.wait(`${button("Authorize debt settlement")}.disabled`);
+          assert.equal(await carry.scope(() => prisma.payrollCarryAuthorization.count()), 2);
+          // Replacing opening changes the hash; the old settlement must be re-reviewed.
+          await fill("Reviewed opening inventory (JSON)", JSON.stringify(inventory("-30.5678")));
+          await evidence();
+          await click("Authorize opening inventory");
+          await browser.wait(text("Existing settlement is stale"));
+          await select("Source carry component", "old_service");
+          await evidence();
+          await click("Authorize debt settlement");
+          await browser.wait(`!${text("Existing settlement is stale")}`);
+          const rows = await carry.scope(() =>
+            prisma.payrollCarryAuthorization.findMany({ orderBy: { createdAt: "asc" } }),
+          );
+          assert.equal(rows.length, 4);
+          assert.deepEqual(
+            rows.map((row) => [row.kind, row.revision]),
+            [
+              ["OPENING", 1],
+              ["SETTLEMENT", 1],
+              ["OPENING", 2],
+              ["SETTLEMENT", 2],
+            ],
+          );
+          assert.ok(
+            rows.every(
+              (row) =>
+                row.actorId === carry.ownerId &&
+                row.reason === "Reviewed complete browser inventory and debt",
+            ),
+          );
+          const opening = rows[2].payload as {
+            staff: { staffId: string; carryForward: unknown[] }[];
+            evidence: { reference: string };
+          };
+          assert.deepEqual(
+            opening.staff.find((row) => row.staffId === carry.staffId)?.carryForward,
+            [{ componentKey: "old_service", base: "-30.5678", units: "-1.0000" }],
+          );
+          assert.equal(opening.evidence.reference, "SYNTHETIC-M5-CARRY");
+          const settlement = rows[3].payload as { components: unknown[] };
+          assert.deepEqual(settlement.components, [
+            {
+              fromKey: "old_service",
+              toKey: null,
+              reason: "Reviewed complete browser inventory and debt",
+            },
+          ]);
+          const { readStoredPayrollCarry } = await import("./payroll-close-store.js");
+          const view = await carry.scope(() => readStoredPayrollCarry("2026-12"));
+          assert.equal(view.settlements[0].stale, false);
+          assert.equal(await carry.scope(() => prisma.payrollCloseEvent.count()), 0);
+          assert.equal(await carry.scope(() => prisma.employeeCommission.count()), 0);
+          assert.equal(await f.scope(() => prisma.payrollCloseEvent.count()), 6);
+          assert.deepEqual(await f.scope(() => prisma.payrollClose.findFirstOrThrow()), frozen);
+        },
+      );
     } finally {
       const chromeExit =
         browser.process.exitCode === null ? once(browser.process, "exit") : Promise.resolve();

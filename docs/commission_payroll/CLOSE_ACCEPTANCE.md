@@ -1,5 +1,19 @@
 # CP-005 monthly close acceptance checkpoint
 
+## November 2, 2026 — M5 final local acceptance
+
+**CP-005 M1–M5 DONE locally for supported scope and explicit policy refusals.**
+The former M5 browser, final money-review and representative monthly-volume gates
+are closed. Final evidence and failures/limits are recorded in
+APPLICATION_CLOSE_ACCEPTANCE.md and the latest PROGRESS.md checkpoint. The complete
+M1/M2/M3 source/correction/carry regression was rerun: **634 passed, 0 failed**,
+7 separately gated skips. Chrome **10/10**, focused close acceptance **56/56**, web
+**981/981**, shared **305/305**, full API **1,131 passed, 0 failed**, workspace
+lint/types/build pass.
+Historical dated entries below retain their original checkpoint status; they do
+not override this final review. CP-003A/006/007 and production release, MTD/export,
+earnings activation and cutover remain separately gated.
+
 ## November 2, 2026 — CP-005 M4 DONE; M5 IN PROGRESS
 
 Mounted `/api/payroll-close` in the real application and Settings → Payroll close.

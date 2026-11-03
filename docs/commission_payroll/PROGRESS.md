@@ -1,5 +1,64 @@
 # Commission & Payroll progress
 
+## November 2, 2026 — CP-005 M5 final local acceptance
+
+**M1–M5 and CP-005 DONE for local supported scope; not production release.**
+Final money/lifecycle/response-contract review and retained boundaries:
+APPLICATION_CLOSE_ACCEPTANCE.md. The authoritative loader now batches complete
+collection histories and reuses loaded sales, removing repeated receipt reads
+without dropping prior-month history or exact tax replay. A new regression checks
+tenant-scoped complete-history query shape and missing-history refusal. Other
+changes are acceptance tests, their fixture and docs; no new policy was introduced.
+
+- Chrome **10/10**, no skips/failures: `/tmp/m5-final-browser.{log,exit}`.
+  Manager calculate/adjust/recalculate, missing reason, real added-receipt stale
+  approval with unchanged close/audit, owner freeze/payout, salary redaction,
+  failure/retry and role/outlet boundaries. Future opening refuses incomplete
+  inventory, accepts exact component debt, writes it off, detects changed opening
+  and repairs stale settlement; prior approved tenant remains byte-for-byte intact.
+- Independent mounted money matrix verifies all five calculation methods, new and
+  senior cohorts, capped supplemental component, salon-cash incentive, all five
+  manual adjustments/authenticated reasons and exact 2,288.00 take-home; frozen
+  hashes, 10 audit events, 1,000 unchanged payment rows and zero earnings.
+- Representative monthly fixture: 50 staff, 1,000 real cash service receipts, five
+  published active plans, 10 components, two active cohorts and three tier bands.
+  Initial expanded-cohort samples **6,736.3 / 6,745.7 / 7,744.0 ms**, all <10 s:
+  `/tmp/m5-matrix-final.{log,exit}`. An overlapping full-API run later produced
+  **15,608.6 ms**, correctly failing the unchanged 10-second assertion:
+  `/tmp/m5-focused-verified.{log,exit}`. The subsequent isolated run also failed at
+  **13,654.5 ms**, `/tmp/m5-focused-final.{log,exit}`; not solely CPU contention.
+  Batched complete collection histories and reused monthly sales to remove repeated
+  DB reads. Optimized samples **7,163.3 / 8,029.9 / 7,927.9 ms**, all <10 s:
+  `/tmp/m5-matrix-optimized.{log,exit}`. Final focused rerun **56/56**, no skips:
+  `/tmp/m5-final-focused2.{log,exit}`; samples **7,265.8 / 8,057.3 / 8,086.4 ms**,
+  all below 10 seconds. Not load/throughput or production sizing.
+  MTD <500 ms is not measured or accepted.
+- Enabled payroll regression: **641 tests, 634 passed, 0 failed, 7 skips**, exit 0:
+  `/tmp/m5-final-payroll.{log,exit}`. Skips are CP003 configuration/races/
+  preview browser, CP004 package/session/value lifecycle, and CP005 Chrome supplied
+  separately above. No enabled CP005 DB gate was skipped. This reruns the M1/M2/M3
+  source/correction/carry/race matrix, not just the new synthetic monetary fixture.
+- Full API: **1,388 tests, 1,131 passed, 0 failed, 257 opt-in skips**, exit 0:
+  `/tmp/m5-final-api.{log,exit}`. Ordinary API skips do not replace enabled DB or
+  Chrome acceptance. Full web **981/981**: `/tmp/m5-web-all.{log,exit}`; shared
+  **305/305**: `/tmp/m5-shared.{log,exit}`.
+- Workspace lint/typecheck/shared-API-web build pass, exit 0:
+  `/tmp/m5-final-quality.{log,exit}`. Final changed-file formatting/diff checks
+  recorded with final focused verification. Existing pg concurrent-query deprecation,
+  npm CLI config and unavailable clipboard-helper warnings were not suppressed.
+- Initial browser setup attempted a zero-action settlement and correctly refused;
+  later title-only patch accidentally duplicated a test declaration and was caught
+  by parsing/lint/typecheck. Both corrected without disabling policy, constraints,
+  assertions or tests. Earlier failed logs remain under `/tmp/m5-*`; passing final
+  evidence is explicitly named above.
+
+Only verified `127.0.0.1:55485/payroll_close_test`, PostgreSQL 18.6, UTC, role
+`postgres`, directory `/tmp/cp005-m3-apyc3kkj` was written. Historical fixture dates
+are synthetic; mounted browser transitions use the real November 2, 2026 clock.
+CP-003A historical equality, CP-006 exports/reports/MTD/self-service UI and CP-007
+release/cutover remain separate. No application DB/schema/migration/dependency,
+provider payment, earnings activation, deployment, commit or push changes.
+
 ## November 2, 2026 — CP-005 M4 DONE; M5 IN PROGRESS
 
 Mounted `/api/payroll-close` in the real application and Settings → Payroll close.

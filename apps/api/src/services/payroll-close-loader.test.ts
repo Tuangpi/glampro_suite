@@ -82,6 +82,24 @@ test("full single-receipt package purchases reconcile all original sale policies
   }
 });
 
+test("collection replay batches complete tenant sale histories without a month filter", async () => {
+  const f = loaderFixture();
+  await f.load();
+  const queries = f.queries.filter((row) => row.model === "commissionCollection");
+  assert.equal(queries.length, 2, "one monthly inventory and one complete-history query");
+  assert.deepEqual(queries[1].args, {
+    where: { tenantId: "salon", saleId: { in: ["sale"] } },
+    include: { allocations: { orderBy: { id: "asc" } } },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+  });
+  const missing = loaderFixture();
+  missing.tx.commissionCollection.findMany = (async (args: { where: { saleId?: unknown } }) =>
+    args.where.saleId
+      ? []
+      : missing.data.collections) as unknown as typeof missing.tx.commissionCollection.findMany;
+  await assert.rejects(missing.load(), /COLLECTION|CASH/);
+});
+
 test("package purchases reject missing, foreign, noncanonical and changed original economics", async () => {
   for (const mutate of [
     (f: ReturnType<typeof packagePurchaseFixture>) => {

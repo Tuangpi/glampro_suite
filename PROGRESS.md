@@ -1,5 +1,26 @@
 # Glampro Suite — progress
 
+## November 2, 2026 — CP-005 M5 final local acceptance
+
+**M1–M5 / CP-005 DONE for local supported scope, not release/cutover.**
+Completed mounted manager draft/adjustment and real receipt stale-source flows,
+owner complete opening/debt write-off/stale authorization repair, independent
+five-method/two-stage money matrix and 50-staff/1,000-real-receipt/five-plan timing.
+Chrome **10/10** and final focused **56/56**; enabled payroll regression **641 tests:
+634 passed, 0 failed, 7 separately gated skips**; full API **1,388 tests: 1,131
+passed, 0 failed, 257 opt-in skips**; web **981/981**; shared **305/305**. Workspace
+lint, typecheck and shared/API/web builds pass. Removed repeated collection
+history/sale queries while preserving complete-history exact-cent tax reconciliation.
+Final monthly samples **7,265.8 / 8,057.3 / 8,086.4 ms**, all <10 seconds; not MTD
+or throughput acceptance. Commands, samples and the initial failed attempts:
+`docs/commission_payroll/APPLICATION_CLOSE_ACCEPTANCE.md` and
+`docs/commission_payroll/PROGRESS.md`.
+
+CP-003A, CP-006 MTD/exports/reports/self-service UI and CP-007 release/cutover remain
+separately gated. Only identity-verified disposable PostgreSQL was written. No
+schema/migration/dependency, production DB, provider payment, deployment, activation,
+commit or push changes. Older M5-open checkpoints below are historical.
+
 ## November 2, 2026 — CP-005 M4 DONE; M5 IN PROGRESS
 
 Mounted `/api/payroll-close` in the real application and Settings → Payroll close.
