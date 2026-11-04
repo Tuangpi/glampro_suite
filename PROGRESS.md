@@ -1,5 +1,52 @@
 # Glampro Suite — progress
 
+## November 4, 2026 — a committed security regression in platform operator sign-in, fixed
+
+The CP-007 re-verification earlier today reverted a laptop debug hack in
+`apps/api/src/services/auth.service.ts`. **The same hack existed in a second file and was still
+committed.** `apps/api/src/services/platform-auth.service.ts` printed the platform operator's MFA
+code with `console.log` and had the `sendTwoFactorCode` call and its `EMAIL_SEND_FAILED` branch
+commented out, so operator sign-in never emailed anything and wrote the second factor to the log
+stream. It arrived on October 26 in `c897b052` — a commit titled _"docs: plan staff commission
+extension"_ — and was live on `master` and `origin/master`.
+
+- **Both stated contracts were false while it was live.** `lib/email.ts` documents that a
+  verification code is "never returned to callers or written to application logs", and
+  `PROJECT.md` (SAAS-02) says platform login requires real SMTP configuration. Because the
+  `try`/`catch` was gone, a refused SMTP connection also stopped clearing the challenge and
+  stopped returning the actionable `503 EMAIL_SEND_FAILED`.
+- **No gate could see it.** The file compiles, ESLint and Prettier are clean (every remaining
+  import is still used by the `EMAIL_NOT_CONFIGURED` refusal), and the ungated
+  `services/platform-auth.test.ts` only covers that refusal. The suite that does cover delivery is
+  opt-in — and it **could not pass**: `routes/platform-auth.acceptance.test.ts` reads the code out
+  of the captured SMTP message and asserts the 503 with a cleared `loginCodeHash`.
+- **Fix, one source file.** `platform-auth.service.ts` restores `try { await
+sendTwoFactorCode(...) } catch { updateMany(clear this challenge); throw 503 EMAIL_SEND_FAILED }`,
+  deletes the `console.log`, and re-adds the import. The restored shape matches the salon login in
+  `auth.service.ts`, not the older `throw error;` form that the gated assertions reject.
+- **Tripwire.** New ungated `apps/api/src/services/platform-auth-delivery.test.ts` (mocked
+  `nodemailer.createTransport`, replaced Prisma delegates, captured `console.log`): the mail must
+  carry the six-digit code, the stored `loginCodeHash` must be the hash of that exact
+  challenge/code, **no log line may contain the code**, and `ECONNREFUSED` must produce
+  `503 EMAIL_SEND_FAILED` with exactly that challenge cleared. Both cases fail against the pre-fix
+  source, so it is a real tripwire.
+- **Verification.** Targeted `platform-auth.test.ts` + the new file `4/4`, exit 0. API
+  `tsc --noEmit`, ESLint on both files, Prettier `--check`, `git diff --check`: exit 0. Full
+  ungated API suite (fresh disposable PostgreSQL 18 cluster
+  `/tmp/saas02-pg-Wbxof4` at `127.0.0.1:55440/api_default_run`, 70 migrations, UTC):
+  **1,488 tests — 1,213 pass, 0 fail, 275 skipped**, log `/tmp/api-default-verify3.log`. Gated
+  `SAAS02_ACCEPTANCE=1` against `127.0.0.1:55440/saas02_acceptance` (66 migrations):
+  **1/1 pass**, with the run's own log showing `Email sent … transport: smtp` and no code in any
+  line; the same suite on the pre-fix file is **0/1 fail**, so the fix is demonstrably
+  load-bearing.
+- **Not claimed.** The web suite, the mounted-Chrome acceptance and the gated payroll acceptance
+  were not re-run — no web or payroll source changed. The application database
+  (`localhost:5432/glampro_suite`) was never connected to; every run used the disposable cluster,
+  which was stopped afterwards with its data directory left under `/tmp`. Nothing was pushed.
+- **SEC-01 stays deferred by owner decision**, as recorded in `docs/commission_payroll/PROGRESS.md`:
+  the payroll-economics immutability trigger legitimately refuses that suite's `tenant.deleteMany`
+  teardown, and choosing a test-only bypass is a separate decision.
+
 ## November 4, 2026 — CP-006 DONE for local acceptance: browser acceptance in mounted Chrome
 
 CP-006's last open item, browser acceptance of the payroll reporting surfaces, now runs as an

@@ -1,5 +1,64 @@
 # Commission & Payroll progress
 
+## November 4, 2026 — the other copy of the same debug hack: platform operator MFA restored
+
+- **The revert in the previous entry was incomplete.** It fixed
+  `apps/api/src/services/auth.service.ts` and left the identical laptop workaround in
+  `apps/api/src/services/platform-auth.service.ts`, where it had been committed on
+  October 26 in `c897b052` — a commit titled _"docs: plan staff commission extension"_
+  that carried the source edit alongside documentation, which is why nobody looked for
+  a security change under a docs message. It was live on `master` and `origin/master`.
+  `platformLogin` replaced the `sendTwoFactorCode` call and its `EMAIL_SEND_FAILED`
+  branch with `console.log(\`Platform login code for ...\`)`, so **platform operator
+  MFA codes were written to application logs** and no email was ever sent.
+- **What that broke.** `apps/api/src/lib/email.ts` documents that codes are "never
+  returned to callers or written to application logs", and `PROJECT.md` (SAAS-02)
+  states that platform login "requires actual SMTP configuration … JSON transport is
+  not an MFA-delivery substitute". Both were false for the operator realm. Because the
+  `try`/`catch` was gone, a refused SMTP connection also stopped clearing the
+  challenge and stopped returning the actionable 503. No gate saw it: `tsc`, ESLint
+  and Prettier all pass (every remaining import is still used elsewhere), and the
+  ungated `services/platform-auth.test.ts` covers only the `EMAIL_NOT_CONFIGURED`
+  refusal. The suite that does cover delivery is opt-in, and it **could not pass**:
+  `routes/platform-auth.acceptance.test.ts` reads the code out of the captured SMTP
+  message and asserts `503 EMAIL_SEND_FAILED` plus a cleared `loginCodeHash`.
+- **Fix, one file.** `platform-auth.service.ts` restores the `try { await
+sendTwoFactorCode(...) } catch { updateMany(clear this challenge) ; throw 503
+EMAIL_SEND_FAILED }` block, deletes the `console.log`, and re-adds the
+  `sendTwoFactorCode` import. The restored shape is the one `auth.service.ts` already
+  uses for salon login (same message, same `cause`), not the older `throw error;` form
+  — that older form is what the gated assertions reject.
+- **Tripwire so it cannot come back quietly.** New ungated
+  `apps/api/src/services/platform-auth-delivery.test.ts` (2 cases, built on the
+  `auth-security.test.ts` pattern — mocked `nodemailer.createTransport`, replaced
+  Prisma delegates, captured `console.log`): the email must carry the six-digit code
+  and the persisted `loginCodeHash` must be the hash of that exact challenge/code,
+  while **no log line may contain the code**; and a `ECONNREFUSED` transport must
+  reject `503 EMAIL_SEND_FAILED` and clear exactly that challenge (not a newer one).
+  Run against the pre-fix source both cases fail, so this is a real tripwire and not
+  a test that merely restates the implementation.
+- **Verification.** Targeted unit files `4/4` (`platform-auth.test.ts` 2 + new 2), exit 0. API `tsc -p tsconfig.json --noEmit`, ESLint on both files, Prettier `--check` and
+  `git diff --check` all exit 0. Gated `SAAS02_ACCEPTANCE=1` on a fresh disposable
+  PostgreSQL 18 cluster `/tmp/saas02-pg-Wbxof4`, `127.0.0.1:55440/saas02_acceptance`,
+  UTC, 66 migrations replayed with `DATABASE_URL` and `DOTENV_CONFIG_PATH=/dev/null`
+  and identity asserted before any write: **1/1 pass**, with the run's own log showing
+  `Email sent … transport: smtp` to the loopback capture inbox and no code in any log
+  line. The same suite on the pre-fix file is **0/1, fail** — recorded so the fix is
+  demonstrably load-bearing rather than cosmetic. The full ungated API suite on the same
+  cluster (`127.0.0.1:55440/api_default_run`, 70 migrations) is **1,488 tests — 1,213
+  pass, 0 fail, 275 skipped, 0 cancelled** (`/tmp/api-default-verify3.log`), which
+  includes the two new cases.
+- **Not claimed.** The web suite, the mounted-Chrome acceptance and the gated payroll
+  acceptance were not re-run here: no web or payroll source changed. The application
+  database (`localhost:5432/glampro_suite`) was never connected to — every run used the
+  disposable cluster, which was stopped afterwards with its data directory kept under
+  `/tmp`. Nothing was pushed.
+- **SEC-01 stays deferred by owner decision**, exactly as recorded in the previous
+  entry: the `BEFORE UPDATE OR DELETE` trigger in
+  `20261029140000_sale_line_payroll_economics` legitimately refuses the
+  `tenant.deleteMany` in that suite's `finally`, and choosing a test-only bypass is a
+  separate call. This entry does not touch it.
+
 ## November 4, 2026 — CP-007 re-verified: local debug hack reverted, SEC-01 teardown defect recorded
 
 - **A leftover local-debug change was reverted before this work was called done.**

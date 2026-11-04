@@ -10,7 +10,7 @@ import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
 import { HttpError, unauthorized } from "../lib/http-error.js";
 import { verifyPassword } from "../lib/password.js";
-import { isSmtpConfigured } from "../lib/email.js";
+import { isSmtpConfigured, sendTwoFactorCode } from "../lib/email.js";
 import { createRefreshToken, hashRefreshToken, refreshTokenExpiry } from "../lib/tokens.js";
 import type { PlatformAdmin } from "../../generated/prisma/client.js";
 
@@ -45,20 +45,20 @@ export async function platformLogin(input: PlatformLoginInput) {
       loginAttempts: 0,
     },
   });
-  console.log(`Platform login code for ${admin.email}: ${code}`);
-  // try {
-  //   await sendTwoFactorCode(admin.email, code);
-  // } catch (error) {
-  //   await prisma.platformAdmin.updateMany({
-  //     where: { id: admin.id, loginChallengeHash: challengeHash },
-  //     data: { loginChallengeHash: null, loginCodeHash: null, loginChallengeExpiresAt: null },
-  //   });
-  //   throw new HttpError(
-  //     503,
-  //     "Verification email could not be sent. Check that the configured SMTP server is running, then try signing in again.",
-  //     { code: "EMAIL_SEND_FAILED", cause: error },
-  //   );
-  // }
+  try {
+    await sendTwoFactorCode(admin.email, code);
+  } catch (error) {
+    // Only clear this attempt: a newer login may already have replaced its challenge.
+    await prisma.platformAdmin.updateMany({
+      where: { id: admin.id, loginChallengeHash: challengeHash },
+      data: { loginChallengeHash: null, loginCodeHash: null, loginChallengeExpiresAt: null },
+    });
+    throw new HttpError(
+      503,
+      "Verification email could not be sent. Check that the configured SMTP server is running, then try signing in again.",
+      { code: "EMAIL_SEND_FAILED", cause: error },
+    );
+  }
   return { requiresTwoFactor: true as const, challenge };
 }
 
