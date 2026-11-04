@@ -2,14 +2,20 @@ import { randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import jwt from "jsonwebtoken";
 import {
   ACCESS_TOKEN_TTL_SECONDS,
+  TWO_FACTOR_CODE_LENGTH,
+  TWO_FACTOR_CODE_TTL_SECONDS,
   type PlatformAuthSession,
+  type PlatformAdminProfile,
   type PlatformLoginInput,
+  type PlatformLoginResult,
+  type PlatformPasswordChangeInput,
+  type PlatformTwoFactorDisableInput,
   type PlatformVerifyInput,
 } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../lib/env.js";
-import { HttpError, unauthorized } from "../lib/http-error.js";
-import { verifyPassword } from "../lib/password.js";
+import { conflict, HttpError, unauthorized } from "../lib/http-error.js";
+import { hashPassword, verifyPassword } from "../lib/password.js";
 import { isSmtpConfigured, sendTwoFactorCode } from "../lib/email.js";
 import { createRefreshToken, hashRefreshToken, refreshTokenExpiry } from "../lib/tokens.js";
 import type { PlatformAdmin } from "../../generated/prisma/client.js";
@@ -19,13 +25,37 @@ const ISSUER = "glampro-api";
 const DUMMY_HASH = "$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 const invalid = () =>
   unauthorized("Your platform session is no longer valid.", "SESSION_INVALIDATED");
-const profile = (admin: PlatformAdmin) => ({ id: admin.id, email: admin.email, name: admin.name });
+const profile = (admin: PlatformAdmin): PlatformAdminProfile => ({
+  id: admin.id,
+  email: admin.email,
+  name: admin.name,
+  twoFactorEnabled: admin.twoFactorEnabled,
+});
+/** Enrolment codes are hashed under their own prefix so they can never be replayed at sign-in. */
+const enrollCodeHash = (code: string) => hashRefreshToken(`platform-enroll:${code}`);
 
-export async function platformLogin(input: PlatformLoginInput) {
+export async function platformLogin(input: PlatformLoginInput): Promise<PlatformLoginResult> {
   const admin = await prisma.platformAdmin.findUnique({ where: { email: input.email } });
   const matches = await verifyPassword(input.password, admin?.passwordHash ?? DUMMY_HASH);
   if (!admin || admin.status !== "ACTIVE" || !matches) {
     throw unauthorized("That email and password combination is not right.", "INVALID_CREDENTIALS");
+  }
+  // Email verification is off: issue the session in the same transaction that
+  // clears any half-finished challenge, so an older code cannot be replayed later.
+  if (!admin.twoFactorEnabled) {
+    return prisma.$transaction(async (tx) => {
+      const current = await tx.platformAdmin.update({
+        where: { id: admin.id },
+        data: {
+          lastLoginAt: new Date(),
+          loginChallengeHash: null,
+          loginCodeHash: null,
+          loginChallengeExpiresAt: null,
+          loginAttempts: 0,
+        },
+      });
+      return issuePlatformSession(tx, current);
+    });
   }
   // Never pretend an operator MFA code was delivered through the JSON transport.
   if (!isSmtpConfigured()) {
@@ -33,6 +63,7 @@ export async function platformLogin(input: PlatformLoginInput) {
       code: "EMAIL_NOT_CONFIGURED",
     });
   }
+
   const challenge = randomBytes(32).toString("hex");
   const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const challengeHash = hashRefreshToken(challenge);
@@ -81,6 +112,35 @@ function sessionPayload(
   return { accessToken, refreshToken, expiresIn: ACCESS_TOKEN_TTL_SECONDS, admin: profile(admin) };
 }
 
+type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/**
+ * Creates the operator session row, records the sign-in and mints the tokens.
+ *
+ * Shared by the verified path and the no-verification path so both issue exactly
+ * the same session, audit entry and token pair — only the proof of identity differs.
+ */
+async function issuePlatformSession(tx: Transaction, admin: PlatformAdmin) {
+  const refresh = createRefreshToken();
+  const session = await tx.platformSession.create({
+    data: {
+      adminId: admin.id,
+      tokenHash: refresh.tokenHash,
+      tokenVersion: admin.tokenVersion,
+      expiresAt: refreshTokenExpiry(),
+    },
+  });
+  await tx.auditLog.create({
+    data: {
+      actorPlatformAdminId: admin.id,
+      action: "platform.login",
+      targetType: "PlatformSession",
+      targetId: session.id,
+    },
+  });
+  return sessionPayload(admin, session.id, refresh.token);
+}
+
 export async function platformVerify(input: PlatformVerifyInput): Promise<PlatformAuthSession> {
   const challengeHash = hashRefreshToken(input.challenge);
   const candidate = await prisma.platformAdmin.findUnique({
@@ -106,7 +166,6 @@ export async function platformVerify(input: PlatformVerifyInput): Promise<Platfo
   const actual = Buffer.from(hashRefreshToken(`platform:${input.challenge}:${input.code}`));
   const expected = Buffer.from(candidate.loginCodeHash);
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) throw reject();
-  const refresh = createRefreshToken();
   return prisma.$transaction(async (tx) => {
     const claimed = await tx.platformAdmin.updateMany({
       where: {
@@ -125,23 +184,7 @@ export async function platformVerify(input: PlatformVerifyInput): Promise<Platfo
       },
     });
     if (claimed.count !== 1) throw reject();
-    const session = await tx.platformSession.create({
-      data: {
-        adminId: candidate.id,
-        tokenHash: refresh.tokenHash,
-        tokenVersion: candidate.tokenVersion,
-        expiresAt: refreshTokenExpiry(),
-      },
-    });
-    await tx.auditLog.create({
-      data: {
-        actorPlatformAdminId: candidate.id,
-        action: "platform.login",
-        targetType: "PlatformSession",
-        targetId: session.id,
-      },
-    });
-    return sessionPayload(candidate, session.id, refresh.token);
+    return issuePlatformSession(tx, candidate);
   });
 }
 
@@ -233,5 +276,158 @@ export async function authenticatePlatform(token: string) {
     session.admin.tokenVersion !== claims.tokenVersion
   )
     throw invalid();
-  return profile(session.admin);
+  // The session id lets *Account & security* keep this one session while revoking
+  // the others; it is returned here and deliberately dropped by the routes.
+  return { admin: profile(session.admin), sessionId: session.id };
+}
+
+/**
+ * Changes the operator's password.
+ *
+ * Other operator sessions are revoked in the same transaction: a password change is
+ * what an operator does when a credential may have leaked, so leaving the other
+ * sessions alive would defeat it. The session that made the change survives, or the
+ * operator would be thrown out of the console they are standing in.
+ */
+export async function changePlatformPassword(
+  adminId: string,
+  sessionId: string,
+  input: PlatformPasswordChangeInput,
+) {
+  const admin = await prisma.platformAdmin.findUnique({ where: { id: adminId } });
+  if (!admin || admin.status !== "ACTIVE") throw invalid();
+  if (!(await verifyPassword(input.currentPassword, admin.passwordHash)))
+    throw unauthorized("Your current password is not right.", "INVALID_CREDENTIALS");
+  const passwordHash = await hashPassword(input.newPassword);
+  const revokedSessions = await prisma.$transaction(async (tx) => {
+    await tx.platformAdmin.update({ where: { id: admin.id }, data: { passwordHash } });
+    const revoked = await tx.platformSession.updateMany({
+      where: { adminId: admin.id, id: { not: sessionId }, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    await tx.auditLog.create({
+      data: {
+        actorPlatformAdminId: admin.id,
+        action: "platform.password.change",
+        targetType: "PlatformAdmin",
+        targetId: admin.id,
+        metadata: { revokedSessions: revoked.count },
+      },
+    });
+    return revoked.count;
+  });
+  return { success: true as const, revokedSessions };
+}
+
+/**
+ * Emails a code that, once confirmed, turns verification back on.
+ *
+ * Only reachable while verification is off, so a console without SMTP can still be
+ * entered and the operator can restore the check once mail is configured.
+ */
+export async function enrollPlatformTwoFactor(adminId: string) {
+  const admin = await prisma.platformAdmin.findUnique({ where: { id: adminId } });
+  if (!admin || admin.status !== "ACTIVE") throw invalid();
+  if (admin.twoFactorEnabled)
+    throw conflict("Email verification is already on.", "TWO_FACTOR_ALREADY_ENABLED");
+  if (!isSmtpConfigured())
+    throw new HttpError(503, "Configure SMTP before enabling email verification.", {
+      code: "EMAIL_NOT_CONFIGURED",
+    });
+  const code = String(randomInt(0, 10 ** TWO_FACTOR_CODE_LENGTH)).padStart(
+    TWO_FACTOR_CODE_LENGTH,
+    "0",
+  );
+  const codeHash = enrollCodeHash(code);
+  await prisma.platformAdmin.update({
+    where: { id: admin.id },
+    data: {
+      twoFactorCodeHash: codeHash,
+      twoFactorCodeExpiresAt: new Date(Date.now() + TWO_FACTOR_CODE_TTL_SECONDS * 1000),
+    },
+  });
+  try {
+    await sendTwoFactorCode(admin.email, code);
+  } catch (error) {
+    // A code the operator never received must not stay usable.
+    await prisma.platformAdmin.updateMany({
+      where: { id: admin.id, twoFactorCodeHash: codeHash },
+      data: { twoFactorCodeHash: null, twoFactorCodeExpiresAt: null },
+    });
+    throw new HttpError(
+      503,
+      "Verification email could not be sent. Check the SMTP server, then try again.",
+      { code: "EMAIL_SEND_FAILED", cause: error },
+    );
+  }
+  return { sent: true as const };
+}
+
+/** Consumes the pending enrolment code and switches verification on. */
+export async function confirmPlatformTwoFactor(
+  adminId: string,
+  code: string,
+): Promise<PlatformAdminProfile> {
+  const admin = await prisma.platformAdmin.findUnique({ where: { id: adminId } });
+  if (!admin || admin.status !== "ACTIVE") throw invalid();
+  if (!admin.twoFactorCodeHash || !admin.twoFactorCodeExpiresAt)
+    throw conflict("No verification code is pending. Enable it again.", "TWO_FACTOR_NOT_PENDING");
+  if (admin.twoFactorCodeExpiresAt <= new Date())
+    throw conflict("That code has expired. Enable it again.", "TWO_FACTOR_EXPIRED");
+  const actual = Buffer.from(enrollCodeHash(code));
+  const expected = Buffer.from(admin.twoFactorCodeHash);
+  if (actual.length !== expected.length || !timingSafeEqual(actual, expected))
+    throw unauthorized("That verification code is not right.", "INVALID_TWO_FACTOR_CODE");
+  await prisma.$transaction(async (tx) => {
+    const consumed = await tx.platformAdmin.updateMany({
+      where: {
+        id: admin.id,
+        twoFactorCodeHash: admin.twoFactorCodeHash,
+        twoFactorCodeExpiresAt: { gt: new Date() },
+      },
+      data: { twoFactorEnabled: true, twoFactorCodeHash: null, twoFactorCodeExpiresAt: null },
+    });
+    if (consumed.count !== 1)
+      throw conflict(
+        "That code has already been used. Enable it again.",
+        "INVALID_TWO_FACTOR_CODE",
+      );
+    await tx.auditLog.create({
+      data: {
+        actorPlatformAdminId: admin.id,
+        action: "platform.two_factor.enable",
+        targetType: "PlatformAdmin",
+        targetId: admin.id,
+      },
+    });
+  });
+  return profile({ ...admin, twoFactorEnabled: true });
+}
+
+/** Turns verification off. Re-proves the password because it weakens sign-in. */
+export async function disablePlatformTwoFactor(
+  adminId: string,
+  input: PlatformTwoFactorDisableInput,
+): Promise<PlatformAdminProfile> {
+  const admin = await prisma.platformAdmin.findUnique({ where: { id: adminId } });
+  if (!admin || admin.status !== "ACTIVE") throw invalid();
+  if (!admin.twoFactorEnabled)
+    throw conflict("Email verification is already off.", "TWO_FACTOR_ALREADY_DISABLED");
+  if (!(await verifyPassword(input.currentPassword, admin.passwordHash)))
+    throw unauthorized("Your password is not right.", "INVALID_CREDENTIALS");
+  await prisma.$transaction(async (tx) => {
+    await tx.platformAdmin.update({
+      where: { id: admin.id },
+      data: { twoFactorEnabled: false, twoFactorCodeHash: null, twoFactorCodeExpiresAt: null },
+    });
+    await tx.auditLog.create({
+      data: {
+        actorPlatformAdminId: admin.id,
+        action: "platform.two_factor.disable",
+        targetType: "PlatformAdmin",
+        targetId: admin.id,
+      },
+    });
+  });
+  return profile({ ...admin, twoFactorEnabled: false });
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import CompanyAdministration from "./CompanyAdministration";
 import { platformApi } from "./api";
@@ -12,51 +12,80 @@ vi.mock("./api", () => ({
     changeModule: vi.fn(),
   },
 }));
+
+const administration = {
+  effectiveStatus: "ACTIVE" as const,
+  subscriptions: [],
+  modules: [
+    {
+      code: "customers",
+      name: "Customers",
+      isCore: true,
+      enabled: true,
+      entitled: true,
+      expiresAt: null,
+    },
+    {
+      code: "packages",
+      name: "Packages",
+      isCore: false,
+      enabled: false,
+      entitled: false,
+      expiresAt: null,
+    },
+    {
+      code: "payroll",
+      name: "Payroll",
+      isCore: false,
+      enabled: true,
+      entitled: false,
+      expiresAt: "2026-01-01T00:00:00.000Z",
+    },
+  ],
+};
+
+/** The same company after Packages was granted. */
+const granted = {
+  ...administration,
+  modules: administration.modules.map((row) =>
+    row.code === "packages" ? { ...row, enabled: true, entitled: true } : row,
+  ),
+};
+
 beforeEach(() => {
   vi.resetAllMocks();
-  vi.mocked(platformApi.administration).mockResolvedValue({
-    effectiveStatus: "ACTIVE",
-    subscriptions: [],
-    modules: [
-      {
-        code: "customers",
-        name: "Customers",
-        isCore: true,
-        enabled: true,
-        entitled: true,
-        expiresAt: null,
-      },
-      {
-        code: "packages",
-        name: "Packages",
-        isCore: false,
-        enabled: false,
-        entitled: false,
-        expiresAt: null,
-      },
-    ],
-  });
+  vi.mocked(platformApi.administration).mockResolvedValue(administration);
   vi.mocked(platformApi.audit).mockResolvedValue({ items: [], total: 21, page: 1, pageSize: 20 });
 });
+
 it("requires a reason, changes lifecycle and refreshes company data and audit", async () => {
   const changed = vi.fn().mockResolvedValue(undefined);
   render(<CompanyAdministration id="company-a" onChange={changed} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Suspend company" }));
-  expect(screen.getByRole("button", { name: "Suspend company" })).toBeDisabled();
+
+  expect(await screen.findByRole("button", { name: "Suspend company" })).toBeDisabled();
   expect(platformApi.lifecycle).not.toHaveBeenCalled();
+
   fireEvent.change(screen.getByLabelText("Change reason"), { target: { value: "Payment review" } });
   fireEvent.click(screen.getByRole("button", { name: "Suspend company" }));
+
+  // The button only opens the confirmation; nothing is sent by opening it.
+  const dialog = screen.getByRole("dialog", { name: "Suspend this company?" });
+  expect(dialog).toHaveTextContent("Payment review");
   expect(platformApi.lifecycle).not.toHaveBeenCalled();
+
   fireEvent.click(screen.getByRole("button", { name: "Confirm suspension" }));
   await waitFor(() => expect(changed).toHaveBeenCalledOnce());
   expect(platformApi.lifecycle).toHaveBeenCalledWith("company-a", {
     action: "suspend",
     reason: "Payment review",
   });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   await waitFor(() => expect(platformApi.audit).toHaveBeenCalledTimes(2));
 });
+
 it("records a decimal subscription without charging or silently reactivating", async () => {
   render(<CompanyAdministration id="company-a" onChange={vi.fn()} />);
+
   await screen.findByLabelText("Period start");
   for (const [label, value] of [
     ["Change reason", "Manual period"],
@@ -65,6 +94,7 @@ it("records a decimal subscription without charging or silently reactivating", a
     ["Subscription amount", "99.00"],
   ])
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
+
   fireEvent.click(screen.getByRole("button", { name: "Record subscription" }));
   await waitFor(() =>
     expect(platformApi.recordSubscription).toHaveBeenCalledWith(
@@ -74,21 +104,93 @@ it("records a decimal subscription without charging or silently reactivating", a
   );
   expect(platformApi.lifecycle).not.toHaveBeenCalled();
 });
-it("limits module options to add-ons, reports failures and pages audit", async () => {
-  const { rerender } = render(
-    <CompanyAdministration id="company-a" tab="modules" onChange={vi.fn()} />,
-  );
-  await screen.findByLabelText("Add-on module");
-  expect(screen.queryByRole("option", { name: "Customers" })).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("Change reason"), {
+
+it("shows module access as switches: core is fixed, a lapsed grant reads as off", async () => {
+  render(<CompanyAdministration id="company-a" tab="modules" onChange={vi.fn()} />);
+
+  const core = await screen.findByRole("switch", { name: "Customers" });
+  expect(core).toBeDisabled();
+  expect(core).toHaveAttribute("aria-checked", "true");
+
+  // A grant that has lapsed is off and says so, rather than looking like a plain gap.
+  expect(screen.getByRole("switch", { name: "Payroll" })).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByText("Expired")).toBeInTheDocument();
+  expect(screen.getByRole("switch", { name: "Packages" })).toHaveAttribute("aria-checked", "false");
+});
+
+it("asks for a reason before granting a module and reports a rejection in the dialog", async () => {
+  render(<CompanyAdministration id="company-a" tab="modules" onChange={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole("switch", { name: "Packages" }));
+  const dialog = screen.getByRole("dialog", { name: "Turn on Packages?" });
+  const confirm = within(dialog).getByRole("button", { name: "Confirm change" });
+  expect(confirm).toBeDisabled();
+  expect(platformApi.changeModule).not.toHaveBeenCalled();
+
+  fireEvent.change(within(dialog).getByLabelText("Reason for change"), {
     target: { value: "Purchased add-on" },
   });
   vi.mocked(platformApi.changeModule).mockRejectedValue(new Error("Audit unavailable"));
-  fireEvent.click(screen.getByRole("button", { name: "Save add-on access" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Audit unavailable");
-  expect(screen.getByLabelText("Change reason")).toHaveValue("Purchased add-on");
-  rerender(<CompanyAdministration id="company-a" tab="activity" onChange={vi.fn()} />);
-  fireEvent.click(screen.getByRole("button", { name: "Next audit page" }));
+  fireEvent.click(confirm);
+
+  expect(await within(dialog).findByRole("alert")).toHaveTextContent("Audit unavailable");
+  expect(within(dialog).getByLabelText("Reason for change")).toHaveValue("Purchased add-on");
+  // Nothing was granted, so the switch has not moved.
+  expect(screen.getByRole("switch", { name: "Packages" })).toHaveAttribute("aria-checked", "false");
+});
+
+it("sends a grant with its optional expiry", async () => {
+  vi.mocked(platformApi.changeModule).mockResolvedValue(undefined);
+  render(<CompanyAdministration id="company-a" tab="modules" onChange={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole("switch", { name: "Packages" }));
+  const dialog = screen.getByRole("dialog", { name: "Turn on Packages?" });
+  fireEvent.change(within(dialog).getByLabelText("Reason for change"), {
+    target: { value: "Sold with the annual plan" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Expires at (optional)"), {
+    target: { value: "2026-11-23T00:00:00+08:00" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm change" }));
+
+  await waitFor(() =>
+    expect(platformApi.changeModule).toHaveBeenCalledWith("company-a", {
+      code: "packages",
+      enabled: true,
+      expiresAt: "2026-11-23T00:00:00+08:00",
+      reason: "Sold with the annual plan",
+    }),
+  );
+});
+
+it("revokes a granted module without sending an expiry", async () => {
+  vi.mocked(platformApi.administration).mockResolvedValue(granted);
+  render(<CompanyAdministration id="company-a" tab="modules" onChange={vi.fn()} />);
+
+  fireEvent.click(await screen.findByRole("switch", { name: "Packages" }));
+  const dialog = screen.getByRole("dialog", { name: "Turn off Packages?" });
+  // A revocation has nothing to expire, so the field is not offered at all.
+  expect(within(dialog).queryByLabelText("Expires at (optional)")).not.toBeInTheDocument();
+  fireEvent.change(within(dialog).getByLabelText("Reason for change"), {
+    target: { value: "Downgraded to the base plan" },
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Confirm change" }));
+
+  await waitFor(() =>
+    expect(platformApi.changeModule).toHaveBeenCalledWith("company-a", {
+      code: "packages",
+      enabled: false,
+      expiresAt: null,
+      reason: "Downgraded to the base plan",
+    }),
+  );
+});
+
+it("pages the audit history with the shared pagination control", async () => {
+  render(<CompanyAdministration id="company-a" tab="activity" onChange={vi.fn()} />);
+
+  await screen.findByRole("heading", { name: "Company audit history" });
+  fireEvent.click(screen.getByRole("button", { name: "Next page" }));
   await waitFor(() => expect(platformApi.audit).toHaveBeenLastCalledWith("company-a", 2));
 });
 
@@ -99,9 +201,10 @@ it("lets the operator back out of cancellation without changing access", async (
     target: { value: "Closure requested" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Cancel company" }));
-  expect(screen.getByRole("group", { name: "Confirm company access change" })).toHaveTextContent(
-    "blocked from signing in",
-  );
+
+  const dialog = screen.getByRole("dialog", { name: "Cancel this company?" });
+  expect(dialog).toHaveTextContent("blocked from signing in");
+
   fireEvent.click(screen.getByRole("button", { name: "Keep current access" }));
   expect(screen.queryByRole("button", { name: "Confirm cancellation" })).not.toBeInTheDocument();
   expect(platformApi.lifecycle).not.toHaveBeenCalled();

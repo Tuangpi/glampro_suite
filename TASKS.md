@@ -4,12 +4,16 @@
 
 Approved October 27, 2026. Use [the CP task queue](docs/commission_payroll/TASKS.md)
 and [handoff](docs/commission_payroll/PROGRESS.md) before unrelated existing
-backlog work. CP-001–CP-003 are DONE; CP-004 is IN PROGRESS and must resume.
-Package settings and immutable purchase-time settings capture are implemented;
-redemption/deposit/paid-session/PIN and remaining lifecycle checks stay open.
-STOP October 28: an incorrectly targeted migration modified the local application
-database. See commission-payroll PROGRESS.md; owner review is required before
-further database operations. New lifecycle code is unfinished, not accepted.
+backlog work. The CP queue is **complete for local acceptance** as of November 4,
+2026: CP-001, CP-002, CP-003, CP-003A and CP-004 are DONE, and CP-005, CP-006 and
+CP-007 are DONE for local acceptance (see that tracker for milestone scope).
+Nothing in the CP program is left unimplemented. What remains there cannot be
+closed by code: real-month reconciliation against the salon's exported payroll,
+production migration/deployment/activation and payout under explicit authorization,
+target-host NFR-03 re-measurement, and the deferred SEC-01 teardown-bypass decision.
+STOP October 28 stays in force: an incorrectly targeted migration modified the local
+application database, so no further application-database operations without owner
+review. See commission-payroll PROGRESS.md.
 The former SC queue is [archived and superseded](docs/archive/staff-commission/README.md).
 Do not resume SC tasks, duplicate CP tasks here, or count historical commission
 acceptance as acceptance of the new feature. Historical task IDs below are preserved.

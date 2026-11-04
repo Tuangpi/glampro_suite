@@ -284,6 +284,13 @@ model PlatformAdmin {
   status       PlatformAdminStatus @default(ACTIVE)
   /// Increment to revoke every operator session. Logout revokes one session row.
   tokenVersion Int                 @default(0)
+  /// Email verification on sign-in. On by default; an operator may turn it off
+  /// from *Account & security*, which then issues the session directly.
+  twoFactorEnabled Boolean         @default(true)
+  /// A pending *enrolment* code, kept apart from the `login*` columns so enabling
+  /// 2FA cannot clobber a sign-in challenge another device is waiting on.
+  twoFactorCodeHash String?
+  twoFactorCodeExpiresAt DateTime?
   lastLoginAt  DateTime?
   loginChallengeHash String? @unique
   loginCodeHash String?

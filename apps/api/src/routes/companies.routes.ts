@@ -11,10 +11,12 @@ import {
   recordSubscriptionSchema,
   companyModuleSchema,
   companyAuditQuerySchema,
+  companyPurgeSchema,
   type CompanyLifecycleInput,
   type RecordSubscriptionInput,
   type CompanyModuleInput,
   type CompanyAuditQuery,
+  type CompanyPurgeInput,
 } from "@glampro_suite/shared";
 import { platformAuth } from "../middleware/platform-auth.js";
 import { validate, validated } from "../middleware/validate.js";
@@ -33,6 +35,7 @@ import {
   recordCompanySubscription,
   changeCompanyModule,
 } from "../services/company-administration.service.js";
+import { purgeCompany } from "../services/company-purge.service.js";
 
 export const companiesRouter = Router();
 companiesRouter.use(platformAuth);
@@ -156,6 +159,30 @@ companiesRouter.post(
       res.json({
         data: await resendOwnerInvitation(
           validated<{ id: string }>(req, "params").id,
+          res.locals.platformAdmin.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+/**
+ * Permanent removal. Deliberately a `DELETE` and not a fourth lifecycle action:
+ * suspend/reactivate/cancel keep the data, this does not, so the verb has to say so
+ * and a client cannot reach it by mistyping a lifecycle action.
+ */
+companiesRouter.delete(
+  "/:id",
+  authLimiter,
+  validate(idParamSchema, "params"),
+  validate(companyPurgeSchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await purgeCompany(
+          validated<{ id: string }>(req, "params").id,
+          validated<CompanyPurgeInput>(req, "body"),
           res.locals.platformAdmin.id,
         ),
       });

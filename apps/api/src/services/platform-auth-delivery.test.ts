@@ -24,6 +24,9 @@ const admin = {
   email: "operator@glampro.sg",
   status: "ACTIVE" as string,
   passwordHash,
+  // Verification on: this file covers the emailed-code path. The branch that
+  // issues a session directly is `platform-auth.test.ts`.
+  twoFactorEnabled: true,
 };
 let mailText = "";
 let mailAttempts = 0;
@@ -85,6 +88,8 @@ describe("operator two-factor delivery", () => {
   it("emails the code and never writes it to application logs", async () => {
     const result = await platformLogin({ email: admin.email, password });
 
+    // Sign-in answers with a challenge while email verification is on.
+    assert.ok("requiresTwoFactor" in result, "this operator must be challenged for a code");
     assert.equal(result.requiresTwoFactor, true);
     assert.equal(mailAttempts, 1);
     const code = mailText.match(/verification code is (\d{6})/)?.[1];

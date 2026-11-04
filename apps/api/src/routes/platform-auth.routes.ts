@@ -2,16 +2,27 @@ import { Router } from "express";
 import {
   platformLoginSchema,
   platformVerifySchema,
+  platformPasswordChangeSchema,
+  platformTwoFactorDisableSchema,
+  twoFactorConfirmSchema,
   refreshSchema,
   type PlatformLoginInput,
+  type PlatformPasswordChangeInput,
+  type PlatformTwoFactorDisableInput,
   type PlatformVerifyInput,
   type RefreshInput,
+  type TwoFactorConfirmInput,
 } from "@glampro_suite/shared";
 import { validate, validated } from "../middleware/validate.js";
+import { platformAuth } from "../middleware/platform-auth.js";
 import { authLimiter } from "../middleware/rateLimit.js";
 import { unauthorized } from "../lib/http-error.js";
 import {
   authenticatePlatform,
+  changePlatformPassword,
+  confirmPlatformTwoFactor,
+  disablePlatformTwoFactor,
+  enrollPlatformTwoFactor,
   platformLogin,
   platformVerify,
   platformRefresh,
@@ -71,8 +82,78 @@ platformAuthRouter.get("/me", async (req, res, next) => {
   try {
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ") || !header.slice(7).trim()) throw unauthorized();
-    res.json({ data: await authenticatePlatform(header.slice(7).trim()) });
+    const { admin } = await authenticatePlatform(header.slice(7).trim());
+    res.json({ data: admin });
   } catch (error) {
     next(error);
   }
 });
+platformAuthRouter.post(
+  "/password",
+  authLimiter,
+  platformAuth,
+  validate(platformPasswordChangeSchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await changePlatformPassword(
+          res.locals.platformAdmin.id,
+          res.locals.platformSessionId,
+          validated<PlatformPasswordChangeInput>(req, "body"),
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+// Enrolment only sends the code; the toggle flips on confirmation, so a failed
+// send or a typo can never lock the console out of its own sign-in.
+platformAuthRouter.post(
+  "/two-factor/enroll",
+  authLimiter,
+  platformAuth,
+  async (_req, res, next) => {
+    try {
+      res.json({ data: await enrollPlatformTwoFactor(res.locals.platformAdmin.id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+platformAuthRouter.post(
+  "/two-factor/confirm",
+  authLimiter,
+  platformAuth,
+  validate(twoFactorConfirmSchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await confirmPlatformTwoFactor(
+          res.locals.platformAdmin.id,
+          validated<TwoFactorConfirmInput>(req, "body").code,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+platformAuthRouter.post(
+  "/two-factor/disable",
+  authLimiter,
+  platformAuth,
+  validate(platformTwoFactorDisableSchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await disablePlatformTwoFactor(
+          res.locals.platformAdmin.id,
+          validated<PlatformTwoFactorDisableInput>(req, "body"),
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);

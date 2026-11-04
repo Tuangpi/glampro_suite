@@ -1,49 +1,54 @@
-import { useState, type FormEvent } from "react";
-import { Navigate, useLocation } from "react-router";
+/**
+ * The platform console's route table and session.
+ *
+ * Until now this component faked routing: it read `useLocation`, compared it to
+ * the one path it could draw, and `Navigate`d whenever the two disagreed — so
+ * `/platform/companies/:id` was a URL you could not have, and a company's delete
+ * button lived one scroll away from the operator's own password form. It is now
+ * what it looks like: `/platform` is the directory, `/platform/companies/new` and
+ * `/platform/companies/:id` are pages, and `/platform/account` is where the
+ * operator's password and second factor live, on their own screen.
+ *
+ * The session is state here, not storage: `docs/platform-console.md` states that
+ * an operator session is not saved across page reloads, and keeping that promise
+ * is what keeps this console off a shared machine's disk.
+ *
+ * An unknown path under `/platform` falls back to the directory rather than a
+ * blank screen, and an unauthenticated one goes to the sign-in page, carrying
+ * nothing with it.
+ */
+import { useState } from "react";
+import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import type { PlatformAdminProfile } from "@glampro_suite/shared";
+
 import { platformApi } from "./api";
-import Companies from "./Companies";
-import "./style.css";
+import Account from "./Account";
+import CompaniesPage from "./CompaniesPage";
+import CompanyDetailPage from "./CompanyDetailPage";
+import CreateCompanyPage from "./CreateCompanyPage";
+import PlatformLogin from "./PlatformLogin";
+import PlatformShell from "./PlatformShell";
 
 export default function PlatformApp() {
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [admin, setAdmin] = useState<PlatformAdminProfile | null>(null);
-  const [challenge, setChallenge] = useState<string | null>(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
+  function signedIn(next: PlatformAdminProfile) {
+    setAdmin(next);
     setError("");
-    try {
-      if (challenge) {
-        setAdmin(await platformApi.verify({ challenge, code }));
-        setChallenge(null);
-        setCode("");
-      } else {
-        const result = await platformApi.login({ email, password });
-        setChallenge(result.challenge);
-        setPassword("");
-      }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Sign-in failed.");
-    } finally {
-      setBusy(false);
-    }
+    navigate("/platform", { replace: true });
   }
 
-  async function sessionAction(action: "check" | "logout") {
+  async function signOut() {
     setBusy(true);
     setError("");
     try {
-      if (action === "logout") {
-        await platformApi.logout();
-        setAdmin(null);
-      } else setAdmin(await platformApi.profile());
+      await platformApi.logout();
+      setAdmin(null);
+      navigate("/platform/login", { replace: true });
     } catch (cause) {
       // Retain local state on logout failure so the operator can retry server
       // revocation. Do not claim a failed network request ended the session.
@@ -53,121 +58,31 @@ export default function PlatformApp() {
     }
   }
 
-  const destination = admin ? "/platform" : "/platform/login";
-  if (pathname !== destination) return <Navigate to={destination} replace />;
+  if (!admin) {
+    if (pathname !== "/platform/login") return <Navigate to="/platform/login" replace />;
+    return <PlatformLogin onSignedIn={signedIn} />;
+  }
 
   return (
-    <div className={`platform-portal ${admin ? "platform-workspace" : "platform-auth"}`}>
-      <main>
-        <header className="portal-header">
-          <div className="brand-group">
-            <span className="brand-mark" aria-hidden="true">
-              G
-            </span>
-            <div>
-              <span className="brand">Glampro Suite</span>
-              <span className="brand-caption">Platform administration</span>
-            </div>
-          </div>
-          {admin && (
-            <div className="operator-menu">
-              <div className="operator-identity">
-                <strong>{admin.name}</strong>
-                <span>{admin.email}</span>
-              </div>
-              <button
-                className="button-secondary"
-                disabled={busy}
-                onClick={() => void sessionAction("check")}
-              >
-                Check session
-              </button>
-              <button
-                className="button-secondary"
-                disabled={busy}
-                onClick={() => void sessionAction("logout")}
-              >
-                Sign out
-              </button>
-            </div>
-          )}
-        </header>
-        {error && <p role="alert">{error}</p>}
-        {admin ? (
-          <section className="workspace-content">
-            <p className="workspace-greeting">Welcome, {admin.name}</p>
-            <Companies />
-          </section>
-        ) : (
-          <section>
-            <h1>{challenge ? "Verify your identity" : "Operator sign in"}</h1>
-            <p>
-              {challenge
-                ? "Enter the six-digit code sent to your administrator email."
-                : "For Glampro platform administrators only. Company accounts use the salon portal."}
-            </p>
-            <form onSubmit={(event) => void submit(event)}>
-              {challenge ? (
-                <label>
-                  Verification code
-                  <input
-                    value={code}
-                    onChange={(event) => setCode(event.target.value)}
-                    autoComplete="one-time-code"
-                    inputMode="numeric"
-                    pattern="[0-9]{6}"
-                    maxLength={6}
-                    required
-                  />
-                </label>
-              ) : (
-                <>
-                  <label>
-                    Email
-                    <input
-                      type="email"
-                      autoComplete="username"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      required
-                    />
-                  </label>
-                  <label>
-                    Password
-                    <input
-                      type="password"
-                      autoComplete="current-password"
-                      value={password}
-                      onChange={(event) => setPassword(event.target.value)}
-                      maxLength={200}
-                      required
-                    />
-                  </label>
-                </>
-              )}
-              <button type="submit" disabled={busy}>
-                {busy ? "Please wait…" : challenge ? "Verify and sign in" : "Continue"}
-              </button>
-              {challenge && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => {
-                    setChallenge(null);
-                    setCode("");
-                    setError("");
-                  }}
-                >
-                  Back to sign in
-                </button>
-              )}
-            </form>
-            <p className="note">
-              Email verification is required. Sessions are not saved across page reloads.
-            </p>
-          </section>
-        )}
-      </main>
-    </div>
+    <PlatformShell
+      name={admin.name}
+      email={admin.email}
+      busy={busy}
+      onSignOut={() => void signOut()}
+    >
+      {error ? (
+        <p role="alert" className="mb-4 rounded-md bg-danger/5 px-3 py-2.5 text-sm text-danger">
+          {error}
+        </p>
+      ) : null}
+
+      <Routes>
+        <Route index element={<CompaniesPage />} />
+        <Route path="companies/new" element={<CreateCompanyPage />} />
+        <Route path="companies/:id" element={<CompanyDetailPage />} />
+        <Route path="account" element={<Account admin={admin} onChange={setAdmin} />} />
+        <Route path="*" element={<Navigate to="/platform" replace />} />
+      </Routes>
+    </PlatformShell>
   );
 }

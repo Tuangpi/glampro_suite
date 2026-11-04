@@ -33,6 +33,25 @@ export const companyModuleSchema = z
   })
   .strict();
 export const companyAuditQuerySchema = paginationQuerySchema;
+/**
+ * Permanent removal of a company and every row that points at it.
+ *
+ * Deliberately not part of `companyLifecycleSchema`: suspend, reactivate and
+ * cancel keep the data and stay reversible, while a purge does not. The slug has
+ * to be typed back so a mis-click cannot empty a salon that shares its name.
+ */
+export const companyPurgeSchema = z
+  .object({
+    confirmSlug: z.string().trim().min(3).max(64),
+    reason: reasonSchema,
+  })
+  .strict();
+export const companyPurgeResultSchema = z.object({
+  purged: z.literal(true),
+  company: z.object({ id: z.string(), name: z.string(), slug: z.string() }),
+  /** Rows removed across every tenant-scoped table, for the audit entry. */
+  deletedRows: z.number().int().nonnegative(),
+});
 export const companyAdministrationSchema = z.object({
   effectiveStatus: tenantStatusSchema,
   subscriptions: z.array(
@@ -77,5 +96,7 @@ export type CompanyLifecycleInput = z.infer<typeof companyLifecycleSchema>;
 export type RecordSubscriptionInput = z.infer<typeof recordSubscriptionSchema>;
 export type CompanyModuleInput = z.infer<typeof companyModuleSchema>;
 export type CompanyAuditQuery = z.infer<typeof companyAuditQuerySchema>;
+export type CompanyPurgeInput = z.infer<typeof companyPurgeSchema>;
+export type CompanyPurgeResult = z.infer<typeof companyPurgeResultSchema>;
 export type CompanyAdministration = z.infer<typeof companyAdministrationSchema>;
 export type CompanyAudit = z.infer<typeof companyAuditSchema>;

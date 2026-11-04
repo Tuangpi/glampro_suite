@@ -8,7 +8,11 @@ export const platformAuth: RequestHandler = async (req, res, next) => {
   try {
     const header = req.headers.authorization;
     if (!header?.startsWith("Bearer ") || !header.slice(7).trim()) throw unauthorized();
-    res.locals.platformAdmin = await authenticatePlatform(header.slice(7).trim());
+    const { admin, sessionId } = await authenticatePlatform(header.slice(7).trim());
+    res.locals.platformAdmin = admin;
+    // Account & security needs to know *which* session is asking so it can keep
+    // this one alive while revoking the operator's other sessions.
+    res.locals.platformSessionId = sessionId;
     next();
   } catch (error) {
     next(error);

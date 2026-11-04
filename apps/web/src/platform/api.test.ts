@@ -4,7 +4,12 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetModules();
 });
-const admin = { id: "operator", name: "Operator", email: "operator@example.test" };
+const admin = {
+  id: "operator",
+  name: "Operator",
+  email: "operator@example.test",
+  twoFactorEnabled: true,
+};
 const session = { accessToken: "access-one", refreshToken: "refresh-one", expiresIn: 900, admin };
 function response(data: unknown, status = 200) {
   return new Response(JSON.stringify(status === 200 ? { data } : { message: "Request refused" }), {
@@ -115,5 +120,39 @@ describe("operator API sessions", () => {
     await expect(platformApi.logout()).rejects.toThrow("Request refused");
     await platformApi.logout();
     expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[2][1].body);
+  });
+  it("purges a company with DELETE and the typed slug, never a lifecycle POST", async () => {
+    const fetcher = vi.fn().mockImplementation((url: string) =>
+      Promise.resolve(
+        response(
+          url.endsWith("/verify") || url.endsWith("/refresh")
+            ? session
+            : {
+                purged: true,
+                company: { id: "company-a", name: "Salon A", slug: "salon-a" },
+                deletedRows: 12,
+              },
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    const { platformApi } = await import("./api");
+    await platformApi.verify({ challenge: "a".repeat(64), code: "123456" });
+    const result = await platformApi.deleteCompany("company/a", {
+      confirmSlug: "salon-a",
+      reason: "Customer asked us to erase their data",
+    });
+    expect(result).toEqual({
+      purged: true,
+      company: { id: "company-a", name: "Salon A", slug: "salon-a" },
+      deletedRows: 12,
+    });
+    const call = fetcher.mock.calls.find(([url]) => url.includes("/companies/"));
+    expect(call?.[0]).toBe("/api/platform/companies/company%2Fa");
+    expect(call?.[1].method).toBe("DELETE");
+    expect(JSON.parse(call?.[1].body as string)).toEqual({
+      confirmSlug: "salon-a",
+      reason: "Customer asked us to erase their data",
+    });
   });
 });

@@ -1,5 +1,57 @@
 # Glampro Suite — progress
 
+## November 4, 2026 — the platform console rebuilt on the design system, with real routes
+
+The operator console was the last screen family on hand-written CSS — `platform/style.css`,
+544 lines, with its own purple (`#58378b` against the token's `#6144E4`), its own font
+stack (`system-ui` instead of Plus Jakarta) and its own buttons. It also faked routing:
+`PlatformApp` compared `useLocation().pathname` to the one path it could draw and
+`Navigate`d whenever they disagreed, so a company had no URL, and "Account & security"
+opened as a panel _inside_ the company list — an operator changing their password was
+one scroll away from a company's delete button.
+
+- **Real routes.** `PlatformApp.tsx` is now a route table: `/platform/login`, `/platform`,
+  `/platform/companies/new`, `/platform/companies/:id`, `/platform/account`. An unknown
+  path under `/platform` falls back to the directory; an unauthenticated one goes to
+  sign-in. The session is still state, never storage — the reload guarantee in
+  `docs/platform-console.md` is unchanged and asserted by a test that reads
+  `localStorage`/`sessionStorage` after sign-in.
+- **Split pages, not one growing file.** `Companies.tsx` (441 lines, directory + create +
+  detail + purge in one component) became `CompaniesPage.tsx`, `CreateCompanyPage.tsx`
+  and `CompanyDetailPage.tsx`; `AccountSecurity.tsx` became `Account.tsx`. The chrome
+  moved into `PlatformShell.tsx`, sign-in into `PlatformLogin.tsx` — the salon `Login`
+  layout, reusing the same `BrandMark`, which is now `components/ui/BrandMark.tsx` rather
+  than a copy.
+- **Module access is switches, not two selects.** The old form asked for a module _and_
+  a separate grant/revoke choice, with an ISO timestamp typed by hand: two ways to pair
+  the wrong module with the wrong action, and no view of current state while doing it.
+  It is now one switch per module in a `Table`. Core rows are checked and disabled;
+  a lapsed grant (`enabled: true, entitled: false`) reads off with an `Expired <date>`
+  badge instead of looking like a plain gap.
+- **New `components/ui/Switch.tsx`** (with `__tests__/Switch.test.tsx`): `role="switch"`,
+  `aria-checked`, native Space/Enter, a 44px row and an accessible name from its label.
+  `loading` keeps the server's position and refuses input, so a rejected change cannot
+  leave a switch showing a state that was never saved.
+- **Every toggle still needs a reason.** `companyModuleSchema` requires one, so a switch
+  opens a confirmation with the reason field (and an optional expiry only when granting)
+  and reports a failure _inside_ that dialog — an alert behind the overlay is not an
+  alert. Same pattern for suspend/cancel, and for the purge.
+- **The purge is a modal, not a `<details>`.** The danger zone is a card with one button;
+  the confirmation requires a reason and the slug typed back and stays disabled until
+  both are right. A `409` keeps the dialog open with the reason still typed.
+- **Kept on purpose:** `DetailTabs` stays hand-rolled (the kit `Tabs` unmounts inactive
+  panels, which would wipe a half-typed change reason), with the tab ids and
+  `aria-controls` unchanged.
+- **Verification.** `src/platform` 38/38 (was 24), `Switch.test.tsx` 6/6. Web
+  `tsc --noEmit`, ESLint, Prettier `--check`: exit 0. `npm run build`: exit 0, and
+  `PlatformApp-*.js` is 43.6 kB in its own chunk. Full web suite: **1,035 passed, 6
+  failed**, all six `PayrollPlans.test.tsx` `Test timed out in 5000ms` under parallel
+  load; that file alone is **24/24** — pre-existing, unrelated to this work.
+- **Not claimed.** No API or shared change in this slice, so those suites were not
+  re-run. Browser/visual review of the ported screens was not performed: the checks
+  above are type, lint, build and jsdom only. `style.css` is deleted; nothing else on
+  disk referenced it.
+
 ## November 4, 2026 — a committed security regression in platform operator sign-in, fixed
 
 The CP-007 re-verification earlier today reverted a laptop debug hack in

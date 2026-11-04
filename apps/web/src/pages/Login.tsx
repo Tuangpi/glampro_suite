@@ -24,6 +24,7 @@ import { useState, type ComponentType, type FormEvent, type SVGProps } from "rea
 import { useNavigate, useSearchParams } from "react-router";
 
 import { Calendar, Cart, Eye, Package, Users } from "@/components/icons";
+import BrandMark from "@/components/ui/BrandMark";
 import Button from "@/components/ui/Button";
 import Field, { CONTROL_CLASS } from "@/components/ui/Field";
 import IconButton from "@/components/ui/IconButton";
@@ -243,28 +244,6 @@ export default function Login() {
         </div>
       </main>
     </div>
-  );
-}
-
-/**
- * The brand mark: the purple-gradient "G" that `AppShell`'s rail and
- * `favicon.svg` already draw.
- *
- * It replaced the ported `Lock` glyph this screen used to show. `Lock` itself is
- * untouched and still exported — the handoff's 41-icon port is one-for-one
- * (PROJECT.md#design-4) — it is simply no longer this page's subject: a
- * purple "G" reads as *this* product, a padlock reads as any sign-in form.
- */
-function BrandMark({ className }: { className?: string }) {
-  return (
-    <span
-      className={cn(
-        "flex shrink-0 items-center justify-center rounded-md bg-gradient-to-br from-[var(--sp-purple-grad-a)] to-[var(--sp-purple-grad-b)] font-heavy text-white shadow-purple-btn",
-        className,
-      )}
-    >
-      G
-    </span>
   );
 }
 
