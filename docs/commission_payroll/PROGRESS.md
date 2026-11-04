@@ -1,5 +1,117 @@
 # Commission & Payroll progress
 
+## November 4, 2026 — CP-007 DONE: release verification, NFR-03 evidence and cutover runbook
+
+**CP-007 is complete as local release acceptance. Not release, not earnings activation,
+no production data touched.** The four things that were open when the cutover itself
+was accepted — TC-01–TC-25 end-to-end evidence, the month-to-date performance budget,
+the operator runbook and a green full regression — are now closed, and the one item
+that cannot be closed by code (reconciling real salary figures) is stated plainly
+instead of being implied.
+
+- **NFR-03 now passes on the month-to-date read.** `payroll-close-store.ts` gained
+  `verifiedPayrollCloseSnapshot()`, which proves a stored progress snapshot against
+  the audited `stateHash` instead of re-reading and re-hashing the ~1.4 MB close audit
+  payload; only `readStoredPayrollProgress` uses it, the close path keeps full
+  verification. Measured on `127.0.0.1:55485/payroll_close_test` (PostgreSQL 18, UTC
+  server, Asia/Singapore salon month, 50 staff / five plans / 1,000 real receipts):
+  month close **3,794 / 4,347 ms** and month-to-date **255.3–282.4 ms** on a fresh
+  database; month close **7,427 / 8,003 ms** and month-to-date **414.6–460.3 ms** when
+  the same suite runs last, after the close matrix has written its own receipts into
+  the same database. A fast-hash rewrite of the audit copy was tried first and bought
+  nothing — the win came from not reading the payload at all, which is safe because
+  event-payload tampering is still refused wherever the payload is returned or acted
+  upon, and because "CP-006 progress refuses a snapshot its audit row no longer covers"
+  passes on both the lean and the full path.
+- **The second timing row was contention, not data age — corrected on re-measurement.**
+  Re-running the two wall-clock files alone on the same accumulated database reproduced
+  **3,996–4,659 ms** and **259–291 ms**, i.e. the fresh-database figures. The older
+  7,427 / 8,003 ms and 414.6–460.3 ms samples only appear when the file runs at the tail
+  of a 14-minute serial set, so they measure the load the run left behind, not the
+  database's age. The acceptance record now quotes the isolated protocol.
+- **The host clock, not the code, decides the last 2× — measured and stated.** After an
+  unplanned reboot the machine came up in `powersave` at 400–1,100 MHz (an i5-13420H
+  nominally boosting to ~4.6 GHz) and no passwordless `sudo` exists to change it. On that
+  host, three runs of the same two files give month close **7,162–9,595 ms** (inside the
+  10 s budget) and month-to-date medians **461–497 ms** with **2, 3 and 5 samples of ten
+  over 500 ms** — the per-sample budget is breached there, while the close budget is not.
+  The recorded position is therefore explicit: NFR-03 is met with ~1.7× headroom on a
+  host at nominal clock and is _not_ met on this power-limited host. The owner accepted
+  that evidence rather than leaving it open: the assertion was **not** loosened to a
+  median, and measuring on the hardware that will actually run payroll is now Step 5 of
+  the cutover runbook, beside the pre-activation checks.
+- **The rollback guard was wrong for paid months, and is fixed.** Written down as "no
+  approved month that has not been paid out", the code refused on **any** `APPROVED`
+  close — but confirming a payout keeps `status = APPROVED` and records `state.payout`,
+  so a salon that had approved _and paid_ the current month could never roll back, with
+  a message telling it to settle the month it had already settled. `rollbackPayrollCutover`
+  now blocks on `state.payout === null` only, which matches the double-pay rationale: a
+  frozen snapshot never pays those sales again. The acceptance file gained a fourth case
+  ("CP-007 rollback is refused while plan payroll is approved for an unsettled month")
+  that pins both directions on real HTTP and real PostgreSQL — refused with
+  `PAYROLL_CUTOVER_ROLLBACK_BLOCKED` and `details.periodKeys` while the payout is missing,
+  and the same rollback succeeding once it is recorded.
+- **The acceptance fixture now states planner statistics.** `payrollCloseFixture` ends
+  with `ANALYZE`, because a just-migrated database has no statistics while one in service
+  does (autoanalyze produces them after the first thousand receipts) and the wall-clock
+  assertions were partly measuring a first-touch plan. The performance suite also prints
+  the full sample distribution on a budget miss instead of only the failing sample.
+- **The performance suite reports its warm-up honestly.** `monthToDateColdMs` is now
+  `monthToDateWarmUpMs`, one warm-up call plus ten steady-state samples are collected
+  before any assertion, so a cold first call is visible instead of being either hidden
+  or mistaken for steady state.
+- **TC-01–TC-25 are evidenced by executed tests**, not by inspection:
+  `docs/commission_payroll/RELEASE_ACCEPTANCE.md` maps every case to a named test at
+  engine, API, mounted-HTTP or UI level, with the layers marked. NFR-01–NFR-07 get an
+  evidence row each, and the TC-09/10/12/16/18 chain was re-executed on a fresh
+  disposable cluster (`127.0.0.1:55476/commission_collection_test`): **41 tests, 41
+  passed, 0 failed** in 6.7 s. The command recorded earlier in the acceptance table
+  named two of those files under `src/routes/` where they live under `src/services/`,
+  which silently ran one file instead of three; the paths are corrected.
+- **Regression re-run from a rebuilt environment.** Shared **305/305**. API default (all
+  opt-in gates off, files in parallel) **1,486 tests / 98 suites — 1,211 passed, 275
+  skipped, 0 failed** in 61.9 s, green on two consecutive runs. Gated payroll acceptance
+  in two invocations: the two wall-clock files alone (**2 tests**, close matrix passing)
+  and the remaining payroll set serially (**786 tests — 777 passed, 9 skipped, 0
+  failed**, 602 s) covering CP-003A preview, CP-005 close/matrix, CP-006 progress and
+  CP-007 cutover, including the new rollback-guard case. Web **116 files / 1,016 tests,
+  0 failed** with `--maxWorkers=2` in 134 s. `tsc --noEmit` and ESLint exit 0 for all
+  three packages; `prettier --check` clean.
+- **A shared-catalogue race in the default suite was found and fixed.** The first
+  post-rebuild default run failed two `requireModule` assertions (`packages` expected to
+  be refused, answered 200). The guard was right: `commission-collection-evidence.
+acceptance.test.ts` upserts the `packages` catalogue row with `isCore: true` and
+  `update: {}`, so on a freshly migrated database whichever parallel file creates that
+  row first decides whether the add-on is core, and `requireModule.test.ts` inherited it.
+  That file now states the core-ness it depends on (`update: { isCore }`) instead of
+  leaving `update: {}`; it passes 7/7 with the row forced to `isCore = true` beforehand
+  and normalises it back. Pre-existing, unrelated to payroll — recorded because it made
+  the release gate non-deterministic.
+- **Three configuration lessons, not product defects.** With 98 API files in flight the
+  two NFR-03 assertions are also measuring CPU contention, so sequential execution is
+  the only meaningful mode for them; running every gate at once is invalid because
+  several suites pin their own disposable host, port and database name and fail on
+  `url.port` before asserting any behaviour; and a host rebooted into a power-saving CPU
+  governor halves throughput, which is enough to move the month-to-date read across its
+  budget without a line of product code changing. On the web side, four concurrent
+  suites exhaust the machine and time out `PayrollPlans`/`payroll-close*` tests that all
+  pass in isolation and under bounded workers.
+- **Operator documentation.** `docs/commission_payroll/CUTOVER_RUNBOOK.md` is the
+  preconditions → dry-run → resolve → activate → verify → rollback procedure, and its
+  steps are each mapped to the acceptance test that exercised them. Two scope decisions
+  are now written down rather than implied: the switch is salon-wide (`PayrollCutover`
+  is unique per tenant) and activation cannot backdate.
+- **Disclosed, not hidden.** The opt-in `SC003_CORRECTION_HTTP_TEST` fixture redeems
+  unpaid sessions without the manager approval `payroll-package-session.ts` has required
+  since commit `8c1ac04` (2026-10-30), so it fails with `PACKAGE_UNPAID_SESSIONS` on a
+  healthy system; it predates CP-007, is skipped in the default regression and is
+  recorded in the acceptance document instead of being quietly repaired. The twelve-month
+  reconciliation with the salon's real exported payroll still needs that data, which has
+  never been in this repository.
+- **Authorization.** No production migration, deployment, payout, activation or data
+  change happened in any of these runs. The disposable clusters were stopped and removed
+  afterwards. Production steps require separate explicit authorization and a named owner.
+
 ## November 4, 2026 — CP-007 prospective cutover implemented and locally accepted
 
 **CP-007 IN PROGRESS. Cutover is implemented, tested and locally accepted; it is not

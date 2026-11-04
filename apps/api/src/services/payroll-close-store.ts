@@ -47,23 +47,56 @@ export type PayrollCloseLoader = (
 ) => Promise<PayrollCloseInputs>;
 type Json = Parameters<PayrollCloseTransaction["payrollClose"]["create"]>[0]["data"]["state"];
 
-export async function verifiedPayrollClose(tx: PayrollCloseTransaction, periodKey: string) {
-  const stored = await tx.payrollClose.findFirst({ where: { periodKey } });
-  if (!stored) return null;
-  const audit = await tx.payrollCloseEvent.findFirst({
-    where: { periodKey, revision: stored.revision },
-  });
+function verifiedState<T extends { state: unknown; revision: number; status: string }>(
+  stored: T,
+  audit: { stateHash: string } | null,
+  periodKey: string,
+  auditState: { state: unknown } | null,
+) {
   const state = stored.state as unknown as PayrollCloseState;
   if (
     !audit ||
     audit.stateHash !== payrollInputHash(stored.state) ||
-    audit.stateHash !== payrollInputHash(audit.state) ||
+    // The event carries its own copy of the snapshot; re-hash it whenever it was read.
+    (auditState !== null && audit.stateHash !== payrollInputHash(auditState.state)) ||
     state.periodKey !== periodKey ||
     state.revision !== stored.revision ||
     state.status !== stored.status
   )
     throw conflict("Payroll close audit does not match its stored snapshot.");
   return { stored, state };
+}
+
+/** Full verification: the stored snapshot **and** the audit event's own copy must hash
+ * to the audited `stateHash`. Use this wherever the event payload is read or returned. */
+export async function verifiedPayrollClose(tx: PayrollCloseTransaction, periodKey: string) {
+  const stored = await tx.payrollClose.findFirst({ where: { periodKey } });
+  if (!stored) return null;
+  const audit = await tx.payrollCloseEvent.findFirst({
+    where: { periodKey, revision: stored.revision },
+  });
+  return verifiedState(stored, audit, periodKey, audit);
+}
+
+/**
+ * Snapshot verification for read models that never return the audit payload.
+ *
+ * The snapshot being shown is still proved against the audited `stateHash`; only the
+ * event's second copy is left unread. That copy costs about as much as the snapshot
+ * itself — one 1.4 MB row read plus one canonical hash over 50 statements and 1,000
+ * receipt lines measured ~300 ms against a 500 ms month-to-date budget (NFR-03) — and
+ * it proves a payload this path does not return. Tampering with the event payload is
+ * still refused everywhere the payload is actually exposed or acted on, because those
+ * call sites keep the full check.
+ */
+export async function verifiedPayrollCloseSnapshot(tx: PayrollCloseTransaction, periodKey: string) {
+  const stored = await tx.payrollClose.findFirst({ where: { periodKey } });
+  if (!stored) return null;
+  const audit = await tx.payrollCloseEvent.findFirst({
+    where: { periodKey, revision: stored.revision },
+    select: { stateHash: true },
+  });
+  return verifiedState(stored, audit, periodKey, null);
 }
 
 function context() {
@@ -475,7 +508,7 @@ export async function readStoredPayrollProgress(period?: string) {
     const selfOnly = user.globalRole === "STAFF" || currentOutletId() !== undefined;
     const periodKey =
       requested ?? salonPeriodKey(await salonTimeZone(tx, scope.tenantId), new Date());
-    const verified = await verifiedPayrollClose(tx, periodKey);
+    const verified = await verifiedPayrollCloseSnapshot(tx, periodKey);
     const state = verified?.state ?? openPayrollClose(periodKey);
     const planIds = [
       ...new Set(

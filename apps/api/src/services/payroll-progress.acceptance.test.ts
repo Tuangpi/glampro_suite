@@ -25,7 +25,7 @@ const { runAsTenant, runAsPlatform, runAtOutlet } = await import("../lib/tenant-
 const { salonDayBounds } = await import("../lib/wall-clock.js");
 const { calculatePayrollClose, openPayrollClose, payrollInputHash } =
   await import("./payroll-close-state.js");
-const { readStoredPayrollProgress, readStoredPayrollStatements } =
+const { readStoredPayrollProgress, readStoredPayrollStatements, readStoredPayrollClose } =
   await import("./payroll-close-store.js");
 const { exportInputs, exportOwner } = await import("./payroll-export.test-helper.js");
 
@@ -350,3 +350,36 @@ test("CP-006 progress and self-service read real payroll rows", { skip: !enabled
   assert.equal(await count(tenantId), 3);
   assert.equal(await count(foreignTenantId), 1);
 });
+
+test(
+  "CP-006 progress refuses a snapshot its audit row no longer covers",
+  { skip: !enabled },
+  async () => {
+    await store(tenantId, rekey(closeState("2026-06", true)));
+    // Rewriting a stored snapshot in place is what the history guard exists to stop, so a
+    // tampered row only reaches the table with that guard lifted — the position a
+    // compromised writer would be in. The read model must still refuse to show it: the
+    // month-to-date read verifies the snapshot against the audited hash even though it
+    // no longer reads the audit payload itself (see `verifiedPayrollCloseSnapshot`).
+    await runAsPlatform(() =>
+      prisma.$transaction(async (tx) => {
+        await tx.$executeRawUnsafe("SET LOCAL session_replication_role = replica");
+        await tx.$executeRawUnsafe(
+          `UPDATE payroll_closes SET state = jsonb_set(state, '{calculation,statements,0,staff,name}', '"Tampered"')
+             WHERE "tenantId" = $1 AND "periodKey" = '2026-06'`,
+          tenantId,
+        );
+      }),
+    );
+    await assert.rejects(
+      runAsTenant(tenantId, () => readStoredPayrollProgress("2026-06"), ids.manager),
+      /audit does not match/,
+    );
+    // The same snapshot read through the full check is refused too, so the cheaper read
+    // path did not become the weak one.
+    await assert.rejects(
+      runAsTenant(tenantId, () => readStoredPayrollClose("2026-06"), ids.manager),
+      /audit does not match/,
+    );
+  },
+);

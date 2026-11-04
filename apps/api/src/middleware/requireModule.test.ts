@@ -118,18 +118,23 @@ async function call(code: string, scope: "tenant" | "platform" | "none") {
 describe("requireModule", { skip: databaseUrl ? false : "DATABASE_URL is not set" }, () => {
   before(async () => {
     await seed();
-    // The guard resolves modules from the seeded catalogue.
+    // The guard resolves modules from the seeded catalogue. The catalogue is shared by
+    // every suite on this database, and `packages` is created as *core* by suites that
+    // need the add-on to pass (e.g. `commission-collection-evidence.acceptance.test.ts`
+    // upserts it with `update: {}`, so the first writer wins). These assertions are
+    // about an add-on being refused, so this file states the core-ness it depends on
+    // instead of inheriting whatever a parallel suite happened to leave behind.
     for (const [index, code] of [...CORE_MODULE_CODES, ADD_ON, ADD_ON_GIFT_CARDS].entries()) {
+      const isCore = CORE_MODULE_CODES.includes(code as (typeof CORE_MODULE_CODES)[number]);
+
       await prisma.module.upsert({
         where: { code },
-        update: {},
+        update: { isCore },
         create: {
           code,
           name: code,
-          category: CORE_MODULE_CODES.includes(code as (typeof CORE_MODULE_CODES)[number])
-            ? "Core"
-            : "Add-on",
-          isCore: CORE_MODULE_CODES.includes(code as (typeof CORE_MODULE_CODES)[number]),
+          category: isCore ? "Core" : "Add-on",
+          isCore,
           sortOrder: index,
         },
       });

@@ -20,9 +20,11 @@
   plan will re-derive, and an unidentified payout. Blockers refuse activation;
   warnings are shown and accepted with the attestation.
 - **Rollback is guarded by outstanding plan payroll.** Rollback is refused while
-  a close is `APPROVED` for a month that has not been paid out: resuming legacy
-  would pay the same sales again for a month the plan already owes. History is
-  append-only and every transition is a new revision whose hash points at its
+  a close is `APPROVED` for a month whose payout has not been confirmed: resuming
+  legacy would pay the same sales again for a month the plan already owes. Payout
+  confirmation — not the `APPROVED` status, which a paid month keeps — is the
+  settlement signal, so a paid month never traps the salon on plan payroll. History
+  is append-only and every transition is a new revision whose hash points at its
   predecessor.
 - **One writer boundary, under the existing lock.** `legacyAccrualSuperseded` is
   read inside sale completion while the tenant commission-row lock is held, so a
@@ -32,6 +34,25 @@
 - **Owner-only.** Only a verified owner (`SUPER_ADMIN` with a second factor) may
   activate or roll back; management may read the state and the dry run. The role
   and the second factor are read from the database, not from the token.
+- **Wall-clock budgets are measured in their own invocation.** The two files that
+  assert NFR-03 run alone, in one serial invocation, before the rest of the gated
+  payroll set; expected outcomes on a nominal-clock host are 4 s close and ~270 ms
+  MTD, and the sizes are documented in `RELEASE_ACCEPTANCE.md`. Measuring them at the
+  tail of a 14-minute set charges them for the load the other 786 tests left behind
+  (7.4–8.0 s / 415–460 ms on an _unchanged_ database), which is not a property of the
+  code and was the source of an earlier, wrong "aged database is slower" conclusion.
+  A host rebooted into a `powersave` CPU governor is not a valid environment either:
+  it halves throughput and pushes the per-sample MTD budget over 500 ms while the
+  median stays under it. The budget itself is unchanged — it is the environment that
+  has to be stated alongside the number.
+- **NFR-03 is accepted on the nominal-clock evidence; the assertion stays per-sample.**
+  When the re-measurement host turned out to be power-throttled, the options were to
+  accept the documented two-state evidence, to loosen the assertion to a median, or to
+  leave the item open. Loosening was rejected: a per-request budget is what the
+  requirement asks for, and a median would hide a slow tail. The owner accepted the
+  evidence on November 4, 2026, and measuring on the hardware that will run payroll
+  became a pre-activation step of the runbook (Step 5), so the number that matters is
+  taken on the machine that will serve salons rather than on a laptop.
 - Not authorized by this decision: applying the migration to production data,
   activating a real salon, or any historical backfill.
 

@@ -497,11 +497,17 @@ export function rollbackPayrollCutover(
 
     const timeZone = await salonTimeZone(tx, tenantId);
     const currentPeriodKey = salonPeriodKey(timeZone, new Date());
-    const owing = await tx.payrollClose.findMany({
+    // Only an approved month **whose payout is not yet confirmed** can be double paid:
+    // once the payout is recorded the frozen snapshot will never pay those sales again,
+    // so resuming legacy accrual cannot pay the same sale twice.
+    const approved = await tx.payrollClose.findMany({
       where: { status: "APPROVED", periodKey: { gte: currentPeriodKey } },
-      select: { periodKey: true },
+      select: { periodKey: true, state: true },
       orderBy: { periodKey: "asc" },
     });
+    const owing = approved.filter(
+      (row) => ((row.state as unknown as PayrollCloseState).payout ?? null) === null,
+    );
     if (owing.length > 0)
       throw conflict(
         "Plan payroll is already approved for a month that has not been paid out. Roll back once that month is settled.",

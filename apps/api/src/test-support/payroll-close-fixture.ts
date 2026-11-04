@@ -215,5 +215,11 @@ export async function payrollCloseFixture(
   } finally {
     mock.timers.reset();
   }
+  // A database in service has planner statistics for these tables — autoanalyze
+  // produces them after the first thousand receipts — while a freshly migrated one
+  // does not. The matrix and performance suites assert wall-clock budgets on what the
+  // close path does, so give the planner the statistics it would have in service
+  // instead of letting the samples describe a first-touch estimate.
+  await prisma.$executeRawUnsafe("ANALYZE");
   return { tenantId, ownerId, managerId, staffId, cashierId, ids, scope };
 }

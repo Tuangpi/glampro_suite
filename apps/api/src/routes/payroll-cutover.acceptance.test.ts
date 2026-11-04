@@ -22,6 +22,7 @@ import { createApp } from "../app.js";
 import { prisma } from "../lib/prisma.js";
 import { signAccessToken } from "../lib/tokens.js";
 import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
+import { payrollInputHash, type PayrollCloseState } from "../services/payroll-close-state.js";
 import { salonPeriodKey } from "../services/payroll-progress.js";
 import { payrollCutoverWindow, previousPeriodKey } from "../services/payroll-cutover-inventory.js";
 import { createSale } from "../services/sale.service.js";
@@ -672,6 +673,163 @@ test(
       assert.equal(stored?.revision, 2);
       assert.equal(stored?.status, "ROLLED_BACK");
       assert.equal(stored?.effectivePeriodKey, currentPeriodKey);
+    } finally {
+      mock.timers.reset();
+      server.close();
+      await once(server, "close");
+    }
+  },
+);
+
+test(
+  "CP-007 rollback is refused while plan payroll is approved for an unsettled month",
+  { skip: process.env.RUN_CP005_ACCEPTANCE !== "true", timeout: 120000 },
+  async () => {
+    const f = await cutoverFixture();
+    const server = createApp().listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const root = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/payroll-cutover`;
+    const bearer = signAccessToken({
+      id: f.ownerId,
+      email: `${f.ownerId}@example.test`,
+      globalRole: "SUPER_ADMIN",
+      tenantId: f.tenantId,
+      realm: "web",
+      tokenVersion: 0,
+    }).token;
+    const currentPeriodKey = salonPeriodKey(f.timeZone, new Date());
+    const call = async (path: string, body?: unknown) => {
+      const response = await fetch(`${root}${path}`, {
+        method: body === undefined ? "GET" : "POST",
+        headers: {
+          Authorization: `Bearer ${bearer}`,
+          ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+      return {
+        status: response.status,
+        body: (await response.json()) as Record<string, unknown> & {
+          data?: PayrollCutoverState & PayrollCutoverInventory;
+        },
+      };
+    };
+
+    try {
+      const inventory = (await call(`/inventory?months=3&effectivePeriodKey=${currentPeriodKey}`))
+        .body.data!;
+      const activated = await call("/activate", {
+        expectedRevision: 0,
+        effectivePeriodKey: currentPeriodKey,
+        inventoryMonths: 3,
+        inventoryHash: inventory.inventoryHash,
+        reason: "Owner switched plan payroll on",
+      });
+      assert.equal(activated.status, 200, JSON.stringify(activated.body));
+
+      // Plan payroll is approved for the current month and has not been paid out yet.
+      const approvedState: PayrollCloseState = {
+        periodKey: currentPeriodKey,
+        status: "APPROVED",
+        revision: 1,
+        adjustments: [],
+        calculation: null,
+        approval: {
+          at: new Date().toISOString(),
+          actorId: f.ownerId,
+          reason: "cp007 rollback guard fixture",
+        },
+        payout: null,
+      };
+      const approveHash = payrollInputHash(approvedState);
+      await f.scope(() =>
+        prisma.$transaction(async (tx) => {
+          await tx.payrollClose.create({
+            data: {
+              tenantId: f.tenantId,
+              periodKey: currentPeriodKey,
+              revision: 1,
+              status: "APPROVED",
+              state: JSON.parse(JSON.stringify(approvedState)),
+            },
+          });
+          await tx.payrollCloseEvent.create({
+            data: {
+              tenantId: f.tenantId,
+              periodKey: currentPeriodKey,
+              revision: 1,
+              action: "APPROVE",
+              actorId: f.ownerId,
+              reason: "cp007 rollback guard fixture",
+              previousHash: null,
+              stateHash: approveHash,
+              state: JSON.parse(JSON.stringify(approvedState)),
+            },
+          });
+        }),
+      );
+
+      const refused = await call("/rollback", {
+        expectedRevision: 1,
+        reason: "Owner tried to drop back to the legacy ledger",
+      });
+      assert.equal(refused.status, 409);
+      assert.equal(refused.body.code, "PAYROLL_CUTOVER_ROLLBACK_BLOCKED");
+      assert.deepEqual(refused.body.details, { periodKeys: [currentPeriodKey] });
+
+      // The refusal is not a partial write: the salon is still on plan payroll.
+      const after = await call("");
+      assert.equal(after.status, 200);
+      assert.equal(after.body.data!.status, "ACTIVE");
+      assert.equal(after.body.data!.revision, 1);
+      assert.equal(after.body.data!.history.length, 1);
+      assert.equal(
+        await f.scope(() => prisma.payrollCutoverEvent.count({ where: { tenantId: f.tenantId } })),
+        1,
+      );
+
+      // Confirming the payout settles the month: the frozen snapshot can never pay those
+      // sales again, so the same rollback now succeeds and resumes legacy accrual.
+      const settledState: PayrollCloseState = {
+        ...approvedState,
+        revision: 2,
+        payout: {
+          at: new Date().toISOString(),
+          actorId: f.ownerId,
+          reference: "PAYOUT-0001",
+          reason: "Month settled",
+        },
+      };
+      const settledHash = payrollInputHash(settledState);
+      await f.scope(() =>
+        prisma.$transaction(async (tx) => {
+          await tx.payrollClose.update({
+            where: { tenantId_periodKey: { tenantId: f.tenantId, periodKey: currentPeriodKey } },
+            data: { revision: 2, state: JSON.parse(JSON.stringify(settledState)) },
+          });
+          await tx.payrollCloseEvent.create({
+            data: {
+              tenantId: f.tenantId,
+              periodKey: currentPeriodKey,
+              revision: 2,
+              action: "PAYOUT",
+              actorId: f.ownerId,
+              reason: "Month settled",
+              previousHash: approveHash,
+              stateHash: settledHash,
+              state: JSON.parse(JSON.stringify(settledState)),
+            },
+          });
+        }),
+      );
+
+      const settled = await call("/rollback", {
+        expectedRevision: 1,
+        reason: "Owner resumed the legacy ledger after the month was paid",
+      });
+      assert.equal(settled.status, 200, JSON.stringify(settled.body));
+      assert.equal(settled.body.data!.status, "ROLLED_BACK");
+      assert.equal(settled.body.data!.revision, 2);
     } finally {
       mock.timers.reset();
       server.close();
