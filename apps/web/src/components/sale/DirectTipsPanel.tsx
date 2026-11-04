@@ -168,6 +168,7 @@ export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
           {canReturn && !isReadOnly && tips.data?.items.some((tip) => !tip.returnedAt) ? (
             <Input
               label="Tip return reason"
+              placeholder="e.g. Cash returned by the stylist at close"
               value={reason}
               maxLength={500}
               disabled={busy}
@@ -199,6 +200,7 @@ export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
                 type="number"
                 min="0.01"
                 step="0.01"
+                placeholder="0.00"
                 value={amount}
                 disabled={busy}
                 onChange={(event) => setAmount(event.target.value)}

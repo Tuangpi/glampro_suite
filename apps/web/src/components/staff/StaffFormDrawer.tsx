@@ -345,6 +345,7 @@ export default function StaffFormDrawer({
         <Input
           label="Name"
           required
+          placeholder="e.g. Aina Rahman"
           value={form.name}
           onChange={(event) => setField("name", event.target.value)}
           error={fieldError("name")}
@@ -376,6 +377,7 @@ export default function StaffFormDrawer({
               label="Email"
               type="email"
               required
+              placeholder="name@example.com"
               value={form.email}
               onChange={(event) => setField("email", event.target.value)}
               error={fieldError("email")}
@@ -384,6 +386,7 @@ export default function StaffFormDrawer({
             />
             <Input
               label="Password"
+              placeholder="Please set this staff member's password"
               type="password"
               required
               value={form.password}
@@ -406,6 +409,7 @@ export default function StaffFormDrawer({
           />
           <Input
             label="Position"
+            placeholder="e.g. Senior stylist"
             value={form.position}
             onChange={(event) => setField("position", event.target.value)}
             error={fieldError("position")}
@@ -416,6 +420,7 @@ export default function StaffFormDrawer({
 
         <Input
           label="Phone"
+          placeholder="+65 9123 4567"
           value={form.phone}
           onChange={(event) => setField("phone", event.target.value)}
           error={fieldError("phone")}
@@ -424,6 +429,7 @@ export default function StaffFormDrawer({
 
         <Input
           label={isEditing ? "New POS PIN (leave blank to keep)" : "POS PIN"}
+          placeholder={isEditing ? "Please enter a new POS PIN" : "Please enter a POS PIN"}
           type="password"
           inputMode="numeric"
           autoComplete="new-password"
@@ -449,6 +455,7 @@ export default function StaffFormDrawer({
             min="0"
             max="100"
             step="0.01"
+            placeholder="e.g. 10"
             value={form.commissionRate}
             onChange={(event) => setField("commissionRate", event.target.value)}
             error={fieldError("commissionRate")}
@@ -535,6 +542,7 @@ export default function StaffFormDrawer({
             {commissionRole && (
               <Input
                 label="Classification reason"
+                placeholder="e.g. Joins as a commission-earning senior stylist"
                 value={classificationReason}
                 onChange={(event) => setClassificationReason(event.target.value)}
                 required

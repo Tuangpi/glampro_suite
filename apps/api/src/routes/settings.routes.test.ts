@@ -22,6 +22,8 @@ const TENANT_A = "settings-rt-a";
 const TENANT_B = "settings-rt-b";
 const TENANT_SUSPENDED = "settings-rt-suspended";
 const TENANT_IDS = [TENANT_A, TENANT_B, TENANT_SUSPENDED];
+/** The latest plan's end date — what the profile must report for TENANT_A. */
+const SUBSCRIPTION_ENDS_AT = new Date("2027-03-31T00:00:00.000Z");
 
 interface ProfileBody {
   id: string;
@@ -33,6 +35,8 @@ interface ProfileBody {
   locale: string;
   gstEnabled: boolean;
   gstRegistrationNumber: string | null;
+  /** `null` when the salon has no plan recorded (TENANT_B does not). */
+  subscriptionEndsAt: string | null;
   owner: { id: string; name: string; email: string } | null;
 }
 
@@ -146,6 +150,24 @@ async function seed(): Promise<void> {
     });
 
     await prisma.tenant.update({ where: { id: TENANT_A }, data: { ownerUserId: owner.id } });
+    // Two plans, so the profile has to pick the later one: an older period that
+    // has already ended, then the current one.
+    await prisma.subscription.create({
+      data: {
+        tenantId: TENANT_A,
+        startDate: new Date("2025-04-01T00:00:00.000Z"),
+        endDate: new Date("2026-03-31T00:00:00.000Z"),
+        amount: 49,
+      },
+    });
+    await prisma.subscription.create({
+      data: {
+        tenantId: TENANT_A,
+        startDate: new Date("2026-04-01T00:00:00.000Z"),
+        endDate: SUBSCRIPTION_ENDS_AT,
+        amount: 59,
+      },
+    });
     await prisma.tenantModule.createMany({
       data: [
         {
@@ -174,6 +196,7 @@ let server: Server | undefined;
 let ownerToken = "";
 let staffToken = "";
 let suspendedToken = "";
+let foreignToken = "";
 
 async function login(email: string): Promise<string> {
   return loginForRouteTest(baseUrl, email, PASSWORD);
@@ -206,6 +229,7 @@ describe("settings endpoints", { skip: databaseUrl ? false : "DATABASE_URL is no
     ownerToken = await login(`owner@${DOMAIN}`);
     staffToken = await login(`staff@${DOMAIN}`);
     suspendedToken = await login(`suspended@${DOMAIN}`);
+    foreignToken = await login(`foreign@${DOMAIN}`);
   });
 
   after(async () => {
@@ -230,6 +254,8 @@ describe("settings endpoints", { skip: databaseUrl ? false : "DATABASE_URL is no
     assert.equal(profile.lowStockThreshold, 6);
     assert.equal(profile.timeZone, "Asia/Singapore");
     assert.equal(profile.locale, "en-SG");
+    // The later of the salon's two plans, not the first row found.
+    assert.equal(profile.subscriptionEndsAt, SUBSCRIPTION_ENDS_AT.toISOString());
     assert.deepEqual(profile.owner, {
       id: "settings-rt-owner",
       name: "Sonia Owner",
@@ -269,6 +295,22 @@ describe("settings endpoints", { skip: databaseUrl ? false : "DATABASE_URL is no
     assert.equal(profile.lowStockThreshold, 9);
     assert.equal(profile.slug, TENANT_A);
     assert.equal(profile.status, "ACTIVE");
+    // Expiry is not the salon's to write: the strict schema refuses it outright
+    // rather than silently ignoring a value the client believed it had set.
+    const expiryWrite = await request("PATCH", "/api/settings/profile", ownerToken, {
+      name: "Renamed Salon",
+      lowStockThreshold: 9,
+      subscriptionEndsAt: "2099-01-01T00:00:00.000Z",
+    });
+    assert.equal(expiryWrite.status, 422);
+  });
+
+  it("reports no expiry for a salon with no plan recorded", async () => {
+    const profile = await dataOf<ProfileBody>(
+      await request("GET", "/api/settings/profile", foreignToken),
+    );
+    assert.equal(profile.id, TENANT_B);
+    assert.equal(profile.subscriptionEndsAt, null);
   });
 
   it("persists localisation, preserves it for older clients and isolates other salons", async () => {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router";
 import CompaniesPage from "./CompaniesPage";
@@ -22,6 +22,7 @@ const company = {
   name: "Salon A",
   slug: "salon-a",
   status: "ACTIVE" as const,
+  subscriptionEndsAt: "2027-03-31T00:00:00.000Z",
   createdAt: new Date().toISOString(),
   owner: { id: "owner-a", name: "Owner A", email: "owner@example.test", disabled: true },
   invitation: {
@@ -63,6 +64,7 @@ beforeEach(() => {
     total: 1,
     page: 1,
     pageSize: 20,
+    stats: { total: 1, active: 1, suspended: 0, expiringSoon: 0 },
   });
   vi.mocked(platformApi.company).mockResolvedValue(company);
 });
@@ -133,6 +135,46 @@ it("keeps the tab panels mounted and moves between them with the arrow keys", as
   fireEvent.keyDown(screen.getByRole("tab", { name: "Subscription" }), { key: "Home" });
   expect(overview).toHaveFocus();
   expect(screen.getByRole("tabpanel", { name: "Overview" })).toBeVisible();
+});
+
+it("shows directory totals and each company's subscription expiry", async () => {
+  const noPlan = {
+    ...company,
+    id: "company-b",
+    name: "Salon B",
+    slug: "salon-b",
+    status: "SUSPENDED" as const,
+    subscriptionEndsAt: null,
+    invitation: null,
+  };
+  vi.mocked(platformApi.companies).mockResolvedValue({
+    items: [company, noPlan],
+    total: 2,
+    page: 1,
+    pageSize: 20,
+    // Directory-wide counts, so they may exceed the two rows on this page.
+    stats: { total: 5, active: 3, suspended: 2, expiringSoon: 1 },
+  });
+  render(<Harness />);
+  await screen.findByRole("button", { name: "Salon A" });
+
+  const overview = screen.getByRole("group", { name: "Company directory overview" });
+  const tile = (label: string) => within(overview).getByText(label).parentElement;
+  expect(tile("All companies")).toHaveTextContent("5");
+  expect(tile("Active")).toHaveTextContent("3");
+  expect(tile("Suspended")).toHaveTextContent("2");
+  expect(tile("Ending in 30 days")).toHaveTextContent("1");
+  // The tiles are the directory; the card title is the search.
+  expect(screen.getByText("2 companies")).toBeInTheDocument();
+
+  expect(screen.getByRole("columnheader", { name: "Subscription ends" })).toBeInTheDocument();
+  // Formatted the same way the cell formats it, so the assertion is about which
+  // date is shown rather than about the machine's locale.
+  expect(
+    screen.getByText(new Date(company.subscriptionEndsAt).toLocaleDateString()),
+  ).toBeInTheDocument();
+  // A company with no plan says so instead of showing a blank or a fake date.
+  expect(screen.getByText("No plan recorded")).toBeInTheDocument();
 });
 
 it("shows list failures and allows retry without leaving the directory", async () => {

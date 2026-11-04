@@ -39,6 +39,7 @@ import Pagination from "@/components/ui/Pagination";
 import Skeleton from "@/components/ui/Skeleton";
 import Switch from "@/components/ui/Switch";
 import Table, { type TableColumn } from "@/components/ui/Table";
+import { dayToLocalInstant, formatDateInputValue } from "@/lib/utils";
 import { platformApi } from "./api";
 import type { DetailTab } from "./DetailTabs";
 
@@ -59,6 +60,23 @@ function formatExpiry(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+}
+
+/**
+ * `max` for a period start. The service records only a *current* period
+ * (`recordCompanySubscription` refuses a start in the future), so the picker
+ * greys the days it would reject instead of letting the request fail.
+ */
+function todayInputValue(): string {
+  return formatDateInputValue(new Date());
+}
+
+/**
+ * `min` for a period end. Both boundaries are stored at midnight, so an end of
+ * "today" has already passed and tomorrow is the earliest day the service takes.
+ */
+function tomorrowInputValue(): string {
+  return formatDateInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
 }
 
 const MODULE_COLUMNS = (
@@ -206,9 +224,15 @@ export default function CompanyAdministration({
     const form = event.currentTarget;
     const values = new FormData(form);
     void perform(async () => {
+      // The picker knows a day; the API stores an instant. Each boundary is that
+      // day at midnight in the operator's own timezone, so the day never shifts.
+      const startDate = dayToLocalInstant(String(values.get("startDate") ?? ""));
+      const endDate = dayToLocalInstant(String(values.get("endDate") ?? ""));
+      if (!startDate) throw new Error("Choose a valid period start date.");
+      if (!endDate) throw new Error("Choose a valid period end date.");
       const input = recordSubscriptionSchema.safeParse({
-        startDate: values.get("startDate"),
-        endDate: values.get("endDate"),
+        startDate,
+        endDate,
         amount: values.get("amount"),
         currency: values.get("currency"),
         reason,
@@ -368,20 +392,22 @@ export default function CompanyAdministration({
               <form className="mt-4 flex flex-col gap-3 px-2" onSubmit={subscription}>
                 <h4 className="text-sm font-bold text-ink">Record current subscription period</h4>
                 <p className="text-xs text-ink-muted">
-                  Use ISO timestamps with a timezone, for example 2026-10-23T00:00:00+08:00. Periods
-                  cannot overlap.
+                  Pick the first and last day of the period. Both are recorded at midnight in your
+                  own timezone, and periods cannot overlap.
                 </p>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
                     name="startDate"
                     label="Period start"
-                    placeholder="2026-10-23T00:00:00+08:00"
+                    type="date"
+                    max={todayInputValue()}
                     required
                   />
                   <Input
                     name="endDate"
                     label="Period end"
-                    placeholder="2026-11-23T00:00:00+08:00"
+                    type="date"
+                    min={tomorrowInputValue()}
                     required
                   />
                   <Input
@@ -395,6 +421,7 @@ export default function CompanyAdministration({
                     name="currency"
                     label="Currency"
                     defaultValue="SGD"
+                    placeholder="SGD"
                     pattern="[A-Z]{3}"
                     required
                   />

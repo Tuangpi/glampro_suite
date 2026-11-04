@@ -317,6 +317,12 @@ function FamilyDialog({
       {needsValue ? (
         <Input
           label={draft.kind === "create" ? "New prepaid family name" : "Target prepaid family ID"}
+          placeholder={draft.kind === "create" ? "e.g. Tan family credit" : undefined}
+          hint={
+            draft.kind === "create"
+              ? undefined
+              : "Copy it from the other profile's prepaid family panel."
+          }
           value={value}
           maxLength={draft.kind === "create" ? 100 : 64}
           disabled={blocked}
@@ -328,6 +334,7 @@ function FamilyDialog({
       ) : null}
       <Input
         label="Family change reason"
+        placeholder="e.g. Credit split after the children turned 18"
         value={reason}
         maxLength={2000}
         disabled={blocked}

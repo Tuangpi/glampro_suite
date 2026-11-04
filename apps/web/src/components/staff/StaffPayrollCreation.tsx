@@ -71,6 +71,7 @@ export default function StaffPayrollCreation({
           />
           <Input
             label="Assignment reason"
+            placeholder="e.g. Promoted to senior stylist"
             required
             value={value.reason}
             onChange={(event) => onChange({ ...value, reason: event.target.value })}

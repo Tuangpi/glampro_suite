@@ -110,11 +110,16 @@ beforeEach(() => {
       locale: "en-SG",
       gstEnabled: false,
       gstRegistrationNumber: null,
+      // Still on the API payload: the screen no longer edits them, and a profile
+      // save must leave the stored values alone.
       onlineBookingEnabled: false,
       onlineDepositAmount: 0,
       onlineNoShowFee: 0,
       owner: { id: "owner-1", name: "Ava Owner", email: "ava@example.com" },
 
+      // The API still returns the salon's stored localisation preferences; the
+      // screen simply no longer offers them for editing.
+      subscriptionEndsAt: "2027-03-31T00:00:00.000Z",
       createdAt: "2026-01-02T00:00:00.000Z",
       updatedAt: "2026-10-09T00:00:00.000Z",
     },
@@ -289,60 +294,41 @@ describe("Settings", () => {
     expect(screen.queryByRole("region", { name: "Salon details" })).not.toBeInTheDocument();
   });
 
-  it("preserves unsaved salon and booking drafts when switching categories", async () => {
+  it("preserves unsaved salon and business-hours drafts when switching categories", async () => {
     const user = userEvent.setup();
     renderSettings();
     await user.clear(screen.getByLabelText("Salon name"));
     await user.type(screen.getByLabelText("Salon name"), "Unsaved salon");
     await user.selectOptions(screen.getByLabelText("Settings category"), "booking");
-    await user.click(screen.getByLabelText("Enable online booking"));
-    await user.clear(screen.getByLabelText("Deposit amount (SGD)"));
-    await user.type(screen.getByLabelText("Deposit amount (SGD)"), "25.50");
+    // Every day is closed on the server, so ticking Tuesday opens it with the
+    // card's default window — the draft the round trip below has to keep.
+    await user.click(screen.getByLabelText("Tuesday"));
+    const opens = screen.getAllByLabelText("Opens");
+    expect(opens).toHaveLength(1);
+    await user.clear(opens[0]);
+    await user.type(opens[0], "10:30");
     await user.selectOptions(screen.getByLabelText("Settings category"), "salon");
     expect(screen.getByLabelText("Salon name")).toHaveValue("Unsaved salon");
     await user.selectOptions(screen.getByLabelText("Settings category"), "booking");
-    expect(screen.getByLabelText("Deposit amount (SGD)")).toHaveValue(25.5);
-    await user.click(screen.getByRole("button", { name: "Save booking settings" }));
+    expect(screen.getByLabelText("Tuesday")).toBeChecked();
+    expect(screen.getAllByLabelText("Opens")[0]).toHaveValue("10:30");
+    await user.click(screen.getByRole("button", { name: "Save hours" }));
     expect(mutateAsync).toHaveBeenCalledWith({
-      name: "Ava Salon",
-      lowStockThreshold: 5,
-      onlineBookingEnabled: true,
-      onlineDepositAmount: 2550,
-      onlineNoShowFee: 0,
+      tuesday: { open: "10:30", close: "20:00" },
     });
   });
 
-  it("shows saved booking fees in dollars and keeps them when online booking is disabled", async () => {
-    const profile = useSalonProfile();
-    useSalonProfile.mockReturnValue({
-      ...profile,
-      data: {
-        ...profile.data,
-        onlineBookingEnabled: true,
-        onlineDepositAmount: 1234,
-        onlineNoShowFee: 505,
-      },
-    });
-    const user = userEvent.setup();
+  it("no longer offers the online-booking settings in the booking category", () => {
     renderSettings("booking");
-    expect(screen.getByLabelText("Deposit amount (SGD)")).toHaveValue(12.34);
-    expect(screen.getByLabelText("No-show fee (SGD)")).toHaveValue(5.05);
-    await user.click(screen.getByLabelText("Enable online booking"));
+    // Hiding is deliberate: the salon's hours and resources stay, while the
+    // online-booking toggle and its fees are managed outside this screen. The
+    // profile write never sends those keys, so nothing here can change them.
+    expect(screen.getByText("Business hours")).toBeVisible();
+    expect(screen.getByText("Rooms and equipment")).toBeVisible();
+    expect(screen.queryByText("Online booking")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Enable online booking")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Deposit amount (SGD)")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Save booking settings" }));
-    expect(mutateAsync).toHaveBeenCalledWith({
-      name: "Ava Salon",
-      lowStockThreshold: 5,
-      onlineBookingEnabled: false,
-      onlineDepositAmount: 1234,
-      onlineNoShowFee: 505,
-    });
-  });
-
-  it("keeps booking settings read-only for a suspended salon", async () => {
-    auth.readOnly = true;
-    renderSettings("booking");
-    expect(screen.getByLabelText("Enable online booking")).toBeDisabled();
+    expect(screen.queryByLabelText("No-show fee (SGD)")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save booking settings" })).not.toBeInTheDocument();
   });
 
@@ -384,7 +370,7 @@ describe("Settings", () => {
     expect(screen.getByText("Senior stylist")).toBeInTheDocument();
   });
 
-  it("saves salon-editable fields including persisted localisation preferences", async () => {
+  it("saves salon-editable fields without touching the platform-owned preferences", async () => {
     const user = userEvent.setup();
     renderSettings();
     await user.clear(screen.getByLabelText("Salon name"));
@@ -392,33 +378,23 @@ describe("Settings", () => {
     await user.clear(screen.getByLabelText("Low-stock threshold"));
     await user.type(screen.getByLabelText("Low-stock threshold"), "8");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
+    // No `timeZone`/`locale`: omitted keys are left alone by the service, so a
+    // profile save can never reset the salon's formatting preferences.
     expect(mutateAsync).toHaveBeenCalledWith({
       name: "New Salon Name",
       lowStockThreshold: 8,
-      timeZone: "Asia/Singapore",
-      locale: "en-SG",
       gstEnabled: false,
       gstRegistrationNumber: null,
     });
   });
 
-  it("allows a manager to change the saved timezone and formatting locale", async () => {
+  it("hides the timezone and formatting locale fields", () => {
     auth.role = "MANAGER";
-    const user = userEvent.setup();
     renderSettings();
-    await user.clear(screen.getByLabelText("Salon timezone"));
-    await user.type(screen.getByLabelText("Salon timezone"), "Europe/London");
-    await user.clear(screen.getByLabelText("Formatting locale"));
-    await user.type(screen.getByLabelText("Formatting locale"), "en-GB");
-    await user.click(screen.getByRole("button", { name: "Save profile" }));
-    expect(mutateAsync).toHaveBeenCalledWith({
-      name: "Ava Salon",
-      lowStockThreshold: 5,
-      timeZone: "Europe/London",
-      locale: "en-GB",
-      gstEnabled: false,
-      gstRegistrationNumber: null,
-    });
+    expect(screen.queryByLabelText("Salon timezone")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Formatting locale")).not.toBeInTheDocument();
+    // The rest of the profile form is still there.
+    expect(screen.getByLabelText("Salon name")).toBeEnabled();
   });
 
   it("lets a manager switch GST on and save the registration number", async () => {
@@ -433,8 +409,6 @@ describe("Settings", () => {
     expect(mutateAsync).toHaveBeenCalledWith({
       name: "Ava Salon",
       lowStockThreshold: 5,
-      timeZone: "Asia/Singapore",
-      locale: "en-SG",
       gstEnabled: true,
       gstRegistrationNumber: "M90312345X",
     });
@@ -464,24 +438,44 @@ describe("Settings", () => {
     expect(screen.queryByLabelText("GST registration number")).not.toBeInTheDocument();
   });
 
-  it("displays server validation errors without losing the draft preferences", async () => {
-    mutateAsync.mockRejectedValueOnce(new Error("Invalid timezone"));
-    getValidationDetails.mockReturnValueOnce({ "body.timeZone": "Choose a valid timezone" });
+  it("displays server validation errors without losing the draft", async () => {
+    mutateAsync.mockRejectedValueOnce(new Error("Name is required"));
+    getValidationDetails.mockReturnValueOnce({ "body.name": "Name is required" });
     const user = userEvent.setup();
     renderSettings();
-    await user.clear(screen.getByLabelText("Salon timezone"));
-    await user.type(screen.getByLabelText("Salon timezone"), "Mars/Olympus");
+    await user.clear(screen.getByLabelText("Salon name"));
+    await user.type(screen.getByLabelText("Salon name"), "Draft Salon");
     await user.click(screen.getByRole("button", { name: "Save profile" }));
-    expect(screen.getByText("Choose a valid timezone")).toBeInTheDocument();
-    expect(screen.getByLabelText("Salon timezone")).toHaveValue("Mars/Olympus");
+    expect(screen.getByText("Name is required")).toBeInTheDocument();
+    expect(screen.getByLabelText("Salon name")).toHaveValue("Draft Salon");
   });
 
-  it("disables localisation changes for a read-only salon", () => {
+  it("shows the subscription expiry in the account details", () => {
+    renderSettings();
+    // Read-only fact, formatted by the salon's own formatter (en-SG, 2-digit).
+    const label = screen.getByText("Subscription ends");
+    expect(label.parentElement).toHaveTextContent("31/03/2027");
+  });
+
+  it("says so when no plan is recorded", () => {
+    const profile = useSalonProfile();
+    useSalonProfile.mockReturnValue({
+      ...profile,
+      data: { ...profile.data, subscriptionEndsAt: null },
+    });
+    renderSettings();
+    const label = screen.getByText("Subscription ends");
+    expect(label.parentElement).toHaveTextContent("—");
+  });
+
+  it("disables the profile form for a read-only salon", () => {
     auth.readOnly = true;
     renderSettings();
-    expect(screen.getByLabelText("Salon timezone")).toBeDisabled();
-    expect(screen.getByLabelText("Formatting locale")).toBeDisabled();
+    expect(screen.getByLabelText("Salon name")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
+    // Localisation is platform-owned now, so it is absent for everyone.
+    expect(screen.queryByLabelText("Salon timezone")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Formatting locale")).not.toBeInTheDocument();
   });
 
   it("renders the business hours card", () => {
@@ -608,7 +602,5 @@ describe("Settings", () => {
       screen.getByText("Only a manager or the owner can change the salon profile."),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Salon name")).toBeDisabled();
-    expect(screen.getByLabelText("Salon timezone")).toBeDisabled();
-    expect(screen.getByLabelText("Formatting locale")).toBeDisabled();
   });
 });

@@ -226,6 +226,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
           <>
             <Input
               label="Payroll change reason"
+              placeholder="e.g. Assigned to the senior stylist plan"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               disabled={!canEdit || mutation.isPending}
@@ -278,6 +279,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
         </Button>
         <Input
           label="Plan change reason"
+          placeholder="e.g. Base rate raised from 4% to 5%"
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           disabled={!canEdit || mutation.isPending}
@@ -299,6 +301,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
           <div className="space-y-2">
             <Input
               label="New or duplicate plan name"
+              placeholder="e.g. Hair stylist plan 2027"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -384,6 +387,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
               <fieldset disabled={locked || plan.archived} className="space-y-3">
                 <Input
                   label="Component name"
+                  placeholder="e.g. Service commission"
                   value={component.name}
                   onChange={(e) => editComponent({ name: e.target.value })}
                 />
@@ -416,6 +420,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                 </div>
                 <Input
                   label="Base percentage"
+                  placeholder="e.g. 5"
                   value={component.basePct}
                   onChange={(e) => editComponent({ basePct: e.target.value })}
                 />
@@ -423,6 +428,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                   key={`${plan.id}-${component.key}-include-${JSON.stringify(component.categoryInclude)}`}
                   label="Included category keys (comma-separated, blank = all)"
                   hint="Use the category keys recorded on commission base lines. Exclusions take precedence."
+                  placeholder="e.g. COLOUR, TREATMENT"
                   defaultValue={component.categoryInclude?.join(", ") ?? ""}
                   onBlur={(e) =>
                     editComponent({
@@ -440,6 +446,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                 <Input
                   key={`${plan.id}-${component.key}-exclude-${JSON.stringify(component.categoryExclude)}`}
                   label="Excluded category keys (comma-separated)"
+                  placeholder="e.g. RETAIL, GIFT_CARD"
                   defaultValue={component.categoryExclude?.join(", ") ?? ""}
                   onBlur={(e) =>
                     editComponent({
@@ -456,6 +463,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                 />
                 <Input
                   label="Monthly cap (blank for no cap)"
+                  placeholder="e.g. 1500.00"
                   value={component.monthlyCap ?? ""}
                   onChange={(e) => editComponent({ monthlyCap: e.target.value || null })}
                 />
@@ -476,6 +484,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                 {component.method === "FLAT" && (
                   <Input
                     label="Flat rate percentage"
+                    placeholder="e.g. 5"
                     value={component.flatRatePct ?? ""}
                     onChange={(e) => editComponent({ flatRatePct: e.target.value })}
                   />
@@ -483,6 +492,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                 {component.method === "FIXED_PER_UNIT" && (
                   <Input
                     label="Fixed amount per unit"
+                    placeholder="0.00"
                     value={component.fixedAmount ?? ""}
                     onChange={(e) => editComponent({ fixedAmount: e.target.value })}
                   />
@@ -491,6 +501,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                   <div className="flex flex-wrap items-end gap-2" key={index}>
                     <Input
                       label={`Band ${index + 1} upper limit (blank = uncapped)`}
+                      placeholder="e.g. 10000"
                       value={band.upperLimit ?? ""}
                       onChange={(e) =>
                         editComponent({
@@ -502,6 +513,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                     />
                     <Input
                       label={`Band ${index + 1} standard rate`}
+                      placeholder="e.g. 3"
                       value={band.ratePct}
                       onChange={(e) =>
                         editComponent({
@@ -517,6 +529,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                         <Input
                           key={stage.key}
                           label={`Band ${index + 1} ${stage.name} rate (blank = standard)`}
+                          placeholder="e.g. 4"
                           value={band.stageRates?.[stage.key] ?? ""}
                           onChange={(e) =>
                             editComponent({
@@ -769,11 +782,13 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
               <h3>Test calculator and method comparison</h3>
               <Input
                 label="Calculator monthly base"
+                placeholder="e.g. 25000.00"
                 value={base}
                 onChange={(e) => setBase(e.target.value)}
               />
               <Input
                 label="Calculator credited units"
+                placeholder="e.g. 120"
                 value={units}
                 onChange={(e) => setUnits(e.target.value)}
               />

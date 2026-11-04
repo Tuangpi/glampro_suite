@@ -48,6 +48,7 @@ export default function PrivacyNoticeCard({ canEdit }: { canEdit: boolean }) {
       <form onSubmit={publish} className="flex flex-col gap-3">
         <Input
           label="New notice version"
+          placeholder="e.g. 2026-04-v2"
           value={version}
           onChange={(event) => setVersion(event.target.value)}
           maxLength={100}

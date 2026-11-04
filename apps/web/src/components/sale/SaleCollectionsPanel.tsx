@@ -271,6 +271,7 @@ function CollectionPanel({ sale, identity }: { sale: SaleDetail; identity: strin
               <Input
                 label="Later payment amount (SGD)"
                 inputMode="decimal"
+                placeholder="0.00"
                 value={amount}
                 maxLength={13}
                 onChange={(event) => {
@@ -283,6 +284,7 @@ function CollectionPanel({ sale, identity }: { sale: SaleDetail; identity: strin
                   key={line.saleLineId}
                   label={`Allocation to line ${index + 1}: ${line.itemName} (SGD)`}
                   inputMode="decimal"
+                  placeholder="0.00"
                   value={allocations[line.saleLineId] ?? ""}
                   maxLength={13}
                   onChange={(event) => {
@@ -300,6 +302,7 @@ function CollectionPanel({ sale, identity }: { sale: SaleDetail; identity: strin
               </p>
               <Input
                 label="Later payment reason"
+                placeholder="e.g. Balance paid on the next visit"
                 maxLength={500}
                 value={reason}
                 onChange={(event) => {

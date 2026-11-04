@@ -144,6 +144,28 @@ describe("the password field", () => {
     await user.click(screen.getByRole("button", { name: "Hide password" }));
     expect(screen.getByLabelText("Password")).toHaveAttribute("type", "password");
   });
+
+  // A masked field paints its placeholder as the only unmasked text it ever
+  // shows, so it prompts rather than samples a secret. Asserted here and not
+  // only through `Input` because this control is hand-composed `Field` +
+  // `CONTROL_CLASS` and its `type` is an expression — the shape a sweep for
+  // `type="password"` cannot see, which is how this field once lost its prompt.
+  it("prompts instead of sampling a secret, revealed or not", async () => {
+    const user = renderLogin();
+
+    const password = screen.getByLabelText("Password");
+    expect(password).toHaveAttribute("placeholder", "Please enter your password");
+    // The prompt must not become the name.
+    expect(password).toHaveAccessibleName("Password");
+
+    await user.type(password, "secret123");
+    await user.click(screen.getByRole("button", { name: "Show password" }));
+
+    expect(screen.getByLabelText("Password")).toHaveAttribute(
+      "placeholder",
+      "Please enter your password",
+    );
+  });
 });
 
 describe("where it goes afterwards", () => {

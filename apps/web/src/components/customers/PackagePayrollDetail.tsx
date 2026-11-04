@@ -135,6 +135,7 @@ export default function PackagePayrollDetail({
           </p>
           <Input
             label="Session action / refund reason"
+            placeholder="e.g. Client cancelled the remaining session"
             value={reason}
             onChange={(event) => setReason(event.target.value)}
             disabled={busy || !canManage}
@@ -224,12 +225,14 @@ export default function PackagePayrollDetail({
               </p>
               <Input
                 label="Approved administration fee (net SGD)"
+                placeholder="0.00"
                 value={fee}
                 onChange={(event) => setFee(event.target.value)}
                 disabled={busy}
               />
               <Input
                 label="Cash refund paid (gross SGD; 0.00 for no payout)"
+                placeholder="0.00"
                 value={payout}
                 onChange={(event) => setPayout(event.target.value)}
                 disabled={busy}

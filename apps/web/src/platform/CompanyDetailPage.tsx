@@ -137,6 +137,15 @@ export default function CompanyDetailPage() {
           </Badge>,
         ],
         ["Owner", detail.owner?.name ?? "Not assigned"],
+        [
+          // The company's latest plan expiry — read here for the same reason the
+          // directory column shows it: an operator looking at one company should
+          // not have to open the subscription screens to see where the plan ends.
+          "Subscription ends",
+          detail.subscriptionEndsAt
+            ? new Date(detail.subscriptionEndsAt).toLocaleDateString()
+            : "No plan recorded",
+        ],
         ["Owner email", detail.owner?.email ?? "Not assigned"],
         [
           "Owner access",
@@ -354,6 +363,7 @@ export default function CompanyDetailPage() {
           ) : null}
           <Input
             label="Reason for deletion"
+            placeholder="e.g. Client closed the salon and asked for erasure"
             value={purgeReason}
             onChange={(event) => setPurgeReason(event.target.value)}
             minLength={3}
@@ -362,6 +372,10 @@ export default function CompanyDetailPage() {
             disabled={purging}
             hint="Recorded in the audit log with who asked for it."
           />
+          {/* Placeholder, not value, on purpose: it shows the operator the exact
+              string to type while leaving the delete button disabled until they
+              type it. It is the one placeholder here that is a real value rather
+              than an example — do not "fix" it into a `value`. */}
           <Input
             label="Type the slug to confirm"
             value={purgeSlug}

@@ -380,6 +380,7 @@ function ConsentFormEditor({
       </p>
       <Input
         label="Form title"
+        placeholder="e.g. Balayage colour consent 2026"
         value={title}
         maxLength={200}
         disabled={create.isPending || isReadOnly}

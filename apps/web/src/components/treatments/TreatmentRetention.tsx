@@ -161,6 +161,7 @@ function RetentionEditor({ record, refreshing }: { record: TreatmentRecord; refr
       />
       <Input
         label="Reason for continued retention"
+        placeholder="e.g. Open complaint, reviewed after the follow-up visit"
         required
         maxLength={2000}
         value={reason}
@@ -179,6 +180,7 @@ function RetentionEditor({ record, refreshing }: { record: TreatmentRecord; refr
       {hold ? (
         <Input
           label="Retention hold reason"
+          placeholder="e.g. Legal hold while the insurer reviews the claim"
           required
           maxLength={2000}
           value={holdReason}

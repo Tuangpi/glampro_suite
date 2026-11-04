@@ -1,5 +1,107 @@
 # Glampro Suite — progress
 
+## November 4, 2026 — the online-booking card leaves Settings
+
+"Booking & hours" held three cards and only two of them belonged there. The **Online booking**
+card — an enable toggle plus deposit and no-show fee inputs — sat above the business hours that
+give the section its name, and its values were the only ones on the page that no other part of
+the salon app reads back.
+
+- **The card is gone; the feature is not.** `onlineBookingEnabled`, `onlineDepositAmount` and
+  `onlineNoShowFee` stay on the tenant, on `salonProfileSchema` and in the public booking
+  contract: `public-booking.service.ts` still refuses to take a booking when the toggle is off
+  and still stamps the stored deposit and no-show fee onto the appointment it creates. Only the
+  UI is hidden — a salon already taking online bookings keeps taking them, at the same fees.
+- **The cost of hiding it, stated plainly.** That toggle was the only control in the product
+  for turning public booking on or off. The stored value now decides, and no screen edits it.
+  That is the visible consequence of a UI-only removal, not an oversight.
+- **`ProfileCard` lost its second mode.** It was one component with a `booking` flag that
+  swapped the title, the description, the entire form body, the submit payload, the button label
+  and the read-only sentence. With the booking card removed the flag could only ever be `false`,
+  so the branch is deleted rather than left dead — one component, one purpose, and a payload that
+  sends exactly the four profile keys the form shows.
+- **The section keeps its id, its label and its neighbours.** `?section=booking` still resolves
+  to Business hours and Rooms and equipment, and the nav blurb now reads "Opening hours and the
+  rooms or equipment you book" instead of advertising a control that is no longer rendered.
+- **Business hours are untouched, and they do generate slots.** `fitsOperatingHours` in
+  `booking-hours.service.ts` gates public availability and the public booking write through
+  `withinHours` (the whole service must fit the day's window, on the existing 30-minute grid
+  anchored at opening, with real minute boundaries across DST), and internal create/reschedule
+  through `assertOutletBookingHours`. An outlet that never overrode its week inherits the company
+  hours this card saves. Company-wide internal bookings with no outlet selected stay deliberately
+  permissive, as `docs/outlet-booking-hours.md` already records.
+- **Verification.** `Settings.test.tsx` **28/28** — the three online-booking tests became one
+  guard that the card cannot return, and the draft-preservation test now round-trips a
+  business-hours edit instead of a deposit amount. `prettier --check`, `eslint` and `tsc --noEmit`
+  on `apps/web`: exit 0. Full web suite **1,040 passed, 9 failed**, all nine in
+  `PayrollPlans.test.tsx`, which this change does not touch and which fails the same two
+  `basicSalary` pattern assertions when run alone — the payroll form work already uncommitted in
+  the tree.
+- **Not claimed.** No browser or visual review. The API, the public booking page and the tenant
+  columns are unmodified, so nothing here re-exercises them.
+
+## November 4, 2026 — platform-owned localisation, and plan end dates on both sides
+
+Two screens answered "what does this salon's plan say?" badly. The salon's Settings page
+offered **Salon timezone** and **Formatting locale** as editable text inputs — they are
+platform decisions, and a typo there silently moved every date the salon sees. The
+operator's directory showed a company's status but never when its plan ends, so
+"is this account about to lapse?" was a question you answered by opening the company, then
+the subscription screen.
+
+- **The two localisation inputs are gone from Settings.** The fields still exist on the
+  profile and still feed `SalonFormattingContext` and every server-side formatter; the form
+  simply no longer renders or submits them. `updateSalonProfileSchema` already treats them
+  as optional and the service writes `{ ...input }`, so an omitted key is left alone —
+  a profile save can no longer reset a salon's formatting preferences, and the existing
+  round-trip tests for the API stay green.
+- **Account details now includes "Subscription ends".** Read-only, like the slug and
+  status beside it: the latest `Subscription.endDate`, or `—` when no plan is recorded.
+  "Account details" was the salon-side block on Settings — `/platform/account` holds only
+  the operator's own credentials and no tenant data.
+- **The directory shows the same date per row**, plus the same fact on the company page.
+  Both read the latest plan exactly as `prepaid.service.ts` and the expiry check do, so the
+  console, the salon and `resolveTenantStatus` cannot disagree about when a plan lapses.
+  "No plan recorded" is a sentence rather than an em dash, because in a table it is the
+  answer an operator needs before selling one.
+- **Four tiles above the directory**: All companies, Active, Suspended, Ending in 30 days.
+  They are computed by the API — `listCompanies` grew a `$transaction` with the existing
+  page and count plus a `groupBy(["status"])` and one count for `expiringSoon` — so a
+  company created mid-request cannot appear in a tile but not in a page. They count the
+  whole directory and never narrow with the search box: the first tile is labelled "All
+  companies" while the card title keeps reporting the filtered count.
+- **`expiringSoon` means what it says**: a live company whose **latest** end date falls in
+  the next 30 days, expressed as `subscriptions.some(endDate in window)` **and not**
+  `subscriptions.some(endDate after window)`. A company already past its last end date has
+  lapsed, not is expiring, and `resolveTenantStatus` is what turns that into `EXPIRED`.
+  Suspended companies are likewise not "ending in 30 days".
+- **Contracts.** `salonProfileSchema` and `companySummarySchema` (and therefore
+  `companyDetailSchema`) gained `subscriptionEndsAt: string | null`; a new
+  `companyDirectoryStatsSchema { total, active, suspended, expiringSoon }` is carried on
+  `companyListSchema.stats`. The field is required, not optional, so a screen cannot
+  silently render a blank date — every fixture had to be updated, which is the point.
+- **The tiles reuse `StatTile`** (`role="group"`, `aria-label="Company directory overview"`)
+  instead of a fourth bespoke stat box, and the warning tone is amber because a suspension
+  is an operator action that needs an answer — unlike a disabled staff account, which is
+  just a state.
+- **Verification.** Shared **312/312** (`npm run test --workspace @glampro_suite/shared`).
+  Web: `Settings.test.tsx` **29/29**, `Companies.test.tsx` **8/8**, `platform/api.test.ts`
+  **5/5**; full web suite **1,042 passed, 8 failed**, all eight `PayrollPlans.test.tsx`
+  timeouts under parallel load — that file alone is **24/24**, the same pre-existing flake
+  recorded below. API: `settings.routes.test.ts` **9/9** (now seeds two plans and asserts
+  the later one, that a salon without a plan reports `null`, and that a `PATCH` carrying
+  `subscriptionEndsAt` is a 422) and `companies.acceptance.test.ts` **1/1** against a
+  throwaway PostgreSQL on port 55441 created for the run — it now creates a plan ending in
+  10 days and asserts both the row's date and that `expiringSoon` rose by exactly one.
+  `lint` and `prettier --check`:
+  exit 0 for `apps/web` and `packages/shared`; the api workspace fails only on the unused
+  `HttpError` import left by the local 2FA debug hack in `auth.service.ts`, which is not
+  part of this work and was reinstated byte-identical after the route tests were run
+  against its committed form.
+- **Not claimed.** No browser or visual review: the checks are type, lint, unit tests and
+  HTTP-level route tests. `glampro_test` was several migrations behind, so it was brought
+  to head with `prisma migrate deploy` before the route suites could run.
+
 ## November 4, 2026 — the platform console rebuilt on the design system, with real routes
 
 The operator console was the last screen family on hand-written CSS — `platform/style.css`,

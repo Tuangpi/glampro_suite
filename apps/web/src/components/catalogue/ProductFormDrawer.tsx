@@ -241,6 +241,7 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
         <Input
           label="Name"
           required
+          placeholder="e.g. Argan oil shampoo 250 ml"
           value={form.name}
           onChange={(event) => set("name")(event.target.value)}
           error={fieldError("name")}
@@ -255,6 +256,7 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
             inputMode="decimal"
             step="0.01"
             min="0"
+            placeholder="0.00"
             value={form.memberPrice}
             onChange={(event) => set("memberPrice")(event.target.value)}
             error={fieldError("memberPrice")}
@@ -266,6 +268,7 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
             inputMode="decimal"
             step="0.01"
             min="0"
+            placeholder="0.00"
             value={form.nonmemberPrice}
             onChange={(event) => set("nonmemberPrice")(event.target.value)}
             error={fieldError("nonmemberPrice")}
@@ -280,6 +283,7 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
             inputMode="numeric"
             step="1"
             min="0"
+            placeholder="0"
             value={form.quantity}
             onChange={(event) => set("quantity")(event.target.value)}
             error={fieldError("quantity")}
@@ -291,6 +295,7 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
             inputMode="numeric"
             step="1"
             min="0"
+            placeholder="0"
             value={form.points}
             onChange={(event) => set("points")(event.target.value)}
             error={fieldError("points")}
@@ -322,6 +327,7 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
 
         <Input
           label="Barcode"
+          placeholder="e.g. 8881234567890"
           value={form.barcode}
           onChange={(event) => set("barcode")(event.target.value)}
           error={fieldError("barcode")}
@@ -336,6 +342,7 @@ export default function ProductFormDrawer({ open, product, onClose }: ProductFor
 
         <Input
           label="Description"
+          placeholder="e.g. Sulphate-free shampoo for coloured hair"
           value={form.description}
           onChange={(event) => set("description")(event.target.value)}
           error={fieldError("description")}

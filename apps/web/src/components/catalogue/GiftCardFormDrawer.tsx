@@ -198,6 +198,7 @@ export default function GiftCardFormDrawer({ open, card, onClose }: GiftCardForm
             inputMode="decimal"
             step="0.01"
             min="0"
+            placeholder="0.00"
             value={form.value}
             onChange={(event) => set("value")(event.target.value)}
             error={fieldError("value")}

@@ -70,6 +70,7 @@ export default function PayrollDefinitionEditor({
           <div key={stage.key} className="space-y-2 rounded border border-line p-3">
             <Input
               label={`Stage ${index + 1} name`}
+              placeholder="e.g. Months 1–6"
               value={stage.name}
               onChange={(e) => stageChange(index, { name: e.target.value })}
             />
@@ -79,6 +80,7 @@ export default function PayrollDefinitionEditor({
               min={1}
               max={1200}
               step={1}
+              placeholder="e.g. 1"
               value={Number.isFinite(stage.fromMonth) ? stage.fromMonth : ""}
               onChange={(e) =>
                 stageChange(index, {
@@ -92,6 +94,7 @@ export default function PayrollDefinitionEditor({
               min={1}
               max={1200}
               step={1}
+              placeholder="e.g. 6"
               value={stage.toMonth === null || !Number.isFinite(stage.toMonth) ? "" : stage.toMonth}
               onChange={(e) =>
                 stageChange(index, {
@@ -135,6 +138,7 @@ export default function PayrollDefinitionEditor({
           <div key={rule.key} className="space-y-3 rounded border border-line p-3">
             <Input
               label={`Incentive ${index + 1} name`}
+              placeholder="e.g. Monthly sales bonus"
               value={rule.name}
               onChange={(e) => incentiveChange(index, { name: e.target.value })}
             />
@@ -202,6 +206,7 @@ export default function PayrollDefinitionEditor({
                 <Input
                   label={`Incentive ${index + 1} row ${rowIndex + 1} individual target`}
                   inputMode="decimal"
+                  placeholder="e.g. 20000.00"
                   value={row.individualTarget}
                   onChange={(e) =>
                     incentiveChange(index, {
@@ -215,6 +220,7 @@ export default function PayrollDefinitionEditor({
                   <Input
                     label={`Incentive ${index + 1} row ${rowIndex + 1} group target`}
                     inputMode="decimal"
+                    placeholder="e.g. 80000.00"
                     value={row.groupTarget ?? ""}
                     onChange={(e) =>
                       incentiveChange(index, {
@@ -228,6 +234,7 @@ export default function PayrollDefinitionEditor({
                 <Input
                   label={`Incentive ${index + 1} row ${rowIndex + 1} award`}
                   inputMode="decimal"
+                  placeholder="e.g. 200.00"
                   value={row.amount}
                   onChange={(e) =>
                     incentiveChange(index, {

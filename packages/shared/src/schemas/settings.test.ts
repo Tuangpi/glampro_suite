@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import {
   gstRegistrationNumberSchema,
   salonLocaleSchema,
+  salonProfileSchema,
   salonTimeZoneSchema,
   updateSalonProfileSchema,
 } from "./settings.js";
@@ -47,6 +48,50 @@ describe("salon localisation contracts", () => {
         .success,
       false,
     );
+    // Expiry is the platform console's verdict, exactly like `status`.
+    assert.equal(
+      updateSalonProfileSchema.safeParse({
+        name: "Salon",
+        lowStockThreshold: 5,
+        subscriptionEndsAt: "2099-01-01T00:00:00.000Z",
+      }).success,
+      false,
+    );
+  });
+});
+
+describe("salon profile contract", () => {
+  const profile = {
+    id: "tenant-1",
+    name: "Salon",
+    slug: "salon",
+    status: "ACTIVE",
+    lowStockThreshold: 5,
+    timeZone: "Asia/Singapore",
+    locale: "en-SG",
+    gstEnabled: false,
+    gstRegistrationNumber: null,
+    onlineBookingEnabled: false,
+    onlineDepositAmount: 0,
+    onlineNoShowFee: 0,
+    owner: null,
+    subscriptionEndsAt: "2027-03-31T00:00:00.000Z",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("carries the subscription expiry as an instant, or null when there is no plan", () => {
+    assert.equal(salonProfileSchema.parse(profile).subscriptionEndsAt, "2027-03-31T00:00:00.000Z");
+    assert.equal(
+      salonProfileSchema.parse({ ...profile, subscriptionEndsAt: null }).subscriptionEndsAt,
+      null,
+    );
+  });
+
+  it("requires the expiry, so a screen cannot silently render a blank date", () => {
+    const withoutExpiry: Record<string, unknown> = { ...profile };
+    delete withoutExpiry.subscriptionEndsAt;
+    assert.equal(salonProfileSchema.safeParse(withoutExpiry).success, false);
   });
 });
 

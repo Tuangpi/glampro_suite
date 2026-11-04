@@ -169,6 +169,7 @@ export default function RefundSaleDialog({
               <input
                 aria-label={`Refund amount ${index + 1}`}
                 inputMode="decimal"
+                placeholder="0.00"
                 value={row.amount}
                 className={cn(CONTROL_CLASS, "h-control w-28 px-3")}
                 onChange={(event) =>

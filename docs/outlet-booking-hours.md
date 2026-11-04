@@ -12,6 +12,10 @@ change shared customer/credit identity, stock, sale attribution or company roles
   override, not inheritance. No split shifts, overnight windows or holiday
   exceptions are introduced. Missing company hours means closed for branch and
   public booking.
+- Company hours are edited at Settings → Booking & hours → Business hours. That card no
+  longer shares its section with an online-booking toggle, deposit or no-show fee: the stored
+  values and their public-booking enforcement are unchanged, and the salon profile form never
+  sends those keys.
 - Staff: select an outlet in the top bar before creating its appointment.
   Calendar times use the selected outlet's zone. The editor uses the saved
   appointment's outlet zone even when opened from the consolidated calendar.

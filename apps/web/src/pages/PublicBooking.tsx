@@ -259,6 +259,7 @@ function Booking({ slug }: { slug: string | undefined }) {
           id="booking-name"
           disabled={loading || booked}
           maxLength={200}
+          placeholder="e.g. Aina Rahman"
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="border p-2 w-full"
@@ -271,6 +272,7 @@ function Booking({ slug }: { slug: string | undefined }) {
           disabled={loading || booked}
           type="tel"
           maxLength={50}
+          placeholder="+65 9123 4567"
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
           className="border p-2 w-full"
@@ -283,6 +285,7 @@ function Booking({ slug }: { slug: string | undefined }) {
           disabled={loading || booked}
           type="email"
           maxLength={254}
+          placeholder="name@example.com"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           className="border p-2 w-full"

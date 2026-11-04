@@ -218,6 +218,7 @@ export default function PayrollCarry({ period, disabled }: { period: string; dis
                   <Input
                     label="Destination component key"
                     hint="Leave empty to explicitly write off the source component. Otherwise enter the new plan's exact component key."
+                    placeholder="e.g. svc_commission"
                     value={toKey}
                     disabled={busy || !fromKey}
                     onChange={(event) => {
@@ -252,6 +253,7 @@ export default function PayrollCarry({ period, disabled }: { period: string; dis
           )}
           <Input
             label="Carry authorization reason"
+            placeholder="e.g. Moving July debt into the 2027 plan"
             value={reason}
             disabled={busy}
             onChange={(event) => {
@@ -261,6 +263,7 @@ export default function PayrollCarry({ period, disabled }: { period: string; dis
           />
           <Input
             label="Carry evidence reference"
+            placeholder="e.g. Signed carry agreement 2026-07"
             value={reference}
             disabled={busy}
             onChange={(event) => {

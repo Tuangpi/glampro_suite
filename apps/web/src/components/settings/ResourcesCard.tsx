@@ -212,6 +212,7 @@ function ResourceEditor({
 
       <Input
         label="Name"
+        placeholder="e.g. Treatment room 2"
         value={name}
         error={fieldErrors["name"] ?? fieldErrors["body.name"]}
         onChange={(event) => setName(event.target.value)}

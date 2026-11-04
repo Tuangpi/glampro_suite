@@ -257,6 +257,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
         <Input
           label="Name"
           required
+          placeholder="e.g. Balayage colour"
           value={form.name}
           onChange={(event) => set("name")(event.target.value)}
           error={fieldError("name")}
@@ -271,6 +272,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
             inputMode="decimal"
             step="0.01"
             min="0"
+            placeholder="0.00"
             value={form.memberPrice}
             onChange={(event) => set("memberPrice")(event.target.value)}
             error={fieldError("memberPrice")}
@@ -282,6 +284,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
             inputMode="decimal"
             step="0.01"
             min="0"
+            placeholder="0.00"
             value={form.nonmemberPrice}
             onChange={(event) => set("nonmemberPrice")(event.target.value)}
             error={fieldError("nonmemberPrice")}
@@ -296,6 +299,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
             inputMode="numeric"
             step="1"
             min="5"
+            placeholder="e.g. 90"
             value={form.durationMinutes}
             onChange={(event) => set("durationMinutes")(event.target.value)}
             error={fieldError("durationMinutes")}
@@ -307,6 +311,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
             inputMode="numeric"
             step="1"
             min="0"
+            placeholder="0"
             value={form.points}
             onChange={(event) => set("points")(event.target.value)}
             error={fieldError("points")}
@@ -342,6 +347,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
           min="1"
           max="365"
           step="1"
+          placeholder="e.g. 28"
           value={form.interval}
           onChange={(event) => set("interval")(event.target.value)}
           error={fieldError("interval")}
@@ -349,6 +355,7 @@ export default function ServiceFormDrawer({ open, service, onClose }: ServiceFor
         />
         <Input
           label="Description"
+          placeholder="e.g. Hand-painted lightening for long hair"
           value={form.description}
           onChange={(event) => set("description")(event.target.value)}
           error={fieldError("description")}

@@ -61,30 +61,42 @@ export default function AcceptInvitation() {
             <p role="alert">Invitation link is missing. Ask your provider to resend it.</p>
           ) : (
             <form onSubmit={(event) => void submit(event)} className="mt-6 grid gap-4">
-              <label>
-                New password
-                <input
-                  className="block w-full rounded border p-3"
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={12}
-                  maxLength={72}
-                  required
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                />
-              </label>
-              <label>
-                Confirm password
-                <input
-                  className="block w-full rounded border p-3"
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  value={confirm}
-                  onChange={(event) => setConfirm(event.target.value)}
-                />
-              </label>
+              <div>
+                <label>
+                  New password
+                  <input
+                    className="block w-full rounded border p-3"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Please enter your new password"
+                    minLength={12}
+                    maxLength={72}
+                    required
+                    aria-describedby="new-password-hint"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                  />
+                </label>
+                {/* The rule the server enforces, kept out of the label so the
+                    control's accessible name stays just "New password". */}
+                <p id="new-password-hint" className="mt-1 text-xs text-ink-muted">
+                  At least 12 characters.
+                </p>
+              </div>
+              <div>
+                <label>
+                  Confirm password
+                  <input
+                    className="block w-full rounded border p-3"
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Please enter your new password again"
+                    required
+                    value={confirm}
+                    onChange={(event) => setConfirm(event.target.value)}
+                  />
+                </label>
+              </div>
               <button
                 className="rounded bg-purple-800 p-3 text-white"
                 disabled={busy}

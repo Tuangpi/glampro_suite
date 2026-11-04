@@ -298,6 +298,7 @@ function Photos({ id, readOnly }: { id: string; readOnly: boolean }) {
           />
           <Input
             label="Photo caption"
+            placeholder="e.g. Before — balayage"
             value={caption}
             maxLength={500}
             disabled={busy}

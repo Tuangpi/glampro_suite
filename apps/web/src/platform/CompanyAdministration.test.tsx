@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
+
+import { dayToLocalInstant, formatDateInputValue } from "@/lib/utils";
 import CompanyAdministration from "./CompanyAdministration";
 import { platformApi } from "./api";
 
@@ -87,20 +89,43 @@ it("records a decimal subscription without charging or silently reactivating", a
   render(<CompanyAdministration id="company-a" onChange={vi.fn()} />);
 
   await screen.findByLabelText("Period start");
+  // A date control shows the expected form itself, so neither field carries a
+  // placeholder — the operator picks a day, not an ISO timestamp.
+  expect(screen.getByLabelText("Period start")).toHaveAttribute("type", "date");
+  expect(screen.getByLabelText("Period start")).not.toHaveAttribute("placeholder");
+  expect(screen.getByLabelText("Period end")).toHaveAttribute("type", "date");
+  expect(screen.getByLabelText("Period end")).not.toHaveAttribute("placeholder");
+
+  // Days the service would reject are not offered: a period cannot start after
+  // today and cannot end on a day that has already begun.
+  const planted = new Date();
+  const startDay = formatDateInputValue(planted);
+  const endDay = formatDateInputValue(new Date(planted.getTime() + 30 * 24 * 60 * 60 * 1000));
+  expect(screen.getByLabelText("Period start")).toHaveAttribute("max", startDay);
+  expect(screen.getByLabelText("Period end")).toHaveAttribute(
+    "min",
+    formatDateInputValue(new Date(planted.getTime() + 24 * 60 * 60 * 1000)),
+  );
+
   for (const [label, value] of [
     ["Change reason", "Manual period"],
-    ["Period start", "2026-10-01T00:00:00Z"],
-    ["Period end", "2026-11-01T00:00:00Z"],
+    ["Period start", startDay],
+    ["Period end", endDay],
     ["Subscription amount", "99.00"],
   ])
     fireEvent.change(screen.getByLabelText(label), { target: { value } });
 
   fireEvent.click(screen.getByRole("button", { name: "Record subscription" }));
   await waitFor(() =>
-    expect(platformApi.recordSubscription).toHaveBeenCalledWith(
-      "company-a",
-      expect.objectContaining({ amount: "99.00", currency: "SGD" }),
-    ),
+    expect(platformApi.recordSubscription).toHaveBeenCalledWith("company-a", {
+      // The picked day crosses the wire as that day's midnight plus this
+      // machine's offset, which is what the API's strict schema requires.
+      startDate: dayToLocalInstant(startDay),
+      endDate: dayToLocalInstant(endDay),
+      amount: "99.00",
+      currency: "SGD",
+      reason: "Manual period",
+    }),
   );
   expect(platformApi.lifecycle).not.toHaveBeenCalled();
 });

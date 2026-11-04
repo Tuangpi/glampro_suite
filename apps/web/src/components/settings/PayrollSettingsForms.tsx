@@ -105,16 +105,17 @@ export function PayrollProfileForm({ value, canEdit, save }: FormProps<Profile>)
     >
       {(
         [
-          ["basicSalary", "Basic monthly salary"],
-          ["fixedOvertime", "Fixed monthly overtime"],
-          ["levy", "Monthly levy"],
-          ["salesAlertPct", "Sales alert percentage"],
+          ["basicSalary", "Basic monthly salary", "e.g. 3200.00"],
+          ["fixedOvertime", "Fixed monthly overtime", "e.g. 250.00"],
+          ["levy", "Monthly levy", "e.g. 450.00"],
+          ["salesAlertPct", "Sales alert percentage", "e.g. 15"],
         ] as const
-      ).map(([key, label]) => (
+      ).map(([key, label, placeholder]) => (
         <Input
           key={key}
           label={label}
           inputMode="decimal"
+          placeholder={placeholder}
           value={fields[key]}
           onChange={(e) => form.setFields({ ...form.fields, [key]: e.target.value })}
         />
@@ -163,16 +164,19 @@ export function PayrollPlanMetadataForm({ value, canEdit, save }: FormProps<Payr
     >
       <Input
         label="Plan name"
+        placeholder="e.g. Senior stylist commission plan"
         value={form.fields.name}
         onChange={(e) => form.setFields({ ...form.fields, name: e.target.value })}
       />
       <Input
         label="Plan description"
+        placeholder="e.g. Commission for stylists after probation"
         value={form.fields.description}
         onChange={(e) => form.setFields({ ...form.fields, description: e.target.value })}
       />
       <Input
         label="Plan positions (comma-separated, blank = all)"
+        placeholder="e.g. Senior stylist, Stylist"
         value={positions}
         onChange={(e) => setPositions(e.target.value)}
       />
@@ -255,6 +259,7 @@ export function PayrollStaffSettingsForm({ value, canEdit, save }: FormProps<Sta
         min={0}
         max={1200}
         step={1}
+        placeholder="e.g. 6"
         value={
           form.fields.stageEndOverride === null || !Number.isFinite(form.fields.stageEndOverride)
             ? ""
@@ -300,6 +305,7 @@ export function PayrollSalonSettingsForm({ value, canEdit, save }: FormProps<Set
         min={1}
         max={31}
         step={1}
+        placeholder="e.g. 15"
         value={
           fields.joinAfterDay === null || !Number.isFinite(fields.joinAfterDay)
             ? ""
@@ -329,12 +335,14 @@ export function PayrollSalonSettingsForm({ value, canEdit, save }: FormProps<Set
       <Input
         label="Minimum package deposit percentage"
         inputMode="decimal"
+        placeholder="e.g. 20"
         value={fields.minimumDepositPct}
         onChange={(e) => form.setFields({ ...form.fields, minimumDepositPct: e.target.value })}
       />
       <Input
         label="Refund administration fee"
         inputMode="decimal"
+        placeholder="0.00"
         value={fields.refundAdminFee}
         onChange={(e) => form.setFields({ ...form.fields, refundAdminFee: e.target.value })}
       />

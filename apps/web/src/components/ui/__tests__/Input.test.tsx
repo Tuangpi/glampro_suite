@@ -51,6 +51,28 @@ describe("Input", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Enter a valid email address");
   });
 
+  it("shows a placeholder as an example without letting it become the name", () => {
+    render(<Input label="Phone" placeholder="+65 9123 4567" />);
+
+    const input = screen.getByLabelText("Phone");
+    expect(input).toHaveAttribute("placeholder", "+65 9123 4567");
+    // The label still names the control: a placeholder shows a shape or prompts
+    // for input, it never replaces the label.
+    expect(input).toHaveAccessibleName("Phone");
+  });
+
+  it("prompts for a secret instead of showing a sample value", () => {
+    render(
+      <Input label="New password" type="password" placeholder="Please enter your new password" />,
+    );
+
+    const input = screen.getByLabelText("New password");
+    // A masked field paints its placeholder in clear text, so it carries an
+    // instruction — never something that reads like a value to submit.
+    expect(input).toHaveAttribute("placeholder", "Please enter your new password");
+    expect(input).toHaveAccessibleName("New password");
+  });
+
   it("drops the hint once an error is present, so only one message is read", () => {
     render(<Input label="Email" hint="Work address" error="Enter a valid email address" />);
 

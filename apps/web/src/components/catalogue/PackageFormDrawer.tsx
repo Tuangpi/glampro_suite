@@ -320,6 +320,7 @@ export default function PackageFormDrawer({
         <Input
           label="Name"
           required
+          placeholder="e.g. 6-session hair treatment"
           value={form.name}
           onChange={(event) => set("name")(event.target.value)}
           error={fieldError("name")}
@@ -334,6 +335,7 @@ export default function PackageFormDrawer({
             inputMode="decimal"
             step="0.01"
             min="0"
+            placeholder="0.00"
             value={form.memberPrice}
             onChange={(event) => set("memberPrice")(event.target.value)}
             error={fieldError("memberPrice")}
@@ -345,6 +347,7 @@ export default function PackageFormDrawer({
             inputMode="decimal"
             step="0.01"
             min="0"
+            placeholder="0.00"
             value={form.nonmemberPrice}
             onChange={(event) => set("nonmemberPrice")(event.target.value)}
             error={fieldError("nonmemberPrice")}
@@ -359,6 +362,7 @@ export default function PackageFormDrawer({
             inputMode="numeric"
             step="1"
             min={isEditing ? "0" : "1"}
+            placeholder="e.g. 6"
             value={form.sessionCount}
             onChange={(event) => set("sessionCount")(event.target.value)}
             error={fieldError("sessionCount")}
@@ -379,6 +383,7 @@ export default function PackageFormDrawer({
           min="1"
           max="36500"
           step="1"
+          placeholder="e.g. 365"
           value={form.validityDays}
           onChange={(event) => set("validityDays")(event.target.value)}
           error={fieldError("validityDays")}
@@ -387,6 +392,7 @@ export default function PackageFormDrawer({
 
         <Input
           label="Description"
+          placeholder="e.g. Six colour sessions, booked one at a time"
           value={form.description}
           onChange={(event) => set("description")(event.target.value)}
           error={fieldError("description")}
@@ -418,6 +424,7 @@ export default function PackageFormDrawer({
             {saleMode === "FIXED" ? (
               <Input
                 label="Fixed amount per sale"
+                placeholder="0.00"
                 value={saleFixed}
                 onChange={(event) => setSaleFixed(event.target.value)}
                 inputMode="decimal"
@@ -437,6 +444,7 @@ export default function PackageFormDrawer({
             {redemptionCommissionMode === "FIXED" ? (
               <Input
                 label="Fixed amount per session"
+                placeholder="0.00"
                 value={redemptionFixed}
                 onChange={(event) => setRedemptionFixed(event.target.value)}
                 inputMode="decimal"
@@ -444,12 +452,14 @@ export default function PackageFormDrawer({
             ) : null}
             <Input
               label="Minimum deposit %"
+              placeholder="e.g. 10"
               value={depositPct}
               onChange={(event) => setDepositPct(event.target.value)}
               inputMode="decimal"
             />
             <Input
               label="Commission settings reason"
+              placeholder="e.g. Package margin renegotiated for 2027"
               value={commissionReason}
               onChange={(event) => setCommissionReason(event.target.value)}
               maxLength={500}
@@ -512,6 +522,7 @@ export default function PackageFormDrawer({
                       min="1"
                       max="100"
                       step="1"
+                      placeholder="e.g. 2"
                       value={required[service.id] ?? "1"}
                       onChange={(event) =>
                         setRequired((previous) => ({

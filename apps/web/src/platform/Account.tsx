@@ -180,6 +180,7 @@ export default function Account({
           <form className="flex flex-col gap-3 px-2 pt-2 pb-1" onSubmit={changePassword}>
             <Input
               label="Current password"
+              placeholder="Please enter your current password"
               type="password"
               autoComplete="current-password"
               maxLength={200}
@@ -191,6 +192,7 @@ export default function Account({
             <div className="grid gap-3 sm:grid-cols-2">
               <Input
                 label="New password"
+                placeholder="Please enter your new password"
                 type="password"
                 autoComplete="new-password"
                 minLength={12}
@@ -202,6 +204,7 @@ export default function Account({
               />
               <Input
                 label="Confirm new password"
+                placeholder="Please enter your new password again"
                 type="password"
                 autoComplete="new-password"
                 minLength={12}
@@ -308,6 +311,7 @@ export default function Account({
           ) : null}
           <Input
             label="Verification code"
+            placeholder="Please enter the code from your email"
             value={code}
             onChange={(event) => setCode(event.target.value)}
             inputMode="numeric"
@@ -358,6 +362,7 @@ export default function Account({
           ) : null}
           <Input
             label="Your password"
+            placeholder="Please enter your password"
             type="password"
             autoComplete="current-password"
             maxLength={200}

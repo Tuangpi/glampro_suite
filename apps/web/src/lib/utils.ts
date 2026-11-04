@@ -99,6 +99,36 @@ export function formatDateInputValue(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * `YYYY-MM-DD` from `<input type="date">` → that day's midnight **in the browser's
+ * own timezone**, written with an explicit offset (`2026-10-23T00:00:00+08:00`).
+ *
+ * It exists because a date picker knows a day while the API stores an instant: a
+ * bare `2026-10-23` is a different moment in every timezone, so
+ * `recordSubscriptionSchema` refuses one. The offset comes from the machine the
+ * operator is sitting at — the wall clock they read the period against — so the
+ * day never shifts to the one before it.
+ *
+ * Returns `null` for anything that is not a real calendar day (`2026-02-30`,
+ * `23/10/2026`, an empty picker) so the caller can name the field that is wrong
+ * instead of forwarding a parse error.
+ */
+export function dayToLocalInstant(day: string): string | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const [year, month, date] = day.split("-").map((part) => Number.parseInt(part, 10));
+  const local = new Date(year, month - 1, date);
+  // A day the month does not have rolls forward into the next one; refuse it
+  // rather than quietly recording a different day.
+  if (local.getFullYear() !== year || local.getMonth() !== month - 1 || local.getDate() !== date)
+    return null;
+  // `getTimezoneOffset` counts minutes *behind* UTC, so +08:00 reports -480.
+  const offset = -local.getTimezoneOffset();
+  const total = Math.abs(offset);
+  const hours = String(Math.floor(total / 60)).padStart(2, "0");
+  const minutes = String(total % 60).padStart(2, "0");
+  return `${day}T00:00:00${offset < 0 ? "-" : "+"}${hours}:${minutes}`;
+}
+
 /** Formats a minor-unit amount (cents) as a currency string. */
 export function formatMoney(
   minorUnits: number | null | undefined,

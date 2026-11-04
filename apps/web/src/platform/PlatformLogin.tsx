@@ -133,12 +133,14 @@ export default function PlatformLogin({
                 <>
                   <Input
                     label="Verification code"
+                    placeholder="Please enter the code from your email"
                     value={code}
                     onChange={(event) => setCode(event.target.value)}
                     autoComplete="one-time-code"
                     inputMode="numeric"
                     pattern="[0-9]{6}"
                     maxLength={6}
+                    hint="Six digits."
                     disabled={busy}
                     required
                   />
@@ -177,6 +179,7 @@ export default function PlatformLogin({
                           id={controlId}
                           type={showPassword ? "text" : "password"}
                           autoComplete="current-password"
+                          placeholder="Please enter your password"
                           value={password}
                           onChange={(event) => setPassword(event.target.value)}
                           disabled={busy}

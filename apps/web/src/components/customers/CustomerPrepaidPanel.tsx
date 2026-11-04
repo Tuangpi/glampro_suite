@@ -231,6 +231,7 @@ function TransferDialog({
       </p>
       <Input
         label="Find receiving customer"
+        placeholder="Search by name or phone…"
         value={search}
         disabled={blocked}
         onChange={(event) => {
@@ -285,6 +286,7 @@ function TransferDialog({
       ) : null}
       <Input
         label="Transfer reason"
+        placeholder="e.g. Credit moved to the client's second profile"
         value={reason}
         maxLength={2000}
         disabled={blocked}

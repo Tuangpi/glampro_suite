@@ -69,6 +69,17 @@ export async function getSalonProfile(): Promise<SalonProfile> {
 
       updatedAt: true,
       owner: { select: { id: true, name: true, email: true } },
+      /**
+       * Latest plan only. `endDate` is the subscription's expiry — there is no
+       * separate renewal column (`schema.prisma` → `Subscription`), and every
+       * other reader (`prepaid.service.ts`, `public-booking.service.ts`) picks
+       * the same way, so the console and the salon cannot disagree.
+       */
+      subscriptions: {
+        orderBy: { endDate: "desc" },
+        take: 1,
+        select: { endDate: true },
+      },
     },
   });
   // Unreachable while `users.tenantId` is the foreign key we authenticated
@@ -78,6 +89,7 @@ export async function getSalonProfile(): Promise<SalonProfile> {
 
   return salonProfileSchema.parse({
     ...tenant,
+    subscriptionEndsAt: tenant.subscriptions[0]?.endDate.toISOString() ?? null,
     createdAt: tenant.createdAt.toISOString(),
     updatedAt: tenant.updatedAt.toISOString(),
   });

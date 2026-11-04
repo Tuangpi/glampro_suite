@@ -130,6 +130,7 @@ export default function CommissionAttributionPolicy({ canEdit }: { canEdit: bool
               <>
                 <Input
                   label="Attribution policy change reason"
+                  placeholder="e.g. Split attribution now follows the staff who completed the service"
                   value={reason}
                   maxLength={500}
                   onChange={(event) => {

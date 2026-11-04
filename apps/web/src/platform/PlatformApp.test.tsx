@@ -82,6 +82,18 @@ describe("operator console routing and session", () => {
     },
   );
 
+  // Same shape as the salon sign-in: a hand-composed masked control whose
+  // `type` is an expression, so the prompt is the only text a reader gets
+  // before the first keystroke.
+  it("prompts for the operator password instead of sampling one", async () => {
+    render(<App />);
+
+    const password = await screen.findByLabelText("Password");
+    expect(password).toHaveAttribute("placeholder", "Please enter your password");
+    // The prompt is not the name.
+    expect(password).toHaveAccessibleName("Password");
+  });
+
   it("requires verification before showing the console and signs out", async () => {
     render(<App />);
     await login();

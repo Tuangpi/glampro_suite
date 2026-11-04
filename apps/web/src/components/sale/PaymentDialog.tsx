@@ -570,6 +570,7 @@ export default function PaymentDialog({
                         <input
                           type="text"
                           inputMode="decimal"
+                          placeholder="0.00"
                           value={tender.amount}
                           disabled={isPending}
                           aria-label={`Amount for tender ${index + 1}`}
@@ -654,8 +655,10 @@ export default function PaymentDialog({
                         />
                         <Input
                           label={`Manager PIN (tender ${index + 1})`}
+                          placeholder="Please enter the manager's PIN"
                           type="password"
                           autoComplete="off"
+                          hint="Six digits."
                           value={tender.unpaidSessionOverride.pin}
                           disabled={isPending}
                           onChange={(event) =>
@@ -669,6 +672,7 @@ export default function PaymentDialog({
                         />
                         <Input
                           label={`Approval reason (tender ${index + 1})`}
+                          placeholder="e.g. Client prepaid the session but never attended"
                           value={tender.unpaidSessionOverride.reason}
                           disabled={isPending}
                           maxLength={500}
@@ -738,6 +742,7 @@ export default function PaymentDialog({
                           type="text"
                           inputMode="decimal"
                           aria-label={`Tender ${index + 1} allocation to line ${position + 1}`}
+                          placeholder="0.00"
                           className={cn(CONTROL_CLASS, "w-28 px-2")}
                           value={allocationDraft[`${tender.id}:${position}`] ?? ""}
                           onChange={(event) => {

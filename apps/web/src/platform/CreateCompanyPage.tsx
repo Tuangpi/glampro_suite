@@ -87,10 +87,15 @@ export default function CreateCompanyPage() {
           onSubmit={(event) => void create(event)}
         >
           <div className="grid gap-4 sm:grid-cols-2">
+            {/* Placeholders here are examples of a valid value, not rules: the
+                slug's shape is not guessable from its label, which is why it
+                carries an example as well as the hint. Secrets (passwords,
+                codes) deliberately carry none — see `PlatformLogin`/`Account`. */}
             <Input
               label="Company name"
               value={name}
               onChange={(event) => setName(event.target.value)}
+              placeholder="Glampro Demo Salon"
               maxLength={160}
               required
               disabled={busy}
@@ -99,6 +104,7 @@ export default function CreateCompanyPage() {
               label="Company slug"
               value={slug}
               onChange={(event) => setSlug(event.target.value)}
+              placeholder="glampro-demo-salon"
               pattern="[a-z0-9]+(-[a-z0-9]+)*"
               minLength={3}
               maxLength={64}
@@ -110,6 +116,7 @@ export default function CreateCompanyPage() {
               label="Owner name"
               value={ownerName}
               onChange={(event) => setOwnerName(event.target.value)}
+              placeholder="Aina Rahman"
               maxLength={120}
               required
               disabled={busy}
@@ -119,6 +126,7 @@ export default function CreateCompanyPage() {
               type="email"
               value={ownerEmail}
               onChange={(event) => setOwnerEmail(event.target.value)}
+              placeholder="owner@salon.com"
               maxLength={255}
               required
               disabled={busy}

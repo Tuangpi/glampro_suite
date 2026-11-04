@@ -43,6 +43,7 @@ export default function PackageValuationActivation() {
       </p>
       <Input
         label="Activation reason"
+        placeholder="e.g. Board approved package valuation from 1 April"
         value={reason}
         required
         maxLength={2000}

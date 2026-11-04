@@ -18,9 +18,24 @@ const select = {
   status: true,
   createdAt: true,
   owner: { select: { id: true, name: true, email: true, disabled: true } },
+  // Only the latest plan's expiry is interesting to an operator; `endDate` is
+  // the subscription's expiry (there is no separate renewal column) and every
+  // other reader picks it the same way, so the console cannot disagree.
+  subscriptions: { orderBy: { endDate: "desc" }, take: 1, select: { endDate: true } },
 } as const;
-function publicCompany<T extends { createdAt: Date }>(company: T) {
-  return { ...company, createdAt: company.createdAt.toISOString() };
+/**
+ * The row as the console reads it: instants as ISO strings, and the nested
+ * subscription list flattened into the one field the UI shows.
+ */
+function publicCompany<T extends { createdAt: Date; subscriptions: { endDate: Date }[] }>(
+  company: T,
+) {
+  const { subscriptions, ...rest } = company;
+  return {
+    ...rest,
+    createdAt: company.createdAt.toISOString(),
+    subscriptionEndsAt: subscriptions[0]?.endDate.toISOString() ?? null,
+  };
 }
 function invitationOrigin() {
   const value = process.env.SALON_PORTAL_ORIGIN;
@@ -64,6 +79,14 @@ function rethrowDuplicate(error: unknown): never {
     throw conflict("The company slug or owner email is already in use.");
   throw error;
 }
+/**
+ * `GET /api/platform/companies` — the directory, plus whole-directory totals.
+ *
+ * The tiles count the business, not the page: `search` and paging narrow
+ * `items`/`total` only, while `stats` always describes every company. One
+ * transaction keeps the rows and the numbers from the same snapshot, so a
+ * company created mid-request cannot appear in a tile but not in a page.
+ */
 export async function listCompanies(query: CompanyListQuery) {
   const where = query.search
     ? {
@@ -73,7 +96,9 @@ export async function listCompanies(query: CompanyListQuery) {
         ],
       }
     : {};
-  const [items, total] = await prisma.$transaction([
+  const now = new Date();
+  const expiringBy = new Date(now.getTime() + 30 * 24 * 60 * 60_000);
+  const [items, total, byStatus, expiringSoon] = await prisma.$transaction([
     prisma.tenant.findMany({
       where,
       select,
@@ -82,8 +107,32 @@ export async function listCompanies(query: CompanyListQuery) {
       take: query.pageSize,
     }),
     prisma.tenant.count({ where }),
+    prisma.tenant.groupBy({ by: ["status"], _count: { _all: true } }),
+    // Live companies whose **latest** plan lapses inside the window: at least
+    // one subscription ends in it, and none ends after it. A company already
+    // past its last end date is lapsed, not expiring, so it is not counted.
+    prisma.tenant.count({
+      where: {
+        status: "ACTIVE",
+        subscriptions: { some: { endDate: { gt: now, lte: expiringBy } } },
+        NOT: { subscriptions: { some: { endDate: { gt: expiringBy } } } },
+      },
+    }),
   ]);
-  return { items: items.map(publicCompany), total, page: query.page, pageSize: query.pageSize };
+  const countOf = (status: "ACTIVE" | "SUSPENDED") =>
+    byStatus.find((row) => row.status === status)?._count._all ?? 0;
+  return {
+    items: items.map(publicCompany),
+    total,
+    page: query.page,
+    pageSize: query.pageSize,
+    stats: {
+      total: byStatus.reduce((sum, row) => sum + row._count._all, 0),
+      active: countOf("ACTIVE"),
+      suspended: countOf("SUSPENDED"),
+      expiringSoon,
+    },
+  };
 }
 export async function companyDetail(id: string) {
   const company = await prisma.tenant.findUnique({ where: { id }, select });

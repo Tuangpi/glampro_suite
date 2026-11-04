@@ -182,6 +182,7 @@ function RefundForm({
       </p>
       <Input
         label="Approved administration fee (net SGD)"
+        placeholder="0.00"
         value={fee}
         disabled={busy || refreshing}
         onChange={(event) => {
@@ -198,6 +199,7 @@ function RefundForm({
       {quoteError ? <p role="alert">{quoteError}</p> : null}
       <Input
         label="Refund reason"
+        placeholder="e.g. Unused credit refunded at the client's request"
         value={reason}
         maxLength={500}
         disabled={busy || refreshing}

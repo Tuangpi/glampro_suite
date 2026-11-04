@@ -261,6 +261,7 @@ export default function CommissionRules({
                 {(staffId || scope === "PACKAGE") && (
                   <Input
                     label="Search catalogue for rule or preview"
+                    placeholder="Search by name…"
                     value={search}
                     onChange={(event) => setSearch(event.target.value)}
                   />
@@ -318,6 +319,7 @@ export default function CommissionRules({
                     min="0"
                     max="100"
                     step="0.01"
+                    placeholder="e.g. 10"
                     value={rate}
                     onChange={(event) => setRate(event.target.value)}
                   />
@@ -330,6 +332,7 @@ export default function CommissionRules({
                 />
                 <Input
                   label="Commission change reason"
+                  placeholder="e.g. Senior stylist rate raised after review"
                   value={reason}
                   maxLength={500}
                   onChange={(event) => setReason(event.target.value)}

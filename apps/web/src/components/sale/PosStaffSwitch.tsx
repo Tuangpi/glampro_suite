@@ -90,10 +90,12 @@ export default function PosStaffSwitch({ disabled }: { disabled: boolean }) {
           </div>
           <Input
             label="Staff PIN"
+            placeholder="Please enter the staff member's PIN"
             type="password"
             inputMode="numeric"
             autoComplete="off"
             maxLength={6}
+            hint="Six digits."
             disabled={busy || disabled}
             value={pin}
             onChange={(event) => setPin(event.target.value)}

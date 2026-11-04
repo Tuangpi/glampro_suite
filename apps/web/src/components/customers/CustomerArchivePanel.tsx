@@ -83,6 +83,7 @@ export default function CustomerArchivePanel({
         </p>
         <Input
           label="Archive reason"
+          placeholder="e.g. Duplicate profile merged into CUS-0104"
           value={reason}
           maxLength={2000}
           required

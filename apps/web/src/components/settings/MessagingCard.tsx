@@ -101,17 +101,18 @@ function SettingsEditor({
         <div className="grid gap-4 sm:grid-cols-2">
           {(
             [
-              ["reminderHours", "Reminder lead time (hours)"],
-              ["rebookingDays", "Rebooking delay (days)"],
-              ["quietStart", "Quiet hours start (0–23)"],
-              ["quietEnd", "Quiet hours end (0–23)"],
-              ["cancellationHours", "Self-cancellation cutoff (hours)"],
+              ["reminderHours", "Reminder lead time (hours)", "e.g. 24"],
+              ["rebookingDays", "Rebooking delay (days)", "e.g. 28"],
+              ["quietStart", "Quiet hours start (0–23)", "21"],
+              ["quietEnd", "Quiet hours end (0–23)", "8"],
+              ["cancellationHours", "Self-cancellation cutoff (hours)", "e.g. 24"],
             ] as const
-          ).map(([key, label]) => (
+          ).map(([key, label, placeholder]) => (
             <Input
               key={key}
               label={label}
               type="number"
+              placeholder={placeholder}
               value={draft[key]}
               onChange={(e) => setDraft({ ...draft, [key]: Number(e.target.value) })}
             />
@@ -124,6 +125,7 @@ function SettingsEditor({
           <div className="mt-4 flex flex-col gap-4">
             <Input
               label="Channel notice version"
+              placeholder="e.g. 2026-04"
               value={draft.consentVersion}
               onChange={(e) => setDraft({ ...draft, consentVersion: e.target.value })}
             />

@@ -180,6 +180,7 @@ function Review({
         <input
           value={reason}
           maxLength={500}
+          placeholder="e.g. Customer asked us to hold it for two more weeks"
           onChange={(e) => setReason(e.target.value)}
           disabled={busy}
         />

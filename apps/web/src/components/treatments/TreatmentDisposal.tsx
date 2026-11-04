@@ -110,6 +110,7 @@ export default function TreatmentDisposal({
           </Button>
           <Input
             label="Disposal reason"
+            placeholder="e.g. Retention period ended; service no longer offered"
             value={reason}
             maxLength={500}
             disabled={busy}
@@ -128,6 +129,7 @@ export default function TreatmentDisposal({
               </p>
               <Input
                 label="Type DISPOSE to confirm permanent disposal"
+                placeholder="DISPOSE"
                 value={confirmation}
                 disabled={busy}
                 onChange={(event) => setConfirmation(event.target.value)}

@@ -159,12 +159,14 @@ export default function Login() {
                   </p>
                   <Input
                     label="Verification code"
+                    placeholder="Please enter the code from your email"
                     name="code"
                     inputMode="numeric"
                     autoComplete="one-time-code"
                     value={code}
                     onChange={(event) => setCode(event.target.value)}
                     maxLength={6}
+                    hint="Six digits."
                     error={fieldErrors.code}
                     disabled={submitting}
                     required
@@ -209,6 +211,7 @@ export default function Login() {
                           type={showPassword ? "text" : "password"}
                           name="password"
                           autoComplete="current-password"
+                          placeholder="Please enter your password"
                           value={password}
                           onChange={(event) => setPassword(event.target.value)}
                           disabled={submitting}

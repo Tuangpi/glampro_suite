@@ -203,6 +203,7 @@ export default function PayrollClose({
             <div className="space-y-3">
               <Input
                 label="Payroll action reason"
+                placeholder="e.g. Approved after checking the July statements"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 disabled={busy}
@@ -265,6 +266,7 @@ export default function PayrollClose({
                 <>
                   <Input
                     label="Actual payout reference"
+                    placeholder="e.g. GIRO batch 2026-07"
                     value={reference}
                     disabled={busy}
                     onChange={(e) => setReference(e.target.value)}

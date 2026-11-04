@@ -52,11 +52,13 @@ export default function TwoFactorCard() {
           {sent ? (
             <Input
               label="Enrollment verification code"
+              placeholder="Please enter the code from your email"
               value={code}
               onChange={(event) => setCode(event.target.value)}
               autoComplete="one-time-code"
               inputMode="numeric"
               maxLength={6}
+              hint="Six digits."
               required
               disabled={pending}
             />

@@ -18,7 +18,7 @@ address bar disagreed with it.
 | Route                     | Screen              | What it does                                           |
 | ------------------------- | ------------------- | ------------------------------------------------------ |
 | `/platform/login`         | `PlatformLogin`     | Operator sign-in and the emailed-code step             |
-| `/platform`               | `CompaniesPage`     | Searchable directory, status and pagination            |
+| `/platform`               | `CompaniesPage`     | Directory totals, searchable directory, plan end dates |
 | `/platform/companies/new` | `CreateCompanyPage` | Create a company and invite its owner                  |
 | `/platform/companies/:id` | `CompanyDetailPage` | Overview, subscription, module access, activity, purge |
 | `/platform/account`       | `Account`           | The operator's own password and second factor          |
@@ -29,6 +29,63 @@ an unauthenticated address is redirected to `/platform/login`, and an unknown pa
 under `/platform` falls back to the directory instead of a blank screen. Account &
 security is its own page so an operator changing their password is never standing next
 to a company's delete button.
+
+## Directory totals and plan end dates
+
+The directory opens with four tiles — **All companies**, **Active**, **Suspended** and
+**Ending in 30 days** — computed by `listCompanies` in the same transaction as the page,
+so a company created mid-request cannot appear in a tile but not in a page. They count the
+whole directory and never narrow with the search box, which is why the first tile says
+"All companies" while the card title above the table reports the filtered count. Only two
+totals are single-status counts; `total` is a `groupBy` over every status, and
+`expiringSoon` counts live companies whose **latest** plan ends within 30 days. A company
+already past its last end date has lapsed rather than is expiring, so it is not counted
+there — `resolveTenantStatus` is what turns that into `EXPIRED`.
+
+Each row and the company page show **Subscription ends**, the latest
+`Subscription.endDate` (`null` = no plan recorded, shown as "No plan recorded"). That is
+the same column every other reader of a plan uses, so the console, the salon's Settings
+page account details and the server's own expiry check cannot disagree.
+
+## Placeholders and hints
+
+A placeholder speaks in one of two voices:
+
+- **An example of a valid value** — `glampro-demo-salon`, taken from the slug's
+  `[a-z0-9]+(-[a-z0-9]+)*` shape, which no label can convey.
+- **An instruction** — what to type, for a secret or a confirmation:
+  - `Please enter your password`
+  - `Please enter your new password again`
+  - `Please enter the code from your email`
+
+  This is the voice for a secret and for a confirmation: a masked field paints its
+  placeholder as the only unmasked text it will ever show, so a sample password, PIN or
+  code must never sit there, and a second password box has to say which box it is.
+
+Neither voice may state a rule, and neither may stand in for the label. The placeholder is
+gone after one keystroke, so anything that has to stay on screen — a length, a format, an
+expiry — belongs in the field's `hint`, which `components/ui/Field.tsx` wires to
+`aria-describedby`; and the label keeps naming the control, which
+`apps/web/src/components/ui/__tests__/Input.test.tsx` holds `Input` to.
+
+The one dynamic placeholder in the console is intentional: _Type the slug to confirm_
+shows the real slug, and because it is a placeholder rather than a value the delete button
+stays disabled until it is typed.
+
+The salon app in `apps/web/src` follows the same convention, not only this console.
+Examples carry the shape — `0.00` for money, `e.g. 10` for a percentage, `name@example.com`
+for an address, `Search by name or phone…` for a lookup, `e.g. CUS-0104` for a reference,
+`e.g. …` for a reason. Instructions carry secrets and confirmations — "Please enter your
+current password", "Please enter your new password again", "Please enter the staff
+member's PIN". Date, time, month and file inputs carry neither: the native control already
+shows the expected form.
+
+One trap when auditing: a masked field with a reveal button writes its type as an
+expression — `type={showPassword ? "text" : "password"}` — so a sweep for `type="password"`
+silently skips it, and the sign-in boxes in `pages/Login.tsx` and `platform/PlatformLogin.tsx`
+are hand-composed `Field` + `CONTROL_CLASS` for exactly that reason. Find secrets by
+`autoComplete` (`current-password`, `new-password`, `one-time-code`) or by scanning every
+`<input` tag, never by the literal type.
 
 ## Sign-in
 
@@ -75,6 +132,28 @@ cards. `POST /api/platform/auth/password`, `…/two-factor/enroll`, `…/two-fac
   because it weakens sign-in for that operator. Every one of these actions writes an
   `audit_logs` row (`platform.password.change`, `platform.two_factor.enable`,
   `platform.two_factor.disable`).
+
+## Recording a subscription period
+
+The Subscription tab ends with a form that records one manual period —
+`POST /api/platform/companies/:id/subscriptions`. Nothing is charged or captured;
+the record is what gives the company a dated period of access.
+
+- **The operator picks days, the API stores instants.** `recordSubscriptionSchema`
+  requires an offset (`2026-10-23T00:00:00+08:00`) because a bare `2026-10-23` is a
+  different moment in every timezone. Both fields are `<input type="date">`, which knows
+  only the day, so `dayToLocalInstant` (`lib/utils.ts`) writes that day's midnight in the
+  operator's own timezone with the offset attached — the day the operator picked is the
+  day that is recorded, never the one before it.
+- **Neither field carries a placeholder.** Per _Placeholders and hints_, the native
+  control already shows the expected form; the rule that has to stay on screen (both
+  boundaries are midnight, periods cannot overlap) sits in the paragraph above the fields.
+- **The pickers refuse the days the service refuses.** Start is capped at today and end
+  starts at tomorrow: a current period cannot begin in the future, and an end of "today"
+  is already in the past once it is stored at midnight.
+- **Overlap and rejection.** A period that overlaps an active one answers `409`, and a
+  rejected period keeps its typed days so the operator corrects one field rather than
+  retyping the form.
 
 ## Module access
 

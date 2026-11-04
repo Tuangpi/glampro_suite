@@ -285,6 +285,7 @@ export default function TreatmentRecordForm({
 
           <Input
             label="Notes"
+            placeholder="e.g. Patch test clear; two colour bowls used"
             value={form.notes}
             onChange={set("notes")}
             error={fieldError("notes")}

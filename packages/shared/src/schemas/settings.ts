@@ -77,6 +77,13 @@ export const salonProfileSchema = z.object({
   onlineDepositAmount: z.number().int().min(0),
   onlineNoShowFee: z.number().int().min(0),
   owner: z.object({ id: z.string(), name: z.string(), email: z.string() }).nullable(),
+  /**
+   * When the salon's subscription lapses — the latest `Subscription.endDate`,
+   * `null` when no plan is recorded. Read-only: expiry is the platform
+   * console's verdict, and `updateSalonProfileSchema` is strict, so sending it
+   * back is a validation error rather than a silent write.
+   */
+  subscriptionEndsAt: z.string().nullable(),
 
   createdAt: z.string(),
   updatedAt: z.string(),

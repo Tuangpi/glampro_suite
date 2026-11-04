@@ -69,7 +69,7 @@ const SETTINGS_SECTIONS = [
   {
     id: "booking",
     label: "Booking & hours",
-    description: "Online booking, opening hours and resources.",
+    description: "Opening hours and the rooms or equipment you book.",
   },
   {
     id: "team",
@@ -195,7 +195,6 @@ export default function Settings() {
                   {section.id === "outlets" && <Outlets />}
                   {section.id === "booking" && (
                     <>
-                      <ProfileCard canEdit={canEdit} booking />
                       <OperatingHoursCard canEdit={canEdit} />
                       <ResourcesCard canEdit={canEdit} />
                     </>
@@ -252,8 +251,23 @@ function TeamSettings({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-/** Salon profile and salon-wide localisation preferences. */
-function ProfileCard({ canEdit, booking = false }: { canEdit: boolean; booking?: boolean }) {
+/**
+ * Salon profile: the business name, the low-stock threshold and tax settings,
+ * plus the read-only account facts.
+ *
+ * The salon-wide localisation preferences (`timeZone`, `locale`) are **not**
+ * editable here — the platform console owns them, and the API keeps them on the
+ * profile so `SalonFormattingContext` and every server-side formatter keep
+ * reading one stored pair. This form therefore never sends them: the service
+ * leaves omitted fields untouched, so a profile save cannot reset them.
+ *
+ * The online-booking settings are not edited here either. This screen no longer
+ * offers them, and the payload below never sends `onlineBookingEnabled`,
+ * `onlineDepositAmount` or `onlineNoShowFee`, so a profile save cannot change
+ * them while the API, the columns and the public booking flow keep using the
+ * stored values.
+ */
+function ProfileCard({ canEdit }: { canEdit: boolean }) {
   const { formatDate } = useSalonFormatting();
   const { tenant } = useAuth();
   const profile = useSalonProfile(tenant?.id);
@@ -266,28 +280,16 @@ function ProfileCard({ canEdit, booking = false }: { canEdit: boolean; booking?:
   // whenever the profile refetched behind the form.
   const [draftName, setDraftName] = useState<string | null>(null);
   const [draftThreshold, setDraftThreshold] = useState<string | null>(null);
-  const [draftTimeZone, setDraftTimeZone] = useState<string | null>(null);
-  const [draftLocale, setDraftLocale] = useState<string | null>(null);
   const [draftGstEnabled, setDraftGstEnabled] = useState<boolean | null>(null);
   const [draftGstNumber, setDraftGstNumber] = useState<string | null>(null);
-  const [draftOnlineEnabled, setDraftOnlineEnabled] = useState<boolean | null>(null);
-  const [draftOnlineDeposit, setDraftOnlineDeposit] = useState<string | null>(null);
-  const [draftOnlineNoShow, setDraftOnlineNoShow] = useState<string | null>(null);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
   const name = draftName ?? data?.name ?? "";
   const threshold = draftThreshold ?? (data === undefined ? "" : String(data.lowStockThreshold));
-  const timeZone = draftTimeZone ?? data?.timeZone ?? "";
-  const locale = draftLocale ?? data?.locale ?? "";
   const gstEnabled = draftGstEnabled ?? data?.gstEnabled ?? false;
   const gstRegistrationNumber = draftGstNumber ?? data?.gstRegistrationNumber ?? "";
-  const onlineEnabled = draftOnlineEnabled ?? data?.onlineBookingEnabled ?? false;
-  const onlineDeposit =
-    draftOnlineDeposit ?? (data === undefined ? "" : (data.onlineDepositAmount / 100).toFixed(2));
-  const onlineNoShow =
-    draftOnlineNoShow ?? (data === undefined ? "" : (data.onlineNoShowFee / 100).toFixed(2));
 
   const fieldError = (field: string): string | undefined =>
     fieldErrors[field] ?? fieldErrors[`body.${field}`];
@@ -298,30 +300,19 @@ function ProfileCard({ canEdit, booking = false }: { canEdit: boolean; booking?:
     setFormError(null);
 
     try {
-      await update.mutateAsync(
-        booking
-          ? {
-              // The existing API requires these two fields on every profile write.
-              // Use saved values, never the other category's unsaved draft.
-              name: data!.name,
-              lowStockThreshold: data!.lowStockThreshold,
-              onlineBookingEnabled: onlineEnabled,
-              onlineDepositAmount: Math.round(Number(onlineDeposit || 0) * 100),
-              onlineNoShowFee: Math.round(Number(onlineNoShow || 0) * 100),
-            }
-          : {
-              name: name.trim(),
-              lowStockThreshold: Number(threshold),
-              timeZone: timeZone.trim(),
-              locale: locale.trim(),
-              // Always sent: the toggle is a checkbox, so "untouched" and "off"
-              // are the same unchecked state and omitting it would never uncheck.
-              gstEnabled,
-              gstRegistrationNumber:
-                gstRegistrationNumber.trim().length > 0 ? gstRegistrationNumber.trim() : null,
-            },
-      );
-      showToast("success", booking ? "Booking settings saved." : "Salon profile saved.");
+      await update.mutateAsync({
+        name: name.trim(),
+        lowStockThreshold: Number(threshold),
+        // `timeZone`/`locale` are platform-owned: omitting them tells the
+        // service to leave the stored pair alone, so this form can never
+        // reset a salon's formatting preferences by saving.
+        // Always sent: the toggle is a checkbox, so "untouched" and "off"
+        // are the same unchecked state and omitting it would never uncheck.
+        gstEnabled,
+        gstRegistrationNumber:
+          gstRegistrationNumber.trim().length > 0 ? gstRegistrationNumber.trim() : null,
+      });
+      showToast("success", "Salon profile saved.");
     } catch (error) {
       const details = getValidationDetails(error);
       if (Object.keys(details).length > 0) {
@@ -333,14 +324,7 @@ function ProfileCard({ canEdit, booking = false }: { canEdit: boolean; booking?:
   }
 
   return (
-    <Card
-      title={booking ? "Online booking" : "Salon profile"}
-      description={
-        booking
-          ? "Choose whether customers can book online and set your booking fees."
-          : "Your business name, regional preferences and tax settings."
-      }
-    >
+    <Card title="Salon profile" description="Your business name, stock threshold and tax settings.">
       {profile.isPending ? (
         <div className="flex flex-col gap-3">
           <Skeleton className="h-11" />
@@ -360,146 +344,85 @@ function ProfileCard({ canEdit, booking = false }: { canEdit: boolean; booking?:
             </p>
           ) : null}
 
-          {!booking && (
-            <>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Input
-                  label="Salon name"
-                  required
-                  value={name}
-                  onChange={(event) => setDraftName(event.target.value)}
-                  error={fieldError("name")}
-                  disabled={!canEdit || update.isPending}
-                  maxLength={200}
-                />
-                <Input
-                  label="Low-stock threshold"
-                  type="number"
-                  min={0}
-                  max={10000}
-                  value={threshold}
-                  onChange={(event) => setDraftThreshold(event.target.value)}
-                  error={fieldError("lowStockThreshold")}
-                  disabled={!canEdit || update.isPending}
-                  hint="Products with stock at or below this quantity are marked as low stock."
-                />
-                <Input
-                  label="Salon timezone"
-                  required
-                  value={timeZone}
-                  onChange={(event) => setDraftTimeZone(event.target.value)}
-                  error={fieldError("timeZone")}
-                  disabled={!canEdit || update.isPending}
-                  maxLength={100}
-                  hint="Use a timezone identifier, such as Asia/Singapore. Saved for the whole salon."
-                />
-                <Input
-                  label="Formatting locale"
-                  required
-                  value={locale}
-                  onChange={(event) => setDraftLocale(event.target.value)}
-                  error={fieldError("locale")}
-                  disabled={!canEdit || update.isPending}
-                  maxLength={100}
-                  hint="Use a locale identifier, such as en-SG. This preference does not translate the app."
-                />
-              </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Input
+              label="Salon name"
+              required
+              placeholder="e.g. Glampro Orchard"
+              value={name}
+              onChange={(event) => setDraftName(event.target.value)}
+              error={fieldError("name")}
+              disabled={!canEdit || update.isPending}
+              maxLength={200}
+            />
+            <Input
+              label="Low-stock threshold"
+              type="number"
+              min={0}
+              max={10000}
+              placeholder="e.g. 5"
+              value={threshold}
+              onChange={(event) => setDraftThreshold(event.target.value)}
+              error={fieldError("lowStockThreshold")}
+              disabled={!canEdit || update.isPending}
+              hint="Products with stock at or below this quantity are marked as low stock."
+            />
+          </div>
 
-              <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
-                <Checkbox
-                  label="Charge GST (9% inclusive)"
-                  checked={gstEnabled}
-                  disabled={!canEdit || update.isPending}
-                  onChange={(event) => setDraftGstEnabled(event.target.checked)}
-                />
-                {gstEnabled && (
-                  <Input
-                    label="GST registration number"
-                    required={gstEnabled}
-                    value={gstRegistrationNumber}
-                    onChange={(event) => setDraftGstNumber(event.target.value)}
-                    error={fieldError("gstRegistrationNumber")}
-                    disabled={!canEdit || update.isPending}
-                    maxLength={50}
-                    hint="Printed on receipts and tax reports. Required while GST is enabled."
-                  />
-                )}
-                <p className="text-xs text-ink-muted">
-                  Catalogue prices include 9% GST when enabled; the till shows the GST component on
-                  receipts and reports without changing what the customer pays.
-                </p>
-              </div>
-            </>
-          )}
-
-          {booking && (
-            <div className="flex flex-col gap-3">
-              <Checkbox
-                label="Enable online booking"
-                checked={onlineEnabled}
+          <div className="flex flex-col gap-3 rounded-lg border border-line bg-surface p-3">
+            <Checkbox
+              label="Charge GST (9% inclusive)"
+              checked={gstEnabled}
+              disabled={!canEdit || update.isPending}
+              onChange={(event) => setDraftGstEnabled(event.target.checked)}
+            />
+            {gstEnabled && (
+              <Input
+                label="GST registration number"
+                required={gstEnabled}
+                placeholder="e.g. M90312345X"
+                value={gstRegistrationNumber}
+                onChange={(event) => setDraftGstNumber(event.target.value)}
+                error={fieldError("gstRegistrationNumber")}
                 disabled={!canEdit || update.isPending}
-                onChange={(event) => setDraftOnlineEnabled(event.target.checked)}
+                maxLength={50}
+                hint="Printed on receipts and tax reports. Required while GST is enabled."
               />
-              {onlineEnabled && (
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Input
-                    label="Deposit amount (SGD)"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={onlineDeposit}
-                    onChange={(event) => setDraftOnlineDeposit(event.target.value)}
-                    error={fieldError("onlineDepositAmount")}
-                    disabled={!canEdit || update.isPending}
-                  />
-                  <Input
-                    label="No-show fee (SGD)"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    value={onlineNoShow}
-                    onChange={(event) => setDraftOnlineNoShow(event.target.value)}
-                    error={fieldError("onlineNoShowFee")}
-                    disabled={!canEdit || update.isPending}
-                  />
-                </div>
-              )}
-              <p className="text-xs text-ink-muted">
-                Amounts are in Singapore dollars. Set a fee to 0 for no charge.
-              </p>
-            </div>
-          )}
+            )}
+            <p className="text-xs text-ink-muted">
+              Catalogue prices include 9% GST when enabled; the till shows the GST component on
+              receipts and reports without changing what the customer pays.
+            </p>
+          </div>
 
-          {!booking && (
-            <details className="rounded-lg border border-line p-3">
-              <summary className="cursor-pointer text-sm font-medium text-ink">
-                Account details
-              </summary>
-              <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
-                <Fact label="Salon identifier" value={data.slug} />
-                <Fact label="Status" value={data.status} />
-                <Fact label="Owner" value={data.owner?.name ?? "—"} />
-                <Fact label="Created" value={formatDate(data.createdAt)} />
-              </dl>
-              <p className="text-xs text-ink-muted">
-                Your salon identifier and account status are read-only. Contact support if they need
-                to change.
-              </p>
-            </details>
-          )}
+          <details className="rounded-lg border border-line p-3">
+            <summary className="cursor-pointer text-sm font-medium text-ink">
+              Account details
+            </summary>
+            <dl className="grid gap-x-8 gap-y-2 text-sm sm:grid-cols-2 lg:grid-cols-4">
+              <Fact label="Salon identifier" value={data.slug} />
+              <Fact label="Status" value={data.status} />
+              <Fact
+                label="Subscription ends"
+                value={data.subscriptionEndsAt ? formatDate(data.subscriptionEndsAt) : "—"}
+              />
+              <Fact label="Owner" value={data.owner?.name ?? "—"} />
+              <Fact label="Created" value={formatDate(data.createdAt)} />
+            </dl>
+            <p className="text-xs text-ink-muted">
+              Your salon identifier, account status and subscription expiry are read-only and set by
+              the platform. Contact support if they need to change.
+            </p>
+          </details>
 
           {canEdit ? (
             <div className="flex justify-end">
               <Button type="submit" loading={update.isPending}>
-                {booking ? "Save booking settings" : "Save profile"}
+                Save profile
               </Button>
             </div>
           ) : (
-            <p className="text-xs text-ink-muted">
-              {booking
-                ? "Only a manager or the owner can change booking settings."
-                : isReadOnlyReason()}
-            </p>
+            <p className="text-xs text-ink-muted">{isReadOnlyReason()}</p>
           )}
         </form>
       )}

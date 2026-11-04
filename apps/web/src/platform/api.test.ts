@@ -66,7 +66,13 @@ describe("operator API sessions", () => {
         Promise.resolve(
           response(
             url.includes("companies")
-              ? { items: [], total: 0, page: 1, pageSize: 20 }
+              ? {
+                  items: [],
+                  total: 0,
+                  page: 1,
+                  pageSize: 20,
+                  stats: { total: 0, active: 0, suspended: 0, expiringSoon: 0 },
+                }
               : { success: true },
           ),
         ),

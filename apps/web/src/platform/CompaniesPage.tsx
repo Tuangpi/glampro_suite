@@ -1,10 +1,16 @@
 /**
  * The company directory — `/platform`.
  *
- * The first thing an operator sees, so it answers three questions without a
- * click: which companies exist, what state each is in, and what I can do to one.
- * The company name is the row's own link into its page; the search field and
- * pagination are server-driven because the API owns paging.
+ * The first thing an operator sees, so it answers four questions without a
+ * click: which companies exist, what state each is in, when each plan lapses,
+ * and what I can do to one. The company name is the row's own link into its
+ * page; the search field and pagination are server-driven because the API owns
+ * paging.
+ *
+ * The tiles count the whole directory — the API computes them beside the page
+ * from one snapshot — so searching narrows the rows under them, never the
+ * numbers. The first tile is therefore labelled "All companies" rather than
+ * repeating the card title, which does count the search.
  *
  * The notice above the table is how a purge or a failed invitation reports back:
  * both of those happen on another route, so it arrives in router state rather
@@ -14,7 +20,7 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import type { CompanyList } from "@glampro_suite/shared";
 
-import { Plus } from "@/components/icons";
+import { AlertTriangle, CheckCircle, Clock, Grid, Plus } from "@/components/icons";
 import Badge, { type BadgeVariant } from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -22,6 +28,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import Input from "@/components/ui/Input";
 import Pagination from "@/components/ui/Pagination";
 import Skeleton from "@/components/ui/Skeleton";
+import StatTile from "@/components/ui/StatTile";
 import Table, { type TableColumn } from "@/components/ui/Table";
 import { platformApi } from "./api";
 
@@ -105,6 +112,20 @@ export default function CompaniesPage() {
       ),
     },
     {
+      key: "subscription",
+      header: "Subscription ends",
+      cell: (row) => (
+        // A date, or a muted sentence when no plan is recorded — an em dash in a
+        // table reads as missing data, while "no plan" is itself the answer an
+        // operator needs before they can sell one.
+        <span className={row.subscriptionEndsAt ? undefined : "text-ink-muted"}>
+          {row.subscriptionEndsAt
+            ? new Date(row.subscriptionEndsAt).toLocaleDateString()
+            : "No plan recorded"}
+        </span>
+      ),
+    },
+    {
       key: "created",
       header: "Created",
       cell: (row) => new Date(row.createdAt).toLocaleDateString(),
@@ -156,6 +177,31 @@ export default function CompaniesPage() {
           {notice}
         </p>
       ) : null}
+
+      {/* Directory totals from the API: whole-business counts that the search
+          does not narrow, grouped and named so they read as one thing. */}
+      <div
+        role="group"
+        aria-label="Company directory overview"
+        className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      >
+        <StatTile icon={<Grid />} value={list?.stats.total} label="All companies" />
+        <StatTile icon={<CheckCircle />} value={list?.stats.active} label="Active" tone="success" />
+        {/* Amber because suspension is an operator action that needs an answer,
+            unlike a disabled staff account, which is just a state. */}
+        <StatTile
+          icon={<AlertTriangle />}
+          value={list?.stats.suspended}
+          label="Suspended"
+          tone="warning"
+        />
+        <StatTile
+          icon={<Clock />}
+          value={list?.stats.expiringSoon}
+          label="Ending in 30 days"
+          tone="neutral"
+        />
+      </div>
 
       <Card
         title={list ? `${list.total} companies` : "Companies"}

@@ -590,6 +590,7 @@ export default function AppointmentFormDrawer({
 
         <Input
           label="Comment"
+          placeholder="e.g. Wants the same stylist as last time"
           value={form.comment}
           onChange={(event) => setField("comment", event.target.value)}
           error={fieldError("comment")}
@@ -626,6 +627,7 @@ export default function AppointmentFormDrawer({
                   type="number"
                   min={2}
                   max={26}
+                  placeholder="e.g. 4"
                   value={form.occurrences}
                   onChange={(event) => setField("occurrences", event.target.value)}
                   error={repeatError}

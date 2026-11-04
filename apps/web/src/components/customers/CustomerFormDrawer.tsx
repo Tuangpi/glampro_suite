@@ -206,6 +206,7 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
         <Input
           label="Name"
           required
+          placeholder="e.g. Aina Rahman"
           value={form.name}
           onChange={(event) => set("name")(event.target.value)}
           error={fieldError("name")}
@@ -214,9 +215,12 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
         />
 
         <div className="grid gap-4 sm:grid-cols-2">
+          {/* A stored phone is free text, so only an example can show the shape
+              — local number or country code — that the salon is expected to type. */}
           <Input
             label="Phone"
             type="tel"
+            placeholder="+65 9123 4567"
             value={form.phone}
             onChange={(event) => set("phone")(event.target.value)}
             error={fieldError("phone")}
@@ -225,6 +229,7 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
           <Input
             label="Email"
             type="email"
+            placeholder="name@example.com"
             value={form.email}
             onChange={(event) => set("email")(event.target.value)}
             error={fieldError("email")}
@@ -253,6 +258,7 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
             label="Customer code"
+            placeholder="e.g. VIP-014"
             value={form.code}
             onChange={(event) => set("code")(event.target.value)}
             error={fieldError("code")}
@@ -261,6 +267,7 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
           />
           <Input
             label="Membership reference"
+            placeholder="e.g. 8881234567890"
             value={form.memberId}
             onChange={(event) => set("memberId")(event.target.value)}
             error={fieldError("memberId")}
@@ -270,6 +277,7 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
 
         <Input
           label="Address"
+          placeholder="e.g. 12 Orchard Road, #03-01"
           value={form.address}
           onChange={(event) => set("address")(event.target.value)}
           error={fieldError("address")}
@@ -278,6 +286,7 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
 
         <Input
           label="Comment"
+          placeholder="e.g. Prefers afternoon slots"
           value={form.comment}
           onChange={(event) => set("comment")(event.target.value)}
           error={fieldError("comment")}

@@ -184,8 +184,44 @@ test(
       assert.equal(listed.status, 200);
       assert.equal(listed.body.data.total, 2);
       assert.equal(listed.body.data.items.length, 1);
+      // A company created seconds ago has no plan, so its expiry is `null` rather
+      // than a guessed date.
+      assert.equal(listed.body.data.items[0].subscriptionEndsAt, null);
+      // The tiles count the whole directory, so they are at least the two
+      // companies this run created and are unaffected by `search`/`pageSize`.
+      const stats = listed.body.data.stats;
+      assert.equal(typeof stats.total, "number");
+      assert.ok(stats.total >= 2, `expected at least 2 companies, got ${stats.total}`);
+      assert.ok(stats.active >= 2);
+      assert.equal(stats.suspended >= 0, true);
+      assert.equal(stats.expiringSoon >= 0, true);
+      // An unfiltered page agrees with the tile.
+      const all = await call("/platform/companies", undefined, platformToken);
+      assert.equal(all.body.data.stats.total, stats.total);
+      assert.equal(all.body.data.total, stats.total);
+      // A plan ending inside the 30-day window is exactly what the "Ending in 30
+      // days" tile counts, and the row shows that date rather than "no plan".
+      const endsSoon = new Date(Date.now() + 10 * 86_400_000);
+      await runAsPlatform(() =>
+        prisma.subscription.create({
+          data: {
+            tenantId: companyB.id,
+            startDate: new Date(),
+            endDate: endsSoon,
+            amount: 59,
+          },
+        }),
+      );
+      const withPlan = await call("/platform/companies", undefined, platformToken);
+      const plannedRow = withPlan.body.data.items.find(
+        (item: { id: string }) => item.id === companyB.id,
+      );
+      assert.equal(plannedRow.subscriptionEndsAt, endsSoon.toISOString());
+      assert.equal(withPlan.body.data.stats.expiringSoon, stats.expiringSoon + 1);
+      assert.equal(withPlan.body.data.stats.active, stats.active);
       const detail = await call(`/platform/companies/${companyA.id}`, undefined, platformToken);
       assert.equal(detail.status, 200);
+      assert.equal(detail.body.data.subscriptionEndsAt, null);
       assert.equal(detail.body.data.owner.email, a.ownerEmail);
       assert.equal(JSON.stringify(detail.body).includes("tokenHash"), false);
       const resend = await call(`/platform/companies/${companyA.id}/invitation`, {}, platformToken);

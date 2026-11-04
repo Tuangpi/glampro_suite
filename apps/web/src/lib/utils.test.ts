@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   cn,
   createSalonFormatters,
+  dayToLocalInstant,
   formatDate,
   formatDateInputValue,
   formatDuration,
@@ -29,6 +30,25 @@ describe("formatDateInputValue", () => {
   it("keeps the local calendar day instead of shifting to UTC", () => {
     // 00:30 local on the 1st would become the previous day via toISOString().
     expect(formatDateInputValue(new Date(2026, 0, 1, 0, 30))).toBe("2026-01-01");
+  });
+});
+
+describe("dayToLocalInstant", () => {
+  it("turns a picked day into that day's local midnight with an explicit offset", () => {
+    const instant = dayToLocalInstant("2026-10-23") ?? "";
+
+    // The offset is the machine's, so the shape is asserted, not a fixed +08:00.
+    expect(instant).toMatch(/^2026-10-23T00:00:00[+-]\d{2}:\d{2}$/);
+    expect(new Date(instant).getTime()).toBe(new Date(2026, 9, 23).getTime());
+    // And it round-trips: the day the operator picked is the day that comes back.
+    expect(formatDateInputValue(new Date(instant))).toBe("2026-10-23");
+  });
+
+  it("refuses a day the calendar does not have, and anything that is not a day", () => {
+    expect(dayToLocalInstant("2026-02-30")).toBeNull();
+    expect(dayToLocalInstant("2026-10-23T00:00:00Z")).toBeNull();
+    expect(dayToLocalInstant("23/10/2026")).toBeNull();
+    expect(dayToLocalInstant("")).toBeNull();
   });
 });
 

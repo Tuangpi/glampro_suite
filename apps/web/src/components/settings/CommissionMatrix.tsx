@@ -95,6 +95,7 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
         </p>
         <Input
           label="Search commission staff"
+          placeholder="Search by name…"
           value={search}
           disabled={busy || !!draft}
           onChange={(event) => {
@@ -174,6 +175,7 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
               <div className="flex flex-col gap-3 mt-3">
                 <Input
                   label="Bulk commission change reason"
+                  placeholder="e.g. Annual rate review"
                   value={reason}
                   maxLength={500}
                   onChange={(e) => setReason(e.target.value)}
