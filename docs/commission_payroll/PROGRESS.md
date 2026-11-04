@@ -1,5 +1,66 @@
 # Commission & Payroll progress
 
+## November 4, 2026 — CP-007 re-verified: local debug hack reverted, SEC-01 teardown defect recorded
+
+- **A leftover local-debug change was reverted before this work was called done.**
+  `apps/api/src/services/auth.service.ts` had the `sendTwoFactorCode` call and its
+  `EMAIL_SEND_FAILED` branch commented out and replaced by
+  `console.log("Two-factor code for ...")`, left over from signing in on this laptop
+  without a mail inbox. It is not part of CP-007, no document mentions it, and it broke
+  the tree: `tsc --noEmit` failed with
+  `TS6133: 'HttpError' is declared but its value is never read`, ESLint failed with
+  `@typescript-eslint/no-unused-vars`, and two-factor codes were printed to application
+  logs — the exact thing `lib/email.ts` documents that it never does. The file is
+  restored to its committed state; nothing else was touched. The supported local path is
+  unchanged and already configured: `apps/api/.env` points `SMTP_HOST` at
+  `127.0.0.1:1025`, so run a capture inbox there (`.env.example` lines 44–47) instead of
+  printing codes.
+- **Re-verification after the revert.** API `tsc -p tsconfig.json --noEmit` exit 0 and
+  ESLint over all affected files exit 0. Prettier check and `git diff --check` exit 0.
+  On a fresh disposable PostgreSQL 18 cluster (`127.0.0.1:55485/payroll_close_test`, UTC,
+  rebuilt with the documented recipe because a reboot wiped `/tmp`),
+  `payroll-cutover-inventory.test.ts` **8/8**, `payroll-cutover.acceptance.test.ts`
+  **4/4** and `payroll-progress.acceptance.test.ts` skipped its two DB cases under
+  `RUN_CP005_ACCEPTANCE` as designed, so those two were run on their own gate
+  (`CP006_PROGRESS_DB=1`) and pass **2/2**, including "CP-006 progress refuses a snapshot
+  its audit row no longer covers" — the lean `verifiedPayrollCloseSnapshot` read does
+  still refuse a snapshot its event no longer covers. Totals: 12 passed / 0 failed / 2
+  gated skips, then 2 passed / 0 failed.
+- **The NFR-03 file passes on its isolated protocol, including on this host.** Run alone
+  with `RUN_CP007_PERFORMANCE=true` on the fresh cluster: month close **3,861 / 4,317.7
+  ms** (10 s budget) and month-to-date **252.0–289.7 ms** across ten samples (500 ms
+  budget) — the earlier breach did not reproduce, even though
+  `scaling_governor` still reads `powersave`, because the file was not charged for the
+  rest of a serial set. This supports the recorded position: the number depends on the
+  invocation and the host clock, and the pre-activation target-host measurement stays
+  Step 5 of the runbook.
+- **New finding, pre-existing and not caused by CP-007 — SEC-01's teardown cannot delete
+  its tenant.** `auth-security.acceptance.test.ts` is gated off by default
+  (`SEC01_ACCEPTANCE=1`). Run against a fresh `127.0.0.1:55439/sec01_acceptance`, every
+  assertion passes — including the loopback-SMTP two-factor delivery that proves the
+  revert restored email, and the `EMAIL_SEND_FAILED` 503 on a refused connection — but
+  the test still reports failure because its `finally` block calls
+  `prisma.tenant.deleteMany({ where: { id: tenantId } })` and PostgreSQL raises
+  `Original payroll sale economics are immutable`. The cause is the migration
+  `20261029140000_sale_line_payroll_economics`, whose `BEFORE UPDATE OR DELETE` trigger
+  refuses any delete of a `sale_lines` row carrying `payrollEconomics`, and the tenant
+  cascade reaches those rows. Any suite that completes a real sale and then deletes its
+  tenant hits the same wall; SEC-01 is simply the one that was run. **Not fixed and not
+  hidden:** the guard is correct for production (immutability must win over cleanup), so
+  the fix belongs in test teardown — either `SET session_replication_role = replica` on
+  the platform connection of a disposable database, or a shared purge helper that drops
+  the sale graph before the tenant. That is a decision about test-only trigger bypass,
+  so it is recorded here for the next session rather than applied unilaterally.
+- **What this entry does not claim.** The gated 786-case payroll set, the full API and
+  web suites, the mounted-Chrome acceptance and any browser walkthrough were not re-run
+  here: the only source file restored is byte-identical to the committed revision those
+  runs covered. Real-month reconciliation, the migration on production, deployment and
+  earnings activation remain with the owner and still need separate authorization.
+- Commit: `CP-007 release verification, NFR-03 evidence and cutover runbook` (the
+  acceptance record, runbook and the four payroll changes), followed by this note.
+  Nothing was pushed; no production database was touched; both disposable clusters were
+  stopped and their data directories kept under `/tmp`.
+
 ## November 4, 2026 — CP-007 DONE: release verification, NFR-03 evidence and cutover runbook
 
 **CP-007 is complete as local release acceptance. Not release, not earnings activation,
