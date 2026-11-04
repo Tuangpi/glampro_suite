@@ -1,5 +1,65 @@
 # CP-003 readiness and plan lifecycle browser acceptance
 
+## CP-006 mounted reports browser acceptance — November 4, 2026
+
+The opt-in `apps/api/src/services/payroll-reports-browser.acceptance.test.ts` closes the CP-006
+browser item. It uses the same extracted Chrome-pipe helper as CP-003/CP-005 with a real
+`createApp`, a real Vite dev server and the disposable PostgreSQL cluster — no response mocks,
+no fixture HTML. Enable `RUN_CP006_BROWSER_ACCEPTANCE=true`; port 55175 must be free and
+`CORS_ORIGINS` must contain `http://127.0.0.1:55175`. Use only
+`127.0.0.1:55485/payroll_close_test`, a verified `/tmp/cp005-*` UTC data directory,
+`NODE_ENV=test` and a synthetic `JWT_SECRET` (the fixture asserts host, port, database name,
+data-directory prefix and UTC before any write). From the repository root:
+
+```sh
+DOTENV_CONFIG_PATH=/dev/null \
+DATABASE_URL=postgresql://postgres@127.0.0.1:55485/payroll_close_test \
+JWT_SECRET=cp006-browser-test-only NODE_ENV=test \
+CORS_ORIGINS=http://127.0.0.1:55175 RUN_CP006_BROWSER_ACCEPTANCE=true \
+  node --import tsx --test \
+  apps/api/src/services/payroll-reports-browser.acceptance.test.ts
+```
+
+Result: **10/10 passed, exit 0**, twice in a row, on a fresh PostgreSQL 18 cluster
+(`/tmp/cp005-browser-KIweQd`, UTC, `payroll_close_test`) — `/tmp/cp006-browser.log`. The ten
+subcases, all driven through the mounted React app:
+
+1. Owner calculates and approves September through Settings → Payroll close; the state line
+   reaches `2026-09: APPROVED`, the calculate control disappears and exactly one close exists.
+2. Owner approves the carry month (`2026-10: APPROVED`) and then calculates the open month,
+   which is stored as `CALCULATED` only — the refusal for a month whose predecessor is not
+   approved is real behaviour the suite has to satisfy, not something the test bypasses.
+3. Owner opens the period report: totals present, `Salary`/`Take home` present in the frozen
+   statements table yet absent from the report section, `Base lines for Close Staff` opens the
+   drill-down with its `Source` column and at least one frozen line.
+4. All three frozen exports download from the UI (`Downloaded payroll-2026-09.xlsx.`,
+   `…-payslips-2026-09.pdf.`, `…base-ledger-2026-09.csv.`) and the bytes are read back in the
+   page: `PK\x03\x04` + spreadsheetml + >2 kB, `%PDF` + >1 kB, and a BOM + CRLF ledger with one
+   row per frozen line for all four staff, plus a `?staffId=` ledger filtered to a single row.
+5. Manager reads the same frozen report with no salary/take-home column, no owner controls and
+   no export buttons, while `GET /:period/report` answers 200 and the export and approve
+   requests answer 403.
+6. Staff member's Settings → My earnings shows the own month-to-date card labelled an
+   **estimate** for the open draft month (no salary column), lists only the two approved months
+   `2026-10` and `2026-09`, opens the `2026-09` statement with its commission components, and
+   receives exactly the eleven own-statement fields — no staff identity, no salary — while the
+   management report and payslip export answer 403.
+7. Cashier is told the panel is not theirs, no progress card mounts, and the statements read is 403.
+8. The till shows the seller's own `Your commission progress` card for staff and no card for a
+   cashier.
+9. A customer profile renders the holding history of one real value-package purchase: the
+   holding-totals list with unused session value, unused credit and source-sale receivables, and
+   the purchase row priced from the source sale.
+10. No stray processes or profile directories remain; the Chrome profile is removed with retries.
+
+Boundaries: the session is the same synthetic signed access token the API issues, bootstrapped
+into the real `/auth/me`, so this is authenticated browser/API acceptance — **not** login, 2FA,
+token refresh or logout acceptance. Month-to-date figures are the last stored calculation rather
+than a live recomputation, which is the CP-006 contract and leaves the CP-007 `<500 ms` budget
+untested. No human opened the workbook in a spreadsheet application or printed the payslip PDF;
+those two eyeball steps stay disclosed as the only manual remainder, and the artefact-level
+evidence recorded in `TASKS.md` M1 remains the substitute for them.
+
 ## CP-005 mounted close browser acceptance — November 2, 2026
 
 The additional opt-in `apps/api/src/services/payroll-close-browser.acceptance.test.ts`

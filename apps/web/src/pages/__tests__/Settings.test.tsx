@@ -64,6 +64,12 @@ vi.mock("@/components/settings/PayrollPlans", () => ({
 vi.mock("@/components/settings/PayrollWorkspace", () => ({
   default: () => <section aria-label="Monthly payroll workspace" />,
 }));
+vi.mock("@/components/settings/MyEarnings", () => ({
+  default: () => <section aria-label="My earnings" />,
+}));
+vi.mock("@/components/payroll/PayrollProgress", () => ({
+  default: () => <section aria-label="Month-to-date commission progress" />,
+}));
 vi.mock("@/components/settings/CommissionMatrix", () => ({
   default: ({ canEdit }: { canEdit: boolean }) => (
     <section aria-label="Commission matrix" data-editable={canEdit} />

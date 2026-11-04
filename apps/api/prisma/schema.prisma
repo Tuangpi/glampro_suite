@@ -1649,6 +1649,42 @@ model PayrollCloseEvent {
   @@map("payroll_close_events")
 }
 
+/// CP-007 prospective cutover. Exactly one row per salon: the current activation
+/// record, frozen at activation. Legacy earnings already recorded are never rewritten;
+/// this only decides which path writes **new** earnings, and from which salon month a
+/// plan payroll is the payroll of record.
+model PayrollCutover {
+  id String @id @default(cuid())
+  tenantId String @unique
+  revision Int
+  /// `ACTIVE` | `ROLLED_BACK`. Rollback keeps the row so the history stays complete.
+  status String
+  /// First salon-local month covered by plan payroll. Never before the activation month.
+  effectivePeriodKey String
+  /// Frozen activation state, including the attested inventory hash.
+  state Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@map("payroll_cutovers")
+}
+
+/// Append-only activation/rollback evidence, including the reviewed inventory hash.
+model PayrollCutoverEvent {
+  id String @id @default(cuid())
+  tenantId String
+  revision Int
+  /// `ACTIVATE` | `ROLLBACK`.
+  action String
+  actorId String
+  reason String
+  previousHash String?
+  stateHash String
+  state Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, revision])
+  @@map("payroll_cutover_events")
+}
+
 model CommissionPeriod {
   id String @id @default(cuid())
   tenantId String

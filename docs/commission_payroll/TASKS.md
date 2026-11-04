@@ -3,22 +3,39 @@
 ## Quick status navigation
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
-- **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **IN PROGRESS**; M1 frozen exports, M2 period report/drill-down and M3 customer holding history DONE as of November 3, 2026. MTD/POS progress, own-data staff self-service and browser/manual acceptance remain TODO.
+- **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **DONE for local acceptance** as of November 4, 2026: M1 frozen exports, M2 period report/drill-down, M3 customer holding history, M4 MTD/POS progress, M5 own-data staff self-service and mounted-Chrome browser acceptance (**10/10**, twice). Not release or earnings activation; the only disclosed remainder is a human opening the workbook in a spreadsheet application and printing the payslip PDF.
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
 
 ## Workflow
 
-Current continuation — November 3, 2026: **CP-006 IN PROGRESS; M1, M2 and M3 DONE.**
-An approved monthly close exports owner-only frozen artefacts (Excel workbook,
-per-staff payslip PDFs, filtered base-ledger CSV) and is reviewed in the app as frozen
-period totals, a per-staff breakdown and a filtered drill-down to each base line and
-its captured source. A customer profile now also carries a holding history: purchases,
+Current continuation — November 4, 2026: **CP-006 DONE for local acceptance.** The
+mounted Chrome acceptance that was the last open CP-006 item now runs
+(`RUN_CP006_BROWSER_ACCEPTANCE=true`, 10/10 subcases, twice) against the real
+`createApp`, the real Vite app and a disposable PostgreSQL cluster: the owner approves
+September and the carry month and leaves the open month calculated only, the period
+report and its base-line drill-down are read in the app, all three frozen exports are
+downloaded and their bytes verified (`PK`, `%PDF`, BOM + CRLF, filtered ledger), a
+manager reads the same report with no salary column and every owner action refused, a
+staff member reads an **estimated** month-to-date card and only their own two approved
+statements, a cashier is refused, the till shows the seller's own progress only, and a
+customer profile renders a real purchase's holding history. The only disclosed
+remainder is human eyeball work — opening the workbook in a spreadsheet application and
+printing the payslip PDF — which is recorded, not claimed. This is not release and not
+earnings activation; CP-007 is next and no longer gated on CP-006.
+
+Previous continuation — November 3, 2026: **CP-006 M1–M5 DONE.** An
+approved monthly close exports owner-only frozen artefacts (Excel workbook, per-staff
+payslip PDFs, filtered base-ledger CSV) and is reviewed in the app as frozen period
+totals, a per-staff breakdown and a filtered drill-down to each base line and its
+captured source. A customer profile now also carries a holding history: purchases,
 captured payments, session and credit usage, and what is left — with unused session
 value, value-package credit, expired-unused value and source-sale receivables reported
-in separate buckets. The remaining CP-006 milestones (MTD/POS progress, own-data staff
-self-service, browser/manual acceptance) are still TODO, so CP-006 is not accepted and
-CP-007 remains gated on it.
+in separate buckets. Staff can now read month-to-date base/band progress, clearly
+labelled as an estimate until the month is approved, at the till and in Settings, and a
+staff member can read their own frozen statements without ever seeing salary or another
+person's figures. Browser/manual acceptance of the exports and reports was the one open
+item at that point; it is now executed (see the November 4 continuation above).
 
 Previous continuation — November 3, 2026: **CP-003A DONE** for the local supported
 scope (not release, not earnings activation). The historical impact preview returns
@@ -1212,9 +1229,11 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
 
 ## CP-006 — Reports, exports and progress workflows
 
-- Status: **IN PROGRESS** — **M1 frozen exports, M2 period report/drill-down and M3 customer
-  holding history DONE** as of November 3, 2026; MTD/POS progress, own-data staff
-  self-service and acceptance remain TODO and CP-006 is not accepted.
+- Status: **DONE for local acceptance** — **M1 frozen exports, M2 period report/drill-down,
+  M3 customer holding history, M4 MTD/POS progress, M5 own-data staff self-service and the
+  mounted-Chrome browser acceptance DONE** as of November 4, 2026. Not release and not
+  earnings activation. The one disclosed remainder is human eyeball work on the exported
+  workbook and payslip PDF.
 - Dependencies: CP-005.
 - Expected result: period summary, statement/base-line drill-down to source,
   customer holding payment/session history, true Excel summary + per-staff sheets,
@@ -1229,9 +1248,11 @@ by the M1-19 review below. M2–M5 retain their own acceptance gates.
   disclosed; relevant API/UI tests, build/typecheck/lint pass.
 - Coverage: FR-PAY-05, FR-RPT-01–FR-RPT-06, FR-POS-09, report/MTD UI;
   FR-BAS-10 explicitly tracked as optional.
-- Evidence: `PROGRESS.md` (November 3, 2026 — CP-006 M1 frozen payroll exports; November 3,
-  2026 — CP-006 M2 period report and base-line drill-down; November 3, 2026 — CP-006 M3
-  customer holding history).
+- Evidence: `PROGRESS.md` (November 4, 2026 — CP-006 browser acceptance; November 3, 2026 —
+  CP-006 M1 frozen payroll exports; November 3, 2026 — CP-006 M2 period report and base-line
+  drill-down; November 3, 2026 — CP-006 M3 customer holding history; November 3, 2026 — CP-006
+  M4 MTD/POS progress; November 3, 2026 — CP-006 M5 own-data staff self-service);
+  `BROWSER_ACCEPTANCE.md` (CP-006 mounted reports).
 
 ### CP-006-M1 — Frozen payroll exports: DONE
 
@@ -1370,25 +1391,176 @@ assigns FR-RPT-04–FR-RPT-05 to the MTD overview and own-data self-service inst
       typecheck, workspace ESLint, Prettier and the web production build all exit 0; full
       suite counts are recorded in `PROGRESS.md`.
 
-### CP-006 — remaining milestones: TODO
+### CP-006-M4 — MTD/POS progress: DONE
 
-- [ ] TODO — **MTD/POS progress** (FR-RPT-04 and FR-POS-09) clearly labelled as estimated
-      and reconciling to the same frozen inputs and rules; no claim of acceptance until the
-      CP-006 integration is tested.
-- [ ] TODO — **Own-data staff self-service** (FR-RPT-05): a staff member's own frozen
-      statements only, with the existing salary-redaction boundary preserved.
-- [ ] TODO — **Browser/manual acceptance** of the exports and reports: opening the workbook
-      in a spreadsheet application, printing a payslip PDF, downloading a filtered ledger,
-      and reading the period report, drill-down and holding history from the mounted web app.
-      FR-BAS-10 gift-card base capture remains optional.
+**Status snapshot — November 3, 2026: 6 DONE, 0 IN PROGRESS; M4 DONE; CP-006 still IN
+PROGRESS.** Scope is FR-RPT-04's month-to-date overview and FR-POS-09's informational
+base/band display. It does not accept the CP-006 completion check: own-data self-service
+and browser/manual acceptance are separate items below.
+
+- [x] DONE — **Shared contract.** `packages/shared/src/schemas/payroll-progress.ts` carries
+      `payrollProgressViewSchema` (period/status, `estimated`, `basis`
+      `APPROVED|ESTIMATED|NOT_CALCULATED`, `scope` `SALON|SELF`, the calculation
+      version/hash/time, and per-staff rows with plan, stage, tenure month, the tier
+      component in play, pooled base, current rate, next threshold, `gapToNext`, commission,
+      incentive, estimate, base amount, units and every component). Both schemas are
+      `.strictObject()`, so a projection that grew a salary field would fail to parse.
+- [x] DONE — **Read model and estimate labelling.** `payroll-progress.ts` projects the
+      **stored calculation snapshot** — the same `assemblePayrollStatement` output the period
+      report and exports read — instead of re-deriving bands from a page of rows. An
+      unapproved month therefore reports `basis: "ESTIMATED"` with the snapshot's own
+      `calculatedAt`, an approved month reports `basis: "APPROVED"`, and a month nobody has
+      calculated reports `NOT_CALCULATED` with **no rows** rather than an invented zero.
+      Salary, take-home and the profile never enter the projection.
+- [x] DONE — **Reconciliation.** A frozen month's `commission`, `incentive`, `baseAmount`,
+      `units`, `lines` and per-staff figures equal `payrollPeriodReport`'s, to the cent and
+      to the fourth decimal, because both read the same frozen statements (tested).
+      `estimate` is exactly `commission + incentive`, and `commission` already includes an
+      authorized `COMMISSION_ADJ`, so the estimate reconciles to the report rather than to a
+      raw component total.
+- [x] DONE — **Boundaries.** `GET /api/payroll-close/progress` sits behind `auth`, `staff`
+      and `requireRole("SUPER_ADMIN","MANAGER","STAFF")`: 401 anonymous, 403 without the
+      entitlement and 403 for a cashier. An omitted `period` means the **salon-local**
+      current month (`salonPeriodKey` reads the tenant zone, so a Singapore salon is already
+      in the next month at 17:00 UTC), a strict query refuses an impossible period or an
+      unknown key, and an outlet-scoped or `STAFF` caller is narrowed to their **own** row
+      instead of the salon table.
+- [x] DONE — **Web surfaces.** `PayrollProgress.tsx` shows the salon table in Settings →
+      Team & commissions (plan, stage, base, rate now, distance to the next band,
+      commission, incentive, estimated total, totals footer) with an `Estimated` or `Frozen`
+      badge and the snapshot time; `PosPayrollProgress.tsx` puts the signed-in operator's own
+      compact base/band line on the till (FR-POS-09) and renders nothing for a cashier.
+- [x] DONE — **Verification.** 9 new pure projection tests, 10 new HTTP tests and 1 new
+      database test (a gated suite that creates two salons and proves period/status
+      filtering, plan naming, newest-first paging, own-data narrowing and tenant isolation),
+      plus 7 component tests. Numbers below were re-run after the final edit; the exact
+      commands are in the CP-006 verification block just after this milestone.
+
+Verification commands, executed November 3, 2026 (all exit 0):
+
+```bash
+# shared contracts — 305/305
+cd packages/shared && npm test
+
+# API payroll group — 75/75 (progress, report, export data/render, close state/view,
+# and both payroll HTTP suites)
+cd apps/api && node --import tsx --test src/services/payroll-progress.test.ts \
+  src/services/payroll-report.test.ts src/services/payroll-export-data.test.ts \
+  src/services/payroll-export-render.test.ts src/services/payroll-close-state.test.ts \
+  src/services/payroll-close-view.test.ts src/routes/payroll-close.http.test.ts \
+  src/routes/payroll-progress.http.test.ts
+
+# gated database acceptance — 1/1; refuses to run without CP006_PROGRESS_DB=1 and a *test DB
+# (substitute your own credentials; the suite refuses any database whose name lacks "test")
+cd apps/api && DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/glampro_cp006_test \
+  CP006_PROGRESS_DB=1 node --import tsx --test \
+  src/services/payroll-progress.acceptance.test.ts
+
+# web — 16/16 new components (7 progress, 6 self-service, 3 POS); Settings 27/27; Sale 59/59
+cd apps/web && npx vitest run src/components/payroll/PayrollProgress.test.tsx \
+  src/components/settings/MyEarnings.test.tsx \
+  src/components/sale/PosPayrollProgress.test.tsx \
+  src/pages/__tests__/Settings.test.tsx src/pages/__tests__/Sale.test.tsx
+
+# quality gates
+cd apps/api && npx tsc --noEmit -p tsconfig.json && npx eslint src && npm run build
+cd apps/web && npx tsc --noEmit -p tsconfig.json && npx eslint src && npm run build
+cd packages/shared && npx eslint . && npm run build
+npx prettier --check .
+```
+
+### CP-006-M5 — Own-data staff self-service: DONE
+
+**Status snapshot — November 3, 2026: 4 DONE, 0 IN PROGRESS; M5 DONE; CP-006 still IN
+PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
+
+- [x] DONE — **Own frozen statements only.** `GET /api/payroll-close/statements` returns
+      the caller's approved months, newest first, bounded by `limit` (default 12, max 36)
+      with `hasMore`; a draft month is never listed, because `ownPayrollStatement` refuses
+      anything that is not an approved snapshot. The route is registered **before**
+      `/:period`, so "statements" is not parsed as a payroll month.
+- [x] DONE — **Integrity and paging.** `readStoredPayrollStatements` pages approved closes
+      four at a time (scan ceiling 120), skips a month that does not mention the caller after
+      one row read, and hash-verifies every month it does list in the same transaction — a
+      tampered snapshot is refused with the module's existing conflict rather than listed.
+- [x] DONE — **Salary redaction preserved.** The projection carries commission, incentive,
+      collection, line count, base amount and units: no `basicSalary`, `fixedOvertime`,
+      `levy`, `takeHome` or another person's row. Tests assert both the shape and the
+      serialised absence of those fields; the per-period detail reuses the existing
+      `GET /:period/statement` projection, whose own-data rule CP-005 already tested.
+- [x] DONE — **Web self-service.** Settings → My earnings (`MyEarnings.tsx`) shows the
+      caller's own month-to-date panel, their frozen months (period, commission, incentive,
+      collected, base amount, approval, payout state) and a drill-down into each month's
+      components and incentives; a cashier is told why the panel is empty instead of
+      producing a refusal, and no request is made.
+
+### CP-006 — browser acceptance: DONE
+
+**Status snapshot — November 4, 2026: 1 DONE, 0 TODO; CP-006 DONE for local acceptance.**
+
+- [x] DONE — **Browser acceptance in mounted Chrome.**
+      `apps/api/src/services/payroll-reports-browser.acceptance.test.ts`
+      (`RUN_CP006_BROWSER_ACCEPTANCE=true`, 10/10 subcases, **two consecutive clean runs, exit
+      0**) drives the real `createApp` + real Vite app + disposable PostgreSQL 18 cluster
+      (`/tmp/cp005-browser-KIweQd`, UTC, `payroll_close_test`) in headless Chrome and proves:
+      the owner approves 2026-09 and the carry month 2026-10 and leaves the open month
+      `CALCULATED` only; the period report totals and per-staff rows render while `Salary`/
+      `Take home` stay in the frozen statements table and out of the report; the base-line
+      drill-down opens with its frozen `Source` column; all three exports download from the UI
+      and their bytes are verified in the page (`PK\x03\x04` + spreadsheetml + >2 kB, `%PDF` + >1 kB, BOM + CRLF ledger with one row per frozen line and a `?staffId=` ledger of exactly
+      one row); a manager reads the same report with no salary column, no owner controls and
+      403 on export/approve; a staff member sees an **estimated** month-to-date card for the
+      draft month, only the two approved statements, the own-statement field set with no
+      identity or salary, and 403 on the management report and payslip export; a cashier gets
+      the explanatory panel and a 403 read; the till shows the seller's own progress for staff
+      and nothing for a cashier; a customer profile renders a real value-package purchase's
+      holding history. Log: `/tmp/cp006-browser.log`.
+- Disclosed remainder — no human opened the workbook in a spreadsheet application or printed
+  the payslip PDF in this environment. The artefact-level inspection recorded under M1 stands in
+  for those two eyeball steps, and the CP-006 completion check's "browser/manual gaps
+  disclosed" condition is met rather than overclaimed. FR-BAS-10 gift-card base capture remains
+  optional and deferred.
 - Note — FR-RPT-06's company-wide half was already delivered by CP-005
   (`GET /api/reports/package-valuation`, `apps/web/src/pages/Reports.tsx`); M3 adds the
   per-customer half without changing that report's buckets or recalculation.
 
 ## CP-007 — Cutover, reconciliation and release verification
 
-- Status: **TODO**.
+- Status: **IN PROGRESS** — prospective cutover implemented and locally accepted;
+  release verification, TC-01–TC-25 end-to-end, performance evidence and rollout
+  documentation remain open.
+- Delivered:
+  - Migration `apps/api/prisma/migrations/20261104120000_payroll_cutover` —
+    `payroll_cutovers` (one row per salon, revision/status/effective month, state
+    must agree with those columns) and append-only `payroll_cutover_events`
+    (unique per tenant/revision, `previousHash` only absent on revision 1) with
+    triggers refusing event edits/deletes, identity or revision changes and
+    status transitions that do not alternate.
+  - Shared contract `packages/shared/src/schemas/payroll-cutover.ts` (state,
+    history entry, inventory, issues, activate/rollback payloads, query).
+  - Pure classifier `apps/api/src/services/payroll-cutover-inventory.ts` — salon
+    month window, coverage starting at the activation month, BLOCKER =
+    legacy payout inside a covered month / unpaid earning no plan can re-derive /
+    outstanding clawback / activation month before the current one, WARNING =
+    legacy earning the plan will re-derive or an untraceable payout, exact
+    per-staff aggregation and a stable inventory hash.
+  - `apps/api/src/services/payroll-cutover.ts` — read-only dry run, attested
+    activation (tenant row lock, `expectedRevision`, quoted `inventoryHash`,
+    blockers, month not before the current one), rollback refused while plan
+    payroll is approved for an unsettled month, chain verification on every read,
+    and `legacyAccrualSuperseded` for the writer guard.
+  - Routes `GET /api/payroll-cutover`, `GET /api/payroll-cutover/inventory`,
+    `POST /api/payroll-cutover/activate`, `POST /api/payroll-cutover/rollback`
+    (management/owner read, verified owner-only writes).
+  - `apps/api/src/services/sale.service.ts` skips `employeeCommission.createMany`
+    from the activation month onwards; line snapshots and performances are still
+    written, and no historic earning row is ever rewritten.
+  - Tests: `payroll-cutover-inventory.test.ts` (8 unit cases) and
+    `payroll-cutover.acceptance.test.ts` (3 opt-in cases on real Postgres/HTTP:
+    attested activation + writer stop + rollback + re-activation, double-pay
+    blocker, append-only history).
 - Dependencies: CP-006, CP-003A.
+
 - Expected result: prospective guarded activation, evidence-quality inventory,
   no duplicate legacy/new payouts, safe migration/backfill tooling and rollout/
   rollback documentation. All must-haves accepted; should/could deferrals explicit.

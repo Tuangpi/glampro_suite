@@ -74,6 +74,10 @@ export const TENANT_SCOPED_MODELS = [
   "PayrollClose",
   "PayrollCloseEvent",
   "PayrollCarryAuthorization",
+  // CP-007 prospective cutover. Scoped so a salon can read only its own activation
+  // record, and so a fixture cannot activate another salon by quoting its id.
+  "PayrollCutover",
+  "PayrollCutoverEvent",
   "PayrollSourceEvent",
   "PrepaidRefundSettlement",
   "CommissionPeriod",

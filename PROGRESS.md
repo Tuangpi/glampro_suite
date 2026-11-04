@@ -1,5 +1,34 @@
 # Glampro Suite — progress
 
+## November 4, 2026 — CP-006 DONE for local acceptance: browser acceptance in mounted Chrome
+
+CP-006's last open item, browser acceptance of the payroll reporting surfaces, now runs as an
+opt-in suite instead of a manual checklist: **10/10 subcases, exit 0, twice** in headless
+Chrome against the real API, the real Vite app and a disposable PostgreSQL 18 cluster.
+Local supported scope only: no release, no earnings activation, no schema, application-database,
+production, activation, commit or push work.
+
+- New opt-in `apps/api/src/services/payroll-reports-browser.acceptance.test.ts`
+  (`RUN_CP006_BROWSER_ACCEPTANCE=true`). The owner approves 2026-09 through Settings → Payroll
+  close, approves the carry month 2026-10, and leaves the open month `CALCULATED` — the
+  "previous close or authorized opening required" refusal is satisfied, not bypassed.
+- Proven in the mounted app: the frozen period report and its `Source` drill-down; `Salary`/
+  `Take home` in the statements table but never in the report; all three exports downloaded from
+  the UI with bytes verified in-page (`PK\x03\x04`, `%PDF`, BOM + CRLF ledger, one row per frozen
+  line, and a `?staffId=` ledger of exactly one row); a manager reading the report with no salary
+  column and 403 on export/approve; a staff member's **estimated** month-to-date card plus only
+  their own two approved statements and the eleven-field projection with no identity or salary;
+  a cashier refused with an explanation; the till showing only the seller's own progress; and a
+  customer profile rendering a real value-package purchase's holding history.
+- Disclosed, not claimed: no human opened the workbook in a spreadsheet application or printed
+  the payslip PDF here. Session bootstrap is a synthetic signed token against the real
+  `/auth/me`, so this is not login/2FA/refresh acceptance, and MTD remains the last stored
+  calculation, leaving the CP-007 `<500 ms` budget untested.
+- Verification: API typecheck, ESLint and Prettier on the new file exit 0; without the flag the
+  suite reports `1 skipped` and exits 0, so the ordinary API run is unchanged. Log
+  `/tmp/cp006-browser.log`; details in `docs/commission_payroll/BROWSER_ACCEPTANCE.md`,
+  `TASKS.md` and `PROGRESS.md`.
+
 ## November 3, 2026 — CP-003A DONE: evidence matrix, money cases, browser money acceptance
 
 CP-003A's three open checklist items are closed on the disposable

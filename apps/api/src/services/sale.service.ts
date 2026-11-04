@@ -48,6 +48,7 @@ import {
   payrollMixedCreditFunding,
 } from "./payroll-full-credit-funding.js";
 import { lockCommissionConfiguration } from "./commission.service.js";
+import { legacyAccrualSuperseded } from "./payroll-cutover.js";
 import {
   captureRedemptionCommission,
   redemptionCommissionEvidenceSchema,
@@ -2228,7 +2229,11 @@ async function fillLedgers(
         ruleSource: selected.source,
       });
     }
-    if (commissions.length > 0) await tx.employeeCommission.createMany({ data: commissions });
+    // CP-007: from the cutover month onwards the plan is the payroll of record. The
+    // legacy ledger stops here rather than paying the same sale a second time; the
+    // line snapshots above are still written, because plan payroll needs them.
+    if (commissions.length > 0 && !(await legacyAccrualSuperseded(tx, tenantId, soldAt)))
+      await tx.employeeCommission.createMany({ data: commissions });
 
     await tx.employeePerformance.createMany({
       data: attributed.map((line) => ({

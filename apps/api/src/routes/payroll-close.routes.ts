@@ -1,6 +1,11 @@
 import { Router, type RequestHandler } from "express";
 import { z } from "zod";
-import { payrollAdjustmentSchema, payrollPeriodKeySchema } from "@glampro_suite/shared";
+import {
+  payrollAdjustmentSchema,
+  payrollPeriodKeySchema,
+  payrollProgressQuerySchema,
+  payrollStatementHistoryQuerySchema,
+} from "@glampro_suite/shared";
 import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
@@ -11,6 +16,8 @@ import {
   readStoredPayrollStatement,
   readStoredPayrollReport,
   readStoredPayrollStatementLines,
+  readStoredPayrollProgress,
+  readStoredPayrollStatements,
   calculateStoredPayrollClose,
   approveStoredPayrollClose,
   adjustStoredPayrollClose,
@@ -112,6 +119,32 @@ payrollCloseRouter.get(
     const statement = await readStoredPayrollStatement(period(req), String(req.params.staffId));
     return { staff: statement.staff, result: statement.result, payroll: statement.payroll };
   }),
+);
+/**
+ * CP-006 progress and self-service reads. Both paths are **single segments**, so they are
+ * registered before `/:period` — otherwise "progress" or "statements" would be parsed as
+ * a payroll month. Neither can return salary: the projections carry commission,
+ * incentives, base amounts and collection only.
+ */
+payrollCloseRouter.get(
+  "/progress",
+  requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),
+  validate(payrollProgressQuerySchema, "query"),
+  handle((req) =>
+    readStoredPayrollProgress(
+      validated<z.infer<typeof payrollProgressQuerySchema>>(req, "query").period,
+    ),
+  ),
+);
+payrollCloseRouter.get(
+  "/statements",
+  requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),
+  validate(payrollStatementHistoryQuerySchema, "query"),
+  handle((req) =>
+    readStoredPayrollStatements(
+      validated<z.infer<typeof payrollStatementHistoryQuerySchema>>(req, "query").limit,
+    ),
+  ),
 );
 payrollCloseRouter.get(
   "/:period",

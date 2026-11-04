@@ -46,6 +46,7 @@ import {
 
 import { Search } from "@/components/icons";
 import DirectTipsPanel from "@/components/sale/DirectTipsPanel";
+import PosPayrollProgress from "@/components/sale/PosPayrollProgress";
 import PosStaffSwitch from "@/components/sale/PosStaffSwitch";
 import CartPanel from "@/components/sale/CartPanel";
 import { type StaffOption } from "@/components/sale/CartLine";
@@ -834,6 +835,8 @@ export default function Sale() {
                 </p>
               ) : null}
             </Card>
+            {/* FR-POS-09: the seller's own base and band progress, never a colleague's. */}
+            <PosPayrollProgress />
             {heldSaleId ? (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-purple/40 bg-surface-2 px-4 py-2.5">
                 <p className="text-xs text-ink-body">

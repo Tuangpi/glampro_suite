@@ -34,6 +34,7 @@ import { staffRouter } from "./routes/staff.routes.js";
 import { commissionsRouter } from "./routes/commissions.routes.js";
 import { payrollConfigurationRouter } from "./routes/payroll-configuration.routes.js";
 import { payrollCloseRouter } from "./routes/payroll-close.routes.js";
+import { payrollCutoverRouter } from "./routes/payroll-cutover.routes.js";
 import { vouchersRouter } from "./routes/vouchers.routes.js";
 import { errorHandler, notFoundHandler } from "./middleware/errorHandler.js";
 import { apiLimiter } from "./middleware/rateLimit.js";
@@ -112,6 +113,9 @@ export function createApp(): Express {
   app.use(`${API_PREFIX}/commissions`, commissionsRouter);
   app.use(`${API_PREFIX}/payroll-configuration`, payrollConfigurationRouter);
   app.use(`${API_PREFIX}/payroll-close`, payrollCloseRouter);
+  // CP-007. Plan payroll becomes the payroll of record from a chosen month; legacy
+  // accrual stops there and nothing historic is rewritten.
+  app.use(`${API_PREFIX}/payroll-cutover`, payrollCutoverRouter);
   // Screen 08's last two tabs. Both are **add-ons**, so these two mounts are the
   // first routes whose `requireModule` can actually refuse: every other module they
   // sit beside is core and passes as soon as the tenant exists.

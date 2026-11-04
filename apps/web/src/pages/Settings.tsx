@@ -19,7 +19,9 @@ import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
 import MessagingCard from "@/components/settings/MessagingCard";
 import ResourcesCard from "@/components/settings/ResourcesCard";
 import CommissionRules from "@/components/settings/CommissionRules";
+import MyEarnings from "@/components/settings/MyEarnings";
 import PayrollPlans from "@/components/settings/PayrollPlans";
+import PayrollProgress from "@/components/payroll/PayrollProgress";
 import PayrollWorkspace from "@/components/settings/PayrollWorkspace";
 import CommissionMatrix from "@/components/settings/CommissionMatrix";
 import CommissionAttributionPolicy from "@/components/settings/CommissionAttributionPolicy";
@@ -78,6 +80,11 @@ const SETTINGS_SECTIONS = [
     id: "payroll",
     label: "Payroll close",
     description: "Monthly payroll review, frozen statements and separate payout confirmation.",
+  },
+  {
+    id: "my-payroll",
+    label: "My earnings",
+    description: "Your own month-to-date progress and your own frozen statements.",
   },
   {
     id: "messages",
@@ -195,6 +202,7 @@ export default function Settings() {
                   )}
                   {section.id === "team" && <TeamSettings canEdit={canEdit} />}
                   {section.id === "payroll" && <PayrollWorkspace />}
+                  {section.id === "my-payroll" && <MyEarnings />}
                   {section.id === "messages" && <MessagingCard canEdit={canEdit} />}
                   {section.id === "privacy" && (
                     <>
@@ -235,6 +243,7 @@ function TeamSettings({ canEdit }: { canEdit: boolean }) {
         <>
           <CommissionAttributionPolicy canEdit={canEdit} />
           <PayrollPlans canEdit={canEdit && user?.globalRole === "SUPER_ADMIN"} />
+          <PayrollProgress />
           <CommissionMatrix canEdit={canEdit} />
           <CommissionRules canEdit={canEdit} />
         </>

@@ -1,5 +1,40 @@
 # Commission & Payroll decisions
 
+## November 4, 2026 — CP-007 cutover is prospective, attested and reversible
+
+- **Prospective, never retroactive.** Activation writes one row per salon and one
+  audit event; it does not rewrite an `employee_commissions` row, recalculate a
+  closed month or backfill anything. From the activation month the plan is the
+  payroll of record and the legacy writer is skipped; the months before it stay
+  exactly as legacy recorded them. Historic earnings therefore cannot be
+  corrupted by a switch, and rolling back cannot un-pay them.
+- **The switch is attested.** Activation must quote the `inventoryHash` of the
+  legacy evidence the owner reviewed, together with `expectedRevision`. The hash
+  is recomputed inside the transaction: if anything was recorded in between, the
+  attempt fails with `PAYROLL_CUTOVER_INVENTORY_STALE` and the freshly computed
+  hash is returned so the owner re-reviews rather than activates blind.
+- **Evidence quality is graded, not averaged.** BLOCKER: a legacy payout inside a
+  covered month (the plan would pay the same sale twice), an unpaid earning no
+  plan can re-derive (no `saleId`), an outstanding clawback, and an activation
+  month before the current salon month. WARNING: an unpaid traceable earning the
+  plan will re-derive, and an unidentified payout. Blockers refuse activation;
+  warnings are shown and accepted with the attestation.
+- **Rollback is guarded by outstanding plan payroll.** Rollback is refused while
+  a close is `APPROVED` for a month that has not been paid out: resuming legacy
+  would pay the same sales again for a month the plan already owes. History is
+  append-only and every transition is a new revision whose hash points at its
+  predecessor.
+- **One writer boundary, under the existing lock.** `legacyAccrualSuperseded` is
+  read inside sale completion while the tenant commission-row lock is held, so a
+  sale either records its legacy rows before the activation commits or records
+  none at all. Plan inputs (`sale_lines`, snapshots, performances, collection
+  evidence) keep being written — only the legacy earnings row is skipped.
+- **Owner-only.** Only a verified owner (`SUPER_ADMIN` with a second factor) may
+  activate or roll back; management may read the state and the dry run. The role
+  and the second factor are read from the database, not from the token.
+- Not authorized by this decision: applying the migration to production data,
+  activating a real salon, or any historical backfill.
+
 ## November 2, 2026 — purchase-only credit conversion commission policy
 
 - User explicitly chose: **exclude purchase-only credit conversion from VP_SPEND

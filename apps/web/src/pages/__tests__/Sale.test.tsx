@@ -61,6 +61,8 @@ vi.mock("@/hooks/useServices", () => ({ useCartServices }));
 vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
 // This panel's API and retry/return behavior has its own focused tests.
 vi.mock("@/components/sale/DirectTipsPanel", () => ({ default: () => null }));
+// The POS payroll progress panel has its own focused tests; the till is not about it.
+vi.mock("@/components/sale/PosPayrollProgress", () => ({ default: () => null }));
 
 const isReadOnly = vi.hoisted(() => ({ value: false }));
 /** The signed-in role, writable per test so the void action can be asserted absent. */

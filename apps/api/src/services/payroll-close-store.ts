@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { payrollPeriodKeySchema, type PayrollAdjustment } from "@glampro_suite/shared";
+import {
+  payrollPeriodKeySchema,
+  payrollStatementHistoryQuerySchema,
+  type PayrollAdjustment,
+  type PayrollOwnStatements,
+} from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { currentOutletId, currentScope } from "../lib/tenant-context.js";
 import { conflict, forbidden, notFound, HttpError } from "../lib/http-error.js";
@@ -30,6 +35,7 @@ import {
   type PayrollCloseInputs,
   type PayrollCloseState,
 } from "./payroll-close-state.js";
+import { ownPayrollStatement, payrollProgressView, salonPeriodKey } from "./payroll-progress.js";
 
 export type PayrollCloseTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 /** Server-owned loader only. Must resolve complete authoritative inputs in this
@@ -64,6 +70,21 @@ function context() {
   const scope = currentScope();
   if (scope?.kind !== "tenant" || !scope.actorId || currentOutletId())
     throw forbidden("Payroll close requires a salon-wide authenticated actor.");
+  return { tenantId: scope.tenantId, actorId: scope.actorId };
+}
+
+/** Roles that hold commission statements, and so may read their own. Cashiers hold none. */
+const selfServiceRoles: readonly string[] = ["SUPER_ADMIN", "MANAGER", "STAFF"];
+
+/**
+ * Self-service reads are allowed at a branch, because they never leave the caller's own
+ * statement: a seller standing at an outlet till may read their own progress. A
+ * salon-wide payroll table still refuses an outlet picker (see `context`).
+ */
+function selfServiceContext() {
+  const scope = currentScope();
+  if (scope?.kind !== "tenant" || !scope.actorId)
+    throw forbidden("Payroll self-service requires an authenticated salon actor.");
   return { tenantId: scope.tenantId, actorId: scope.actorId };
 }
 async function actor(tx: PayrollCloseTransaction, ownerOnly: boolean): Promise<PayrollCloseActor> {
@@ -411,5 +432,117 @@ export async function readStoredPayrollCarry(period: string) {
       return { ...settlement, stale };
     });
     return { ...metadata, availability: "READY" as const, balances, settlements };
+  });
+}
+
+/** Page size and scan ceiling for the own-statement history; never loads every month at once. */
+const STATEMENT_HISTORY_PAGE = 4;
+const STATEMENT_HISTORY_SCAN = 120;
+
+/** The payroll month is a wall-clock month at the salon, so the zone is read from the tenant. */
+async function salonTimeZone(tx: PayrollCloseTransaction, tenantId: string) {
+  const tenant = await tx.tenant.findUnique({
+    where: { id: tenantId },
+    select: { timeZone: true },
+  });
+  if (!tenant) throw notFound("Salon not found.", "TENANT_NOT_FOUND");
+  return tenant.timeZone;
+}
+
+/**
+ * CP-006 month-to-date progress (FR-RPT-04, FR-POS-09).
+ *
+ * The figures are read from the stored calculation snapshot, never recomputed: an
+ * unapproved month is the same engine arithmetic on inputs that later postings may
+ * still extend, which the caller is told about through `estimated` and `basis`. No
+ * salary field leaves this function.
+ *
+ * Visibility is decided here rather than in the browser: a manager or owner sees the
+ * salon table, a staff member sees only their own line, and an outlet-scoped actor sees
+ * only their own line as well — a branch picker must not widen a salon-wide statement.
+ */
+export async function readStoredPayrollProgress(period?: string) {
+  const scope = selfServiceContext();
+  const requested = period === undefined ? undefined : payrollPeriodKeySchema.parse(period);
+  return prisma.$transaction(async (tx) => {
+    await lockCommissionConfiguration(tx, scope.tenantId);
+    const user = await tx.user.findFirst({
+      where: { id: scope.actorId, disabled: false },
+      select: { id: true, globalRole: true },
+    });
+    if (!user || !selfServiceRoles.includes(user.globalRole))
+      throw forbidden("Payroll progress is not available to this account.");
+    const selfOnly = user.globalRole === "STAFF" || currentOutletId() !== undefined;
+    const periodKey =
+      requested ?? salonPeriodKey(await salonTimeZone(tx, scope.tenantId), new Date());
+    const verified = await verifiedPayrollClose(tx, periodKey);
+    const state = verified?.state ?? openPayrollClose(periodKey);
+    const planIds = [
+      ...new Set(
+        (state.calculation?.statements ?? []).flatMap((statement) =>
+          statement.result.planId ? [statement.result.planId] : [],
+        ),
+      ),
+    ];
+    const plans = planIds.length
+      ? await tx.payrollPlan.findMany({
+          where: { id: { in: planIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    return payrollProgressView(state, {
+      scope: selfOnly ? "SELF" : "SALON",
+      staffId: selfOnly ? user.id : null,
+      planNames: new Map(plans.map((plan) => [plan.id, plan.name])),
+    });
+  });
+}
+
+/**
+ * CP-006 own-data staff self-service (FR-RPT-05): the caller's own frozen statements.
+ *
+ * Approved months are paged newest-first and every month that holds one of this staff
+ * member's statements is hash-verified in the same transaction, so a tampered snapshot
+ * is refused instead of being listed. Months that do not mention the caller cost one
+ * row read and are skipped. Salary and take-home never enter the projection.
+ */
+export async function readStoredPayrollStatements(limit: number): Promise<PayrollOwnStatements> {
+  const scope = selfServiceContext();
+  const query = payrollStatementHistoryQuerySchema.parse({ limit });
+  return prisma.$transaction(async (tx) => {
+    await lockCommissionConfiguration(tx, scope.tenantId);
+    const user = await tx.user.findFirst({
+      where: { id: scope.actorId, disabled: false },
+      select: { id: true, globalRole: true },
+    });
+    if (!user || !selfServiceRoles.includes(user.globalRole))
+      throw forbidden("Payroll self-service is not available to this account.");
+    const statements: PayrollOwnStatements["statements"] = [];
+    let scanned = 0;
+    while (scanned < STATEMENT_HISTORY_SCAN && statements.length <= query.limit) {
+      const page = await tx.payrollClose.findMany({
+        where: { status: "APPROVED" },
+        orderBy: { periodKey: "desc" },
+        skip: scanned,
+        take: STATEMENT_HISTORY_PAGE,
+        select: { periodKey: true, state: true },
+      });
+      if (!page.length) break;
+      scanned += page.length;
+      for (const row of page) {
+        const stored = row.state as unknown as PayrollCloseState;
+        if (!stored.calculation?.statements.some((item) => item.staff.id === user.id)) continue;
+        const verified = await verifiedPayrollClose(tx, row.periodKey);
+        const summary = verified ? ownPayrollStatement(verified.state, user.id) : null;
+        if (summary) statements.push(summary);
+        if (statements.length > query.limit) break;
+      }
+      if (page.length < STATEMENT_HISTORY_PAGE) break;
+    }
+    return {
+      statements: statements.slice(0, query.limit),
+      limit: query.limit,
+      hasMore: statements.length > query.limit,
+    };
   });
 }
