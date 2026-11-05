@@ -22,6 +22,7 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import Skeleton from "@/components/ui/Skeleton";
 import PayrollDefinitionEditor from "./PayrollDefinitionEditor";
 import PayrollVersionComparison from "./PayrollVersionComparison";
 import PayrollHistoricalPreview from "./PayrollHistoricalPreview";
@@ -172,7 +173,25 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
       setError(getErrorMessage(cause));
     }
   }
-  if (query.isPending) return <p role="status">Loading commission plans…</p>;
+  if (query.isPending)
+    // A card the shape of the one that is coming, so choosing the Payroll section does
+    // not flash a paragraph and then replace it with a form.
+    return (
+      <div role="status" aria-busy="true" className="flex flex-col gap-4">
+        <span className="sr-only">Loading payroll plans…</span>
+        <div className="rounded-card border border-line bg-surface">
+          <div className="border-b border-line-soft px-5 py-4">
+            <Skeleton className="h-5 max-w-48" />
+          </div>
+          <div className="flex flex-col gap-4 px-5 py-4">
+            <Skeleton className="h-11 w-full" />
+            <Skeleton className="h-11 w-full" />
+            <Skeleton className="h-32 w-full" />
+          </div>
+        </div>
+        <Skeleton className="h-11 max-w-40" />
+      </div>
+    );
   if (query.isError || !query.data)
     return (
       <div role="alert">

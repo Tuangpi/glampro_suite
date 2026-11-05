@@ -5,6 +5,7 @@ import { createShiftSchema, type ShiftSummary } from "@glampro_suite/shared";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import Skeleton from "@/components/ui/Skeleton";
 import { getErrorMessage, getPaginated, patch, post } from "@/lib/api";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -90,7 +91,20 @@ export default function StaffRoster({ staffId }: { staffId: string }) {
         breaks before shortening work hours. No roster means unrestricted booking.
       </p>
       {roster.isPending ? (
-        <p>Loading working hours…</p>
+        // Rows shaped like the list that is coming, rather than a bare sentence: the
+        // form below is already on screen, so the section must not grow by a paragraph
+        // when the roster lands.
+        <div role="status" aria-busy="true">
+          <span className="sr-only">Loading working hours…</span>
+          <ul className="flex flex-col gap-2">
+            {Array.from({ length: 3 }, (_, index) => (
+              <li key={index} className="flex items-center justify-between gap-2">
+                <Skeleton className="h-4 max-w-64" />
+                <Skeleton className="h-7 max-w-20" />
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : roster.isError ? (
         <p role="alert">{getErrorMessage(roster.error)}</p>
       ) : (

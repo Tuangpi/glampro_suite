@@ -27,6 +27,7 @@ import Card from "@/components/ui/Card";
 import Checkbox from "@/components/ui/Checkbox";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import Skeleton from "@/components/ui/Skeleton";
 import { showToast } from "@/components/ui/toast-store";
 import { ROLE_OPTIONS } from "@/constants/staff";
 import { useDepartments } from "@/hooks/useDepartments";
@@ -240,7 +241,14 @@ export default function StaffIdentityForm({ staff, canEdit }: StaffIdentityFormP
         <fieldset className="flex flex-col gap-1.5" disabled={!canEdit}>
           <legend className="text-sm font-medium text-ink">Departments</legend>
           {departments.isPending ? (
-            <p className="text-xs text-ink-muted">Loading departments…</p>
+            // Placeholder rows take a checkbox's height, so the fieldset is the size it
+            // will be once the departments arrive.
+            <div role="status" aria-busy="true" className="flex flex-col gap-1">
+              <span className="sr-only">Loading departments…</span>
+              {Array.from({ length: 3 }, (_, index) => (
+                <Skeleton key={index} className="h-5 max-w-40" />
+              ))}
+            </div>
           ) : departments.data && departments.data.length > 0 ? (
             <div className="flex flex-col gap-1">
               {departments.data.map((department) => (

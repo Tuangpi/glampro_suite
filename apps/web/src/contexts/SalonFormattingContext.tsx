@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo } from "react";
 
 import { useAuth } from "@/contexts/AuthContext";
+import PageLoading from "@/components/ui/PageLoading";
 import { useSalonProfile } from "@/hooks/useSettings";
 import { createSalonFormatters, DEFAULT_SALON_FORMATTING } from "@/lib/utils";
 
@@ -51,7 +52,7 @@ function AuthenticatedFormatting({
     [formatters, timeZone, locale],
   );
 
-  if (!profile.data && profile.isPending) return <p role="status">Loading salon preferences…</p>;
+  if (!profile.data && profile.isPending) return <PageLoading label="Loading salon preferences…" />;
   if (!profile.data || profile.data.id !== tenantId) {
     return (
       <div role="alert">

@@ -14,6 +14,7 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import Skeleton from "@/components/ui/Skeleton";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
@@ -128,7 +129,19 @@ export default function CommissionRules({
       description="Item → package → department → staff → company. Rates never stack. New kinds remain disabled for earnings pending collection and reporting cutover."
     >
       <div className="flex flex-col gap-3">
-        {config.isPending && <p role="status">Loading commission rules…</p>}
+        {config.isPending && (
+          // Shaped like the rules list below, inside the same card, so the section is
+          // the size it will be once the rules arrive.
+          <div role="status" aria-busy="true" className="flex flex-col gap-3">
+            <span className="sr-only">Loading commission rules…</span>
+            <Skeleton className="h-11 w-full" />
+            <div className="flex flex-col gap-2">
+              {Array.from({ length: 3 }, (_, index) => (
+                <Skeleton key={index} className="h-9 w-full" />
+              ))}
+            </div>
+          </div>
+        )}
         {config.isError && (
           <p role="alert">
             Unable to load commission rules.{" "}

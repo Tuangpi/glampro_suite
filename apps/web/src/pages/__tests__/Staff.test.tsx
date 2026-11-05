@@ -103,6 +103,7 @@ function queryResult(overrides: Record<string, unknown> = {}) {
     isError: false,
     error: null,
     isFetching: false,
+    refetch: vi.fn(),
     ...overrides,
   };
 }
@@ -184,6 +185,23 @@ beforeEach(() => {
 });
 
 describe("the table", () => {
+  it("links the name in-app, so the list is not thrown away to show one record", async () => {
+    const user = userEvent.setup();
+    useStaffList.mockReturnValue(listOf([staffRow()]));
+    renderStaff();
+
+    // Still a real `<a href>`: the middle mouse button and "copy link address" work,
+    // which is why a row action would not do.
+    const link = screen.getByRole("link", { name: "Amara Okafor" });
+    expect(link).toHaveAttribute("href", "/staff/u1");
+
+    await user.click(link);
+
+    // A bare `<a>` would have asked the browser for a whole new document and never
+    // touched this probe — that reload was the flash between the list and the page.
+    expect(screen.getByTestId("location")).toHaveTextContent("/staff/u1");
+  });
+
   it("creates a reasoned commission classification and initial plan atomically", async () => {
     const user = userEvent.setup();
     renderStaff();
@@ -317,6 +335,34 @@ describe("the table", () => {
     expect(
       screen.queryByRole("button", { name: /delete|remove|archive/i }),
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("the loading state", () => {
+  it("draws the table's own columns rather than a stack of loose bars", () => {
+    useStaffList.mockReturnValue(queryResult({ isPending: true, data: undefined }));
+    renderStaff();
+
+    // The header the rows will land under is already there, so the table does not grow
+    // a header when the answer arrives. The body is placeholders, hidden from a reader.
+    expect(screen.getByRole("table", { name: "Staff in this salon" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Staff" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Last login" })).toBeInTheDocument();
+    expect(screen.getByText("Loading staff…")).toBeInTheDocument();
+  });
+
+  it("reserves each tile's number instead of claiming zero", () => {
+    useStaffList.mockReturnValue(queryResult({ isPending: true, data: undefined }));
+    useStaffCount.mockReturnValue(queryResult({ isPending: true, data: undefined }));
+    renderStaff();
+
+    // A tile that has not answered shows "—" for a missing count, which is exactly what
+    // a salon with none of something shows. `loading` is what keeps the two apart.
+    const overview = screen.getByRole("group", { name: "Team overview" });
+    expect(within(overview).queryByText("—")).not.toBeInTheDocument();
+    for (const tile of Array.from(overview.children)) {
+      expect(tile).toHaveAttribute("aria-busy", "true");
+    }
   });
 });
 

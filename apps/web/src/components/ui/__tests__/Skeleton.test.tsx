@@ -34,4 +34,12 @@ describe("Skeleton", () => {
     expect(skeleton).toHaveClass("h-28", "w-16", "rounded-card");
     expect(skeleton).toHaveClass("h-4", "w-full");
   });
+
+  it("pulses only for a reader who has not asked for less motion", () => {
+    const { container } = render(<Skeleton />);
+
+    // `motion-safe:` is what makes this safe: the shimmer is decoration, and a reader
+    // with `prefers-reduced-motion` gets a still block instead of a flashing one.
+    expect(container.firstElementChild).toHaveClass("motion-safe:animate-pulse");
+  });
 });

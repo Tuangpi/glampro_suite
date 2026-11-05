@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   CreateStaffInput,
   GlobalRole,
+  PaginatedResponse,
   StaffDetail,
   StaffSummary,
   UpdateStaffInput,
@@ -74,13 +75,54 @@ export function useStaffCount(filters: StaffCountFilters = {}, enabled = true) {
   });
 }
 
-/** One staff member, for the editor's second read. */
+/**
+ * One staff member, for that member's own page.
+ *
+ * The list already holds the row the reader just clicked, and `staffDetailSchema` is
+ * `staffSummarySchema` — a summary **is** a detail, not a projection of one — so the
+ * cached row is offered as placeholder data. `isPending` is therefore false on the path
+ * that matters, and the header paints on the first frame with the name, role and status
+ * that were on screen a moment ago instead of blanking for a record already in memory.
+ *
+ * Only a cold arrival has nothing to fall back on: a bookmark, a refresh, a link pasted
+ * into a new tab. That is the case `StaffProfileSkeleton` exists for.
+ *
+ * `isPlaceholderData` is true until the fetch lands, which is the honest description of
+ * what the page is showing — values that are real but a moment old. Nothing on the page
+ * needs to branch on it: the placeholder *is* the record, and the request replaces it
+ * with itself.
+ */
 export function useStaff(id: string | null) {
+  const queryClient = useQueryClient();
+
   return useQuery({
     queryKey: queryKeys.staff.detail(id ?? ""),
     queryFn: () => get<StaffDetail>(`/staff/${id}`),
     enabled: id !== null,
+    placeholderData: id === null ? undefined : () => findCachedStaffRow(queryClient, id),
   });
+}
+
+/**
+ * The row for `id` on any cached page of staff, whatever the search term or filter.
+ *
+ * Addressed by the `staff.list()` **prefix** rather than by an exact key: the filters are
+ * the last element of a list key, so a reader who searched for "amara" and then opened
+ * her is on `["staff", "list", { search: "amara", … }]`, a key this function could only
+ * rebuild by re-deriving the page's own state.
+ */
+function findCachedStaffRow(
+  queryClient: ReturnType<typeof useQueryClient>,
+  id: string,
+): StaffSummary | undefined {
+  const pages = queryClient.getQueriesData<PaginatedResponse<StaffSummary>>({
+    queryKey: queryKeys.staff.list(),
+  });
+  for (const [, page] of pages) {
+    const row = page?.data.find((entry) => entry.id === id);
+    if (row) return row;
+  }
+  return undefined;
 }
 
 export function useCreateStaff() {

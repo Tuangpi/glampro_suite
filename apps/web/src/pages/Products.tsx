@@ -50,9 +50,9 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import Pagination from "@/components/ui/Pagination";
-import Skeleton from "@/components/ui/Skeleton";
 import StatTile from "@/components/ui/StatTile";
 import Table, { type TableColumn } from "@/components/ui/Table";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import Tabs, { type TabItem } from "@/components/ui/Tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useGiftCardList } from "@/hooks/useGiftCards";
@@ -111,6 +111,48 @@ const NOUNS: Record<
     addLabel: "Add gift card",
     empty: "Add a gift card so the salon can sell prepaid value.",
     addOn: "Gift cards",
+  },
+};
+
+/**
+ * How wide each column's placeholder bar is, per tab.
+ *
+ * Keyed by the real column `key`, and unlisted columns fall back to `w-24`. Varying
+ * widths are what keep a loading table from reading as one grey slab; the alignment
+ * (`right` for money and counts) is taken from the column itself.
+ */
+const SKELETON_WIDTHS: Record<CatalogueTab, Record<string, string>> = {
+  products: {
+    item: "w-40",
+    price: "w-20",
+    memberPrice: "w-20",
+    barcode: "w-28",
+    stock: "w-16",
+    status: "w-20",
+    actions: "w-12",
+  },
+  services: {
+    item: "w-40",
+    price: "w-20",
+    memberPrice: "w-20",
+    duration: "w-16",
+    status: "w-20",
+    actions: "w-12",
+  },
+  packages: {
+    item: "w-40",
+    sessions: "w-16",
+    price: "w-20",
+    memberPrice: "w-20",
+    services: "w-32",
+    status: "w-20",
+    actions: "w-12",
+  },
+  "gift-cards": {
+    item: "w-40",
+    value: "w-20",
+    expires: "w-24",
+    actions: "w-12",
   },
 };
 
@@ -409,6 +451,7 @@ export default function Products() {
           onAdd={openCreate}
           onPageChange={setPage}
           onClearSearch={() => setSearchInput("")}
+          onRetry={() => void products.refetch()}
         />
       ),
     },
@@ -433,6 +476,7 @@ export default function Products() {
           onAdd={openCreate}
           onPageChange={setPage}
           onClearSearch={() => setSearchInput("")}
+          onRetry={() => void services.refetch()}
         />
       ),
     },
@@ -457,6 +501,7 @@ export default function Products() {
           onAdd={openCreate}
           onPageChange={setPage}
           onClearSearch={() => setSearchInput("")}
+          onRetry={() => void packages.refetch()}
         />
       ),
     },
@@ -481,6 +526,7 @@ export default function Products() {
           onAdd={openCreate}
           onPageChange={setPage}
           onClearSearch={() => setSearchInput("")}
+          onRetry={() => void giftCards.refetch()}
         />
       ),
     },
@@ -550,18 +596,21 @@ export default function Products() {
               : undefined
           }
           label="Total items"
+          loading={productTotal.isPending || serviceTotal.isPending}
         />
         <StatTile
           icon={<AlertTriangle />}
           value={lowStock.data?.total}
           label="Low stock"
           tone="warning"
+          loading={lowStock.isPending}
         />
         <StatTile
           icon={<AlertTriangle />}
           value={outOfStock.data?.total}
           label="Out of stock"
           tone="danger"
+          loading={outOfStock.isPending}
         />
       </div>
 
@@ -672,6 +721,8 @@ interface CataloguePanelProps<T extends { id: string }> {
   onAdd: () => void;
   onPageChange: (page: number) => void;
   onClearSearch: () => void;
+  /** Re-asks this tab's own query — not a page reload. */
+  onRetry: () => void;
 }
 
 function CataloguePanel<T extends { id: string }>({
@@ -691,6 +742,7 @@ function CataloguePanel<T extends { id: string }>({
   onAdd,
   onPageChange,
   onClearSearch,
+  onRetry,
 }: CataloguePanelProps<T>) {
   const { noun, icon, addLabel, empty, addOn } = NOUNS[tab];
   const plural = `${noun}s`;
@@ -716,11 +768,14 @@ function CataloguePanel<T extends { id: string }>({
       </div>
 
       {isPending ? (
-        <div className="flex flex-col gap-3 p-5">
-          {Array.from({ length: 5 }, (_, index) => (
-            <Skeleton key={index} className="h-9" />
-          ))}
-        </div>
+        // The tab's own columns, so the header words survive the swap and the body
+        // reserves the height the rows will take.
+        <TableSkeleton
+          caption={caption}
+          columns={columns}
+          widths={SKELETON_WIDTHS[tab]}
+          className="rounded-none border-0"
+        />
       ) : isError ? (
         <EmptyState
           title={
@@ -734,7 +789,9 @@ function CataloguePanel<T extends { id: string }>({
           // gets the same answer until the salon buys the module.
           action={
             needsAddOn ? undefined : (
-              <Button onClick={() => window.location.reload()}>Try again</Button>
+              <Button onClick={onRetry} loading={isFetching}>
+                Try again
+              </Button>
             )
           }
         />

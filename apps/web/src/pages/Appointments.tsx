@@ -26,8 +26,8 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import Select from "@/components/ui/Select";
-import Skeleton from "@/components/ui/Skeleton";
 import Table, { type TableColumn } from "@/components/ui/Table";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { showToast } from "@/components/ui/toast-store";
 import {
   APPOINTMENT_STATUS_BADGE,
@@ -469,11 +469,25 @@ export default function Appointments() {
           </div>
 
           {isPending ? (
-            <div className="flex flex-col gap-3 p-5">
-              {Array.from({ length: 5 }, (_, index) => (
-                <Skeleton key={index} className="h-11" />
-              ))}
-            </div>
+            // The list's own columns, so the header words survive the swap and the body
+            // reserves the height the rows will take.
+            <TableSkeleton
+              caption="Appointments for the selected day"
+              columns={columns}
+              widths={{
+                time: "w-24",
+                customer: "w-40",
+                service: "w-32",
+                outlet: "w-24",
+                staff: "w-24",
+                status: "w-20",
+                actions: "w-12",
+              }}
+              // A booking's cell carries the time and the customer's name, so a real row
+              // is taller than a single line of text.
+              rowHeight="h-6"
+              className="rounded-none border-0"
+            />
           ) : isError ? (
             <EmptyState
               title="The book could not be loaded"

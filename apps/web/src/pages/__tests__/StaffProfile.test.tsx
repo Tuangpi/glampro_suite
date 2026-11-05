@@ -131,6 +131,29 @@ beforeEach(() => {
   resetMutate.mockReset().mockResolvedValue({ success: true });
 });
 
+describe("the loading state", () => {
+  it("draws the page's own shape rather than a sentence about the page", () => {
+    useStaff.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+      error: null,
+      isFetching: true,
+      refetch: vi.fn(),
+    });
+
+    const { container } = renderProfile();
+
+    // The rail, the avatar disc and the section card are all reserved, so the layout is
+    // not built from nothing the moment the record lands.
+    expect(screen.getByRole("status")).toHaveTextContent("Loading staff member…");
+    expect(container.querySelectorAll("[aria-hidden='true']").length).toBeGreaterThan(5);
+    // Nothing about the record is invented while it is missing.
+    expect(screen.queryByText("Amara Okafor")).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Identity" })).not.toBeInTheDocument();
+  });
+});
+
 describe("the identity section", () => {
   it("compares an edited start date against the date originally loaded", async () => {
     const user = userEvent.setup();

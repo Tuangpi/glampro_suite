@@ -11,9 +11,18 @@
  * to reach a profile — a record's own page is worth a plain link, because it works with
  * the middle mouse button and with the back button in a way a row action does not.
  *
+ * It is a router `Link`, not a bare `<a>`. Both render a real `<a href>`, so the middle
+ * mouse button and "copy link address" behave identically, but a bare anchor is treated
+ * by the browser as a document navigation: clicking the name threw the whole application
+ * away and booted it again — root chunk, session refresh, salon preferences, route chunk,
+ * *then* the record — while the "Edit" button beside it, which calls `navigate()`, arrived
+ * at once. That was the flash between this list and a staff member's page.
+ *
  * Decorative chip: the name is always rendered beside it, so a screen reader gains
  * nothing from hearing the initials.
  */
+import { Link } from "react-router";
+
 import { getInitials } from "@/lib/utils";
 
 export interface StaffCardProps {
@@ -34,9 +43,9 @@ export default function StaffCard({ name, email, href }: StaffCardProps) {
       </span>
       <div className="min-w-0">
         {href ? (
-          <a href={href} className="truncate font-bold text-ink underline">
+          <Link to={href} className="truncate font-bold text-ink underline">
             {name}
-          </a>
+          </Link>
         ) : (
           <p className="truncate font-bold text-ink">{name}</p>
         )}

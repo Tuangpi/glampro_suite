@@ -12,6 +12,7 @@
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/components/customers/CustomerConsentPanel", () => ({
@@ -85,6 +86,7 @@ function summary(overrides: Record<string, unknown> = {}) {
 
 const mutateAsync = vi.fn();
 const updateMutateAsync = vi.fn();
+const refetch = vi.fn();
 
 /** The query result the page destructures, with the flags defaulted. */
 function queryResult(overrides: Record<string, unknown> = {}) {
@@ -94,12 +96,27 @@ function queryResult(overrides: Record<string, unknown> = {}) {
     isError: false,
     error: null,
     isFetching: false,
+    refetch,
     ...overrides,
   };
 }
 
 function listOf(rows: unknown[], total = rows.length) {
   return queryResult({ data: { data: rows, total, page: 1, pageSize: 20, pageCount: 1 } });
+}
+
+/**
+ * The page in a router, because a customer's name is a `Link`.
+ *
+ * An anchor would have rendered outside one, but it would also have thrown the whole
+ * application away and booted it again to show one record — see `StaffCard`.
+ */
+function renderCustomers() {
+  return render(
+    <MemoryRouter initialEntries={["/customers"]}>
+      <Customers />
+    </MemoryRouter>,
+  );
 }
 
 beforeEach(() => {
@@ -111,12 +128,13 @@ beforeEach(() => {
   getValidationDetails.mockReturnValue({});
   mutateAsync.mockReset().mockResolvedValue({});
   updateMutateAsync.mockReset().mockResolvedValue({});
+  refetch.mockReset();
 });
 
 describe("the list", () => {
   it("includes archived customers explicitly and labels preserved records", async () => {
     useCustomerList.mockReturnValue(listOf([summary({ archivedAt: "2026-10-22T01:00:00Z" })]));
-    render(<Customers />);
+    renderCustomers();
     expect(screen.getByText("Archived")).toBeInTheDocument();
     expect(screen.getByRole("checkbox", { name: "Include archived customers" })).not.toBeChecked();
     await userEvent.click(screen.getByRole("checkbox", { name: "Include archived customers" }));
@@ -139,7 +157,7 @@ describe("the list", () => {
       listOf([summary(), summary({ id: "c2", name: "Irene Foo", phone: null })]),
     );
 
-    render(<Customers />);
+    renderCustomers();
 
     const rows = screen.getAllByRole("row").slice(1); // drop the header row
     expect(rows).toHaveLength(2);
@@ -151,7 +169,7 @@ describe("the list", () => {
   it("does not render the columns the data model cannot support", () => {
     useCustomerList.mockReturnValue(listOf([summary()]));
 
-    render(<Customers />);
+    renderCustomers();
 
     // `Last visit`, `Total spend` and `Tier` are proposals in the handoff with no
     // column behind them. A zero there would be a false statement, not a blank.
@@ -166,13 +184,13 @@ describe("the list", () => {
       listOf([summary({ phone: null, email: null, memberId: "M-1" })]),
     );
 
-    render(<Customers />);
+    renderCustomers();
 
     expect(within(screen.getAllByRole("row")[1]!).getAllByText("—")).toHaveLength(2);
   });
 
   it("offers a way out of an empty book", () => {
-    render(<Customers />);
+    renderCustomers();
 
     expect(screen.getByText("No customers yet")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Add customer" }).length).toBeGreaterThan(0);
@@ -182,17 +200,44 @@ describe("the list", () => {
     getErrorMessage.mockReturnValue("The API is unreachable.");
     useCustomerList.mockReturnValue(queryResult({ isError: true, error: new Error("boom") }));
 
-    render(<Customers />);
+    renderCustomers();
 
     expect(screen.getByText("The customer list could not be loaded")).toBeInTheDocument();
     expect(screen.getByText("The API is unreachable.")).toBeInTheDocument();
+  });
+
+  it("draws the table's own columns while the list is loading", () => {
+    useCustomerList.mockReturnValue(queryResult({ isPending: true, data: undefined }));
+
+    renderCustomers();
+
+    // The header the rows will land under is already there, so the table does not grow
+    // a header when the request answers. The body is placeholders, hidden from a reader.
+    const table = screen.getByRole("table", { name: "Customers in this salon" });
+    expect(table).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Customer" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Membership" })).toBeInTheDocument();
+    expect(screen.queryByRole("row", { name: /Mrs Loi/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Loading customers…")).toBeInTheDocument();
+  });
+
+  it("retries the query instead of reloading the document", async () => {
+    const user = userEvent.setup();
+    useCustomerList.mockReturnValue(queryResult({ isError: true, error: new Error("boom") }));
+
+    renderCustomers();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    // A reload rebuilt the whole application — session, cache and the reader's place —
+    // to re-ask one question.
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });
 
 describe("search", () => {
   it("debounces, then asks the server rather than filtering the page locally", async () => {
     const user = userEvent.setup();
-    render(<Customers />);
+    renderCustomers();
 
     await user.type(screen.getByLabelText("Search customers"), "loi");
 
@@ -216,7 +261,7 @@ describe("search", () => {
     const user = userEvent.setup();
     useCustomerList.mockReturnValue(queryResult());
 
-    render(<Customers />);
+    renderCustomers();
     expect(screen.getByText("No customers yet")).toBeInTheDocument();
 
     await user.type(screen.getByLabelText("Search customers"), "zzz");
@@ -231,7 +276,7 @@ describe("a suspended salon", () => {
     isReadOnly.value = true;
     useCustomerList.mockReturnValue(listOf([summary()]));
 
-    render(<Customers />);
+    renderCustomers();
 
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add customer" })).toBeDisabled();
@@ -250,7 +295,7 @@ describe("the create form", () => {
 
   it("sends a name on its own, which the contract allows", async () => {
     const user = userEvent.setup();
-    render(<Customers />);
+    renderCustomers();
 
     const submit = await openCreateForm(user);
     await user.type(screen.getByLabelText(/Name/), "Mrs Loi");
@@ -263,7 +308,7 @@ describe("the create form", () => {
 
   it("refuses to submit without a name rather than round-tripping", async () => {
     const user = userEvent.setup();
-    render(<Customers />);
+    renderCustomers();
 
     await user.click(await openCreateForm(user));
 
@@ -277,7 +322,7 @@ describe("the create form", () => {
     getValidationDetails.mockReturnValue({ "body.email": "Invalid email address" });
     mutateAsync.mockRejectedValue(new Error("Validation failed"));
 
-    render(<Customers />);
+    renderCustomers();
     const submit = await openCreateForm(user);
     await user.type(screen.getByLabelText(/Name/), "Mrs Loi");
     await user.type(screen.getByLabelText("Email"), "nope");
@@ -296,7 +341,7 @@ describe("the create form", () => {
     getValidationDetails.mockReturnValue({});
     mutateAsync.mockRejectedValue(new Error("Conflict"));
 
-    render(<Customers />);
+    renderCustomers();
     const submit = await openCreateForm(user);
     await user.type(screen.getByLabelText(/Name/), "Mrs Loi");
     await user.click(submit);

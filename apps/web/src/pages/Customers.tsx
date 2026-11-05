@@ -11,6 +11,7 @@
  * columns return in the phase that has the data behind them.
  */
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 
 import type { CustomerDetail, CustomerSummary } from "@glampro_suite/shared";
 
@@ -20,8 +21,8 @@ import { Search, Users } from "@/components/icons";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import Pagination from "@/components/ui/Pagination";
-import Skeleton from "@/components/ui/Skeleton";
 import Table, { type TableColumn } from "@/components/ui/Table";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCustomerList } from "@/hooks/useCustomers";
 import { get, getErrorMessage } from "@/lib/api";
@@ -50,7 +51,7 @@ export default function Customers() {
     return () => window.clearTimeout(timer);
   }, [searchInput]);
 
-  const { data, isPending, isError, error, isFetching } = useCustomerList({
+  const { data, isPending, isError, error, isFetching, refetch } = useCustomerList({
     page,
     pageSize: PAGE_SIZE,
     search: search || undefined,
@@ -79,12 +80,12 @@ export default function Customers() {
         <div className="flex items-center gap-2.5">
           <CustomerAvatar name={row.name} />
           <div className="min-w-0">
-            <a
-              href={`/customers/${encodeURIComponent(row.id)}`}
+            <Link
+              to={`/customers/${encodeURIComponent(row.id)}`}
               className="truncate font-bold text-ink underline"
             >
               {row.name}
-            </a>
+            </Link>
             {row.archivedAt ? <p className="text-xs font-bold">Archived</p> : null}
             <p className="truncate text-xs text-ink-muted">
               {row.code
@@ -181,17 +182,31 @@ export default function Customers() {
         </div>
 
         {isPending ? (
-          <div className="flex flex-col gap-3 p-5">
-            {Array.from({ length: 5 }, (_, index) => (
-              <Skeleton key={index} className="h-9" />
-            ))}
-          </div>
+          <TableSkeleton
+            caption="Customers in this salon"
+            columns={columns}
+            widths={{
+              customer: "w-40",
+              phone: "w-24",
+              email: "w-40",
+              member: "w-20",
+              actions: "w-12",
+            }}
+            // A customer's cell carries an avatar, so a real row is taller than a bar.
+            rowHeight="h-8"
+          />
         ) : isError ? (
           <EmptyState
             title="The customer list could not be loaded"
             description={getErrorMessage(error)}
             icon={<Users />}
-            action={<Button onClick={() => window.location.reload()}>Try again</Button>}
+            // Retry the query rather than the document: a reload rebuilt the whole
+            // application to re-ask one question.
+            action={
+              <Button onClick={() => void refetch()} loading={isFetching}>
+                Try again
+              </Button>
+            }
           />
         ) : (
           <>

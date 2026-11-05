@@ -31,6 +31,7 @@ import CommissionRules from "@/components/settings/CommissionRules";
 import PayrollPlans from "@/components/settings/PayrollPlans";
 import StaffAccessCard from "@/components/staff/StaffAccessCard";
 import StaffIdentityForm from "@/components/staff/StaffIdentityForm";
+import StaffProfileSkeleton from "@/components/staff/StaffProfileSkeleton";
 import StaffRoster from "@/components/staff/StaffRoster";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
@@ -119,11 +120,7 @@ function Profile({ id }: { id: string }) {
   }
 
   if (staff.isPending) {
-    return (
-      <p role="status" className="text-sm text-ink-muted">
-        Loading staff member…
-      </p>
-    );
+    return <StaffProfileSkeleton />;
   }
 
   if (!staff.data || staff.isError) {

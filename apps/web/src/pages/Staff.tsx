@@ -39,9 +39,9 @@ import Button from "@/components/ui/Button";
 import Chip from "@/components/ui/Chip";
 import EmptyState from "@/components/ui/EmptyState";
 import Pagination from "@/components/ui/Pagination";
-import Skeleton from "@/components/ui/Skeleton";
 import StatTile from "@/components/ui/StatTile";
 import Table, { type TableColumn } from "@/components/ui/Table";
+import TableSkeleton from "@/components/ui/TableSkeleton";
 import { ROLE_BADGE, ROLE_LABELS, STATUS_FILTERS, type StaffStatusFilter } from "@/constants/staff";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStaffCount, useStaffList } from "@/hooks/useStaff";
@@ -208,12 +208,18 @@ export default function Staff() {
           change them. Grouped and named so the three numbers are one thing to a screen
           reader — and so "Active" is unambiguous beside the row badges below. */}
       <div role="group" aria-label="Team overview" className="grid gap-4 sm:grid-cols-3">
-        <StatTile icon={<Briefcase />} value={teamTotal.data?.total} label="Team members" />
+        <StatTile
+          icon={<Briefcase />}
+          value={teamTotal.data?.total}
+          label="Team members"
+          loading={teamTotal.isPending}
+        />
         <StatTile
           icon={<CheckCircle />}
           value={activeCount.data?.total}
           label="Active"
           tone="success"
+          loading={activeCount.isPending}
         />
         {/* Neutral rather than amber: a disabled account is a state, not a fault. */}
         <StatTile
@@ -221,6 +227,7 @@ export default function Staff() {
           value={disabledCount.data?.total}
           label="Disabled"
           tone="neutral"
+          loading={disabledCount.isPending}
         />
       </div>
 
@@ -260,17 +267,36 @@ export default function Staff() {
         </div>
 
         {staff.isPending ? (
-          <div className="flex flex-col gap-3 p-5">
-            {Array.from({ length: 5 }, (_, index) => (
-              <Skeleton key={index} className="h-9" />
-            ))}
-          </div>
+          <TableSkeleton
+            caption="Staff in this salon"
+            // The loaded table's own columns, so the header words are the same in both
+            // states and the body reserves the height those rows will take.
+            columns={columns}
+            widths={{
+              person: "w-40",
+              role: "w-16",
+              position: "w-24",
+              departments: "w-32",
+              lastLogin: "w-24",
+              status: "w-20",
+              actions: "w-12",
+            }}
+            // A person's cell carries a 34px avatar, so a real row is taller than a bar.
+            rowHeight="h-8"
+          />
         ) : staff.isError ? (
           <EmptyState
             title="The staff list could not be loaded"
             description={getErrorMessage(staff.error)}
             icon={<Users />}
-            action={<Button onClick={() => window.location.reload()}>Try again</Button>}
+            // Retry the query, not the document: reloading threw away the whole
+            // application — its session, its cached records and the reader's place — to
+            // re-ask one question.
+            action={
+              <Button onClick={() => void staff.refetch()} loading={staff.isFetching}>
+                Try again
+              </Button>
+            }
           />
         ) : (
           <>
