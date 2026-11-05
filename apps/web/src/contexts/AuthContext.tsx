@@ -40,6 +40,15 @@ export interface AuthContextValue {
    * before the user tries.
    */
   isReadOnly: boolean;
+  /**
+   * Re-reads `GET /auth/me`.
+   *
+   * The account-security card changes the person's own second factor, and the
+   * flag it renders lives on the profile. Asking the session to re-read means
+   * there is one copy of that flag, the one the next request will use, instead of
+   * a screen-local copy that can disagree with it.
+   */
+  refreshProfile: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<TwoFactorChallenge | void>;
   verifySignIn: (email: string, challenge: string, code: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -65,6 +74,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setStatus("authenticated");
     return next;
   }, []);
+
+  /**
+   * The session's own refresh entry point. It returns nothing on purpose: a
+   * caller on a security screen wants the new state in the context, not a second
+   * copy in its own component state.
+   */
+  const refreshProfile = useCallback(async () => {
+    await loadProfile();
+  }, [loadProfile]);
 
   // Cold start: `GET /auth/me` is the authority on whether a stored refresh token
   // still means a live session. If the access token has expired in the meantime
@@ -152,11 +170,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       tenant: profile?.tenant ?? null,
       entitlements: profile?.entitlements ?? [],
       isReadOnly: profile?.tenant.status === "SUSPENDED",
+      refreshProfile,
       signIn,
       verifySignIn,
       signOut,
     }),
-    [status, profile, signIn, verifySignIn, signOut],
+    [status, profile, refreshProfile, signIn, verifySignIn, signOut],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

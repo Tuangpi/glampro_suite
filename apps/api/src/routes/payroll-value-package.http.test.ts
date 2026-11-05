@@ -118,7 +118,7 @@ before(() => {
     return callback({
       $executeRaw: async () => 0,
       $queryRaw: async () => [],
-      user: { findFirst: async () => ({ id: "actor", globalRole: role }) },
+      user: { findFirst: async () => ({ id: "actor", globalRole: role, twoFactorEnabled }) },
       customerValuePackageHolding: {
         findFirst: async ({ where }: { where: { id: string; customerId?: string } }) => {
           requests.push(where);
@@ -326,13 +326,15 @@ test("enabled two-factor owner can refund", async () => {
   role = "SUPER_ADMIN";
   assert.equal((await request(writePath, input)).status, 200);
 });
-test("owner without verified two-factor session cannot refund", async () => {
+test("owner without a second factor cannot refund", async () => {
   role = "SUPER_ADMIN";
   twoFactorEnabled = false;
   const response = await request(writePath, input);
-  assert.equal(response.status, 401);
-  assert.equal(response.body.code, "TWO_FACTOR_REQUIRED");
-  assert.equal(transactions, 0);
+  // The refusal is the service's now, not a blanket session gate: the owner may
+  // read (see the read tests above) but a refund still needs the verified account.
+  assert.equal(response.status, 403);
+  assert.match(response.body.message, /Only a verified salon owner can refund/);
+  assert.equal(writes.length, 0);
 });
 test("unknown holding refund returns 404 without writes", async () => {
   const response = await request(writePath.replace("holding-a", "foreign-holding"), input);

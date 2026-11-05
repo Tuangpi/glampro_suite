@@ -47,9 +47,9 @@ subcases, all driven through the mounted React app:
 7. Cashier is told the panel is not theirs, no progress card mounts, and the statements read is 403.
 8. The till shows the seller's own `Your commission progress` card for staff and no card for a
    cashier.
-9. A customer profile renders the holding history of one real value-package purchase: the
-   holding-totals list with unused session value, unused credit and source-sale receivables, and
-   the purchase row priced from the source sale.
+9. A customer profile renders the holding history of one real value-package purchase under the
+   **Packages & credit** tab: the holding-totals list with unused session value, unused credit
+   and source-sale receivables, and the purchase row priced from the source sale.
 10. No stray processes or profile directories remain; the Chrome profile is removed with retries.
 
 Boundaries: the session is the same synthetic signed access token the API issues, bootstrapped

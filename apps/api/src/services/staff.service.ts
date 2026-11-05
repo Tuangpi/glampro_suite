@@ -19,19 +19,22 @@
  */
 import type {
   CreateStaffInput,
+  GlobalRole,
   PaginatedResponse,
+  ResetStaffPasswordInput,
   StaffDetail,
   StaffListQuery,
   StaffSummary,
   UpdateStaffInput,
 } from "@glampro_suite/shared";
 import {
+  adminPasswordSchema,
   staffSummarySchema,
   payrollAssignmentSchema,
   createStaffSchema,
 } from "@glampro_suite/shared";
 
-import { badRequest, conflict, notFound } from "../lib/http-error.js";
+import { badRequest, conflict, forbidden, notFound, validationFailed } from "../lib/http-error.js";
 import { randomBytes } from "node:crypto";
 import { hashPassword } from "../lib/password.js";
 import { prisma } from "../lib/prisma.js";
@@ -386,4 +389,105 @@ export async function updateStaff(id: string, input: UpdateStaffInput): Promise<
   });
 
   return getStaff(id);
+}
+
+/**
+ * Sets another person's password — the recovery path for a forgotten login.
+ *
+ * Ordinary password changes stay in `auth.service.changePassword`, where the caller
+ * proves they know the current one. This is the other half of credential handling:
+ * a colleague who cannot sign in, and a salon that has to be able to hand them a
+ * working login again. Nothing here is a shortcut around [ADR 0007] — the password
+ * and the session ends are one transaction, exactly like a self-service change.
+ *
+ * Three rules beyond the role gate on the route:
+ *
+ * - **A POS PIN-only identity has no password to reset.** The row exists, but
+ *   `email` is null and `auth.service` refuses a web session for it, so resetting
+ *   one would be a silent no-op dressed up as a success. `conflict` says so.
+ * - **A manager cannot reset a manager or an owner.** A `MANAGER` holds `PATCH`
+ *   rights, but a credential write is a takeover primitive: resetting a peer would
+ *   let one manager sign in as another, and resetting an owner would be
+ *   privilege escalation by password. Managers recover `STAFF` and `CASHIER`
+ *   accounts; only an owner recovers a management one.
+ * - **An owner target gets `adminPasswordSchema`**, the same stricter policy
+ *   `changePassword` applies to owners, evaluated against the row's role rather
+ *   than the body's claim.
+ *
+ * The audit row goes in the same transaction as the write, so a reset can never be
+ * recorded without happening or happen without being recorded. It carries the
+ * target's role and nothing else: no password, no hash, no token.
+ */
+export async function resetStaffPassword(
+  id: string,
+  input: ResetStaffPasswordInput,
+  actorRole: GlobalRole,
+): Promise<void> {
+  const scope = requireScope("User");
+  const target = await prisma.user.findFirst({
+    where: { id },
+    select: { id: true, email: true, globalRole: true },
+  });
+  if (!target) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
+
+  if (!target.email)
+    throw conflict(
+      "That staff member signs in with a POS PIN only, so there is no password to reset.",
+      "NO_WEB_LOGIN",
+    );
+
+  if (actorRole === "MANAGER" && !["STAFF", "CASHIER"].includes(target.globalRole))
+    throw forbidden(
+      "Only an owner can reset a manager's or an owner's password.",
+      "ROLE_NOT_PERMITTED",
+    );
+
+  if (target.globalRole === "SUPER_ADMIN") {
+    const parsed = adminPasswordSchema.safeParse(input.password);
+    if (!parsed.success)
+      throw validationFailed([{ path: "password", message: parsed.error.issues[0].message }]);
+  }
+
+  // Hash before the transaction: bcrypt is slow on purpose and holding a connection
+  // for it is how a pool gets exhausted. Same ordering as `createStaff`.
+  const passwordHash = await hashPassword(input.password);
+  const now = new Date();
+
+  await prisma.$transaction(async (tx) => {
+    const changed = await tx.user.updateMany({
+      where: { id, ...(scope.kind === "tenant" ? { tenantId: scope.tenantId } : {}) },
+      data: {
+        passwordHash,
+        // Every access token already issued stops verifying; every refresh row below
+        // stops renewing it. Without both, "reset" would mean "the new password works
+        // and the old session still does too".
+        tokenVersion: { increment: 1 },
+        twoFactorCode: null,
+        twoFactorCodeExpiresAt: null,
+      },
+    });
+    if (changed.count !== 1) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
+
+    await tx.refreshToken.updateMany({
+      where: {
+        userId: id,
+        revokedAt: null,
+        // Defence in depth: `RefreshToken` is not tenant-scoped, so the tenant filter
+        // is stated rather than inherited. `forceSignOut` does the same.
+        ...(scope.kind === "tenant" ? { user: { tenantId: scope.tenantId } } : {}),
+      },
+      data: { revokedAt: now },
+    });
+
+    if (scope.kind === "tenant")
+      await tx.auditLog.create({
+        data: {
+          tenantId: scope.tenantId,
+          action: "STAFF_PASSWORD_RESET",
+          targetType: "User",
+          targetId: id,
+          metadata: { globalRole: target.globalRole },
+        },
+      });
+  });
 }

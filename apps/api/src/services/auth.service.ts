@@ -78,13 +78,28 @@ async function loadUserForSession(userId: string) {
   );
 }
 
-/** Refuses a salon that may not sign in, with the code the UI keys its message off. */
-async function assertTenantMaySignIn(tenantId: string): Promise<void> {
+/** The salon's sign-in policy, as `assertTenantMaySignIn` reports it. */
+export interface TenantSignInPolicy {
+  /** Every member but the owner must present an email code at sign-in. */
+  requireStaffTwoFactor: boolean;
+}
+
+/**
+ * Refuses a salon that may not sign in, with the code the UI keys its message off.
+ *
+ * Returns the salon's sign-in policy with the verdict because every caller that
+ * needs the verdict is also the caller that has to know whether staff must
+ * present a second factor (`login`, `refresh`, `verifyTwoFactorForLogin`). The
+ * flag therefore travels on the row that was already read — a `SELECT` that adds
+ * a boolean costs nothing, while a second query per sign-in would.
+ */
+async function assertTenantMaySignIn(tenantId: string): Promise<TenantSignInPolicy> {
   const tenant = await runAsPlatform(() =>
     prisma.tenant.findUnique({
       where: { id: tenantId },
       select: {
         status: true,
+        requireStaffTwoFactor: true,
         subscriptions: {
           where: { status: { in: ["ACTIVE", "EXPIRED"] }, startDate: { lte: new Date() } },
           orderBy: { endDate: "desc" },
@@ -109,6 +124,52 @@ async function assertTenantMaySignIn(tenantId: string): Promise<void> {
       status === "CANCELLED" ? "TENANT_CANCELLED" : "TENANT_EXPIRED",
     );
   }
+
+  return { requireStaffTwoFactor: tenant.requireStaffTwoFactor };
+}
+
+/**
+ * Whether this person has to answer an email code before a session is issued.
+ *
+ * Two ways in, stated once so `login`, the challenge exchange and the refresh gate
+ * cannot drift apart: they enrolled a second factor themselves, or the salon has
+ * made it a condition of employment for its staff.
+ *
+ * The owner sits outside the salon's policy on purpose. The policy is sold as a
+ * staff rule, and an owner bound by it could never actually switch their own factor
+ * off — the switch would appear to work and the next sign-in would challenge
+ * anyway, which reads as a broken setting rather than a policy. What an owner gives
+ * up by turning their factor off is not the gate but the operations that demand
+ * one: payroll close, prepaid settlements, package valuation and package transfers
+ * each re-read `users.twoFactorEnabled` at the point of use, so those screens refuse
+ * a password-only owner instead of the sign-in doing it silently.
+ */
+function twoFactorRequiredFor(
+  user: { globalRole: AuthSession["user"]["globalRole"]; twoFactorEnabled: boolean },
+  policy: TenantSignInPolicy,
+): boolean {
+  const boundByPolicy = policy.requireStaffTwoFactor && user.globalRole !== "SUPER_ADMIN";
+  return user.twoFactorEnabled || boundByPolicy;
+}
+
+/**
+ * The salon's staff sign-in policy on its own.
+ *
+ * Separate from `assertTenantMaySignIn` because not every reader is a sign-in:
+ * `disableTwoFactor` runs on an authenticated write and only needs the policy,
+ * and asking a "may this salon sign in at all?" question from a write would
+ * conflate two answers. A missing salon answers `false` — the caller's own
+ * session is already refused elsewhere, and inventing a policy here would only
+ * turn a dead session into a confusing error.
+ */
+async function loadStaffTwoFactorPolicy(tenantId: string): Promise<boolean> {
+  const tenant = await runAsPlatform(() =>
+    prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: { requireStaffTwoFactor: true },
+    }),
+  );
+  return tenant?.requireStaffTwoFactor ?? false;
 }
 
 /** Mints an access/refresh pair and records the refresh token's hash. */
@@ -120,6 +181,12 @@ async function issueSession(
     email: string | null;
     globalRole: AuthSession["user"]["globalRole"];
     tokenVersion: number;
+    /**
+     * The person's own second factor, carried into the session's `user` block so
+     * the account-security card can render "on" without a second request. It is
+     * the personal setting only; the salon's policy is read from the profile.
+     */
+    twoFactorEnabled: boolean;
   },
   realm: AuthRealm,
   meta: SessionMeta,
@@ -162,6 +229,7 @@ async function issueSession(
       email,
       globalRole: user.globalRole,
       tenantId: user.tenantId,
+      twoFactorEnabled: user.twoFactorEnabled,
     },
   };
 }
@@ -209,15 +277,16 @@ export async function login(input: LoginInput, meta: SessionMeta): Promise<Login
     throw unauthorized("That email and password combination is not right.", "INVALID_CREDENTIALS");
   }
 
-  await assertTenantMaySignIn(user.tenantId);
+  const policy = await assertTenantMaySignIn(user.tenantId);
 
   await runAsPlatform(() =>
     prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } }),
   );
 
   // Two-factor authentication is required: send a code by email and make the
-  // caller complete verifyTwoFactorForLogin before any tokens are issued.
-  if (user.twoFactorEnabled || user.globalRole === "SUPER_ADMIN") {
+  // caller complete verifyTwoFactorForLogin before any tokens are issued. The
+  // salon's staff policy is one of the three ways in — see `twoFactorRequiredFor`.
+  if (twoFactorRequiredFor(user, policy)) {
     return loginWithTwoFactor({ ...user, email: user.email });
   }
 
@@ -272,11 +341,27 @@ export async function refresh(refreshToken: string, meta: SessionMeta): Promise<
     );
   }
 
-  if (user.globalRole === "SUPER_ADMIN" && !user.twoFactorEnabled) {
-    throw unauthorized("Sign in again to verify your owner account.", "TWO_FACTOR_REQUIRED");
-  }
+  // No owner-only gate here. An owner who turned their own factor off holds a
+  // legitimate session, and the operations that need a second factor ask for it
+  // where they run (`payroll-close-state.ts`, `prepaid.service.ts`, and siblings)
+  // rather than refusing to renew the session that would have performed them.
 
-  await assertTenantMaySignIn(user.tenantId);
+  const policy = await assertTenantMaySignIn(user.tenantId);
+
+  // The salon's policy, checked on renewal rather than only at sign-in. A staff
+  // member holding a session from before the policy was switched on has no code
+  // to exchange, so the honest answer is to make them sign in again — and the
+  // client already treats `401 TWO_FACTOR_REQUIRED` as the end of the session,
+  // which lands them on the login screen instead of a silently dead tab. The owner
+  // is exempt here for the same reason `twoFactorRequiredFor` exempts them: the
+  // policy is a staff rule, and a renewal that refused the owner would undo the
+  // switch they just turned off.
+  if (policy.requireStaffTwoFactor && user.globalRole !== "SUPER_ADMIN" && !user.twoFactorEnabled) {
+    throw unauthorized(
+      "Your salon now requires two-factor authentication. Sign in again to verify your account.",
+      "TWO_FACTOR_REQUIRED",
+    );
+  }
 
   // The atomic claim: only the request that flips `revokedAt` from null may issue
   // the replacement.
@@ -514,12 +599,34 @@ export async function confirmTwoFactor(
 /**
  * Disables two-factor authentication for the user and clears any pending code.
  * Must be called while authenticated as the user.
+ *
+ * Open to every role, including the owner. The owner is not bound by the salon's
+ * staff policy, so the switch they are shown has to be one that actually works;
+ * what changes for them is not sign-in but the operations that read the flag at
+ * the point of use — see `twoFactorRequiredFor`.
  */
 export async function disableTwoFactor(userId: string): Promise<void> {
   const user = await loadUserForSession(userId);
-  if (!user || user.globalRole === "SUPER_ADMIN") {
-    throw forbidden("Owners must keep two-factor authentication enabled.", "TWO_FACTOR_REQUIRED");
+  if (!user) {
+    throw unauthorized(
+      "Your session is no longer valid. Please log in again.",
+      "SESSION_INVALIDATED",
+    );
   }
+
+  // A salon that requires it of everyone cannot be opted out of by one member:
+  // without this the switch would appear to work and the next sign-in would
+  // challenge anyway, which reads as a broken setting rather than a policy. The
+  // owner is exempt, exactly as `twoFactorRequiredFor` exempts them: refusing here
+  // would trap the one account able to change the policy behind a rule it is not
+  // subject to.
+  if (user.globalRole !== "SUPER_ADMIN" && (await loadStaffTwoFactorPolicy(user.tenantId))) {
+    throw forbidden(
+      "Your salon requires two-factor authentication, so it cannot be turned off here. Ask the owner to change the salon's policy first.",
+      "TWO_FACTOR_REQUIRED",
+    );
+  }
+
   await runAsPlatform(() =>
     prisma.user.update({
       where: { id: userId },
@@ -558,12 +665,7 @@ export async function verifyTwoFactorForLogin(
     }),
   );
 
-  if (
-    !user ||
-    (!user.twoFactorEnabled && user.globalRole !== "SUPER_ADMIN") ||
-    !user.twoFactorCode ||
-    !user.twoFactorCodeExpiresAt
-  ) {
+  if (!user) {
     throw unauthorized(
       "Two-factor authentication is not required for this account.",
       "TWO_FACTOR_NOT_REQUIRED",
@@ -577,6 +679,21 @@ export async function verifyTwoFactorForLogin(
     );
   }
 
+  // The salon's verdict comes first: a salon that may not sign in refuses the
+  // exchange before a code is looked at, so the code is never burned by a refused
+  // attempt and the person can try again once the salon is restored.
+  const policy = await assertTenantMaySignIn(user.tenantId);
+
+  // `twoFactorRequiredFor` is the same question `login` asked before sending this
+  // code. Asking it the same way is what lets a salon's policy switch on mid-login
+  // without turning a legitimate challenge into "not required".
+  if (!twoFactorRequiredFor(user, policy) || !user.twoFactorCode || !user.twoFactorCodeExpiresAt) {
+    throw unauthorized(
+      "Two-factor authentication is not required for this account.",
+      "TWO_FACTOR_NOT_REQUIRED",
+    );
+  }
+
   if (user.twoFactorCodeExpiresAt < new Date()) {
     throw unauthorized("The two-factor code has expired. Log in again.", "TWO_FACTOR_EXPIRED");
   }
@@ -586,8 +703,6 @@ export async function verifyTwoFactorForLogin(
   if (!codeMatches) {
     throw unauthorized("The two-factor code is not right.", "INVALID_TWO_FACTOR_CODE");
   }
-
-  await assertTenantMaySignIn(user.tenantId);
 
   // Clear the used code.
   const consumed = await runAsPlatform(() =>
@@ -613,6 +728,11 @@ export async function verifyTwoFactorForLogin(
  * a code is sent by email and the caller must complete `verifyTwoFactorForLogin`
  * before receiving an access/refresh pair. The challenge is bound to this
  * password-verified attempt; enrollment codes cannot be exchanged for sessions.
+ *
+ * Delivery failure is fatal to the attempt on purpose: a salon that requires a
+ * second factor and an SMTP server that cannot send it is a locked door with no
+ * key, so the person is told to check the mail server instead of staring at a
+ * code box that will never be filled.
  */
 async function loginWithTwoFactor(user: {
   id: string;
@@ -637,23 +757,25 @@ async function loginWithTwoFactor(user: {
     }),
   );
 
-  // try {
-  //   await sendTwoFactorCode(user.email, code);
-  // } catch (error) {
-  //   // Only clear this attempt: a newer login may already have replaced its code.
-  //   await runAsPlatform(() =>
-  //     prisma.user.updateMany({
-  //       where: { id: user.id, twoFactorCode: codeHash },
-  //       data: { twoFactorCode: null, twoFactorCodeExpiresAt: null },
-  //     }),
-  //   );
-  //   throw new HttpError(
-  //     503,
-  //     "Verification email could not be sent. Check that the configured SMTP server is running, then try signing in again.",
-  //     { code: "EMAIL_SEND_FAILED", cause: error },
-  //   );
-  // }
-  console.log(`Two-factor code for ${user.email}: ${code}`); // TODO: remove in production
+  try {
+    await sendTwoFactorCode(user.email, code);
+  } catch (error) {
+    // Only clear this attempt: a newer login may already have replaced its code.
+    // A code the person never received must not stay usable, and the caller is
+    // told to check SMTP rather than to retype digits it cannot read.
+    await runAsPlatform(() =>
+      prisma.user.updateMany({
+        where: { id: user.id, twoFactorCode: codeHash },
+        data: { twoFactorCode: null, twoFactorCodeExpiresAt: null },
+      }),
+    );
+    throw new HttpError(
+      503,
+      "Verification email could not be sent. Check that the configured SMTP server is running, then try signing in again.",
+      { code: "EMAIL_SEND_FAILED", cause: error },
+    );
+  }
+
   return { requiresTwoFactor: true, challenge };
 }
 
@@ -717,6 +839,10 @@ export async function loadProfile(user: AuthenticatedUser): Promise<AuthProfile>
         email: user.email,
         globalRole: user.globalRole,
         tenantId,
+        // From the principal, which `middleware/auth.ts` refreshed from the row on
+        // this request — so enabling or disabling two-factor in another tab is
+        // reflected on the next profile read, not the next sign-in.
+        twoFactorEnabled: user.twoFactorEnabled,
       },
       tenant: {
         id: tenant.id,

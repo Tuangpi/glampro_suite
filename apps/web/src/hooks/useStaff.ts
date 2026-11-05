@@ -108,6 +108,28 @@ export function useUpdateStaff() {
 }
 
 /**
+ * Sets a colleague's password — the recovery path for a forgotten login.
+ *
+ * Its own mutation rather than a field on `useUpdateStaff`, because the two writes
+ * have different consequences: this one ends every session the person holds, so it
+ * must not ride along with a profile save that could fail halfway. `POST
+ * /api/staff/:id/password` is the only endpoint that does it (ADR 0007 keeps
+ * `updateStaffSchema` password-free).
+ */
+export function useResetStaffPassword() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, password }: { id: string; password: string }) =>
+      post<{ success: boolean }>(`/staff/${id}/password`, { password }),
+    onSuccess: (_result, variables) => {
+      invalidateStaff(queryClient);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.staff.detail(variables.id) });
+    },
+  });
+}
+
+/**
  * A write moves the tiles as well as the table — disabling the last manager is
  * exactly the thing the Disabled tile is watching for — so the counts are
  * invalidated with the list rather than leaving a tile stale until a reload.

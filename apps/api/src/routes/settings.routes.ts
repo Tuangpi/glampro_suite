@@ -7,8 +7,10 @@ import { configurePrivacyNotice, getPrivacyNotice } from "../services/consent.se
 import {
   updateSalonOperatingHoursSchema,
   updateSalonProfileSchema,
+  updateSalonSecuritySchema,
   type UpdateSalonOperatingHoursInput,
   type UpdateSalonProfileInput,
+  type UpdateSalonSecurityInput,
 } from "@glampro_suite/shared";
 
 import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
@@ -20,6 +22,7 @@ import {
   listModules,
   updateSalonOperatingHours,
   updateSalonProfile,
+  updateSalonSecurityPolicy,
 } from "../services/settings.service.js";
 
 /**
@@ -85,6 +88,33 @@ settingsRouter.patch(
 
       const input = validated<UpdateSalonProfileInput>(req, "body");
       res.status(200).json({ data: await updateSalonProfile(input) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * The salon's staff sign-in policy. **Owner only**, unlike the profile: a manager
+ * can rename the salon, but making two-factor mandatory for every colleague is
+ * the owner's decision — and the same rule the platform console applies when a
+ * manager's own account is concerned.
+ *
+ * Not tenant-write-blocked on its own either: `requireWritableTenant()` keeps a
+ * suspended salon from changing the terms of its own sign-in.
+ */
+settingsRouter.patch(
+  "/security",
+  auth,
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN"),
+  validate(updateSalonSecuritySchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+
+      const input = validated<UpdateSalonSecurityInput>(req, "body");
+      res.status(200).json({ data: await updateSalonSecurityPolicy(input, req.user.id) });
     } catch (error) {
       next(error);
     }

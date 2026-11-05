@@ -85,49 +85,38 @@ it("requires a reason, changes lifecycle and refreshes company data and audit", 
   await waitFor(() => expect(platformApi.audit).toHaveBeenCalledTimes(2));
 });
 
-it("records a decimal subscription without charging or silently reactivating", async () => {
-  render(<CompanyAdministration id="company-a" onChange={vi.fn()} />);
+it("mounts the subscription panel and re-reads the company when a period is recorded", async () => {
+  vi.mocked(platformApi.recordSubscription).mockResolvedValue(undefined);
+  const changed = vi.fn().mockResolvedValue(undefined);
+  render(<CompanyAdministration id="company-a" onChange={changed} />);
 
-  await screen.findByLabelText("Period start");
-  // A date control shows the expected form itself, so neither field carries a
-  // placeholder — the operator picks a day, not an ISO timestamp.
-  expect(screen.getByLabelText("Period start")).toHaveAttribute("type", "date");
-  expect(screen.getByLabelText("Period start")).not.toHaveAttribute("placeholder");
-  expect(screen.getByLabelText("Period end")).toHaveAttribute("type", "date");
-  expect(screen.getByLabelText("Period end")).not.toHaveAttribute("placeholder");
-
-  // Days the service would reject are not offered: a period cannot start after
-  // today and cannot end on a day that has already begun.
   const planted = new Date();
   const startDay = formatDateInputValue(planted);
   const endDay = formatDateInputValue(new Date(planted.getTime() + 30 * 24 * 60 * 60 * 1000));
-  expect(screen.getByLabelText("Period start")).toHaveAttribute("max", startDay);
-  expect(screen.getByLabelText("Period end")).toHaveAttribute(
-    "min",
-    formatDateInputValue(new Date(planted.getTime() + 24 * 60 * 60 * 1000)),
-  );
-
   for (const [label, value] of [
-    ["Change reason", "Manual period"],
+    ["Reason for this period", "Manual period"],
     ["Period start", startDay],
     ["Period end", endDay],
     ["Subscription amount", "99.00"],
   ])
-    fireEvent.change(screen.getByLabelText(label), { target: { value } });
+    fireEvent.change(await screen.findByLabelText(label), { target: { value } });
 
   fireEvent.click(screen.getByRole("button", { name: "Record subscription" }));
-  await waitFor(() =>
-    expect(platformApi.recordSubscription).toHaveBeenCalledWith("company-a", {
-      // The picked day crosses the wire as that day's midnight plus this
-      // machine's offset, which is what the API's strict schema requires.
+  await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+  expect(platformApi.recordSubscription).toHaveBeenCalledWith(
+    "company-a",
+    expect.objectContaining({
       startDate: dayToLocalInstant(startDay),
       endDate: dayToLocalInstant(endDay),
-      amount: "99.00",
-      currency: "SGD",
       reason: "Manual period",
     }),
   );
   expect(platformApi.lifecycle).not.toHaveBeenCalled();
+
+  // The panel reports its own outcome: the section's shared banner belongs to
+  // lifecycle and module changes, and claiming one here would be a lie.
+  expect(await screen.findByText("Subscription period recorded.")).toBeInTheDocument();
+  expect(screen.queryByText("Change saved. Audit history will refresh.")).not.toBeInTheDocument();
 });
 
 it("shows module access as switches: core is fixed, a lapsed grant reads as off", async () => {

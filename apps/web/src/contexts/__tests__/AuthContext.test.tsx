@@ -26,6 +26,7 @@ const USER = {
   email: "owner@glampro.test",
   globalRole: "MANAGER",
   tenantId: "t1",
+  twoFactorEnabled: false,
 } as const;
 
 const PROFILE: AuthProfile = {

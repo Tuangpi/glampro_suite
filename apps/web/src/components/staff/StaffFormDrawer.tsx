@@ -1,35 +1,41 @@
 /**
- * Create and edit a staff member — the form half of handoff screen 09.
+ * Add a staff member — the create half of handoff screen 09.
  *
- * Staff remain User rows. Creation supports either an email/password login or
- * a POS-only PIN identity without an email. A duplicate supplied address is a 409 —
- * `users.email` is globally unique — and why it lands on the Email control rather than
- * in a banner: the API answers it as `details: [{ path: "body.email", message }]` like
+ * **Creation is a drawer; editing is a page** (`/staff/:id`, `StaffProfile`). They are
+ * different shapes of task: a new colleague is one form with one save, which belongs
+ * beside the list it appends to, while an existing record carries five independent save
+ * scopes whose buttons must never look like they save each other. What is left here is
+ * exactly the create form, and the `staff` prop that used to switch this component into
+ * edit mode is gone with it.
+ *
+ * Staff remain User rows. Creation supports either an email/password login or a
+ * POS-only PIN identity without an email. A duplicate supplied address is a 409 —
+ * `users.email` is globally unique — and it lands on the Email control rather than in a
+ * banner because the API answers it as `details: [{ path: "body.email", message }]` like
  * any other field error.
  *
- * **No password box on edit.** Changing a password is
- * `POST /api/auth/change-password`, which bumps `tokenVersion` and ends every session
- * ([ADR 0007]); a box here would be a way round the one flow that does it correctly.
- * Email is read-only on edit for the same reason — `updateStaffSchema` has no `email`
- * field at all, so the address is shown as text rather than as an editor for a value
- * the API would silently drop.
+ * **A password is set here and only here.** Afterwards it moves through the dedicated
+ * `POST /api/staff/:id/password` control on the profile page, which bumps `tokenVersion`
+ * and ends every session the person holds ([ADR 0007]) — the promise a profile PATCH
+ * cannot make, which is why no email or password box exists on that form.
  *
- * **`disabled` is the archive, not a delete.** The checkbox appears on edit only: a
- * disabled user keeps their appointments and their commission history, and a new
- * account that is already disabled is a mistake rather than a state anyone wants.
+ * **`disabled` is not offered here.** It is the archive, not a delete (Q28): a disabled
+ * user keeps their appointments and their commission history, and a *new* account that
+ * is already disabled is a mistake rather than a state anyone wants. It is a control on
+ * the profile page's account-status card.
  *
  * As in the catalogue's drawer, the local checks below only catch what is worth not
  * round-tripping; nothing here re-declares a contract rule, and `PASSWORD_MIN_LENGTH`
  * is the contract's own constant rather than a second copy of 8.
  */
 import { useState } from "react";
+import { useNavigate } from "react-router";
 
 import {
   PASSWORD_MIN_LENGTH,
   createStaffSchema,
   type CreateStaffInput,
   type GlobalRole,
-  type StaffDetail,
 } from "@glampro_suite/shared";
 
 import Button from "@/components/ui/Button";
@@ -37,15 +43,12 @@ import Checkbox from "@/components/ui/Checkbox";
 import Drawer from "@/components/ui/Drawer";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
-import StaffRoster from "@/components/staff/StaffRoster";
-import CommissionRules from "@/components/settings/CommissionRules";
-import PayrollPlans from "@/components/settings/PayrollPlans";
 import StaffPayrollCreation from "./StaffPayrollCreation";
 import { useAuth } from "@/contexts/AuthContext";
 import { showToast } from "@/components/ui/toast-store";
 import { ROLE_OPTIONS } from "@/constants/staff";
 import { useDepartments } from "@/hooks/useDepartments";
-import { useCreateStaff, useUpdateStaff } from "@/hooks/useStaff";
+import { useCreateStaff } from "@/hooks/useStaff";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
 
 interface FormState {
@@ -54,14 +57,12 @@ interface FormState {
   password: string;
   posPin: string;
   pinOnly: boolean;
-  removePin: boolean;
   globalRole: GlobalRole;
   phone: string;
   position: string;
   commissionRate: string;
   startDate: string;
   endDate: string;
-  disabled: boolean;
   departmentIds: string[];
 }
 
@@ -76,50 +77,19 @@ const EMPTY_FORM: FormState = {
   password: "",
   posPin: "",
   pinOnly: false,
-  removePin: false,
   globalRole: "STAFF",
   phone: "",
   position: "",
   commissionRate: "0",
   startDate: "",
   endDate: "",
-  disabled: false,
   departmentIds: [],
 };
-
-function toForm(staff: StaffDetail): FormState {
-  return {
-    name: staff.name,
-    email: staff.email ?? "",
-    pinOnly: staff.email === null,
-    removePin: false,
-    posPin: "",
-    // Never seeded from the record: the list response carries no password material,
-    // and a filled-in box would imply the existing password could be read back.
-    password: "",
-    globalRole: staff.globalRole,
-    phone: staff.phone ?? "",
-    position: staff.position ?? "",
-    commissionRate: staff.commissionRate ?? "0",
-    // `startDate`/`endDate` cross the wire as `YYYY-MM-DD` (the service slices the
-    // timestamp), which is exactly what a date input reads and writes.
-    startDate: staff.startDate ?? "",
-    endDate: staff.endDate ?? "",
-    disabled: staff.disabled,
-    departmentIds: staff.departments.map((department) => department.id),
-  };
-}
 
 /** An empty box means "not supplied" on create. */
 function optional(value: string): string | undefined {
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
-}
-
-/** An empty box means "clear it" on update — an explicit `null`, not an absent key. */
-function clearable(value: string): string | null {
-  const trimmed = value.trim();
-  return trimmed === "" ? null : trimmed;
 }
 
 /** Adds or removes one branch without disturbing the rest of the selection. */
@@ -129,17 +99,10 @@ function toggle(list: string[], id: string): string[] {
 
 export interface StaffFormDrawerProps {
   open: boolean;
-  /** `null` creates; a person edits. */
-  staff: StaffDetail | null;
   onClose: () => void;
 }
 
-export default function StaffFormDrawer({
-  open,
-  staff: initialStaff,
-  onClose,
-}: StaffFormDrawerProps) {
-  const [createdStaff, setCreatedStaff] = useState<StaffDetail | null>(null);
+export default function StaffFormDrawer({ open, onClose }: StaffFormDrawerProps) {
   const [configurePayroll, setConfigurePayroll] = useState(false);
   const [initialPayroll, setInitialPayroll] = useState(false);
   const [commissionRole, setCommissionRole] = useState<
@@ -149,24 +112,20 @@ export default function StaffFormDrawer({
   const [payrollAssignment, setPayrollAssignment] = useState<
     CreateStaffInput["payrollAssignment"] | null
   >(null);
-  const staff = createdStaff ?? initialStaff;
   const { user, isReadOnly } = useAuth();
+  const navigate = useNavigate();
   const canConfigureCommission =
     user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER";
-  // Seeded once, at mount. The page gives this component a `key` that changes when
-  // the record or the open state changes, so a cancelled edit cannot leak its
-  // unsaved text into the next one — without an effect copying props into state,
-  // which renders twice on every open.
-  const [form, setForm] = useState<FormState>(() => (staff ? toForm(staff) : EMPTY_FORM));
-  const [originalStartDate, setOriginalStartDate] = useState(() => form.startDate);
+  // Seeded once, at mount. The page gives this component a `key` that changes with the
+  // open state, so a cancelled form cannot leak its unsaved text into the next one —
+  // without an effect copying props into state, which renders twice on every open.
+  const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
 
   const departments = useDepartments();
   const createStaff = useCreateStaff();
-  const updateStaff = useUpdateStaff();
-  const isSaving = createStaff.isPending || updateStaff.isPending;
-  const isEditing = staff !== null;
+  const isSaving = createStaff.isPending;
 
   function setField<K extends keyof FormState>(field: K, value: FormState[K]) {
     setForm((previous) => ({ ...previous, [field]: value }));
@@ -180,7 +139,7 @@ export default function StaffFormDrawer({
     event.preventDefault();
     setFieldErrors({});
     setFormError(null);
-    if (!isEditing && user?.globalRole !== "SUPER_ADMIN") {
+    if (user?.globalRole !== "SUPER_ADMIN") {
       setFormError(
         "Ask the owner to create staff with audited payroll classification and a join date.",
       );
@@ -207,18 +166,18 @@ export default function StaffFormDrawer({
         "Enter a percentage from 0 to 100 with at most two decimal places.";
     }
 
-    if (!isEditing && !form.pinOnly) {
+    if (!form.pinOnly) {
       if (email === "") localErrors["email"] = "Email is required";
       if (form.password.length < PASSWORD_MIN_LENGTH) {
         localErrors["password"] = `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
       }
     }
 
-    if (((!isEditing && form.pinOnly) || form.posPin !== "") && !/^\d{6}$/.test(form.posPin))
+    if ((form.pinOnly || form.posPin !== "") && !/^\d{6}$/.test(form.posPin))
       localErrors["posPin"] = "Use a six-digit PIN.";
     if (form.pinOnly && ["SUPER_ADMIN", "MANAGER"].includes(form.globalRole))
       localErrors["globalRole"] = "PIN-only staff cannot have a management role.";
-    if (!isEditing && (initialPayroll || commissionRole === "COMMISSION_EARNING")) {
+    if (initialPayroll || commissionRole === "COMMISSION_EARNING") {
       if (!form.startDate)
         localErrors["startDate"] = "A join date is required with a payroll plan.";
       if (!payrollAssignment) {
@@ -232,69 +191,43 @@ export default function StaffFormDrawer({
     }
 
     try {
-      if (staff) {
-        await updateStaff.mutateAsync({
-          id: staff.id,
-          input: {
-            name,
-            globalRole: form.globalRole,
-            phone: clearable(form.phone),
-            position: clearable(form.position),
-            ...(form.removePin ? { posPin: null } : form.posPin ? { posPin: form.posPin } : {}),
-            // Payroll can update this same authoritative date while this drawer is open.
-            // Do not write the drawer's old value back unless the identity form changed it.
-            ...(form.startDate !== originalStartDate
-              ? {
-                  startDate: clearable(form.startDate),
-                  expectedStartDate: originalStartDate || null,
-                }
-              : {}),
-            endDate: clearable(form.endDate),
-            disabled: form.disabled,
-            // Sent even when empty: on update the list *replaces* the selection, so
-            // an empty array is how every branch is taken off someone.
-            departmentIds: form.departmentIds,
-          },
-        });
-        showToast("success", "Staff member updated.");
-      } else {
-        const input = {
-          name,
-          ...(form.pinOnly
-            ? { posPin: form.posPin }
-            : { email, password: form.password, ...(form.posPin ? { posPin: form.posPin } : {}) }),
-          globalRole: form.globalRole,
-          phone: optional(form.phone),
-          position: optional(form.position),
-          commissionRate,
-          startDate: optional(form.startDate),
-          endDate: optional(form.endDate),
-          departmentIds: form.departmentIds,
-          ...((initialPayroll || commissionRole === "COMMISSION_EARNING") && payrollAssignment
-            ? { payrollAssignment }
-            : {}),
-          ...(commissionRole
-            ? { payrollClassification: { commissionRole, reason: classificationReason } }
-            : {}),
-        };
-        const parsed = createStaffSchema.safeParse(input);
-        if (!parsed.success) {
-          setFieldErrors(
-            Object.fromEntries(
-              parsed.error.issues.map((issue) => [issue.path.join("."), issue.message]),
-            ),
-          );
-          setFormError(parsed.error.issues.map((issue) => issue.message).join(" "));
-          return;
-        }
-        const created = await createStaff.mutateAsync(parsed.data);
-        showToast("success", "Staff member added.");
-        if (configurePayroll && canConfigureCommission) {
-          setCreatedStaff(created);
-          setForm(toForm(created));
-          setOriginalStartDate(toForm(created).startDate);
-          return;
-        }
+      const input = {
+        name,
+        ...(form.pinOnly
+          ? { posPin: form.posPin }
+          : { email, password: form.password, ...(form.posPin ? { posPin: form.posPin } : {}) }),
+        globalRole: form.globalRole,
+        phone: optional(form.phone),
+        position: optional(form.position),
+        commissionRate,
+        startDate: optional(form.startDate),
+        endDate: optional(form.endDate),
+        departmentIds: form.departmentIds,
+        ...((initialPayroll || commissionRole === "COMMISSION_EARNING") && payrollAssignment
+          ? { payrollAssignment }
+          : {}),
+        ...(commissionRole
+          ? { payrollClassification: { commissionRole, reason: classificationReason } }
+          : {}),
+      };
+      const parsed = createStaffSchema.safeParse(input);
+      if (!parsed.success) {
+        setFieldErrors(
+          Object.fromEntries(
+            parsed.error.issues.map((issue) => [issue.path.join("."), issue.message]),
+          ),
+        );
+        setFormError(parsed.error.issues.map((issue) => issue.message).join(" "));
+        return;
+      }
+      const created = await createStaff.mutateAsync(parsed.data);
+      showToast("success", "Staff member added.");
+      // The tick was "continue to payroll settings", so it continues to them for real
+      // now: the page's payroll section is a URL, not a second half of this drawer.
+      if (configurePayroll && canConfigureCommission) {
+        onClose();
+        navigate(`/staff/${created.id}?section=payroll`);
+        return;
       }
 
       onClose();
@@ -312,12 +245,8 @@ export default function StaffFormDrawer({
     <Drawer
       open={open}
       onClose={onClose}
-      title={isEditing ? "Edit staff member" : "Add staff member"}
-      description={
-        isEditing
-          ? "Update this person’s role, profile and branches. Their login email is not changed here."
-          : "Create the login and audited payroll setup together. A join date, explicit classification and reason are required."
-      }
+      title="Add staff member"
+      description="Create the login and audited payroll setup together. A join date, explicit classification and reason are required."
       widthClassName="max-w-xl"
       footer={
         <>
@@ -328,9 +257,9 @@ export default function StaffFormDrawer({
             type="submit"
             form="staff-form"
             loading={isSaving}
-            disabled={!isEditing && user?.globalRole !== "SUPER_ADMIN"}
+            disabled={user?.globalRole !== "SUPER_ADMIN"}
           >
-            {isEditing ? "Save changes" : "Add staff member"}
+            Add staff member
           </Button>
         </>
       }
@@ -353,25 +282,12 @@ export default function StaffFormDrawer({
           autoFocus
         />
 
-        {!isEditing && (
-          <Checkbox
-            label="POS PIN only (no email login)"
-            checked={form.pinOnly}
-            onChange={(event) => setField("pinOnly", event.target.checked)}
-          />
-        )}
-        {isEditing ? (
-          // Text, not a disabled input: the contract has no `email` on update, so a
-          // greyed-out box would suggest a field that is merely locked when in fact
-          // nothing about it would ever be sent.
-          <div className="flex flex-col gap-1.5">
-            <p className="text-sm font-medium text-ink">Email</p>
-            <p className="text-sm text-ink-body">{staff.email ?? "POS PIN only"}</p>
-            <p className="text-xs text-ink-muted">
-              The address they sign in with, so it is not changed from this form.
-            </p>
-          </div>
-        ) : !form.pinOnly ? (
+        <Checkbox
+          label="POS PIN only (no email login)"
+          checked={form.pinOnly}
+          onChange={(event) => setField("pinOnly", event.target.checked)}
+        />
+        {!form.pinOnly ? (
           <div className="grid gap-4 sm:grid-cols-2">
             <Input
               label="Email"
@@ -428,8 +344,8 @@ export default function StaffFormDrawer({
         />
 
         <Input
-          label={isEditing ? "New POS PIN (leave blank to keep)" : "POS PIN"}
-          placeholder={isEditing ? "Please enter a new POS PIN" : "Please enter a POS PIN"}
+          label="POS PIN"
+          placeholder="Please enter a POS PIN"
           type="password"
           inputMode="numeric"
           autoComplete="new-password"
@@ -440,28 +356,18 @@ export default function StaffFormDrawer({
           hint="Six digits. POS identity only; no web access or management permissions."
         />
 
-        {isEditing && (
-          <Checkbox
-            label="Revoke POS PIN"
-            checked={form.removePin}
-            onChange={(event) => setField("removePin", event.target.checked)}
-            hint="Immediately ends existing PIN verifications. A new PIN can be set later."
-          />
-        )}
-        {!isEditing && (
-          <Input
-            label="Service commission (%)"
-            type="number"
-            min="0"
-            max="100"
-            step="0.01"
-            placeholder="e.g. 10"
-            value={form.commissionRate}
-            onChange={(event) => setField("commissionRate", event.target.value)}
-            error={fieldError("commissionRate")}
-            hint="Service revenue after discounts, excluding tax. Includes redeemed services; excludes package purchases and direct tips."
-          />
-        )}
+        <Input
+          label="Service commission (%)"
+          type="number"
+          min="0"
+          max="100"
+          step="0.01"
+          placeholder="e.g. 10"
+          value={form.commissionRate}
+          onChange={(event) => setField("commissionRate", event.target.value)}
+          error={fieldError("commissionRate")}
+          hint="Service revenue after discounts, excluding tax. Includes redeemed services; excludes package purchases and direct tips."
+        />
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
@@ -470,11 +376,6 @@ export default function StaffFormDrawer({
             value={form.startDate}
             onChange={(event) => setField("startDate", event.target.value)}
             error={fieldError("startDate")}
-            hint={
-              isEditing
-                ? "For staff with payroll settings or plan history, change the join date in payroll settings below with a reason."
-                : undefined
-            }
           />
           <Input
             label="End date"
@@ -516,16 +417,7 @@ export default function StaffFormDrawer({
           ) : null}
         </fieldset>
 
-        {isEditing ? (
-          <Checkbox
-            label="Disabled"
-            checked={form.disabled}
-            onChange={(event) => setField("disabled", event.target.checked)}
-            hint="A disabled account cannot sign in. Their appointments and their history stay."
-          />
-        ) : null}
-        {staff && open ? <StaffRoster staffId={staff.id} /> : null}
-        {!staff && user?.globalRole === "SUPER_ADMIN" && !isReadOnly && (
+        {user?.globalRole === "SUPER_ADMIN" && !isReadOnly && (
           <>
             <Select
               label="Initial commission classification"
@@ -565,24 +457,15 @@ export default function StaffFormDrawer({
             )}
           </>
         )}
-        {!staff && canConfigureCommission && (
+        {canConfigureCommission && (
           <Checkbox
             label="Configure payroll after creation"
             checked={configurePayroll}
             onChange={(event) => setConfigurePayroll(event.target.checked)}
-            hint="After saving the required classification, join date and any initial plan together, continue to additional payroll settings."
+            hint="After saving the required classification, join date and any initial plan together, continue to this person's payroll section."
           />
         )}
       </form>
-      {staff && open && canConfigureCommission ? (
-        <PayrollPlans
-          staffId={staff.id}
-          canEdit={user?.globalRole === "SUPER_ADMIN" && !isReadOnly}
-        />
-      ) : null}
-      {staff && open && canConfigureCommission ? (
-        <CommissionRules staffId={staff.id} canEdit={!isReadOnly} />
-      ) : null}
     </Drawer>
   );
 }

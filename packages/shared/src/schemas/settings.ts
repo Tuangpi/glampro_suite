@@ -76,6 +76,13 @@ export const salonProfileSchema = z.object({
   onlineBookingEnabled: z.boolean(),
   onlineDepositAmount: z.number().int().min(0),
   onlineNoShowFee: z.number().int().min(0),
+  /**
+   * Salon-wide staff sign-in policy: every non-owner member must pass an email
+   * code at sign-in. Read-only here and written through `PATCH /settings/security`,
+   * because the profile form's body carries unrelated required fields and a
+   * security switch must not depend on them.
+   */
+  requireStaffTwoFactor: z.boolean(),
   owner: z.object({ id: z.string(), name: z.string(), email: z.string() }).nullable(),
   /**
    * When the salon's subscription lapses — the latest `Subscription.endDate`,
@@ -137,6 +144,25 @@ export const updateSalonProfileSchema = z
   );
 
 export type UpdateSalonProfileInput = z.infer<typeof updateSalonProfileSchema>;
+
+/**
+ * `PATCH /api/settings/security` — the salon's sign-in policy.
+ *
+ * A request of its own rather than a field on the profile: `name` and
+ * `lowStockThreshold` are required by `updateSalonProfileSchema`, so riding along
+ * would force the switch to resend unrelated fields it does not own, and a
+ * failure to load the profile would silently block a security decision.
+ *
+ * `strict()` and a required boolean: an omitted key is a mistake here, and it must
+ * not be read as "leave it alone" or as `false`.
+ */
+export const updateSalonSecuritySchema = z
+  .object({
+    requireStaffTwoFactor: z.boolean(),
+  })
+  .strict();
+
+export type UpdateSalonSecurityInput = z.infer<typeof updateSalonSecuritySchema>;
 
 /**
  * One row of the modules panel: what the catalogue offers and whether **this**

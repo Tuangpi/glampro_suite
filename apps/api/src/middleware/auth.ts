@@ -90,10 +90,11 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
       return;
     }
 
-    if (user.globalRole === "SUPER_ADMIN" && !user.twoFactorEnabled) {
-      next(unauthorized("Sign in again to verify your owner account.", "TWO_FACTOR_REQUIRED"));
-      return;
-    }
+    // No owner-only second-factor gate on ordinary requests. Owners hold the
+    // switch themselves (`services/auth.service.ts` → `twoFactorRequiredFor`), and
+    // the operations that need a second factor verify `twoFactorEnabled` where they
+    // run rather than every read refusing a password-only owner. `twoFactorEnabled`
+    // is still on the principal because those operations read it from there.
 
     // A signed claim is not permission to enter a different company. This also
     // invalidates old tokens after an account is reassigned to another tenant.
@@ -157,6 +158,9 @@ export async function auth(req: Request, res: Response, next: NextFunction): Pro
       realm: claims.realm,
       tokenVersion: user.tokenVersion,
       tenantStatus: status,
+      // Read on the same lookup the middleware already makes, so `GET /auth/me`
+      // can report it without a second query. It is the person's own setting.
+      twoFactorEnabled: user.twoFactorEnabled,
     };
 
     req.user = principal;

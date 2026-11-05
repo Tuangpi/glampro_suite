@@ -1,0 +1,22 @@
+-- A salon-wide staff sign-in policy, next to the per-person switch that already
+-- exists on `users.twoFactorEnabled`.
+--
+-- The owner could always turn their own second factor on; what was missing was a
+-- way for an owner to say "everyone at this salon, not just me". `false` by
+-- default so every existing salon keeps today's behaviour until an owner opts in
+-- from Settings → Privacy & security, which means this migration changes no
+-- sign-in for anyone who does not ask for it.
+--
+-- Enforcement lives in `services/auth.service.ts` and reads this column through
+-- `assertTenantMaySignIn`, the one helper `login`, the two-factor challenge and
+-- `refresh` all already call. A staff member holding a session from before the
+-- policy was switched on therefore stops renewing it within one access-token
+-- lifetime rather than being signed out mid-shift.
+--
+-- No backfill and no index: this is a single boolean read by primary key from a
+-- row the request has already loaded. The owner (`SUPER_ADMIN`) is excluded in
+-- code, not here — that account is always challenged, and a stored exclusion
+-- could drift from the role that decides it.
+
+-- AlterTable
+ALTER TABLE "tenants" ADD COLUMN "requireStaffTwoFactor" BOOLEAN NOT NULL DEFAULT false;

@@ -671,6 +671,15 @@ No migration, automatic sending, deployment or external AI authorization is impl
   No automatic evidence purge is configured. Events follow customer/tenant deletion;
   published notices remain tenant-owned. A broader retention/export policy remains
   operator-owned and must be settled before introducing automated retention jobs.
+- Consent while adding a customer (November 4, 2026): the Add-customer drawer shows
+  the current notice and both choices, and records them by calling the same audited
+  consent endpoint immediately after `POST /customers`. This is two requests, not a
+  transaction — the customer is created first, and if the consent call is refused the
+  drawer reports that the consent was not saved and stays open on the new record so
+  the consent panel can finish the job. A grant still requires the notice's
+  confirmation tick and revision 0 is the just-created record; with no notice
+  published the boxes stay disabled and the customer is saved with no consent.
+  Channel (WhatsApp/SMS) consent remains in the edit drawer only.
 - Treatment-consent deletion protection (TK2610-0025, October 22, 2026): user selected
   blocking treatment deletion whenever grant or decline evidence exists. The API
   checks inside a transaction with the same treatment-row lock as consent capture;
@@ -937,6 +946,21 @@ implemented. Auth route tests were inspected, not run in that review; mocked
 AuthContext tests prove local behavior only. Sources: `apps/api/src/services/auth.service.ts`,
 `apps/api/src/middleware/auth.ts`, `apps/api/src/routes/auth.routes.test.ts`,
 `apps/web/src/contexts/AuthContext.tsx`. Resolve security policy in P0-09.
+
+November 4 follow-up — **a forgotten password is recovered by a command, not a field.**
+`POST /api/staff/:id/password` sets a colleague's password for `SUPER_ADMIN` and
+`MANAGER`, and does inside one transaction what this ADR requires of any credential
+write: `tokenVersion` is incremented, every unrevoked `RefreshToken` for that person is
+revoked, and a `STAFF_PASSWORD_RESET` audit row is written with the target's role and no
+secret. `updateStaffSchema` still has no `password` field — the reset is a separate
+route with session semantics, so a profile PATCH cannot change a credential without
+ending the sessions that used it. Two limits make the manager half safe: a manager may
+recover `STAFF` and `CASHIER` rows only (never a peer manager's, never an owner's — a
+credential write is a takeover primitive, not an edit), and an owner target is held to
+`adminPasswordSchema`. A POS PIN-only row has no password to reset and answers 409
+`NO_WEB_LOGIN` rather than reporting a success that changed nothing. Source:
+`apps/api/src/routes/staff.routes.ts`, `apps/api/src/services/staff.service.ts`,
+`apps/web/src/components/staff/StaffFormDrawer.tsx`.
 
 ### ADR 0008
 
@@ -1282,6 +1306,39 @@ redemption UI beyond the payment sheet, and "one use = a set of services" packag
 (that needs its own model in P2-03). Sources: shared `constants.ts` / `sales.ts` /
 `customer.ts`, `sale.service` (`redeemPayments`, `reverseForVoid`), `customer.service`
 (`getCustomerHoldings`), `PaymentDialog`, and the migration above.
+
+### ADR 0021
+
+**Accepted November 5, 2026 — editing a staff member is a page; creating one stays a
+drawer.**
+A staff record carries **five independent save scopes**: profile (`PATCH /api/staff/:id`),
+password (`POST /api/staff/:id/password`), roster, payroll plans and commission rules. All
+five lived in one 576px drawer column, and only the profile had a pinned footer button, so
+payroll settings below the fold read as if "Save changes" saved them — the opposite of what
+the API does. The surface was the problem, not the writes.
+
+`/staff/:id` (`StaffProfile`) renders the record behind a Settings-style section rail
+(identity, login & security, working hours, payroll, commission rules; the last two are
+absent for anyone who may not configure employment terms). Each section holds exactly one
+save scope with its own button, and the page reuses the Settings rail verbatim — mobile
+`<select>`, desktop `<nav aria-label>`, `aria-current`, `?section=` deep links, and
+sections that mount on first visit and stay mounted while hidden so an unsaved draft
+survives a switch. Creation stays a drawer (`StaffFormDrawer`): one short form, one save,
+beside the list it appends to. Its "configure payroll after creation" continuation now
+navigates to `/staff/:id?section=payroll` instead of growing a second half.
+
+**No API or contract change.** `updateStaffSchema` was already partial, so one drawer
+PATCH becomes three small ones — identity, POS PIN (including `posPin: null` to revoke) and
+`disabled` — plus the existing password POST. `disabled` moved to its own account-status
+card because it is the archive (Q28) and its consequence (every session ends) is not a
+profile field's. The role rules are unchanged: a manager recovers `STAFF`/`CASHIER`
+passwords and never a peer manager's or an owner's, and payroll plans stay owner-writable
+while remaining manager-readable. Forms are keyed on `staff.id`, so a refetch after one
+save cannot write a draft over a record it never loaded — the drawer's `key` could not do
+that for an edit. Sources: `apps/web/src/pages/StaffProfile.tsx`,
+`components/staff/StaffIdentityForm.tsx`, `components/staff/StaffAccessCard.tsx`,
+`components/staff/StaffFormDrawer.tsx`, `pages/Staff.tsx`, `routes.tsx`; tests
+`pages/__tests__/StaffProfile.test.tsx` (14) and `pages/__tests__/Staff.test.tsx` (19).
 
 ## Design integration
 

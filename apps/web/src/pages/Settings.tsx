@@ -16,8 +16,8 @@
  */
 import { useState } from "react";
 import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
+import StaffSecurityPolicyCard from "@/components/settings/StaffSecurityPolicyCard";
 import MessagingCard from "@/components/settings/MessagingCard";
-import ResourcesCard from "@/components/settings/ResourcesCard";
 import CommissionRules from "@/components/settings/CommissionRules";
 import MyEarnings from "@/components/settings/MyEarnings";
 import PayrollPlans from "@/components/settings/PayrollPlans";
@@ -69,7 +69,7 @@ const SETTINGS_SECTIONS = [
   {
     id: "booking",
     label: "Booking & hours",
-    description: "Opening hours and the rooms or equipment you book.",
+    description: "Opening hours that decide when the salon can take a booking.",
   },
   {
     id: "team",
@@ -193,12 +193,7 @@ export default function Settings() {
                   </header>
                   {section.id === "salon" && <ProfileCard canEdit={canEdit} />}
                   {section.id === "outlets" && <Outlets />}
-                  {section.id === "booking" && (
-                    <>
-                      <OperatingHoursCard canEdit={canEdit} />
-                      <ResourcesCard canEdit={canEdit} />
-                    </>
-                  )}
+                  {section.id === "booking" && <OperatingHoursCard canEdit={canEdit} />}
                   {section.id === "team" && <TeamSettings canEdit={canEdit} />}
                   {section.id === "payroll" && <PayrollWorkspace />}
                   {section.id === "my-payroll" && <MyEarnings />}
@@ -206,6 +201,9 @@ export default function Settings() {
                   {section.id === "privacy" && (
                     <>
                       <TwoFactorCard />
+                      {/* The salon-wide policy is the owner's to set; a manager
+                          sees only their own account card. */}
+                      {user?.globalRole === "SUPER_ADMIN" && <StaffSecurityPolicyCard />}
                       <PrivacyNoticeCard canEdit={canEdit} />
                     </>
                   )}
@@ -454,7 +452,10 @@ function ModulesCard({
   isPending: boolean;
   isError: boolean;
 }) {
-  const { formatDate } = useSalonFormatting();
+  // Two columns, not three. `expiresAt` is the module grant's lapse date — a
+  // platform-console fact ("Expires", where an operator sees and sets it), not a
+  // renewal here: nothing renews automatically, and a salon cannot act on it.
+  // The Access badge already answers the only question this panel is for.
   const columns: TableColumn<ModuleSummary>[] = [
     {
       key: "name",
@@ -473,11 +474,6 @@ function ModulesCard({
         ) : (
           <Badge variant="neutral">Not purchased</Badge>
         ),
-    },
-    {
-      key: "expires",
-      header: "Renews",
-      cell: (row) => (row.expiresAt ? formatDate(row.expiresAt) : "—"),
     },
   ];
 

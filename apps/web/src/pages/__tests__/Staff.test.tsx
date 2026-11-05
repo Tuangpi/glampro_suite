@@ -11,9 +11,14 @@
  * - Every tile number is a **server-side count**, one question per state (ADR 0010).
  * - A stylist is offered no write affordance, because `requireRole` would refuse it.
  * - A 422 **or a 409** from the server puts its message on the control that caused it.
+ * - **Editing is a page, not this drawer.** The row offers the verb and this screen
+ *   hands over to `/staff/:id`, where the person's five separate save scopes live. What
+ *   is left here is the list, its counts and the create form — `StaffProfile.test.tsx`
+ *   covers the page.
  */
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useLocation } from "react-router";
 import { PASSWORD_MIN_LENGTH } from "@glampro_suite/shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,8 +27,6 @@ const {
   useStaffCount,
   useDepartments,
   useCreateStaff,
-  useUpdateStaff,
-  get,
   getErrorMessage,
   getValidationDetails,
 } = vi.hoisted(() => ({
@@ -31,19 +34,16 @@ const {
   useStaffCount: vi.fn(),
   useDepartments: vi.fn(),
   useCreateStaff: vi.fn(),
-  useUpdateStaff: vi.fn(),
-  get: vi.fn(),
   getErrorMessage: vi.fn<() => string>(() => "Something went wrong."),
   getValidationDetails: vi.fn<() => Record<string, string>>(() => ({})),
 }));
 
-vi.mock("@/lib/api", () => ({ get, getErrorMessage, getValidationDetails }));
+vi.mock("@/lib/api", () => ({ getErrorMessage, getValidationDetails }));
 
 vi.mock("@/hooks/useStaff", () => ({
   useStaffList,
   useStaffCount,
   useCreateStaff,
-  useUpdateStaff,
 }));
 
 vi.mock("@/hooks/useDepartments", () => ({ useDepartments }));
@@ -64,6 +64,7 @@ vi.mock("@/components/staff/StaffPayrollCreation", () => ({
     </button>
   ),
 }));
+
 vi.mock("@/components/staff/StaffRoster", () => ({
   default: () => <section aria-label="Working hours" />,
 }));
@@ -76,10 +77,16 @@ vi.mock("@/components/settings/PayrollPlans", () => ({
   ),
 }));
 
-/** The signed-in member of the salon. Only the role and the suspension matter here. */
+/**
+ * The signed-in member of the salon. The role and the suspension matter here: they
+ * decide which write affordances the list offers.
+ */
 const auth = vi.hoisted(() => ({
-  value: { user: { globalRole: "SUPER_ADMIN" }, isReadOnly: false } as {
-    user: { globalRole: string } | null;
+  value: {
+    user: { id: "signed-in-owner", globalRole: "SUPER_ADMIN" },
+    isReadOnly: false,
+  } as {
+    user: { id?: string; globalRole: string } | null;
     isReadOnly: boolean;
   },
 }));
@@ -132,10 +139,34 @@ function staffRow(overrides: Record<string, unknown> = {}) {
 }
 
 const createMutate = vi.fn();
-const updateMutate = vi.fn();
+
+/**
+ * The list inside a router, with a probe beside it.
+ *
+ * The screen needs a router because the row action navigates to `/staff/:id` rather than
+ * opening an editor, and the probe is how a test reads where it went: the element is
+ * rendered directly rather than through `<Routes>`, so a navigation changes the location
+ * without unmounting the list the test is still asserting against.
+ */
+function LocationProbe() {
+  const location = useLocation();
+  return <p data-testid="location">{`${location.pathname}${location.search}`}</p>;
+}
+
+function renderStaff() {
+  return render(
+    <MemoryRouter initialEntries={["/staff"]}>
+      <Staff />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+}
 
 beforeEach(() => {
-  auth.value = { user: { globalRole: "SUPER_ADMIN" }, isReadOnly: false };
+  auth.value = {
+    user: { id: "signed-in-owner", globalRole: "SUPER_ADMIN" },
+    isReadOnly: false,
+  };
   useStaffList.mockReturnValue(queryResult());
   // The tiles ask three different questions of the same endpoint, so the mock answers
   // by argument rather than by call order — which also proves the filters are the ones
@@ -146,19 +177,16 @@ beforeEach(() => {
     return countOf(11);
   });
   useCreateStaff.mockReturnValue({ mutateAsync: createMutate, isPending: false });
-  useUpdateStaff.mockReturnValue({ mutateAsync: updateMutate, isPending: false });
   useDepartments.mockReturnValue({ data: [], isPending: false });
-  get.mockReset().mockResolvedValue(staffRow());
   getErrorMessage.mockReturnValue("Something went wrong.");
   getValidationDetails.mockReturnValue({});
   createMutate.mockReset().mockResolvedValue({});
-  updateMutate.mockReset().mockResolvedValue({});
 });
 
 describe("the table", () => {
   it("creates a reasoned commission classification and initial plan atomically", async () => {
     const user = userEvent.setup();
-    render(<Staff />);
+    renderStaff();
     await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
     const dialog = within(await screen.findByRole("dialog"));
     await user.type(screen.getByLabelText("Name"), "Amy");
@@ -188,7 +216,7 @@ describe("the table", () => {
   });
   it("creates identity and an initial plan in one request, requiring a join date", async () => {
     const user = userEvent.setup();
-    render(<Staff />);
+    renderStaff();
     await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
     const dialog = within(await screen.findByRole("dialog"));
     await user.type(screen.getByLabelText("Name"), "Amy");
@@ -212,10 +240,10 @@ describe("the table", () => {
       payrollAssignment: { planId: "plan", expectedRevision: 3 },
     });
   });
-  it("creates once then continues payroll setup on the persisted identity", async () => {
+  it("creates once, then hands the payroll continuation to the new person's page", async () => {
     const user = userEvent.setup();
     createMutate.mockResolvedValue(staffRow());
-    render(<Staff />);
+    renderStaff();
     await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
     const submit = within(await screen.findByRole("dialog")).getByRole("button", {
       name: "Add staff member",
@@ -226,14 +254,13 @@ describe("the table", () => {
     await user.click(screen.getByLabelText("Configure payroll after creation"));
     await completePayrollSetup(user);
     await user.click(submit);
-    const payroll = await screen.findByRole("region", { name: "Staff payroll" });
-    expect(payroll).toHaveAttribute("data-staff-id", "u1");
-    expect(payroll).toHaveAttribute("data-can-edit", "true");
+
+    // The identity is created exactly once and the rest of payroll is not squeezed into
+    // the drawer: "continue" is a URL on the person's own page.
     expect(createMutate).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
-    await waitFor(() => expect(updateMutate).toHaveBeenCalled());
-    expect(updateMutate.mock.calls[0]?.[0].input).not.toHaveProperty("startDate");
-    expect(createMutate).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByTestId("location")).toHaveTextContent("/staff/u1?section=payroll"),
+    );
   });
   it("renders a row per person, with their role, their branches and their state", () => {
     useStaffList.mockReturnValue(
@@ -249,7 +276,7 @@ describe("the table", () => {
       ]),
     );
 
-    render(<Staff />);
+    renderStaff();
 
     const rows = screen.getAllByRole("row").slice(1); // drop the header row
     expect(rows).toHaveLength(2);
@@ -268,7 +295,7 @@ describe("the table", () => {
   it("shows the columns the model can fill, and no Shifts or Rating column", () => {
     useStaffList.mockReturnValue(listOf([staffRow()]));
 
-    render(<Staff />);
+    renderStaff();
 
     expect(screen.getByRole("columnheader", { name: "Role" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Position" })).toBeInTheDocument();
@@ -284,7 +311,7 @@ describe("the table", () => {
   it("offers no delete or archive action, because disabling is the archive", () => {
     useStaffList.mockReturnValue(listOf([staffRow()]));
 
-    render(<Staff />);
+    renderStaff();
 
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     expect(
@@ -297,7 +324,7 @@ describe("the tiles", () => {
   it("counts the whole team, one question per state", () => {
     useStaffList.mockReturnValue(listOf([staffRow()]));
 
-    render(<Staff />);
+    renderStaff();
 
     /** The tile's own box: the label's parent also holds the number. */
     const tiles = within(screen.getByRole("group", { name: "Team overview" }));
@@ -321,7 +348,7 @@ describe("the tiles", () => {
 
 describe("the status filter", () => {
   it("offers the three states the API's `status` accepts", () => {
-    render(<Staff />);
+    renderStaff();
 
     expect(screen.getByRole("button", { name: "All staff" })).toHaveAttribute(
       "aria-pressed",
@@ -333,7 +360,7 @@ describe("the status filter", () => {
 
   it("hands the chosen state to the server rather than filtering rows here", async () => {
     const user = userEvent.setup();
-    render(<Staff />);
+    renderStaff();
 
     await user.click(screen.getByRole("button", { name: "Disabled" }));
 
@@ -356,7 +383,7 @@ describe("the status filter", () => {
 describe("search", () => {
   it("hands the debounced term to the server rather than filtering rows here", async () => {
     const user = userEvent.setup();
-    render(<Staff />);
+    renderStaff();
 
     await user.type(screen.getByLabelText("Search staff"), "amara");
 
@@ -370,7 +397,7 @@ describe("who may write", () => {
   it("allows managers to edit but reserves creation for owner-audited setup", () => {
     auth.value = { user: { globalRole: "MANAGER" }, isReadOnly: false };
     useStaffList.mockReturnValue(listOf([staffRow()]));
-    render(<Staff />);
+    renderStaff();
     expect(screen.queryByRole("button", { name: "Add staff member" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
   });
@@ -378,7 +405,7 @@ describe("who may write", () => {
     auth.value = { user: { globalRole: "STAFF" }, isReadOnly: false };
     useStaffList.mockReturnValue(listOf([staffRow()]));
 
-    render(<Staff />);
+    renderStaff();
 
     expect(screen.queryByRole("button", { name: "Add staff member" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
@@ -390,7 +417,7 @@ describe("who may write", () => {
     auth.value = { user: { globalRole: "SUPER_ADMIN" }, isReadOnly: true };
     useStaffList.mockReturnValue(listOf([staffRow()]));
 
-    render(<Staff />);
+    renderStaff();
 
     expect(screen.getByRole("button", { name: "Add staff member" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Edit" })).not.toBeInTheDocument();
@@ -409,7 +436,7 @@ async function completePayrollSetup(user: ReturnType<typeof userEvent.setup>) {
 describe("the add-staff form", () => {
   it("does not submit an identity without explicit payroll classification", async () => {
     const user = userEvent.setup();
-    render(<Staff />);
+    renderStaff();
     await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
     const dialog = within(await screen.findByRole("dialog"));
     await user.type(screen.getByLabelText("Name"), "Amy");
@@ -442,7 +469,7 @@ describe("the add-staff form", () => {
   it("sends the name, email and password a login needs, and defaults to the least privileged role", async () => {
     const user = userEvent.setup();
     useStaffList.mockReturnValue(listOf([staffRow()]));
-    render(<Staff />);
+    renderStaff();
 
     const submit = await openCreateForm(user);
     await user.type(screen.getByLabelText("Name"), "Amara Okafor");
@@ -465,7 +492,7 @@ describe("the add-staff form", () => {
   it("creates a PIN-only colleague without email or password and sends their commission rate", async () => {
     const user = userEvent.setup();
     useStaffList.mockReturnValue(listOf([staffRow()]));
-    render(<Staff />);
+    renderStaff();
     const submit = await openCreateForm(user);
     await user.type(screen.getByLabelText("Name"), "PIN colleague");
     await user.click(screen.getByLabelText("POS PIN only (no email login)"));
@@ -487,7 +514,7 @@ describe("the add-staff form", () => {
   it("refuses to submit without a name, an email and a long-enough password", async () => {
     const user = userEvent.setup();
     useStaffList.mockReturnValue(listOf([staffRow()]));
-    render(<Staff />);
+    renderStaff();
 
     const submit = await openCreateForm(user);
     await user.click(submit);
@@ -510,7 +537,7 @@ describe("the add-staff form", () => {
       ],
       isPending: false,
     });
-    render(<Staff />);
+    renderStaff();
 
     const submit = await openCreateForm(user);
     await user.type(screen.getByLabelText("Name"), "Amara Okafor");
@@ -532,7 +559,7 @@ describe("the add-staff form", () => {
     getValidationDetails.mockReturnValue({ "body.email": "That email address is already in use." });
     createMutate.mockRejectedValue(new Error("Conflict"));
     useStaffList.mockReturnValue(listOf([staffRow()]));
-    render(<Staff />);
+    renderStaff();
 
     const submit = await openCreateForm(user);
     await user.type(screen.getByLabelText("Name"), "Amara Okafor");
@@ -545,51 +572,5 @@ describe("the add-staff form", () => {
       expect(email).toHaveAttribute("aria-invalid", "true");
     });
     expect(screen.getByText("That email address is already in use.")).toBeInTheDocument();
-  });
-});
-
-describe("the edit form", () => {
-  it("compares an edited start date against the date originally loaded", async () => {
-    const user = userEvent.setup();
-    useStaffList.mockReturnValue(listOf([staffRow()]));
-    render(<Staff />);
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    await user.clear(screen.getByLabelText("Start date"));
-    await user.type(screen.getByLabelText("Start date"), "2026-09-01");
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
-    await waitFor(() =>
-      expect(updateMutate).toHaveBeenCalledWith({
-        id: "u1",
-        input: expect.objectContaining({
-          startDate: "2026-09-01",
-          expectedStartDate: "2021-03-04",
-        }),
-      }),
-    );
-  });
-  it("has no password box and no editable email, and disables the account instead of deleting it", async () => {
-    const user = userEvent.setup();
-    useStaffList.mockReturnValue(listOf([staffRow()]));
-    render(<Staff />);
-
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    const dialog = await screen.findByRole("dialog");
-    within(dialog).getByText("amara@salon.test"); // shown, so the login is still visible
-
-    // Changing a password is POST /api/auth/change-password, which ends every session
-    // (ADR 0007), and `updateStaffSchema` has no `email` field at all.
-    expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
-
-    await user.click(screen.getByLabelText("Disabled"));
-    await user.click(within(dialog).getByRole("button", { name: "Save changes" }));
-
-    await waitFor(() => {
-      expect(updateMutate).toHaveBeenCalledWith({
-        id: "u1",
-        input: expect.objectContaining({ disabled: true }),
-      });
-    });
   });
 });

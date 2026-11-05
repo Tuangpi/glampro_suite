@@ -1,8 +1,16 @@
 /**
  * Staff — handoff screen 09.
  *
- * Working hours are managed in the staff editor rather than a summary column.
- * Ratings remain absent because the application has no reviews model.
+ * **This screen lists and creates; it does not edit.** A staff record carries five
+ * independent save scopes — profile, POS PIN and password, roster, payroll and commission
+ * rules — and they were being served by one drawer column with a single pinned "Save
+ * changes" button, which made payroll settings below the fold look as if that button
+ * saved them. Editing is therefore its own page, `/staff/:id`, with a section rail
+ * (`StaffProfile`). Creation stays a drawer: it is one short form, it belongs beside the
+ * list it appends to, and it has a single save.
+ *
+ * Working hours are managed on that page rather than as a summary column. Ratings remain
+ * absent because the application has no reviews model.
  *
  * **Every tile is a server-side count, not a count of the rows on screen** (ADR 0010).
  * The three tiles ask `?status=` with `pageSize=1` rather than counting what happens to
@@ -16,11 +24,12 @@
  *
  * **There is no delete.** `disabled` is the archive: a disabled user keeps their
  * appointments and their commission history, which is why the Phase 4 criterion's third
- * verb lives here and not on customers (Q28).
+ * verb lives on that page and not on customers (Q28).
  */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router";
 
-import type { StaffDetail, StaffSummary } from "@glampro_suite/shared";
+import type { StaffSummary } from "@glampro_suite/shared";
 
 import { Briefcase, CheckCircle, Search, Users } from "@/components/icons";
 import StaffCard from "@/components/staff/StaffCard";
@@ -36,7 +45,7 @@ import Table, { type TableColumn } from "@/components/ui/Table";
 import { ROLE_BADGE, ROLE_LABELS, STATUS_FILTERS, type StaffStatusFilter } from "@/constants/staff";
 import { useAuth } from "@/contexts/AuthContext";
 import { useStaffCount, useStaffList } from "@/hooks/useStaff";
-import { get, getErrorMessage } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
 const PAGE_SIZE = 20;
@@ -44,12 +53,12 @@ const PAGE_SIZE = 20;
 export default function Staff() {
   const { formatDateTime } = useSalonFormatting();
   const { user, isReadOnly } = useAuth();
+  const navigate = useNavigate();
 
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<StaffStatusFilter>("all");
   const [page, setPage] = useState(1);
-  const [editing, setEditing] = useState<StaffDetail | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Typing should not fire a query per keystroke, but the box must still feel
@@ -80,23 +89,31 @@ export default function Staff() {
   const statusLabel = STATUS_FILTERS.find((filter) => filter.value === status)?.label ?? "";
 
   function openCreate() {
-    setEditing(null);
     setDrawerOpen(true);
   }
 
-  async function openEdit(person: StaffSummary) {
-    // A list row is a summary and the form needs the whole record, so opening the
-    // editor is a second read rather than a re-use of the row. It also reads the
-    // `disabled` flag as it stands now, which is what the form's checkbox edits.
-    setEditing(await get<StaffDetail>(`/staff/${person.id}`));
-    setDrawerOpen(true);
+  /**
+   * Editing is a page, not a drawer (`StaffProfile`).
+   *
+   * The list row is a summary, so the page does its own second read; navigating rather
+   * than fetching here also means a stop at payroll is a real URL — it can be linked,
+   * refreshed and bookmarked, which a drawer could not be.
+   */
+  function openEdit(person: StaffSummary) {
+    navigate(`/staff/${person.id}`);
   }
 
   const columns: TableColumn<StaffSummary>[] = [
     {
       key: "person",
       header: "Staff",
-      cell: (row) => <StaffCard name={row.name} email={row.email} />,
+      cell: (row) => (
+        <StaffCard
+          name={row.name}
+          email={row.email}
+          href={`/staff/${encodeURIComponent(row.id)}`}
+        />
+      ),
     },
     {
       key: "role",
@@ -133,7 +150,7 @@ export default function Staff() {
             header: "Edit",
             align: "right" as const,
             cell: (row: StaffSummary) => (
-              <Button variant="secondary" size="sm" onClick={() => void openEdit(row)}>
+              <Button variant="secondary" size="sm" onClick={() => openEdit(row)}>
                 Edit
               </Button>
             ),
@@ -325,12 +342,11 @@ export default function Staff() {
       </section>
 
       <StaffFormDrawer
-        // Remounting on open and on record change is what clears the form. An effect
-        // copying props into state would render twice on every open, and resetting
-        // `editing` alone would leave a stale edit behind on reopen.
-        key={`${editing?.id ?? "new"}:${drawerOpen}`}
+        // Remounting on open is what clears the form. An effect copying props into state
+        // would render twice on every open, and there is no record to carry across any
+        // more: editing left this screen for `/staff/:id`.
+        key={String(drawerOpen)}
         open={drawerOpen}
-        staff={editing}
         onClose={() => setDrawerOpen(false)}
       />
     </div>

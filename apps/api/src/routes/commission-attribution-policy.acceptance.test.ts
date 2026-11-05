@@ -103,8 +103,12 @@ test(
       assert.equal((await call(staffToken)).status, 403);
       assert.equal((await call(staffToken, input)).status, 403);
       assert.equal((await call(token(manager, "platform"))).status, 403);
-      assert.equal((await call(ownerToken)).body.code, "TWO_FACTOR_REQUIRED");
-      assert.equal((await call(ownerToken, input)).body.code, "TWO_FACTOR_REQUIRED");
+      // An owner who has not verified may read the policy, but publishing it is a
+      // payout rule and still needs the verified account.
+      assert.equal((await call(ownerToken)).status, 200);
+      const unverifiedPublish = await call(ownerToken, input);
+      assert.equal(unverifiedPublish.status, 403);
+      assert.match(unverifiedPublish.body.message, /Only a verified salon owner/);
       assert.deepEqual((await call(admin)).body.data, optional);
       assert.equal((await call(admin, { ...input, tenantId: b.id })).status, 422);
       assert.equal((await call(admin, { ...input, reason: " " })).status, 422);

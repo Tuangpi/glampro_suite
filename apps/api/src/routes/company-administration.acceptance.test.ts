@@ -159,15 +159,6 @@ test(
         (await call(root + "/subscriptions", operator, { ...period, amount: "1.234" })).status,
         422,
       );
-      assert.equal(
-        (
-          await call(root + "/subscriptions", operator, {
-            ...period,
-            startDate: new Date(now + day).toISOString(),
-          })
-        ).status,
-        400,
-      );
       const recorded = await Promise.all([
         call(root + "/subscriptions", operator, period),
         call(root + "/subscriptions", operator, period),
@@ -179,6 +170,29 @@ test(
       );
       assert.equal(await runAsTenant(a.id, () => prisma.subscription.count()), 1);
       assert.equal(await runAsTenant(b.id, () => prisma.subscription.count()), 0);
+      // A start in the future is accepted: scheduling the next period is exactly
+      // what an operator does on renewal. It begins the day `period` ends, which
+      // the overlap check allows because it compares with strict inequalities.
+      const scheduled = {
+        ...period,
+        startDate: new Date(now + 30 * day).toISOString(),
+        endDate: new Date(now + 60 * day).toISOString(),
+        reason: "Scheduled renewal",
+      };
+      assert.equal((await call(root + "/subscriptions", operator, scheduled)).status, 201);
+      // Only an end that has already passed is refused, because a period that is
+      // over cannot extend anyone's access.
+      assert.equal(
+        (
+          await call(root + "/subscriptions", operator, {
+            ...scheduled,
+            startDate: new Date(now - 60 * day).toISOString(),
+            endDate: new Date(now - 30 * day).toISOString(),
+          })
+        ).status,
+        400,
+      );
+      assert.equal(await runAsTenant(a.id, () => prisma.subscription.count()), 2);
       assert.equal(
         (
           await call(root + "/modules", operator, {

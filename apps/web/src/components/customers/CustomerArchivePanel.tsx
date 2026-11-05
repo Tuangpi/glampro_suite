@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { archiveCustomerSchema, type CustomerDetail } from "@glampro_suite/shared";
 import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
 import { useAuth } from "@/contexts/AuthContext";
@@ -43,33 +44,40 @@ export default function CustomerArchivePanel({
     }
   }
   return (
-    <section className="rounded-card border border-line p-4" aria-label="Customer archival">
-      <h3 className="font-bold">Customer archival</h3>
-      <p>
-        Archival hides this customer from default lists and preserves all evidence and history. It
-        is not erasure, does not replace retention review, and does not block every booking, POS or
-        mobile action.
-      </p>
-      {row.archivedAt ? (
-        <div role="status">
-          <p>Archived {formatDateTime(row.archivedAt)}</p>
-          <p>Archived by account: {row.archivedById}</p>
-          <p className="whitespace-pre-wrap break-words">Archive reason: {row.archiveReason}</p>
-        </div>
-      ) : (
-        <Button
-          disabled={!canManage || refreshing}
-          onClick={() => {
-            setOpen(true);
-            setError(null);
-          }}
-        >
-          Archive customer
-        </Button>
-      )}
-      {!canManage && !row.archivedAt ? (
-        <p>Only owners and managers in a writable salon can archive customers.</p>
-      ) : null}
+    <Card title="Archival" label="Archival">
+      <div className="flex flex-col gap-3 py-1">
+        <p className="text-sm text-ink-muted">
+          Archival hides this customer from default lists and preserves all evidence and history. It
+          is not erasure, does not replace retention review, and does not block every booking, POS
+          or mobile action.
+        </p>
+        {row.archivedAt ? (
+          <div role="status" className="flex flex-col gap-1 rounded-md bg-surface-2 px-3 py-2">
+            <p className="text-sm font-bold text-ink">Archived {formatDateTime(row.archivedAt)}</p>
+            <p className="text-sm text-ink-body">Archived by account: {row.archivedById}</p>
+            <p className="text-sm whitespace-pre-wrap break-words text-ink-body">
+              Archive reason: {row.archiveReason}
+            </p>
+          </div>
+        ) : (
+          <Button
+            variant="danger"
+            className="w-full"
+            disabled={!canManage || refreshing}
+            onClick={() => {
+              setOpen(true);
+              setError(null);
+            }}
+          >
+            Archive customer
+          </Button>
+        )}
+        {!canManage && !row.archivedAt ? (
+          <p className="text-xs text-ink-muted">
+            Only owners and managers in a writable salon can archive customers.
+          </p>
+        ) : null}
+      </div>
       <Modal
         open={open && canManage && !row.archivedAt}
         title="Archive customer?"
@@ -101,6 +109,6 @@ export default function CustomerArchivePanel({
           Confirm archive
         </Button>
       </Modal>
-    </section>
+    </Card>
   );
 }

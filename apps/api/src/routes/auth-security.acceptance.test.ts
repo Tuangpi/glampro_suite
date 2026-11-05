@@ -101,6 +101,17 @@ test(
           });
         }
       });
+      // Owners hold their own switch: a fresh owner account signs in with a
+      // password, enrols, and is challenged from then on. See
+      // `twoFactorRequiredFor` — the salon's staff policy does not reach them.
+      const ownerSession = await post("login", { email: owner, password });
+      assert.equal(ownerSession.status, 200);
+      assert.equal(ownerSession.body.data.requiresTwoFactor, undefined);
+      const ownerToken = ownerSession.body.data.accessToken;
+      assert.ok(ownerToken);
+      assert.equal((await post("two-factor/enable", {}, ownerToken)).status, 200);
+      assert.equal((await post("two-factor/confirm", { code: code() }, ownerToken)).status, 200);
+
       const challenge = await post("login", { email: owner, password });
       assert.equal(challenge.status, 200);
       assert.equal(challenge.body.data.requiresTwoFactor, true);
@@ -115,7 +126,11 @@ test(
       const token = verified.body.data.accessToken;
       assert.equal((await me(token)).status, 200);
       assert.equal((await post("two-factor/verify-login", verify)).status, 401);
-      assert.equal((await post("two-factor/disable", {}, token)).status, 403);
+      // The owner may turn their own factor off, and the session survives it: what
+      // still demands a second factor is the guarded payroll and prepaid writes, not
+      // the sign-in.
+      assert.equal((await post("two-factor/disable", {}, token)).status, 200);
+      assert.equal((await me(token)).status, 200);
       assert.equal(
         (
           await post(
@@ -168,7 +183,70 @@ test(
         200,
       );
       assert.equal((await post("two-factor/disable", {}, staffToken)).status, 200);
-      assert.equal(messages.length, 3);
+      // Owner enrolment, owner challenge, staff enrolment, staff challenge.
+      assert.equal(messages.length, 4);
+
+      // A salon that requires a second factor of everyone. This block proves the
+      // two places sign-in actually consults the policy: a session issued before
+      // it stops renewing, and a fresh sign-in is challenged even though the
+      // person never enrolled. The challenge below sends one more message, so the
+      // receipt checks that follow count from four.
+      const policyStaff = "policy.staff@sec01.test";
+      await runAsPlatform(async () => {
+        await prisma.user.create({
+          data: {
+            tenantId,
+            email: policyStaff,
+            name: "Policy Staff",
+            globalRole: "STAFF",
+            passwordHash: await hashPassword(password),
+          },
+        });
+      });
+      const beforePolicy = await post("login", { email: policyStaff, password });
+      assert.equal(beforePolicy.status, 200, "the policy is off, so no challenge is owed");
+      assert.equal(beforePolicy.body.data.requiresTwoFactor, undefined);
+      const beforeToken = beforePolicy.body.data.accessToken;
+
+      await runAsPlatform(() =>
+        prisma.tenant.update({
+          where: { id: tenantId },
+          data: { requireStaffTwoFactor: true },
+        }),
+      );
+
+      // The access token it already holds keeps working until it expires; the gate
+      // is renewal, not retroactive revocation.
+      assert.equal((await me(beforeToken)).status, 200);
+      const blockedRefresh = await post("refresh", {
+        refreshToken: beforePolicy.body.data.refreshToken,
+      });
+      assert.equal(blockedRefresh.status, 401);
+      assert.equal(blockedRefresh.body.code, "TWO_FACTOR_REQUIRED");
+
+      const challenged = await post("login", { email: policyStaff, password });
+      assert.equal(challenged.status, 200);
+      assert.equal(challenged.body.data.requiresTwoFactor, true);
+      assert.equal(challenged.body.data.accessToken, undefined);
+      const policySession = await post("two-factor/verify-login", {
+        email: policyStaff,
+        challenge: challenged.body.data.challenge,
+        code: code(),
+      });
+      assert.equal(policySession.status, 200);
+      const policyToken = policySession.body.data.accessToken;
+      const policyProfile = await me(policyToken);
+      assert.equal(policyProfile.status, 200);
+      assert.equal(
+        ((await policyProfile.json()) as { data: { user: { twoFactorEnabled: boolean } } }).data
+          .user.twoFactorEnabled,
+        true,
+      );
+
+      // The policy holds the switch on: one member cannot opt out of it alone.
+      const refusedDisable = await post("two-factor/disable", {}, policyToken);
+      assert.equal(refusedDisable.status, 403);
+      assert.equal(refusedDisable.body.code, "TWO_FACTOR_REQUIRED");
 
       await t.test(
         "cashier receipt HTTP delivery uses stored values through loopback SMTP",
@@ -256,7 +334,9 @@ test(
           assert.equal(sent.body.data.sent, true);
           assert.equal(sent.body.data.to, recipient);
           assert.ok(sent.body.data.messageId);
-          assert.equal(messages.length, 4);
+          // Owner enrolment, owner and staff challenges, one policy challenge, then
+          // this receipt.
+          assert.equal(messages.length, 6);
           // Nodemailer's quoted-printable soft wraps are not receipt line breaks.
           const captured = messages.at(-1)!.replace(/=\r\n/g, "");
           assert.match(captured, /To: receipt@sec01.test/);
@@ -280,18 +360,18 @@ test(
             ),
           );
           assert.equal((await email(sale.id, recipient)).status, 200);
-          assert.equal(messages.length, 5);
+          assert.equal(messages.length, 7);
           assert.match(messages.at(-1)!.replace(/=\r\n/g, ""), /REFUND RECORDED: S\$90\.00/);
           assert.equal((await email(sale.id, "invalid-address")).status, 422);
           assert.equal((await email(sale.id, recipient, "invalid-token")).status, 401);
-          assert.equal(messages.length, 5, "refused requests must not send email");
+          assert.equal(messages.length, 7, "refused requests must not send email");
 
           // Stop the capture transport: a refused SMTP connection must not claim delivery.
           await new Promise<void>((resolve) => smtp.close(() => resolve()));
           const failed = await email(sale.id, recipient);
           assert.equal(failed.status, 503);
           assert.equal(failed.body.code, "EMAIL_SEND_FAILED");
-          assert.equal(messages.length, 5);
+          assert.equal(messages.length, 7);
           const current = await scoped(() => getSale(sale.id));
           assert.equal(current.refundAmount, "90.00");
           const content = await scoped(async () =>
@@ -303,7 +383,16 @@ test(
     } finally {
       http.closeAllConnections();
       await new Promise<void>((resolve) => http.close(() => resolve()));
-      await runAsPlatform(() => prisma.tenant.deleteMany({ where: { id: tenantId } }));
+      // The receipt in this tenant froze payroll economics on its sale line, and the
+      // append-only guard refuses to delete that row. Use the same break-glass the
+      // operator purge uses; `true` keeps it transaction-local so a pooled connection
+      // cannot carry it into a later request.
+      await runAsPlatform(() =>
+        prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT set_config('glampro.purge_tenant', ${tenantId}, true)`;
+          await tx.$executeRaw`DELETE FROM tenants WHERE id = ${tenantId}`;
+        }),
+      );
       await prisma.$disconnect();
       if (smtp.listening) await new Promise<void>((resolve) => smtp.close(() => resolve()));
     }

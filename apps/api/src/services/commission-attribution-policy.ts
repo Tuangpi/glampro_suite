@@ -32,6 +32,11 @@ export async function publishCommissionAttributionPolicy(
     const actor = await tx.user.findFirst({ where: { id: actorId, disabled: false } });
     if (!actor || !["MANAGER", "SUPER_ADMIN"].includes(actor.globalRole))
       throw forbidden("Only salon administrators and managers can publish attribution policy.");
+    // Attribution rules decide what the salon pays out, so an owner publishing them
+    // must still be the verified account — the same call `package.service.ts` makes
+    // for commission settings. Managers have no second factor of their own to give.
+    if (actor.globalRole === "SUPER_ADMIN" && !actor.twoFactorEnabled)
+      throw forbidden("Only a verified salon owner can publish attribution policy.");
     const latest = await tx.commissionAttributionPolicy.findFirst({
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     });

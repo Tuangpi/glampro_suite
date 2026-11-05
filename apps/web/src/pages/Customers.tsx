@@ -251,6 +251,10 @@ export default function Customers() {
         open={drawerOpen}
         customer={editing}
         onClose={() => setDrawerOpen(false)}
+        // A create whose consent step failed lands here: the id changes the key
+        // above, so the drawer remounts on the new record with its consent panel
+        // instead of closing over a choice that was never recorded.
+        onCreated={setEditing}
       />
     </div>
   );

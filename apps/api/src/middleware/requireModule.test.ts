@@ -62,6 +62,7 @@ function appFor(code: string, scope: "tenant" | "platform" | "none"): Express {
       globalRole: "MANAGER",
       realm: "web",
       tokenVersion: 0,
+      twoFactorEnabled: false,
     };
 
     if (scope === "tenant") {

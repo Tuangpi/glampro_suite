@@ -5,9 +5,11 @@ import { verifyPosPin } from "../services/pos-pin.service.js";
 import {
   createStaffSchema,
   idParamSchema,
+  resetStaffPasswordSchema,
   staffListQuerySchema,
   updateStaffSchema,
   type CreateStaffInput,
+  type ResetStaffPasswordInput,
   type StaffListQuery,
   type UpdateStaffInput,
 } from "@glampro_suite/shared";
@@ -16,7 +18,13 @@ import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js"
 import { requireModule } from "../middleware/requireModule.js";
 import { validate, validated } from "../middleware/validate.js";
 import { unauthorized } from "../lib/http-error.js";
-import { createStaff, getStaff, listStaff, updateStaff } from "../services/staff.service.js";
+import {
+  createStaff,
+  getStaff,
+  listStaff,
+  resetStaffPassword,
+  updateStaff,
+} from "../services/staff.service.js";
 
 /**
  * Staff — handoff screen 09.
@@ -28,6 +36,12 @@ import { createStaff, getStaff, listStaff, updateStaff } from "../services/staff
  * `SUPER_ADMIN` because it includes audited payroll classification. A staff member
  * cannot create a colleague, rename a job title or disable an account with this API,
  * and the rule now has an integration test rather than an assertion in a doc.
+ *
+ * `POST /:id/password` is the one credential route, and the one place a manager may
+ * touch a login: recovering a forgotten password is a front-desk problem, so
+ * `MANAGER` is admitted — but only against `STAFF` and `CASHIER` rows, never a peer
+ * manager and never an owner. That limit lives in the service, where the target's
+ * role is known.
  *
  * `requireModule("staff")` is the entitlement boundary; `requireWritableTenant()`
  * keeps a `SUSPENDED` salon read-only (`docs/saas/TENANCY.md` §6). The order matters
@@ -111,6 +125,48 @@ staffRouter.post(
 
       const input = validated<CreateStaffInput>(req, "body");
       res.status(201).json({ data: await createStaff(input) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * Setting another person's password — the recovery path for a forgotten login.
+ *
+ * `SUPER_ADMIN` **and** `MANAGER`, unlike creation: a manager already edits profiles
+ * here, and "the new stylist cannot sign in" is a front-desk problem that should not
+ * wait for the owner. The limits that make that safe live in the service rather than
+ * in the role list: a manager may recover `STAFF` and `CASHIER` accounts only, never
+ * a peer manager's and never an owner's, because a credential write is a takeover
+ * primitive rather than an edit.
+ *
+ * `POST` rather than a `PATCH` field because it is a command with session semantics —
+ * it bumps `tokenVersion` and revokes the target's refresh tokens, which is why
+ * `updateStaffSchema` still has no `password` at all. The response mirrors
+ * `/api/auth/change-password`, in the third person: the caller keeps their session,
+ * the target loses theirs.
+ */
+staffRouter.post(
+  "/:id/password",
+  auth,
+  requireModule("staff"),
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(idParamSchema, "params"),
+  validate(resetStaffPasswordSchema),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+
+      const { id } = validated<{ id: string }>(req, "params");
+      const input = validated<ResetStaffPasswordInput>(req, "body");
+      await resetStaffPassword(id, input, req.user.globalRole);
+
+      res.status(200).json({
+        data: { success: true },
+        message: "Password set. They were signed out on every device.",
+      });
     } catch (error) {
       next(error);
     }

@@ -173,14 +173,40 @@ export const createStaffSchema = z
 export type CreateStaffInput = z.infer<typeof createStaffSchema>;
 
 /**
+ * Setting another person's password — the recovery path for a forgotten login.
+ *
+ * Two flows own a credential, and this is the second one. The first is the person's
+ * own `POST /api/auth/change-password`, where they prove they know the current
+ * password. This is the colleague case: the password is gone, so someone with
+ * `SUPER_ADMIN` or `MANAGER` has to hand them a working login again.
+ *
+ * **Not a field on `updateStaffSchema`.** A profile PATCH has no session semantics,
+ * so a password there would change the secret without ending the sessions that used
+ * the old one — the back door [ADR 0007](../../../../PROJECT.md#adr-0007) warns
+ * about. `POST /api/staff/:id/password` bumps `tokenVersion` and revokes the
+ * target's refresh tokens in the same transaction instead.
+ *
+ * The floor is `PASSWORD_MIN_LENGTH`, matching creation rather than
+ * `adminPasswordSchema`, because the stricter owner policy depends on the
+ * **target's** role — something a request body cannot declare. The service applies
+ * `adminPasswordSchema` when the target is an owner.
+ */
+export const resetStaffPasswordSchema = z.object({
+  password: z.string().min(PASSWORD_MIN_LENGTH, "Password is too short").max(200),
+});
+
+export type ResetStaffPasswordInput = z.infer<typeof resetStaffPasswordSchema>;
+
+/**
  * Updating a staff member's profile.
  *
- * **`password` is absent by design.** Changing a password goes through
- * `POST /api/auth/change-password`, which bumps `tokenVersion` and ends every
- * session ([ADR 0007](../../../../PROJECT.md#adr-0007)).
- * A password field on a general profile-update endpoint would let a manager
- * change someone's password without ending their sessions — a back door around
- * the one flow that does it correctly.
+ * **`password` is absent by design.** Two flows own a credential: the person's own
+ * `POST /api/auth/change-password`, and `POST /api/staff/:id/password` for a
+ * forgotten one (`resetStaffPasswordSchema`). Both bump `tokenVersion` and end every
+ * session ([ADR 0007](../../../../PROJECT.md#adr-0007)). A password field on a
+ * general profile-update endpoint would let a profile PATCH change someone's
+ * password without ending their sessions — a back door around the flows that do it
+ * correctly.
  *
  * `disabled` is a first-class field, not a delete: a disabled user keeps their
  * appointments and their commission history.

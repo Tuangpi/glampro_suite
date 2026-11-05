@@ -21,6 +21,7 @@ import type {
   SalonProfile,
   UpdateSalonOperatingHoursInput,
   UpdateSalonProfileInput,
+  UpdateSalonSecurityInput,
 } from "@glampro_suite/shared";
 
 import { notFound, badRequest } from "../lib/http-error.js";
@@ -65,6 +66,7 @@ export async function getSalonProfile(): Promise<SalonProfile> {
       onlineBookingEnabled: true,
       onlineDepositAmount: true,
       onlineNoShowFee: true,
+      requireStaffTwoFactor: true,
       createdAt: true,
 
       updatedAt: true,
@@ -132,6 +134,66 @@ export async function updateSalonProfile(input: UpdateSalonProfileInput): Promis
   }
 
   await prisma.tenant.update({ where: { id: tenantId }, data: { ...input } });
+  return getSalonProfile();
+}
+
+/**
+ * `PATCH /api/settings/security` — the salon's staff sign-in policy.
+ *
+ * The write has two halves. `tenants.requireStaffTwoFactor` is what sign-in
+ * actually reads (`services/auth.service.ts` → `assertTenantMaySignIn`), and an
+ * `audit_logs` row records who changed it and what it was before. A policy that
+ * locks a whole team out at the next sign-in is exactly the kind of setting that
+ * gets argued about after an incident, so it does not get to change silently.
+ *
+ * Two deliberate non-effects:
+ *   - Turning it **off** leaves `users.twoFactorEnabled` alone. People who
+ *     enrolled keep their second factor, which is what makes switching the policy
+ *     back on a decision rather than a migration.
+ *   - Re-saving the stored value writes nothing, not even an audit row. An
+ *     idempotent save from a stale tab is not a security event, and a trail of
+ *     no-ops stops being read.
+ *
+ * The route adds `requireRole("SUPER_ADMIN")` and `requireWritableTenant()`; this
+ * function trusts the boundary rather than re-implementing it, the same way
+ * `updateSalonProfile` does.
+ */
+export async function updateSalonSecurityPolicy(
+  input: UpdateSalonSecurityInput,
+  actorUserId: string,
+): Promise<SalonProfile> {
+  const tenantId = requireTenantId();
+
+  await prisma.$transaction(async (tx) => {
+    const current = await tx.tenant.findUnique({
+      where: { id: tenantId },
+      select: { requireStaffTwoFactor: true },
+    });
+    if (!current) throw notFound("This salon's record could not be found.", "TENANT_NOT_FOUND");
+    if (current.requireStaffTwoFactor === input.requireStaffTwoFactor) return;
+
+    await tx.tenant.update({
+      where: { id: tenantId },
+      data: { requireStaffTwoFactor: input.requireStaffTwoFactor },
+    });
+
+    await tx.auditLog.create({
+      data: {
+        tenantId,
+        action: "STAFF_TWO_FACTOR_POLICY_CHANGED",
+        targetType: "Tenant",
+        targetId: tenantId,
+        // `audit_logs` has no `actorUserId` column, so the actor travels in
+        // `metadata` — the same shape `staff.service.ts` uses for a password reset.
+        metadata: {
+          actorUserId,
+          requireStaffTwoFactor: input.requireStaffTwoFactor,
+          previousRequireStaffTwoFactor: current.requireStaffTwoFactor,
+        },
+      },
+    });
+  });
+
   return getSalonProfile();
 }
 

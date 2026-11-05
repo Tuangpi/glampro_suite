@@ -319,6 +319,9 @@ describe("web session endpoints", { skip: databaseUrl ? false : "DATABASE_URL is
 
       assert.equal(profile.user.email, `owner@${DOMAIN}`);
       assert.equal(profile.user.tenantId, TENANTS.active);
+      // The account-security card draws its switch from this flag, so the profile
+      // reports the same row `middleware/auth.ts` already re-read.
+      assert.equal(profile.user.twoFactorEnabled, false);
       assert.equal(profile.tenant.id, TENANTS.active);
       assert.equal(profile.tenant.status, "ACTIVE");
 

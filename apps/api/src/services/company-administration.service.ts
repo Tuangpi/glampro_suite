@@ -132,10 +132,11 @@ export async function recordCompanySubscription(
 ) {
   const startDate = new Date(input.startDate),
     endDate = new Date(input.endDate);
-  if (startDate > new Date() || endDate <= new Date())
-    throw badRequest(
-      "Record a current period: start must not be in the future and end must be in the future.",
-    );
+  // A start in the future is allowed: scheduling the next period is exactly what
+  // an operator does on renewal. Only an end that has already passed is refused,
+  // because a period that is over cannot extend anyone's access. `end > start` is
+  // the schema's rule, so it is not repeated here.
+  if (endDate <= new Date()) throw badRequest("Choose a period end in the future.");
   await runAsTenant(id, () =>
     prisma.$transaction(async (tx) => {
       await lockCompany(tx, id);

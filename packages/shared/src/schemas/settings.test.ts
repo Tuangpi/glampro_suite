@@ -7,6 +7,7 @@ import {
   salonProfileSchema,
   salonTimeZoneSchema,
   updateSalonProfileSchema,
+  updateSalonSecuritySchema,
 } from "./settings.js";
 
 describe("salon localisation contracts", () => {
@@ -74,6 +75,7 @@ describe("salon profile contract", () => {
     onlineBookingEnabled: false,
     onlineDepositAmount: 0,
     onlineNoShowFee: 0,
+    requireStaffTwoFactor: false,
     owner: null,
     subscriptionEndsAt: "2027-03-31T00:00:00.000Z",
     createdAt: "2026-01-01T00:00:00.000Z",
@@ -92,6 +94,39 @@ describe("salon profile contract", () => {
     const withoutExpiry: Record<string, unknown> = { ...profile };
     delete withoutExpiry.subscriptionEndsAt;
     assert.equal(salonProfileSchema.safeParse(withoutExpiry).success, false);
+  });
+
+  it("reports the salon's staff second-factor policy alongside the profile", () => {
+    assert.equal(salonProfileSchema.parse(profile).requireStaffTwoFactor, false);
+    assert.equal(
+      salonProfileSchema.parse({ ...profile, requireStaffTwoFactor: true }).requireStaffTwoFactor,
+      true,
+    );
+  });
+});
+
+describe("salon security policy contract", () => {
+  it("accepts an explicit yes or no", () => {
+    assert.deepEqual(updateSalonSecuritySchema.parse({ requireStaffTwoFactor: true }), {
+      requireStaffTwoFactor: true,
+    });
+    assert.deepEqual(updateSalonSecuritySchema.parse({ requireStaffTwoFactor: false }), {
+      requireStaffTwoFactor: false,
+    });
+  });
+
+  it("refuses a missing or non-boolean value rather than defaulting the policy", () => {
+    for (const body of [{}, { requireStaffTwoFactor: "yes" }, { requireStaffTwoFactor: null }]) {
+      assert.equal(updateSalonSecuritySchema.safeParse(body).success, false, JSON.stringify(body));
+    }
+  });
+
+  it("refuses fields the policy screen does not own", () => {
+    assert.equal(
+      updateSalonSecuritySchema.safeParse({ requireStaffTwoFactor: true, status: "SUSPENDED" })
+        .success,
+      false,
+    );
   });
 });
 

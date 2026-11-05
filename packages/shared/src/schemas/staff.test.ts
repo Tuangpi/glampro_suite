@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { PASSWORD_MIN_LENGTH } from "../constants.js";
 import {
   createStaffSchema,
+  resetStaffPasswordSchema,
   staffListQuerySchema,
   staffSummarySchema,
   updateStaffSchema,
@@ -186,6 +187,32 @@ describe("updateStaffSchema", () => {
 
   it("allows disabling without deleting the person's history", () => {
     assert.equal(updateStaffSchema.parse({ disabled: true }).disabled, true);
+  });
+});
+
+describe("resetStaffPasswordSchema", () => {
+  it("accepts a password at the shared creation floor", () => {
+    assert.equal(
+      resetStaffPasswordSchema.safeParse({ password: "x".repeat(PASSWORD_MIN_LENGTH) }).success,
+      true,
+    );
+  });
+
+  it("refuses one below it, on the password field", () => {
+    const parsed = resetStaffPasswordSchema.safeParse({
+      password: "x".repeat(PASSWORD_MIN_LENGTH - 1),
+    });
+    assert.equal(parsed.success, false);
+    assert.equal(parsed.error?.issues[0]?.path[0], "password");
+  });
+
+  it("carries nothing but the password, so a reset cannot also change identity", () => {
+    const parsed = resetStaffPasswordSchema.parse({
+      password: "longenough",
+      email: "someone@else.test",
+      globalRole: "SUPER_ADMIN",
+    });
+    assert.deepEqual(Object.keys(parsed), ["password"]);
   });
 });
 

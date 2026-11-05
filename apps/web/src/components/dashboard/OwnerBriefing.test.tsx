@@ -25,6 +25,8 @@ const facts = {
   to: "2026-10-24T16:00:00.000Z",
   asOf: "2026-10-23T17:00:00.000Z",
 };
+const money = "S$100.01 paid · S$5.25 refunded · S$94.76 net paid";
+const mix = "3 completed receipts · S$33.34 average · 2 new customers";
 const profile = (
   role = "SUPER_ADMIN",
   codes = ["dashboard", "reports", "catalogue", "appointments", "customers"],
@@ -53,27 +55,26 @@ beforeEach(() => {
   useOwnerBriefing.mockReturnValue(snapshot());
 });
 
-it.each(["SUPER_ADMIN", "MANAGER"])("shows factual checks and evidence for %s", (role) => {
+it.each(["SUPER_ADMIN", "MANAGER"])("shows the facts and entitled checks for %s", (role) => {
   useAuth.mockReturnValue(profile(role));
   mount();
   expect(screen.getByRole("heading", { name: "Owner briefing" })).toBeInTheDocument();
-  expect(screen.getByText(/3 completed receipts recorded S\$100.01/)).toHaveTextContent("S$94.76");
-  expect(screen.getByRole("link", { name: "Open reports" })).toHaveAttribute("href", "/reports");
+  expect(screen.getByText(money)).toBeInTheDocument();
+  expect(screen.getByText(mix)).toBeInTheDocument();
+  expect(screen.getByText(/Refunds can relate to sales made earlier/)).toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Review refunds" })).toHaveAttribute("href", "/reports");
   expect(screen.getByRole("link", { name: "Open products" })).toHaveAttribute("href", "/products");
-  expect(screen.getByRole("link", { name: "Open appointments" })).toHaveAttribute(
-    "href",
-    "/appointments",
-  );
-  fireEvent.click(screen.getByRole("button", { name: "View briefing evidence" }));
-  const dialog = screen.getByRole("dialog", { name: "Briefing evidence" });
-  expect(within(dialog).getByText(/2026-10-23T16:00:00.000Z/)).toBeInTheDocument();
-  expect(within(dialog).getByText(/regardless of the original sale date/)).toBeInTheDocument();
-  expect(within(dialog).getByRole("link", { name: "Customers source screen" })).toHaveAttribute(
-    "href",
-    "/customers",
-  );
-  fireEvent.keyDown(dialog, { key: "Escape" });
+  expect(screen.getByText(/1 product is at or below the stock threshold of 4/)).toBeInTheDocument();
+});
+
+it("carries no evidence drawer and no send, approve or activate control", () => {
+  mount();
+  expect(screen.queryByRole("button", { name: "View briefing evidence" })).not.toBeInTheDocument();
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /send|approve|activate/i })).not.toBeInTheDocument();
+  // The definitions moved to Reports and Business questions; the panel states
+  // the one qualification that changes how a paid amount reads.
+  expect(screen.getByText(/not cash-only takings or profit/)).toBeVisible();
 });
 
 it.each(["STAFF", "CASHIER"])("does not mount a query for %s", (role) => {
@@ -96,25 +97,26 @@ it("hides the briefing with missing identity or dashboard entitlement", () => {
   expect(useOwnerBriefing).not.toHaveBeenCalled();
 });
 
-it("removes an open workspace immediately on role loss", () => {
+it("drops the figures when the role is revoked on rerender", () => {
   const view = mount();
-  fireEvent.click(screen.getByRole("button", { name: "View briefing evidence" }));
+  expect(screen.getByText(/S\$100\.01/)).toBeInTheDocument();
   useAuth.mockReturnValue(profile("STAFF"));
   view.rerender(
     <MemoryRouter>
       <OwnerBriefing />
     </MemoryRouter>,
   );
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  expect(screen.queryByText(/S\$100.01/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/S\$100\.01/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/at or below the stock threshold/)).not.toBeInTheDocument();
 });
 
-it("hides unentitled source links while keeping available metrics", () => {
+it("hides unentitled links while keeping the figures and their checks", () => {
   useAuth.mockReturnValue(profile("MANAGER", ["dashboard"]));
   mount();
   expect(screen.queryByRole("link")).not.toBeInTheDocument();
-  expect(screen.getByText(/No suggested checks/)).toBeInTheDocument();
-  expect(screen.getByText(/Net paid after refunds/)).toBeInTheDocument();
+  expect(screen.getByText(money)).toBeInTheDocument();
+  expect(screen.getByText(/Refunds can relate to sales made earlier/)).toBeInTheDocument();
+  expect(screen.getByText(/1 product is at or below the stock threshold of 4/)).toBeInTheDocument();
 });
 
 it("distinguishes loading and errors from zero and offers retry", () => {
@@ -142,9 +144,9 @@ it("distinguishes loading and errors from zero and offers retry", () => {
 it("keeps a labelled last-successful snapshot on refresh failure", () => {
   useOwnerBriefing.mockReturnValue({ ...snapshot(), isError: true, isStale: true });
   mount();
-  expect(screen.getByText(/Showing the last successful snapshot/)).toBeInTheDocument();
-  expect(screen.getByText(/Refresh before acting/)).toBeInTheDocument();
-  expect(screen.getByText(/Net paid after refunds/)).toBeInTheDocument();
+  expect(screen.getAllByRole("status")).toHaveLength(1);
+  expect(screen.getByRole("status")).toHaveTextContent("Showing the last successful snapshot");
+  expect(screen.getByText(money)).toBeInTheDocument();
 });
 
 it("suppresses cached figures after an authorization refusal", () => {
@@ -157,10 +159,11 @@ it("suppresses cached figures after an authorization refusal", () => {
   expect(screen.getByRole("status")).toHaveTextContent(
     "access to this briefing is no longer available",
   );
-  expect(screen.queryByText(/Net paid after refunds/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/S\$94\.76/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
-it("shows a genuine empty period without inferred opportunities or send controls", () => {
+it("shows a genuine empty period without inferred opportunities", () => {
   useOwnerBriefing.mockReturnValue({
     ...snapshot(),
     data: {
@@ -176,18 +179,32 @@ it("shows a genuine empty period without inferred opportunities or send controls
     },
   });
   mount();
-  expect(screen.getByText(/No completed sales/)).toBeInTheDocument();
-  expect(screen.getByText(/No suggested checks/)).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /send|approve|activate/i })).not.toBeInTheDocument();
+  expect(screen.getByText(/^No completed sales in this period/)).toBeInTheDocument();
+  expect(screen.getByText("0 completed receipts · S$0.00 average · 0 new customers")).toBeVisible();
+  expect(screen.queryByText(/Refunds can relate/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/stock threshold/)).not.toBeInTheDocument();
+  expect(screen.queryByRole("link")).not.toBeInTheDocument();
 });
 
-it("keeps qualifications visible and puts the exact reporting window on demand", () => {
+it("singularizes a one-product check and a one-receipt day", () => {
+  useOwnerBriefing.mockReturnValue({
+    ...snapshot(),
+    data: { ...facts, salesToday: 1, newCustomersToday: 1, averageTicket: "100.01" },
+  });
   mount();
-  expect(screen.getByText(/not cash-only takings or profit/)).toBeVisible();
+  expect(screen.getByText("1 completed receipt · S$100.01 average · 1 new customer")).toBeVisible();
+  expect(screen.getByText(/1 product is at or below the stock threshold of 4/)).toBeInTheDocument();
+});
+
+it("puts the exact reporting window on demand and nothing else behind it", () => {
+  mount();
   const toggle = screen.getByText("Reporting window");
   const details = toggle.closest("details")!;
   expect(details).not.toHaveAttribute("open");
   fireEvent.click(toggle);
   expect(details).toHaveAttribute("open");
   expect(within(details).getByText(/end excluded/)).toBeVisible();
+  // No definitions list: what the interval means lives in Reports, by asking in
+  // Business questions, or in the one qualification line above.
+  expect(details.querySelectorAll("dt")).toHaveLength(0);
 });

@@ -135,9 +135,16 @@ cards. `POST /api/platform/auth/password`, `…/two-factor/enroll`, `…/two-fac
 
 ## Recording a subscription period
 
-The Subscription tab ends with a form that records one manual period —
-`POST /api/platform/companies/:id/subscriptions`. Nothing is charged or captured;
-the record is what gives the company a dated period of access.
+The Subscription tab is three cards in the order an operator asks the questions:
+**Current subscription** (what is paid for now, and until when), **Record a
+subscription period** (the next one) and **Subscription history** (what was
+recorded before). Only the middle card writes — `POST
+/api/platform/companies/:id/subscriptions`. Nothing is charged or captured; the
+record is what gives the company a dated period of access.
+
+The card lives in `platform/SubscriptionPanel.tsx` and carries its own reason field.
+It used to share the section's one "Change reason" input with the lifecycle buttons,
+which read as if the reason for a renewal belonged to suspending the company.
 
 - **The operator picks days, the API stores instants.** `recordSubscriptionSchema`
   requires an offset (`2026-10-23T00:00:00+08:00`) because a bare `2026-10-23` is a
@@ -146,14 +153,34 @@ the record is what gives the company a dated period of access.
   operator's own timezone with the offset attached — the day the operator picked is the
   day that is recorded, never the one before it.
 - **Neither field carries a placeholder.** Per _Placeholders and hints_, the native
-  control already shows the expected form; the rule that has to stay on screen (both
-  boundaries are midnight, periods cannot overlap) sits in the paragraph above the fields.
-- **The pickers refuse the days the service refuses.** Start is capped at today and end
-  starts at tomorrow: a current period cannot begin in the future, and an end of "today"
-  is already in the past once it is stored at midnight.
+  control already shows the expected form; the rules that have to stay on screen (both
+  boundaries are midnight, periods cannot overlap) sit in the hint under each field.
+- **A period may start on any day.** Scheduling the next period is what an operator does
+  on renewal, so a start in the future is a normal request: `recordCompanySubscription`
+  refuses only an end that has already passed (_Choose a period end in the future._),
+  because a period that is over cannot extend anyone's access. The start picker
+  therefore carries no `max`.
+- **The end's earliest day follows the start.** Its `min` is the later of tomorrow — an
+  end of "today" is already in the past once it is stored at midnight — and the day
+  after the picked start, so the pair cannot be inverted before the request leaves the
+  browser. `recordSubscriptionSchema` rejects an inverted pair too (_The end must be
+  after the start._), because a request need not come from this form.
+- **A scheduled period brings no access forward.** `resolveTenantStatus` counts only
+  periods whose first day has arrived, and reactivating still requires a _current_
+  period, so recording next month's period does not lift an `EXPIRED` company back to
+  `ACTIVE` today. The summary says so where the operator meets it — "No period is
+  running now. The next one starts 1 Dec 2026, in 30 days — a period brings no access
+  forward until its first day" — instead of leaving the status badge's silence to be
+  interpreted.
 - **Overlap and rejection.** A period that overlaps an active one answers `409`, and a
   rejected period keeps its typed days so the operator corrects one field rather than
-  retyping the form.
+  retyping the form. A rejection is reported inside the card that caused it, and the
+  change banner above belongs to lifecycle and module changes only.
+- **The history renders days, not instants.** A row reads `23 Oct 2026 → 22 Nov 2026`
+  with the amount formatted in its own currency, a `Current` badge on the period that is
+  running and a `Scheduled` badge on one that has not started. The raw
+  `2026-10-23T00:00:00+08:00` belongs to the API and the audit payload, not to a table an
+  operator reads at a glance.
 
 ## Module access
 

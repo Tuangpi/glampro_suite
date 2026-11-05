@@ -508,3 +508,18 @@ it("carries posted money from the readiness check into the rule version comparis
   );
   expect(within(money).getByRole("row", { name: /Salon total/ })).toHaveTextContent("+S$10.50");
 });
+
+it("renders a salon with no plans yet instead of reading a definition off a null draft", async () => {
+  // The empty configuration is the first thing a fresh salon sees: no plan means
+  // no selected plan and no draft. Comparing `draft?.planId` with `plan?.id` there
+  // held (`undefined === undefined`) and the draft was dereferenced as if it
+  // existed, which took the whole Team & commissions section down.
+  const data = configuration();
+  data.plans = [];
+  mocks.get.mockResolvedValue(data);
+  mount();
+  expect(await screen.findByText(/0 active plans/)).toBeInTheDocument();
+  expect(screen.getByLabelText("Commission plan")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
+  expect(screen.getByText(/without a plan \(flat fallback\)/)).toBeInTheDocument();
+});

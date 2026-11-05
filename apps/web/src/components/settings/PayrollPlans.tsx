@@ -183,7 +183,11 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
   const data = query.data;
   const plan = data.plans.find((p) => p.id === selected) ?? data.plans[0];
   const version = plan?.versions[0];
-  const definition = draft?.planId === plan?.id ? draft!.definition : version?.definition;
+  // `draft` is tested before the comparison, not through it: `draft?.planId` and
+  // `plan?.id` are both `undefined` in a salon with no plans, which made the
+  // equality hold and then read `definition` off a null draft — a crash on the
+  // empty state, not on a configured one.
+  const definition = draft && draft.planId === plan?.id ? draft.definition : version?.definition;
   const stale = !!draft && (draft.planId !== plan?.id || draft.revision !== plan?.revision);
   const locked = !canEdit || mutation.isPending || query.isFetching || stale;
   const component =

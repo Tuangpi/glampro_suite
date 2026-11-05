@@ -40,6 +40,7 @@ function principal(overrides: Partial<AuthenticatedUser> = {}): AuthenticatedUse
     realm: "web",
     tokenVersion: 0,
     tenantStatus: "ACTIVE",
+    twoFactorEnabled: false,
     ...overrides,
   };
 }

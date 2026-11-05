@@ -1,5 +1,381 @@
 # Glampro Suite — progress
 
+## November 5, 2026 — a subscription period may start in the future
+
+A company's next period could not be recorded until the day it began. `recordCompanySubscription`
+refused any `startDate` later than now ("Record a current period"), and the console's `<input
+type="date">` carried `max={today}` to match, so the one thing an operator does on renewal —
+schedule next month, before the current period lapses — was impossible from the product. The rule
+was in the service guard alone: `recordSubscriptionSchema` never had it. It now refuses only an end
+that has already passed ("Choose a period end in the future"), because a period that is over cannot
+extend anyone's access. No shared schema, API contract, route or permission changed.
+
+- **The Subscription tab is three cards instead of one card with a table and a form below it.**
+  `Current subscription` answers "paid until when?" from the periods the server already returns —
+  access from, access until, amount, time left, plus one line naming the next period if one is
+  recorded. `Record a subscription period` is the form, with its own reason field. `Subscription
+history` is the flush table. The tab used to make an operator compare two ISO instants in a table
+  and guess which row was live, and it borrowed the section's single "Change reason" input, so a
+  renewal read as if the reason belonged to suspending the company.
+- **The pickers cannot build a period the API refuses.** Start carries no `max` at all. End's `min`
+  is the later of tomorrow (an end of "today" is already past once stored at midnight) and the day
+  after the picked start, derived from the start field's own state — so the pair cannot be inverted
+  before the request leaves the browser, and the schema still rejects an inverted pair for requests
+  that do not come from this form.
+- **A scheduled period still brings no access forward.** `resolveTenantStatus` counts only periods
+  whose first day has arrived and reactivating still needs a _current_ period, so recording next
+  month does not lift an `EXPIRED` company back to `ACTIVE` today. Rather than leaving a status badge
+  that did not move to be interpreted, the summary says it where the operator meets it: "No period
+  is running now. The next one starts 1 Dec 2026, in 30 days — a period brings no access forward
+  until its first day."
+- **The history renders days, not instants.** `23 Oct 2026 → 22 Nov 2026`, the amount formatted in
+  its own currency, a `Current` badge on the running period and a `Scheduled` badge on one that has
+  not started; statuses read as words (`Active`, `Cancelled`) rather than as the enum. The raw
+  `2026-10-23T00:00:00+08:00` now belongs only to the API response and the audit payload.
+- **The panel owns its request and its messages.** `platform/SubscriptionPanel.tsx` (398 lines)
+  takes `{ companyId, effectiveStatus, subscriptions, onRecorded, onBusyChange? }` and holds its own
+  busy, error, notice, reason and start-day state; `CompanyAdministration.tsx` fell from 652 to 556
+  lines and kept only lifecycle and module access plus a `refresh()` that re-reads the company
+  without touching the section's shared banner. A rejection is reported inside the card that caused
+  it, the days stay typed, and the success notice appears only after the API accepted the period.
+- **`SubscriptionPanel.test.tsx`, 6 tests.** A future start goes through end to end and the payload
+  crosses the wire as `dayToLocalInstant`; the end's `min` follows the picked start; the summary
+  reads the running period and names the scheduled one; a scheduled-only company is told the rule
+  and keeps its own status; a reason of only spaces is refused without spending the dates; a `409`
+  is reported in the form with the dates intact and no re-read. `CompanyAdministration.test.tsx` lost
+  the record-flow assertions it no longer owns and kept one wiring test — recording through the
+  mounted panel calls `onChange` and shows the panel's notice, not the section's.
+
+**Verified.** `vitest run src/platform` **46/46** (6 new, 8 rewired); full web suite **1,085 passed /
+6 failed** of 1,091 — all six in `settings/PayrollPlans.test.tsx`, the 5s timeouts under parallel
+load already recorded for that untouched file, which passes **25/25** alone; `tsc -p
+tsconfig.app.json --noEmit` and `tsc -p tsconfig.node.json --noEmit` (web) and `tsc -p tsconfig.json
+--noEmit` (api) exit 0; `eslint` exit 0 on the four web files and the two API files; `prettier
+--check` clean on all seven changed files.
+
+**Not verified.** The gated acceptance test was not run: `SAAS04_ACCEPTANCE=1` needs a disposable
+PostgreSQL on `127.0.0.1:55442`, nothing is listening there and this machine has no Docker, so the
+converted assertions — a future start answering `201` and a passed end answering `400` — have never
+executed. No live browser walkthrough either; the four panel states are covered by the executing
+tests, not by observation.
+
+## November 5, 2026 — the owner briefing becomes three lines of facts
+
+The dashboard's _Owner briefing_ was the longest thing on the page and said the least: a subtitle,
+a six-sentence prose summary, a **Suggested checks** grid of up to three cards, and a
+"View briefing evidence" drawer holding eight metric definitions. Every number in it repeated the
+four tiles printed directly above or the _Business questions_ tab below, and each card's advice
+restated a count the tiles already showed. It is now a 134-line card: a money line, a mix line, at
+most two check lines, one qualification and the collapsed reporting window — about 60 words of
+visible text instead of nine sentences and three cards. No API, schema, permission or request
+changed.
+
+- **Three lines, and every figure is one the salon can act on.** `S$100.01 paid · S$5.25 refunded ·
+S$94.76 net paid`, then `3 completed receipts · S$33.34 average · 2 new customers`. A zero day
+  reads `No completed sales in this period · S$0.00 refunded · S$0.00 net paid` rather than three
+  sentences explaining the same zero, and a one-receipt, one-customer, one-product period is
+  singularized so the strip never says "1 receipts".
+- **The checks are sentences, not cards.** Refunds get one line naming the thing that actually
+  confuses an owner — that a refund can belong to an earlier day's sale — and low stock gets one
+  line with the count and the tenant threshold. The appointments card is gone entirely: that number
+  is already a tile, and nothing about it needs a next step. Each sentence keeps its link only when
+  the module is entitled, so a dashboard-only salon reads the fact without a dead end.
+- **What stayed, because it was load-bearing.** The `SUPER_ADMIN`/`MANAGER` plus `dashboard`
+  gate, the `key={tenant.id}:{user.id}` remount, the 401/403 suppression of cached facts, the
+  salon-timezone `stamp()`, the Refresh/Retry button, the loading, stale, refused and
+  last-successful-snapshot copy, and the `<details>Reporting window` holding the exact from/to
+  interval. `ownerMetrics()` and its three API consumers (`/reports/dashboard`, `/explain`,
+  `/owner-summary`) were not touched.
+- **The trade-off, recorded rather than hidden.** The drawer's eight definitions — what "paid"
+  includes, why net paid can be negative, why average ticket divides by completed receipts, why
+  appointments are not completed visits — are no longer on the dashboard, and they are not printed
+  anywhere else either. Reports shows the figures with their own labels and filters and the
+  _Business questions_ tab can explain them on request, so an owner who needs the exact wording asks
+  there. The one sentence kept is the one that changes how a figure reads: paid amounts may include
+  prepaid redemptions and are not cash-only takings or profit. "Suggested checks" had no empty state
+  worth keeping either: a day with nothing to check now simply shows no check lines.
+- **`OwnerBriefing.test.tsx` retargeted, 14 tests.** The drawer and card-grid assertions became:
+  the exact money and mix text, both entitled links, no dialog and no send/approve/activate
+  control, a one-product and one-receipt day singularizing, and a `<details>` that holds the interval
+  and no `<dt>` definitions. The old "removes an open workspace" test is now "drops the figures when
+  the role is revoked on rerender", which is the behaviour that actually matters once there is no
+  workspace to remove. The unentitled case keeps the sentences and loses only the links; the empty
+  period asserts no links at all.
+- **Verified.** `OwnerBriefing.test.tsx` + `Dashboard.test.tsx` **23/23**; `tsc -p
+tsconfig.app.json --noEmit` and `tsc -p tsconfig.node.json --noEmit` exit 0; `eslint .` exit 0;
+  `prettier --write` then `--check` clean on both files; production web build (`vite build`) exit 0.
+  Full web suite **1,078 passed / 7 failed** of 1,085 — the same `settings/PayrollPlans.test.tsx`
+  five-second timeouts under parallel load already recorded, which pass **25/25** when run alone;
+  the failing set changes between runs (4, then 7) and the file is untouched by this change.
+- **Not verified.** No live browser walkthrough: the four panel states are covered by the executing
+  tests (populated, zero day, loading, error/retry, plus stale and refused), not by observation, and
+  no API or database call was made. That the eight drawer definitions are no longer printed anywhere
+  in the product is a trade-off this change accepts deliberately, not something it checked.
+
+## November 5, 2026 — the customer record is five sections, and the balance rail stops moving
+
+`/customers/:id` was one undifferentiated column of ten stacked panels: identity, archival,
+details, balances, prepaid ownership, session packages, holding history, two history tables,
+treatments, photos. "Can she still use her package?" meant scrolling past the archive policy to
+find out, and the answer to "who is this person" competed with eight other `<h3>`s. The page is
+now a header plus five URL-addressable sections, with the balances pinned beside them. No API,
+schema, permission or request count changed.
+
+- **The header is a card, not three paragraphs.** Hero avatar, the name still in the page's
+  `<h2>`, an `Archived` danger badge while archived, `tel:`/`mailto:` links instead of inert
+  text, and the customer code as a neutral badge. `Edit profile and consent` keeps its exact
+  label, its `actions` position and its read-only `disabled` state.
+- **Five tabs, deep-linkable through `?tab=`.** _Overview_ (details and notes), _Packages &
+  credit_ (the three ownership/transfer/audit panels, untouched), _History_ (visits and sales),
+  _Treatments_, _Photos_. _Treatments_ and _Packages & credit_ name their add-on when the salon
+  has not bought it, so an unentitled tab says which module is missing instead of opening blank.
+  The kit `Tabs` renders only the active panel, so a section's queries no longer fire on first
+  paint; the balance rail is the only thing fetched up front. The cost is recorded rather than
+  hidden: a photo-upload draft and a history page number are dropped when you switch away.
+- **Balances are a sticky rail from `xl`.** A `20rem` column, `sticky` at
+  `calc(var(--sp-topbar-h) + 1.5rem)` and capped to the viewport, scrolling inside itself so a
+  long balance list never runs off the bottom of the screen. It is DOM-first, so on a phone the
+  summary still leads and the tabs follow; `xl:order-2` is what moves it into the rail.
+- **Archival stopped being the second thing on the page.** It is a card under the balances, its
+  danger button full width, its policy prose demoted to `text-sm text-ink-muted`. Every sentence
+  of that prose and the whole confirm → evidence flow came over verbatim, including "Evidence and
+  balances will not be erased" and the zero-button archived read-only state.
+- **`Card` gained a `label` prop.** A `section` is only exposed as a `region` once it has a name,
+  so `label` writes `aria-label` and lets a card be a landmark. Two tests pin both halves:
+  labelled becomes a region, unlabelled stays a container.
+- **Prose became descriptions, and the details grid says more with less.** Labelled values for
+  address, date of birth, membership reference, branches, gender and the three card numbers — all
+  fields the API already returned and the page never showed. History rows are one line plus a
+  status badge, photo tiles are a grid with a quieter delete action, and every section renders
+  skeleton rows or an `EmptyState` instead of "Loading…" and a shrug.
+- **One new shared constant** (`constants/customers.ts`) holds the four gender words, because the
+  profile now reads a stored `gender` back in the words the form offers — nobody typed
+  `UNDISCLOSED`. `CustomerFormDrawer` imports the same list instead of keeping a second copy.
+- **No assertion was deleted.** The six that moved with their section now open that tab first
+  (`Package and credit balances` region → `Balances`, `VOID` and `Receipt #12` → _History_,
+  photos and pagination → their tabs). New coverage: a section fetches nothing until it is opened,
+  `?tab=history` deep links, `tel:`/`mailto:` hrefs, the header `Archived` badge, the gender/card
+  read-back, and the empty balance rail.
+
+Verification: focused `CustomerProfile`/`Card`/`CustomerArchivePanel`/`CustomerFormDrawer`/
+`Customers` 50/50; full web suite 1083/1083 across 120 files, run with `--no-file-parallelism`
+because this machine's 5s `testTimeout` fires on `userEvent`-heavy files when 120 of them share
+the cores (a parallel run failed only timeouts in unrelated payroll, consent and payout files,
+each of which passed alone). Web `typecheck`, `eslint`, changed-source `prettier --check` and the
+production build pass. No authenticated browser visual review was possible here: the sticky rail,
+the `20rem` rail width and the 44px row rhythm are asserted by class and by test, not seen.
+Current task: None. Most recently completed: CUST-UX. Next: None selected.
+
+## November 5, 2026 — the staff editor is a page, and each write owns its own button
+
+Screen 09's edit surface was one 746-line drawer holding **five independent save scopes**:
+profile, password reset, roster, payroll plans and commission rules. Only the profile had a
+pinned footer button, so a payroll edit three scrolls down looked like it was saved by "Save
+changes" — the drawer was lying about the API, which had always treated those as separate
+writes. The fix is layout, not behaviour.
+
+- **`/staff/:id` (`pages/StaffProfile.tsx`)** — the record behind a Settings-style rail:
+  _Identity & profile_, _Login & security_, _Working hours_, _Payroll_, _Commission rules_.
+  The rail is the Settings one reused verbatim: `?section=` deep links, a mobile `<select>`,
+  a desktop `<nav aria-label="Staff sections">` with `aria-current`, and sections that mount
+  on first visit then stay mounted while hidden, so switching a section does not throw away
+  an unsaved draft. `payroll` and `commission` are not in the rail at all for someone who may
+  not configure employment terms, rather than shown and then refused.
+- **One card, one save.** `StaffIdentityForm` is the profile extraction — name, role,
+  position, phone, dates, branches, one `Save changes`. `StaffAccessCard` splits the login
+  facts into three commands: the POS PIN (set, or revoke as an explicit `posPin: null`), the
+  password reset (`POST /api/staff/:id/password`, still its own endpoint), and an
+  _Account status_ card that carries `disabled` on a button of its own. The email is text,
+  because `updateStaffSchema` has no `email` field to post (ADR 0007).
+- **No contract change.** `updateStaffSchema` was already partial, so the drawer's single
+  PATCH becomes three small ones; nothing new was added to the API, the schema or the
+  service. The role rules came over unchanged: a manager may still recover a
+  `STAFF`/`CASHIER` password and never a peer manager's or an owner's, a POS PIN-only row
+  still has no reset block, and payroll plans stay owner-writable while a manager reads them.
+- **Create stays a drawer** (`StaffFormDrawer`, 746 → 471 lines). It is one short form with
+  one save, it belongs beside the list it appends to, and the `staff` prop that used to
+  switch it into edit mode is gone. Its "configure payroll after creation" tick now lands on
+  `/staff/<id>?section=payroll` — a real URL, not a second half of the drawer.
+- **`pages/Staff.tsx` is a list again.** `editing`, the `get<StaffDetail>` pre-fetch and the
+  `key={id:open}` dance are gone; the row action navigates, and the name is a plain link to
+  the record (the shape the customers list already uses). The drawer is keyed on the open
+  state alone.
+- **Keyed remount, kept honest.** Both new forms key on `staff.id`, so a refetch after one
+  save cannot write a draft over a record it never loaded — what the drawer's `key` could
+  not do for an edit.
+- **Tests.** `StaffProfile.test.tsx` is new: 14 tests covering the start-date
+  `expectedStartDate` comparison (including the baseline moving forward after a save, so a
+  second change is not refused as a conflict with itself), the split PATCH for `disabled`
+  and for `posPin: null`, the six-digit local check, the reset posting on its own endpoint,
+  the mistyped confirmation, the PIN-only and manager-vs-manager rules, and the read-only
+  rail for a stylist and a suspended salon. `Staff.test.tsx` keeps the list, the tiles, the
+  filter, "who may write" and the create form (19 tests), now inside a `MemoryRouter`
+  because the row action navigates; the payroll-continuation test asserts the destination
+  instead of a mounted panel. Both files pass (**33/33** together), and the full web suite
+  is **1,061 passed / 5 failed** of 1,066 — the same `settings/PayrollPlans.test.tsx`
+  five-second timeouts under parallel load that were already recorded, and that file still
+  passes **25/25** with `--testTimeout=30000`.
+
+- **Verified.** `tsc -p tsconfig.app.json --noEmit` and `tsc -p tsconfig.json --noEmit`
+  (api) exit 0; `eslint` on every changed file and `prettier --check` exit 0; the api and
+  shared workspaces are untouched by this change.
+
+## November 4, 2026 — Team & commissions no longer blanks out on a salon with no plans
+
+`/settings?section=team` fell over to the cached-page boundary — "The screen failed to load" — for
+any salon that had never created a payroll plan. The trigger was a single line in `PayrollPlans`:
+
+```ts
+const definition = draft?.planId === plan?.id ? draft!.definition : version?.definition;
+```
+
+With no plans, `data.plans` is empty, so `selected` stays `null` and `plan` is `undefined`; the
+component then already picked "no plan", so `draft` is `null` too. Optional chaining on both sides
+of the equality made `undefined === undefined` **true**, the conditional took the draft branch, and
+`draft!.definition` threw on `null` — the `!` silenced the compiler exactly where the runtime had
+nothing to read. So the crash lived on the **empty** state, not on a configured one, which is why a
+freshly seeded tenant hit it and a demo tenant with a Hair sample did not.
+
+- **The guard is the draft, not the comparison.** `draft && draft.planId === plan?.id` short-circuits
+  before any field of the draft is read, so a null draft can only take the version branch regardless
+  of what `plan?.id` is. The comment in the file records why the equality alone is not a guard.
+- **Nothing else on the section was hiding behind it.** The adjacent `stale` flag already used
+  `!!draft && …`, and the rendered empty state (0 active plans · 0 staff on a plan · N without a plan
+  (flat fallback), disabled save/assign controls) was already correct — it simply never got to paint.
+- **Regression test.** `PayrollPlans.test.tsx` gains "renders a salon with no plans yet instead of
+  reading a definition off a null draft", mounting the real component against a `plans: []`
+  configuration. Verified both ways: reverted to the old line it fails with
+  `TypeError: Cannot read properties of null (reading 'definition')` (1 failed / 24 skipped), and with
+  the fix the file is **25/25**.
+- **Live reproduction.** Headless Chrome (CDP, token injected straight into storage — no login flow)
+  against the running dev servers now renders the whole section: staff list, attribution policy,
+  versioned plans empty state, assignments, staff payroll settings, salary profile, month-to-date
+  progress, commission matrix and company rules. No "Something went wrong", no page exception, and
+  no 4xx/5xx response at all: the section now paints every panel it was already built to render.
+- **Verification.** `src/components/settings` + `Settings.test.tsx` **146/146**; the full web suite
+  **1,046 passed / 8 failed** of 1,054, the same eight already-recorded `PayrollPlans.test.tsx`
+  five-second timeouts under parallel load (the file passes **25/25** alone, checked again after this
+  change); `tsc -p tsconfig.app.json --noEmit`, `eslint` and `prettier --check` on the changed files
+  exit 0.
+- **Left alone, recorded instead.** The staff payroll form shows `joinDate: Invalid ISO date` for a
+  staff member with no join date, because the write contract makes `joinDate` required and the form
+  validates an empty string rather than relabelling it. That is a deliberate required-field contract
+  (`settings.test.ts` asserts `joinDate: null` is rejected), so changing the wording or the rule is a
+  product decision, not part of this crash fix.
+
+## November 4, 2026 — consent is captured where the customer is created
+
+Screen 07's Add drawer used to say "Save the customer first, then edit their record to capture
+privacy and marketing choices." A salon that takes a walk-in by name alone therefore recorded
+nothing — and downstream, "no consent on record" reads exactly like "the customer declined". The
+drawer now captures the choice in the same sitting.
+
+- **One endpoint, two requests.** The block is a controlled component with no button of its own
+  (`CustomerConsentCapture.tsx`); `handleSubmit` posts the customer, then posts the choices to
+  `POST /customers/:id/consent` — the same audited route, schema and guards the edit panel uses.
+  Nothing about notice versions, revision conflicts or "marketing implies data" is re-implemented
+  in the UI; the drawer only decides _whether_ to make the call.
+- **`expectedRevision: 0` is not a guess.** The revision belongs to the record created a moment
+  earlier, so no other writer can have touched it between the two calls.
+- **Nothing ticked means no consent event at all.** The server treats `false → false` as a no-op,
+  so the drawer skips the request rather than writing an audit row that records no decision.
+- **Not atomic, and it says so.** If the consent call fails the customer still exists, so the
+  toast reads "Customer added, but consent was not saved: …" and the new record is handed back to
+  the page (`onCreated`); the existing `key` on the drawer remounts it in edit mode with the real
+  consent panel one click away. It never closes as if the choice was stored.
+- **No notice, no dead checkbox.** With nothing published, or while the notice is still loading,
+  the boxes are disabled and the reason is spelled out; the customer is saved with no consent.
+- **Two small contract moves.** `usePrivacyNotice(enabled = true)` lets the drawer skip the read in
+  edit mode, where the panel owns it; `useRecordConsentForNewCustomer()` takes the id with the
+  call because creation happens inside the submit handler. Channel (WhatsApp/SMS) consent stays in
+  the edit drawer — it is per-channel and out of scope here.
+- **Tests.** New `CustomerConsentCapture.test.tsx` **5/5** and `CustomerFormDrawer.test.tsx`
+  **6/6**: no notice published, unreviewed grant refused before anything is sent, data-only and
+  data+marketing grants, no-choice create, and the consent-fails-after-create path. The page test
+  that renders this drawer needed a `useConsent` mock (**13/13**).
+- **Verification.** Full web suite **1,045 passed / 8 failed** of 1,053 — all eight the
+  already-recorded `PayrollPlans.test.tsx` five-second timeouts under parallel load, which passes
+  **24/24** alone. `eslint`, `tsc -p tsconfig.app.json --noEmit` and `prettier --check` on the
+  changed files: exit 0.
+- **Not claimed.** No browser or visual review and no database access; the API, shared contracts
+  and migrations are unmodified, so the consent endpoint itself was not re-exercised live.
+
+## November 4, 2026 — the Renews column leaves the Features panel
+
+`?section=features` drew four columns: **Module**, **Type**, **Access** and **Renews**. The last was
+wrong twice over — by name and by audience.
+
+- **`Renews` was never a renewal date.** The cell rendered `ModuleSummary.expiresAt`, which
+  `listModules()` fills from the tenant's grant row: the instant a module's `TenantModule` lapses,
+  or `null` for core and for an open-ended grant. Nothing in the product renews a grant — a
+  platform operator grants, revokes or re-dates it in the console, and that screen calls the same
+  field **Expires** (`CompanyAdministration.tsx`). A salon reading "Renews" would expect access to
+  continue on that date; in fact access stops working on it.
+- **A salon cannot act on it.** The card's own description says "Contact support to change your
+  subscription", so the date was a deadline with no control attached. It also read `—` on every
+  core module and every open-ended grant — most of the table, most of the time.
+- **The answer the panel exists for is the badge.** `Access` already resolves to Core, Active or
+  Not purchased through the same rule `requireModule` enforces, so the panel can still never
+  disagree with the routes. The salon-facing expiry that _is_ actionable — the subscription's own
+  end date — stays where it was, as **Subscription ends** in the salon profile's Account details.
+- **The contract is untouched.** `moduleSummarySchema.expiresAt`, `GET /api/settings/modules`, the
+  service, the platform console and the database all still carry the date; only this table stopped
+  showing it. Deleting the field would have meant a schema/migration change for a read-only
+  display decision.
+- **Dead code went with it.** `useSalonFormatting()` was the only thing `ModulesCard` used it for,
+  so that hook call left too; `ProfileCard` still formats dates and still imports the hook.
+- **A guard, not a deletion.** `Settings.test.tsx` gained one test that reads the modules table
+  through its caption and asserts the headers are exactly `Module`, `Type`, `Access` — no column
+  can reappear under the old heading without failing.
+- **Verification.** `Settings.test.tsx` **29/29**. Full web suite **1,035 passed, 7 failed** of
+  1,042, all seven the already-recorded `PayrollPlans.test.tsx` 5-second timeouts under parallel
+  load; that file passes **24/24** alone in 43 s (the same flake is recorded against unmodified
+  `HEAD` in the entry below). `eslint`, `tsc -p tsconfig.app.json --noEmit` and `prettier --check`
+  on the two changed files: exit 0.
+- **Not claimed.** No browser or visual review. The API, shared contracts, platform console and
+  database are unmodified, so nothing here re-exercises them.
+
+## November 4, 2026 — the rooms-and-equipment card leaves Settings
+
+"Booking & hours" held two cards and now holds one. **Rooms and equipment** described what a
+booking can occupy — a name, a room-or-equipment kind, an active/inactive archive and the set of
+services allowed to use it — and it was the only screen in the product that wrote any of it.
+
+- **The card is gone; the rule is not.** `assignResources` in `appointment.service.ts` still gives
+  every occupying line the first free room or machine from its service's eligible set, on every
+  create, reschedule, series occurrence and public availability check. It still answers the
+  `409 RESOURCE_UNAVAILABLE` conflict when that set is busy or archived. The `GET`, `POST` and
+  `PATCH` routes under `/api/resources`, the `Resource` and `ServiceResource` tables, the shared
+  contracts and the `Booked in {room}` read-out on the appointment drawer are untouched.
+  `status: INACTIVE` is still an archive, and a line whose room is deleted still keeps its history
+  (`onDelete: SetNull`).
+- **The cost of hiding it, stated plainly.** Nothing in the product now creates a room, renames
+  one, archives or reactivates one, or edits which services may use it — and the route has no
+  `DELETE` by design, so archiving was the only off-switch. A service whose only linked rooms are
+  already `INACTIVE` cannot be booked at all, and the 409 that tells the desk to "reactivate one
+  or add another" now points at a screen that does not exist. That is the visible consequence of a
+  UI-only removal, not an oversight.
+- **The section keeps its id, its label and its neighbour.** `?section=booking` still resolves to
+  Business hours, and the nav blurb reads "Opening hours that decide when the salon can take a
+  booking" instead of advertising a control that is no longer rendered. The fragment that wrapped
+  the two cards collapsed to the one that remains.
+- **Dead code went with it.** `ResourcesCard` (279 lines), its five component tests, the
+  `useResources` hooks and their three tests, and the `resources` entry in `queryKeys` were
+  deleted rather than parked: once the mount went, nothing in `apps/web` imported them, and the
+  eligibility-paging helper existed only to fill the card's checkbox list. `Settings.test.tsx`
+  lost the `@/hooks/useResources` mock and its two "the card is visible" assertions, and gained a
+  single guard that both removed cards cannot return — the shape the online-booking removal left
+  behind.
+- **Verification.** `Settings.test.tsx` **28/28**. Full web suite **1,034 passed, 7 failed** of
+  1,041, all seven `PayrollPlans.test.tsx` 5-second timeouts under parallel load: the
+  same file loses 8 of its 24 the same way on unmodified `HEAD` (a stashed-tree run measured 1,041
+  passed, 8 failed of 1,049) and passes **24/24** alone in 42 s, so the flake is recorded rather
+  than inherited. The total fell by exactly the eight tests deleted. `eslint`, both `tsc --noEmit`
+  projects and `prettier --check` on `apps/web`: exit 0, and a grep for `ResourcesCard`,
+  `useResources` and `queryKeys.resources` across `apps/web/src` returns nothing.
+- **Not claimed.** No browser or visual review. The API, the public booking page, the database and
+  the tenant columns are unmodified, so nothing here re-exercises them.
+
 ## November 4, 2026 — the online-booking card leaves Settings
 
 "Booking & hours" held three cards and only two of them belonged there. The **Online booking**
@@ -4655,3 +5031,152 @@ are not cleared by this milestone review.
   response has no approval flag. Requires focused follow-up before accepting 0029.
 - SEC-01 remains BLOCKED; its separate-resource approval requirement is unchanged.
   No database tests, migrations, seeding, mail, deployment or application edits.
+
+### November 4, 2026 — staff password recovery (owner/manager reset)
+
+- Gap closed: a forgotten staff password was unrecoverable. `PATCH /api/staff/:id` has
+  no `password` by design (ADR 0007), `/api/auth/change-password` requires the current
+  one, and no salon-facing reset existed. `POST /api/staff/:id/password` now sets a
+  colleague's password for `SUPER_ADMIN` and `MANAGER`.
+- Contract: `resetStaffPasswordSchema` in `packages/shared/src/schemas/staff.ts` —
+  `password` only (no email, no role), floored at `PASSWORD_MIN_LENGTH`. The service
+  applies `adminPasswordSchema` when the **target** is an owner, so the stricter policy
+  is judged against the row, not the body.
+- Service: `resetStaffPassword` hashes before the transaction, then in one transaction
+  increments `tokenVersion`, clears any pending 2FA code, revokes the target's unrevoked
+  refresh tokens and writes a `STAFF_PASSWORD_RESET` audit row carrying the target's
+  role and no secret. Refusals: 404 cross-tenant/unknown id, 409 `NO_WEB_LOGIN` for a
+  POS PIN-only row (no password exists), 403 `ROLE_NOT_PERMITTED` when a manager targets
+  a manager or an owner (a credential write is a takeover primitive, not an edit).
+- UI: the edit drawer gained a "Reset password" section with new/confirm inputs and its
+  own button, disabled for read-only tenants and hidden for a manager whose target is a
+  manager or an owner; a self-reset calls `signOut()` so the caller is not left holding
+  a token the API no longer accepts. The profile form still has no password field.
+- Evidence: shared 315/315 (3 new schema cases); `staff.routes.test.ts` 32/32 including
+  8 new password-reset cases against PostgreSQL (old password rejected, new one accepted,
+  pre-reset access token 401 `SESSION_INVALIDATED`, refresh token refused, audit row
+  without the secret, manager/owner limits, 409/422/404 paths); web `Staff.test.tsx`
+  25/25 (4 new reset cases). Full web run 1049/1058 — the 9 failures are the unrelated
+  in-flight `settings/PayrollPlans.test.tsx` salary-profile work, untouched here. API and
+  web typecheck, all three workspace lints and Prettier pass. Full API suite not re-run;
+  only the staff route file. No migration, seed, deployment or production data change.
+- Also removed an unused `HttpError` import from `auth.service.ts` that was failing
+  `npm run typecheck` before this change.
+
+### November 5, 2026 — two-factor authentication: per-account toggle and salon-wide policy
+
+- Gap closed: `User.twoFactorEnabled` existed but a salon could not require it of
+  anyone, and the account card could not be seen from Settings. Two answers now
+  exist side by side: **this account** (`user.twoFactorEnabled` from `GET /auth/me`)
+  and **everyone in the salon** (`Tenant.requireStaffTwoFactor` from
+  `GET /settings/profile`).
+- Schema: `Tenant.requireStaffTwoFactor Boolean @default(false)`, migration
+  `20261105130000_tenant_staff_two_factor`, applied with `migrate deploy` and
+  `prisma generate`. No backfill: absent policy is `false`.
+- Shared contract: `authUserSchema.twoFactorEnabled`,
+  `salonProfileSchema.requireStaffTwoFactor`, and `updateSalonSecuritySchema` /
+  `UpdateSalonSecurityInput` (one explicit boolean; unknown fields refused).
+- Enforcement rides the existing `assertTenantMaySignIn` call sites in
+  `auth.service.ts` (`login`, `refresh`, `verifyTwoFactorForLogin`) via
+  `twoFactorRequiredFor` / `loadStaffTwoFactorPolicy`, so no extra query is paid —
+  the policy travels on the tenant row those paths already read. `SUPER_ADMIN` is
+  excluded from the policy because an owner already verifies unconditionally.
+  The gate is on **renewal, not revocation**: an access token issued before the
+  policy keeps working until it expires; its refresh token is then refused with
+  `401 TWO_FACTOR_REQUIRED` and the next sign-in is challenged.
+  `disableTwoFactor` also refuses under the policy (`403 TWO_FACTOR_REQUIRED`), so
+  a member cannot opt out of a rule the salon set.
+- `PATCH /api/settings/security` (`requireRole("SUPER_ADMIN")`) →
+  `updateSalonSecurityPolicy`: transactional, writes `STAFF_TWO_FACTOR_POLICY_CHANGED`
+  with the actor in `metadata` (`audit_logs` has no `actorUserId`), and is a no-op
+  that writes no audit row when the value is unchanged.
+- Web: `TwoFactorCard` rewritten against the two sources (enable opens a code
+  exchange, disable confirms, the switch is held on for a policy-bound member and
+  for an owner), new `StaffSecurityPolicyCard` (owner-only in Settings → Privacy &
+  security; turning it on is confirmed in a modal, turning it off applies at once),
+  `AuthContext.refreshProfile()` so the card draws server state, and
+  `useUpdateSalonSecurityPolicy()` replacing the cached profile with the response.
+- Evidence: shared 320/320; full API suite `src/**/*.test.ts` + `prisma/*.test.ts`
+  1503 tests — 1228 passed, 0 failed, 275 opt-in skips; web 1067/1073 (the 6
+  failures are the unrelated in-flight `settings/PayrollPlans.test.tsx` work noted
+  on November 4, and that file passes 25/25 on its own); API and web typecheck,
+  `shared` typecheck, all three lints and Prettier pass. Focused additions:
+  `auth-security.acceptance.test.ts` (pre-policy sign-in, live access token after
+  the switch, `401 TWO_FACTOR_REQUIRED` on refresh, challenged fresh sign-in,
+  `twoFactorEnabled: true` after verify, `403` on self-disable),
+  `settings.routes.test.ts` (policy round-trip with audit), `auth.routes.test.ts`,
+  `TwoFactorCard.test.tsx` (6), `StaffSecurityPolicyCard.test.tsx` (3),
+  `Settings.test.tsx` (owner sees the card, manager does not), plus shared schema
+  cases for the new fields.
+- Two things worth recording. Restoring the delivery-failure branch in
+  `loginWithTwoFactor` keeps the established `503 EMAIL_SEND_FAILED` code and
+  message rather than inventing a new one — `apps/api/src/services/auth-security.test.ts`
+  pins that contract, and sibling mail paths already use it. And the local
+  development inbox on `127.0.0.1:1025` (from `apps/api/.env`) was not running
+  during part of this session, which fails any route test that triggers a real
+  send (`staff.routes.test.ts` owner sign-in returned that 503); a plain TCP SMTP
+  sink on that port is enough to run them, and with it the file is 32/32.
+- No deployment, seed or production data change.
+
+### November 5, 2026 — owner two-factor is the owner's setting, not a forced gate
+
+- The switch the owner sees is now the switch the server honours. `twoFactorRequiredFor`
+  no longer forces `SUPER_ADMIN`: an owner answers an email code when they enrolled one
+  themselves, and the salon's `requireStaffTwoFactor` policy binds staff only. The reason
+  is the alternative read worse — an owner bound by the policy could never switch their own
+  factor off, so the toggle would appear to save and the next sign-in would challenge
+  anyway, which is indistinguishable from a broken setting.
+- What the owner gives up by turning it off is not the gate but the writes that need a
+  verified owner. Reads stay open to a password-only owner; money-moving and
+  configuration writes re-read `users.twoFactorEnabled` at the point of use. Most of those
+  guards already existed (`payroll-close-state.ts`, `payroll-close-loader.ts`,
+  `payroll-close-store.ts`, `payroll-close-authorizations.ts`, the three payroll-close
+  loaders, `payroll-close-sale-coverage.ts`, `payroll-close-value-sale.ts`,
+  `payroll-configuration.service.ts`, `prepaid.service.ts`, `prepaid-refund-settlement.ts`,
+  `prepaid-family.service.ts`, `package.service.ts`, `package-valuation.service.ts`,
+  `session-transfer.service.ts`, `sale-void-cash.ts`, `treatment-disposal.service.ts`,
+  `payroll-cutover.ts`) and were unreachable while the sign-in gate forced enrollment; they
+  are the answer now and were left as they are. Two gaps were closed: a value-package
+  refund (`payroll-value-package-refund.ts`) and publishing an attribution policy
+  (`commission-attribution-policy.ts`) now refuse a password-only owner with `403` and
+  "Only a verified salon owner …". Commission attribution policy reads stay open.
+- Removed the sign-in gates that assumed the flag was always true: the owner-only refresh
+  refusal in `auth.service.ts`, and the owner-only second-factor block in
+  `middleware/auth.ts` (`twoFactorEnabled` stays on the principal because the writes read it
+  from there). The staff-policy check on refresh now exempts the owner for the same reason
+  sign-in does — otherwise the owner's session would die at the next renewal, which is the
+  same broken-switch symptom one step later.
+- `disableTwoFactor` is open to owners and still refuses staff while their salon requires it
+  (the owner is exempt there too, or the one account able to change the policy would be
+  trapped behind it); a missing user now answers `SESSION_INVALIDATED` instead of a
+  database error.
+- Web: `TwoFactorCard`'s owner switch is live (`checked={enrolled}`, held on only when the
+  member is enrolled _and_ the salon policy binds them), the "Always on" badge is gone, and
+  the owner copy says what turning it off costs — payroll close, prepaid settlements,
+  package valuation and package transfers. `StaffSecurityPolicyCard`'s description now says
+  the policy covers staff.
+- Evidence: focused `auth-security.test.ts` 19/19 (owner opt-out, owner exempt from the
+  policy at sign-in _and_ renewal, staff opt-out refused, staff renewal refused with
+  `401 TWO_FACTOR_REQUIRED`, password-only owner login, staff still challenged);
+  `payroll-value-package.http.test.ts` and `commission-attribution-policy.acceptance.test.ts`
+  for the two new guards; `TwoFactorCard.test.tsx`; the opt-in SEC-01 acceptance 2/2 against
+  a disposable PostgreSQL on `127.0.0.1:55439` and a loopback capture SMTP; full API suite
+  `src/**/*.test.ts` + `prisma/*.test.ts` 1508 tests — 1233 passed, 0 failed, 275 opt-in
+  skips; API and web typecheck, scoped API lint and Prettier clean. Web 1060/1074 with the
+  14 failures confined to the unrelated in-flight `settings/PayrollPlans.test.tsx` under
+  full-suite load — that file is 25/25 on its own, and the two-factor and Settings files are
+  37/37 together.
+- Two test-side repairs, both consequences of today's other work rather than of this change.
+  SEC-01's teardown deleted the acceptance tenant with `tenant.deleteMany`, which the
+  append-only guard added by the platform tenant purge migration now refuses once the
+  receipt has frozen payroll economics on a sale line; the teardown sets the same
+  transaction-local `glampro.purge_tenant` break-glass the operator purge uses, and the test
+  now passes on repeat runs. The local development inbox on `127.0.0.1:1025` is still needed
+  for any route test that sends mail: `staff.routes.test.ts` answers `503 EMAIL_SEND_FAILED`
+  without a listener there and is 32/32 with a plain SMTP sink.
+- Still open: `payroll-cutover.ts` and `treatment-disposal.service.ts` read the flag through
+  their own actor lookup rather than the shared helper, and the payroll-close guards answer
+  with terse messages ("Payroll input loading is not permitted.") that will now be the first
+  thing a password-only owner sees. Neither is a correctness problem; both are worth a
+  wording pass when payroll close is next touched.
+- No deployment, seed or production data change.

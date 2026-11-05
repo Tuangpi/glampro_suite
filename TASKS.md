@@ -529,6 +529,19 @@ owner-facing experience; they do not authorize deployment or outbound messages.
   captured. Local web/API again returned HTTP 000 on ports 5173/9000. Owner
   walkthrough and explicit acceptance were outstanding at that check; subsequently
   completed and confirmed by the user. OA-03 was not started.
+- Simplification follow-up November 5, 2026: the panel went from 266 lines to 134 — a card of
+  three factual lines (paid/refunded/net, receipt mix, at most two checks), one qualification
+  line and the collapsed window. The "Suggested checks" card grid and the eight-definition
+  evidence drawer are gone; those definitions are no longer printed anywhere in the product —
+  Reports shows the figures with their own labels and the Business questions tab can explain them
+  on request. The role/module gate, tenant:user cache key, refusal suppression, salon-timezone
+  `stamp()`, refresh/retry, loading/stale/error copy and the `<details>` reporting window are
+  unchanged, so the October 24 acceptance stands. `ownerMetrics()` and its three API consumers are
+  untouched. Focused 23/23 (briefing 14, dashboard 9); web typecheck, lint, scoped Prettier and the
+  production build exit 0. Full web 1,078/1,085 — the 7 failures are the already-recorded
+  `settings/PayrollPlans.test.tsx` timeouts under parallel load, and that file passes 25/25 alone.
+  Populated, zero-day, loading, error/retry, stale and refused states are covered by the passing
+  tests; no live browser, HTTP or database check was performed.
 
 ### OA-03 — Service-aware rebooking recommendations
 
@@ -1072,6 +1085,13 @@ phase, use the listed order unless dependencies or unresolved policy block it.
   unchanged across 36 tables; all 10 customers default false/revision zero; no
   notices/events created. No reset/reseed. Agent browser/visual checks not performed.
 - Next: TK2610-0016 / P1-05 Customer profile page. External TK2610-0015 may be marked Done.
+- Follow-up (November 4, 2026): the Add-customer drawer now captures the same choices and
+  records them through `POST /customers/:id/consent` right after creation, at revision 0.
+  Two requests, not a transaction: a failed consent call keeps the drawer open on the created
+  record and says the consent was not saved. Nothing ticked sends no event; no published notice
+  leaves both boxes disabled. API, shared contract and migrations untouched. Verification: new
+  component/drawer tests 5/5 and 6/6, page test 13/13, full web suite 1,045 passed with the eight
+  already-recorded `PayrollPlans` timeouts; web typecheck, lint and scoped Prettier exit 0.
 
 ### TK2610-0016 — P1-05 Customer profile page
 

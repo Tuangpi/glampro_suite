@@ -12,14 +12,6 @@ vi.mock("@/pages/Outlets", () => ({
 vi.mock("@/components/settings/MessagingCard", () => ({
   default: () => <div>WhatsApp and SMS settings</div>,
 }));
-// The rooms card reads two lists of its own (phase D). Mocked at the hook level so
-// this suite keeps testing the page's own wiring rather than the card's queries.
-vi.mock("@/hooks/useResources", () => ({
-  useResourceList: () => ({ data: [], isPending: false, isError: false }),
-  useResourceServices: () => ({ data: { data: [] }, isPending: false, isError: false }),
-  useCreateResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
-  useUpdateResource: () => ({ mutateAsync: vi.fn(), isPending: false }),
-}));
 vi.mock("@/hooks/useServices", () => ({
   useServiceList: () => ({ data: { data: [], total: 0 }, isPending: false }),
 }));
@@ -28,6 +20,7 @@ const {
   useModules,
   useSalonProfile,
   useUpdateSalonProfile,
+  useUpdateSalonSecurityPolicy,
   useSalonOperatingHours,
   useUpdateSalonOperatingHours,
   useStaffList,
@@ -37,6 +30,7 @@ const {
   useModules: vi.fn(),
   useSalonProfile: vi.fn(),
   useUpdateSalonProfile: vi.fn(),
+  useUpdateSalonSecurityPolicy: vi.fn(),
   useSalonOperatingHours: vi.fn(),
   useUpdateSalonOperatingHours: vi.fn(),
   useStaffList: vi.fn(),
@@ -49,6 +43,7 @@ vi.mock("@/hooks/useSettings", () => ({
   useModules,
   useSalonProfile,
   useUpdateSalonProfile,
+  useUpdateSalonSecurityPolicy,
   useSalonOperatingHours,
   useUpdateSalonOperatingHours,
 }));
@@ -115,6 +110,7 @@ beforeEach(() => {
       onlineBookingEnabled: false,
       onlineDepositAmount: 0,
       onlineNoShowFee: 0,
+      requireStaffTwoFactor: false,
       owner: { id: "owner-1", name: "Ava Owner", email: "ava@example.com" },
 
       // The API still returns the salon's stored localisation preferences; the
@@ -175,6 +171,7 @@ beforeEach(() => {
     isError: false,
   });
   useUpdateSalonProfile.mockReturnValue({ mutateAsync, isPending: false });
+  useUpdateSalonSecurityPolicy.mockReturnValue({ mutateAsync, isPending: false });
   useSalonOperatingHours.mockReturnValue({
     data: {
       tenantId: "tenant-1",
@@ -290,7 +287,6 @@ describe("Settings", () => {
     await userEvent.selectOptions(screen.getByLabelText("Settings category"), "booking");
     const booking = screen.getByRole("region", { name: "Booking & hours" });
     expect(within(booking).getByText("Business hours")).toBeVisible();
-    expect(within(booking).getByText("Rooms and equipment")).toBeVisible();
     expect(screen.queryByRole("region", { name: "Salon details" })).not.toBeInTheDocument();
   });
 
@@ -318,27 +314,43 @@ describe("Settings", () => {
     });
   });
 
-  it("no longer offers the online-booking settings in the booking category", () => {
+  it("no longer offers the online-booking or rooms settings in the booking category", () => {
     renderSettings("booking");
-    // Hiding is deliberate: the salon's hours and resources stay, while the
-    // online-booking toggle and its fees are managed outside this screen. The
-    // profile write never sends those keys, so nothing here can change them.
+    // Hiding is deliberate. The business hours stay, and the rooms a booking may
+    // occupy stay on the server — `assignResources` still gives every occupying
+    // line a free room — but nothing on this screen edits the toggle, the fees or
+    // the room list. The profile write never sends those keys, so nothing here
+    // can change them.
     expect(screen.getByText("Business hours")).toBeVisible();
-    expect(screen.getByText("Rooms and equipment")).toBeVisible();
+    expect(screen.queryByText("Rooms and equipment")).not.toBeInTheDocument();
     expect(screen.queryByText("Online booking")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Enable online booking")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Deposit amount (SGD)")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("No-show fee (SGD)")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save booking settings" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add room or equipment" })).not.toBeInTheDocument();
   });
 
   it("keeps personal security separate from salon privacy notices", async () => {
     renderSettings();
     await userEvent.selectOptions(screen.getByLabelText("Settings category"), "privacy");
     expect(screen.getByText("Account security")).toBeVisible();
+    // The salon-wide policy is the owner's, and is a different question from the
+    // member's own switch — so it is its own card on the same screen.
+    expect(screen.getByText("Staff sign-in policy")).toBeVisible();
     expect(screen.getByText("Privacy notice settings")).toBeVisible();
     await userEvent.selectOptions(screen.getByLabelText("Settings category"), "messages");
     expect(screen.getByText("WhatsApp and SMS settings")).toBeVisible();
+  });
+
+  it("offers the salon-wide staff policy to the owner only", async () => {
+    auth.role = "MANAGER";
+    renderSettings();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "privacy");
+    // A manager can still manage their own second factor…
+    expect(screen.getByText("Account security")).toBeVisible();
+    // …but not bind their colleagues' sign-in.
+    expect(screen.queryByText("Staff sign-in policy")).not.toBeInTheDocument();
   });
 
   it("uses salon-facing guidance without architecture or release-planning copy", async () => {
@@ -368,6 +380,24 @@ describe("Settings", () => {
     await userEvent.selectOptions(screen.getByLabelText("Settings category"), "team");
     expect(screen.getByText("Stella Stylist")).toBeInTheDocument();
     expect(screen.getByText("Senior stylist")).toBeInTheDocument();
+  });
+
+  it("lists modules by access, with no renewal date for the salon to read", async () => {
+    renderSettings();
+    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "features");
+
+    const table = screen.getByRole("table", { name: "Modules this salon has access to" });
+    // Access is the only question this panel answers: `expiresAt` is a grant
+    // lapse date the platform console owns, and nothing here renews.
+    expect(
+      within(table)
+        .getAllByRole("columnheader")
+        .map((header) => header.textContent),
+    ).toEqual(["Module", "Type", "Access"]);
+    expect(within(table).queryByText("Renews")).not.toBeInTheDocument();
+    // One header row and the two catalogue rows the fixture returns.
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(within(table).getByText("Active")).toBeInTheDocument();
   });
 
   it("saves salon-editable fields without touching the platform-owned preferences", async () => {

@@ -39,6 +39,8 @@ const user = {
 };
 let mailText = "";
 let consumed = false;
+/** The salon's staff sign-in policy, as `assertTenantMaySignIn` reports it. */
+let salonRequiresStaffTwoFactor = false;
 let sessionsIssued = 0;
 let credentialWrites = 0;
 let mailFails = false;
@@ -57,13 +59,16 @@ function replace(target: object, key: string, implementation: unknown) {
 beforeEach(() => {
   user.globalRole = "SUPER_ADMIN";
   user.disabled = false;
-  user.twoFactorEnabled = false;
+  // The owner starts enrolled: the challenge tests are about a person who has a
+  // second factor, and the ones that prove password-only sign-in set this false.
+  user.twoFactorEnabled = true;
   user.twoFactorCode = null;
   user.twoFactorCodeExpiresAt = null;
   consumed = false;
   sessionsIssued = 0;
   credentialWrites = 0;
   mailFails = false;
+  salonRequiresStaffTwoFactor = false;
   beforeMailFailure = undefined;
   mock.method(nodemailer, "createTransport", () => ({
     sendMail: async (input: { text: string }) => {
@@ -94,7 +99,11 @@ beforeEach(() => {
       return { count: 1 };
     },
   );
-  replace(prisma.tenant, "findUnique", async () => ({ status: "ACTIVE", subscriptions: [] }));
+  replace(prisma.tenant, "findUnique", async () => ({
+    status: "ACTIVE",
+    subscriptions: [],
+    requireStaffTwoFactor: salonRequiresStaffTwoFactor,
+  }));
   replace(prisma.refreshToken, "create", async () => {
     sessionsIssued++;
     return { id: "unit-refresh" };
@@ -198,7 +207,10 @@ describe("email-code authentication security", () => {
     }
   });
 
-  it("requires owner verification before issuing tokens and enrolls on success", async () => {
+  it("challenges staff covered by the salon's policy and enrolls them on success", async () => {
+    user.globalRole = "STAFF";
+    user.twoFactorEnabled = false;
+    salonRequiresStaffTwoFactor = true;
     const input = await challengeLogin();
     assert.equal(sessionsIssued, 0);
     const result = await verifyTwoFactorForLogin(input, {});
@@ -249,24 +261,87 @@ describe("email-code authentication security", () => {
     assert.equal(user.twoFactorEnabled, true);
   });
 
-  it("does not allow owners to disable 2FA", async () => {
-    await assert.rejects(disableTwoFactor(user.id), /must keep/);
+  it("lets an owner turn their own factor off", async () => {
+    user.twoFactorCode = "stale-code-hash";
+    user.twoFactorCodeExpiresAt = new Date(Date.now() + 60_000);
+    await disableTwoFactor(user.id);
+    assert.equal(user.twoFactorEnabled, false);
+    assert.equal(user.twoFactorCode, null);
+    assert.equal(user.twoFactorCodeExpiresAt, null);
   });
 
-  it("does not renew an unenrolled owner's legacy session", async () => {
+  it("does not let the salon's policy trap the owner's own switch", async () => {
+    salonRequiresStaffTwoFactor = true;
+    await disableTwoFactor(user.id);
+    assert.equal(user.twoFactorEnabled, false);
+  });
+
+  it("refuses a staff member's opt-out while the salon requires it", async () => {
+    user.globalRole = "STAFF";
+    salonRequiresStaffTwoFactor = true;
+    await assert.rejects(
+      disableTwoFactor(user.id),
+      /Your salon requires two-factor authentication/,
+    );
+    assert.equal(user.twoFactorEnabled, true);
+  });
+
+  it("renews a password-only owner's session instead of demanding a factor", async () => {
+    user.twoFactorEnabled = false;
+    // The salon requires a factor of its staff, and the owner is still renewed: the
+    // policy is a staff rule, so it must not undo the switch the owner just turned off.
+    salonRequiresStaffTwoFactor = true;
     replace(prisma.refreshToken, "findUnique", async () => ({
       userId: user.id,
+      realm: "web",
       revokedAt: null,
       expiresAt: new Date(Date.now() + 60_000),
     }));
-    await assert.rejects(refresh("legacy-refresh-token", {}), /verify your owner account/);
+    replace(prisma.refreshToken, "updateMany", async () => ({ count: 1 }));
+    const result = await refresh("password-only-refresh-token", {});
+    assert.ok(result.accessToken);
+    assert.equal(sessionsIssued, 1);
+  });
+
+  it("refuses a staff member's renewal while the salon requires a factor", async () => {
+    user.globalRole = "STAFF";
+    user.twoFactorEnabled = false;
+    salonRequiresStaffTwoFactor = true;
+    replace(prisma.refreshToken, "findUnique", async () => ({
+      userId: user.id,
+      realm: "web",
+      revokedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    }));
+    await assert.rejects(
+      refresh("staff-refresh-token", {}),
+      (error: { statusCode?: number; code?: string }) =>
+        error.statusCode === 401 && error.code === "TWO_FACTOR_REQUIRED",
+    );
     assert.equal(sessionsIssued, 0);
   });
 
   it("preserves password-only login for staff who have not opted in", async () => {
     user.globalRole = "STAFF";
+    user.twoFactorEnabled = false;
     const result = await login({ email: user.email, password, realm: "web" }, {});
     assert.ok("accessToken" in result);
+  });
+
+  it("signs an owner in with a password once they turn their factor off", async () => {
+    user.twoFactorEnabled = false;
+    const result = await login({ email: user.email, password, realm: "web" }, {});
+    assert.ok("accessToken" in result);
+    assert.equal(sessionsIssued, 1);
+  });
+
+  it("still challenges a staff member the salon's policy covers", async () => {
+    user.globalRole = "STAFF";
+    user.twoFactorEnabled = false;
+    salonRequiresStaffTwoFactor = true;
+    const result = await login({ email: user.email, password, realm: "web" }, {});
+    assert.ok("requiresTwoFactor" in result);
+    assert.equal(sessionsIssued, 0);
   });
 
   it("rejects weak owner password changes before writing credentials", async () => {

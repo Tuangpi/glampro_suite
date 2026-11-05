@@ -30,6 +30,7 @@ const USER: AuthUser = {
   email: "owner@glampro.test",
   globalRole: "MANAGER",
   tenantId: "t1",
+  twoFactorEnabled: false,
 };
 
 const STALE = {

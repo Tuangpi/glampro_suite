@@ -8,10 +8,22 @@
  * answers a 422 with `details: [{ path: "body.email", message }]`, so `fieldError`
  * strips the `body.` prefix and hands the message to that control's `error` prop.
  * The contract lives in `packages/shared`; nothing here re-declares a rule.
+ *
+ * **Consent on create is a second request, and it is not atomic.** A consent
+ * event needs a customer id, so the choices shown in the Add drawer are held in
+ * local state and sent to `POST /customers/:id/consent` once creation returns
+ * one — the same audited endpoint the edit drawer's panel uses, so the notice
+ * and revision guards are not re-implemented here. If that second call fails the
+ * customer still exists: the drawer says so, keeps the created record open (via
+ * `onCreated`) so the consent panel is one click away, and never claims the
+ * choice was saved.
  */
 import { useState } from "react";
-import CustomerConsentPanel from "@/components/customers/CustomerConsentPanel";
 import ChannelConsentPanel from "@/components/customers/ChannelConsentPanel";
+import CustomerConsentCapture, {
+  type ConsentCaptureValue,
+} from "@/components/customers/CustomerConsentCapture";
+import CustomerConsentPanel from "@/components/customers/CustomerConsentPanel";
 
 import type { CustomerDetail, GenderValue } from "@glampro_suite/shared";
 
@@ -21,15 +33,10 @@ import Drawer from "@/components/ui/Drawer";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import { showToast } from "@/components/ui/toast-store";
+import { GENDER_OPTIONS } from "@/constants/customers";
+import { usePrivacyNotice, useRecordConsentForNewCustomer } from "@/hooks/useConsent";
 import { useCreateCustomer, useUpdateCustomer } from "@/hooks/useCustomers";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
-
-const GENDER_OPTIONS = [
-  { value: "FEMALE", label: "Female" },
-  { value: "MALE", label: "Male" },
-  { value: "OTHER", label: "Other" },
-  { value: "UNDISCLOSED", label: "Prefer not to say" },
-];
 
 interface FormState {
   name: string;
@@ -81,14 +88,36 @@ function clearable(value: string): string | null {
   return trimmed === "" ? null : trimmed;
 }
 
+const EMPTY_CONSENT: ConsentCaptureValue = {
+  pdpaConsent: false,
+  marketingOptIn: false,
+  reviewed: false,
+};
+
+/** Shown when a grant is ticked but there is no notice to record it against. */
+const NO_NOTICE_MESSAGE =
+  "Consent capture is disabled until a manager publishes a privacy notice in Settings.";
+
+const UNREVIEWED_MESSAGE = "Confirm you presented the privacy notice before recording consent.";
+
 export interface CustomerFormDrawerProps {
   open: boolean;
   /** `null` creates; a customer edits. */
   customer: CustomerDetail | null;
   onClose: () => void;
+  /**
+   * Called with the new record when creation succeeded but consent did not, so
+   * the page can reopen this drawer on that record and let staff finish there.
+   */
+  onCreated?: (customer: CustomerDetail) => void;
 }
 
-export default function CustomerFormDrawer({ open, customer, onClose }: CustomerFormDrawerProps) {
+export default function CustomerFormDrawer({
+  open,
+  customer,
+  onClose,
+  onCreated,
+}: CustomerFormDrawerProps) {
   // Seeded once, at mount. The page gives this component a `key` that changes when
   // the record or the open state changes, so a cancelled edit cannot leak its
   // unsaved text into the next one — without an effect copying props into state,
@@ -96,11 +125,18 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
   const [form, setForm] = useState<FormState>(() => (customer ? toForm(customer) : EMPTY_FORM));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);
+  const [consent, setConsent] = useState<ConsentCaptureValue>(EMPTY_CONSENT);
 
+  const isEditing = customer !== null;
   const createCustomer = useCreateCustomer();
   const updateCustomer = useUpdateCustomer();
-  const isSaving = createCustomer.isPending || updateCustomer.isPending;
-  const isEditing = customer !== null;
+  const recordConsent = useRecordConsentForNewCustomer();
+  // Only the create path needs the notice; an existing record's panel reads it
+  // itself, so this query stays off there instead of duplicating the request.
+  const noticeQuery = usePrivacyNotice(!isEditing);
+  const notice = noticeQuery.data ?? null;
+  const wantsConsent = !isEditing && (consent.pdpaConsent || consent.marketingOptIn);
+  const isSaving = createCustomer.isPending || updateCustomer.isPending || recordConsent.isPending;
 
   const set = (field: keyof FormState) => (value: string) => {
     setForm((previous) => ({ ...previous, [field]: value }));
@@ -142,7 +178,19 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
         });
         showToast("success", "Customer updated.");
       } else {
-        await createCustomer.mutateAsync({
+        // Checked before the request: a grant with no notice behind it would be
+        // refused by the API after the customer already exists, which is the
+        // half-saved state this drawer exists to avoid.
+        if (wantsConsent && !notice) {
+          setFormError(NO_NOTICE_MESSAGE);
+          return;
+        }
+        if (wantsConsent && !consent.reviewed) {
+          setFormError(UNREVIEWED_MESSAGE);
+          return;
+        }
+
+        const created = await createCustomer.mutateAsync({
           name: trimmedName,
           code: optional(form.code),
           phone: optional(form.phone),
@@ -153,7 +201,35 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
           address: optional(form.address),
           comment: optional(form.comment),
         });
-        showToast("success", "Customer added.");
+
+        if (wantsConsent && notice) {
+          try {
+            // Revision 0 is the record that was just created — no other staff
+            // member can have written to it between the two calls.
+            await recordConsent.mutateAsync({
+              id: created.id,
+              input: {
+                pdpaConsent: consent.pdpaConsent,
+                marketingOptIn: consent.marketingOptIn,
+                expectedRevision: 0,
+                noticeId: notice.id,
+              },
+            });
+          } catch (cause) {
+            // The customer exists and the consent does not. Closing as if it
+            // worked would leave "no consent on record" looking like "the
+            // customer declined", so the drawer stays on the new record.
+            showToast(
+              "error",
+              `Customer added, but consent was not saved: ${getErrorMessage(cause)}`,
+            );
+            onCreated?.(created);
+            return;
+          }
+          showToast("success", "Customer added and consent recorded.");
+        } else {
+          showToast("success", "Customer added.");
+        }
       }
 
       onClose();
@@ -298,10 +374,13 @@ export default function CustomerFormDrawer({ open, customer, onClose }: Customer
             <ChannelConsentPanel customerId={customer.id} />
           </>
         ) : (
-          <p className="text-sm text-ink-muted">
-            Save the customer first, then edit their record to capture privacy and marketing
-            choices. No consent is assumed.
-          </p>
+          <CustomerConsentCapture
+            notice={notice}
+            value={consent}
+            onChange={setConsent}
+            isLoading={noticeQuery.isPending}
+            disabled={isSaving}
+          />
         )}
       </form>
     </Drawer>

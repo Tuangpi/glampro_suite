@@ -35,6 +35,8 @@ interface ProfileBody {
   locale: string;
   gstEnabled: boolean;
   gstRegistrationNumber: string | null;
+  /** Salon-wide staff sign-in policy; written through `PATCH /security`. */
+  requireStaffTwoFactor: boolean;
   /** `null` when the salon has no plan recorded (TENANT_B does not). */
   subscriptionEndsAt: string | null;
   owner: { id: string; name: string; email: string } | null;
@@ -254,6 +256,9 @@ describe("settings endpoints", { skip: databaseUrl ? false : "DATABASE_URL is no
     assert.equal(profile.lowStockThreshold, 6);
     assert.equal(profile.timeZone, "Asia/Singapore");
     assert.equal(profile.locale, "en-SG");
+    // Off until an owner asks for it: the migration's default is the policy's
+    // default, and no salon already running is asked to change how it signs in.
+    assert.equal(profile.requireStaffTwoFactor, false);
     // The later of the salon's two plans, not the first row found.
     assert.equal(profile.subscriptionEndsAt, SUBSCRIPTION_ENDS_AT.toISOString());
     assert.deepEqual(profile.owner, {
@@ -434,5 +439,83 @@ describe("settings endpoints", { skip: databaseUrl ? false : "DATABASE_URL is no
     });
     assert.equal(suspendedResponse.status, 403);
     assert.equal(((await suspendedResponse.json()) as ErrorEnvelope).code, "TENANT_SUSPENDED");
+  });
+
+  it("stores the staff two-factor policy, records who changed it, and restores it", async () => {
+    const enabled = await request("PATCH", "/api/settings/security", ownerToken, {
+      requireStaffTwoFactor: true,
+    });
+    assert.equal(enabled.status, 200);
+    assert.equal((await dataOf<ProfileBody>(enabled)).requireStaffTwoFactor, true);
+
+    // The same value again is a no-op: an idempotent save is not a security event.
+    const repeated = await request("PATCH", "/api/settings/security", ownerToken, {
+      requireStaffTwoFactor: true,
+    });
+    assert.equal(repeated.status, 200);
+
+    const rows = await runAsPlatform(() =>
+      prisma.auditLog.findMany({
+        where: { tenantId: TENANT_A, action: "STAFF_TWO_FACTOR_POLICY_CHANGED" },
+        orderBy: { createdAt: "desc" },
+      }),
+    );
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.targetType, "Tenant");
+    assert.equal(rows[0]?.targetId, TENANT_A);
+    assert.deepEqual(rows[0]?.metadata, {
+      actorUserId: "settings-rt-owner",
+      requireStaffTwoFactor: true,
+      previousRequireStaffTwoFactor: false,
+    });
+
+    // The stored column is what sign-in reads, not just what the profile reports.
+    const stored = await runAsPlatform(() =>
+      prisma.tenant.findUniqueOrThrow({
+        where: { id: TENANT_A },
+        select: { requireStaffTwoFactor: true },
+      }),
+    );
+    assert.equal(stored.requireStaffTwoFactor, true);
+
+    // Another salon is untouched, and a member of one cannot read this one's policy.
+    const foreign = await dataOf<ProfileBody>(
+      await request("GET", "/api/settings/profile", foreignToken),
+    );
+    assert.equal(foreign.requireStaffTwoFactor, false);
+
+    const restored = await request("PATCH", "/api/settings/security", ownerToken, {
+      requireStaffTwoFactor: false,
+    });
+    assert.equal(restored.status, 200);
+    assert.equal((await dataOf<ProfileBody>(restored)).requireStaffTwoFactor, false);
+  });
+
+  it("refuses the policy to staff, suspended salons and malformed bodies", async () => {
+    const staff = await request("PATCH", "/api/settings/security", staffToken, {
+      requireStaffTwoFactor: true,
+    });
+    assert.equal(staff.status, 403);
+
+    const suspended = await request("PATCH", "/api/settings/security", suspendedToken, {
+      requireStaffTwoFactor: true,
+    });
+    assert.equal(suspended.status, 403);
+    assert.equal(((await suspended.json()) as ErrorEnvelope).code, "TENANT_SUSPENDED");
+
+    for (const body of [
+      {},
+      { requireStaffTwoFactor: "yes" },
+      { requireStaffTwoFactor: true, slug: "x" },
+    ]) {
+      const response = await request("PATCH", "/api/settings/security", ownerToken, body);
+      assert.equal(response.status, 422);
+    }
+
+    // A refused write must not have changed anything.
+    const profile = await dataOf<ProfileBody>(
+      await request("GET", "/api/settings/profile", ownerToken),
+    );
+    assert.equal(profile.requireStaffTwoFactor, false);
   });
 });

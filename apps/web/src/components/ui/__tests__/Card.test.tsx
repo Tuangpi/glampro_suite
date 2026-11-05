@@ -82,4 +82,20 @@ describe("Card", () => {
 
     expect(container.querySelector("section > div")).not.toHaveClass("px-3");
   });
+
+  it("becomes a region a screen reader can jump to once it is labelled", () => {
+    render(
+      <Card title="Balances" label="Balances">
+        Body
+      </Card>,
+    );
+
+    expect(screen.getByRole("region", { name: "Balances" })).toBeInTheDocument();
+  });
+
+  it("stays a plain container until a label names it", () => {
+    render(<Card title="Balances">Body</Card>);
+
+    expect(screen.queryByRole("region")).not.toBeInTheDocument();
+  });
 });

@@ -24,6 +24,14 @@ export interface CardProps {
   /** Divider-separated footer, for totals or a row of links. */
   footer?: React.ReactNode;
   children?: React.ReactNode;
+  /**
+   * Accessible name for the section, so the card becomes a landmark a screen
+   * reader can jump to. Pass the same words as `title` — a `section` is only
+   * exposed as a `region` once it has a name, and an unnamed one is just a
+   * container. Pages that group several cards use this the way `Settings` and
+   * `StaffProfile` use their own `aria-labelledby` section wrappers.
+   */
+  label?: string;
   /** Drop the body padding for edge-to-edge content such as a table. */
   flush?: boolean;
   className?: string;
@@ -35,6 +43,7 @@ export default function Card({
   actions,
   footer,
   children,
+  label,
   flush = false,
   className,
 }: CardProps) {
@@ -42,6 +51,7 @@ export default function Card({
 
   return (
     <section
+      aria-label={label}
       className={cn(
         "flex flex-col overflow-hidden rounded-card border border-line bg-surface",
         className,

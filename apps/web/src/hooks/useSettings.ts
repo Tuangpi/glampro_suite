@@ -13,6 +13,7 @@ import type {
   SalonProfile,
   UpdateSalonOperatingHoursInput,
   UpdateSalonProfileInput,
+  UpdateSalonSecurityInput,
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
@@ -52,6 +53,29 @@ export function useUpdateSalonProfile() {
       void queryClient.setQueryData(queryKeys.settings.general(), profile);
       void queryClient.setQueryData(queryKeys.settings.general(profile.id), profile);
       void queryClient.invalidateQueries({ queryKey: queryKeys.auth.profile() });
+    },
+  });
+}
+
+/**
+ * Saves the salon's staff sign-in policy.
+ *
+ * The endpoint answers with the whole profile, so the cached profile is replaced
+ * rather than refetched — `useSalonProfile` reads the same key, and the policy
+ * card and the account-security card therefore see the new value on the same
+ * render. The auth profile is untouched on purpose: the policy says who must
+ * present a second factor, not whether this person has enrolled, so nothing in
+ * `GET /auth/me` changes.
+ */
+export function useUpdateSalonSecurityPolicy() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: UpdateSalonSecurityInput) =>
+      patch<SalonProfile>("/settings/security", input),
+    onSuccess: (profile) => {
+      void queryClient.setQueryData(queryKeys.settings.general(), profile);
+      void queryClient.setQueryData(queryKeys.settings.general(profile.id), profile);
     },
   });
 }

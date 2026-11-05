@@ -16,6 +16,7 @@ const Customers = lazy(() => import("@/pages/Customers"));
 const CustomerProfile = lazy(() => import("@/pages/CustomerProfile"));
 const Products = lazy(() => import("@/pages/Products"));
 const Staff = lazy(() => import("@/pages/Staff"));
+const StaffProfile = lazy(() => import("@/pages/StaffProfile"));
 const Reports = lazy(() => import("@/pages/Reports"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const NotFound = lazy(() => import("@/pages/NotFound"));
@@ -53,6 +54,10 @@ const routes: RouteObject[] = [
       { path: "customers/:id", element: lazyRoute(<CustomerProfile />) },
       { path: "products", element: lazyRoute(<Products />) },
       { path: "staff", element: lazyRoute(<Staff />) },
+      // Screen 09's editor. Creation stays a drawer on the list — it is one short form —
+      // while a record's five separate save scopes get a page with a rail, because a
+      // single drawer column made payroll look like it was saved by the profile button.
+      { path: "staff/:id", element: lazyRoute(<StaffProfile />) },
       { path: "reports", element: lazyRoute(<Reports />) },
       // Screen 11. The API refuses the profile write for anyone else
       // (`requireRole("SUPER_ADMIN", "MANAGER")`), which is the actual boundary.

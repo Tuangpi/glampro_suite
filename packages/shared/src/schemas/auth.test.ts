@@ -45,8 +45,24 @@ describe("authSessionSchema", () => {
       accessToken: "a",
       refreshToken: "r",
       expiresIn: ACCESS_TOKEN_TTL_SECONDS,
-      user: { id: "u1", name: "Ava Owner", email: "owner@glampro.test", globalRole: "MANAGER" },
+      user: {
+        id: "u1",
+        name: "Ava Owner",
+        email: "owner@glampro.test",
+        globalRole: "MANAGER",
+        twoFactorEnabled: true,
+      },
     };
     assert.deepEqual(authSessionSchema.parse(session), session);
+  });
+
+  it("requires the second-factor flag, so a screen cannot guess it", () => {
+    const result = authSessionSchema.safeParse({
+      accessToken: "a",
+      refreshToken: "r",
+      expiresIn: ACCESS_TOKEN_TTL_SECONDS,
+      user: { id: "u1", name: "Ava Owner", email: "owner@glampro.test", globalRole: "MANAGER" },
+    });
+    assert.equal(result.success, false);
   });
 });

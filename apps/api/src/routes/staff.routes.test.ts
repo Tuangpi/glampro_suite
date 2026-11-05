@@ -680,4 +680,244 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
       assert.equal(response.status, 404);
     });
   });
+
+  /**
+   * The recovery path: a colleague who cannot sign in, and the person who hands them
+   * a working login again.
+   *
+   * The assertions are about consequences rather than status codes, because that is
+   * where a password reset goes wrong: the new password has to work, the old one has
+   * to stop working, and **every session issued with the old credential has to die**.
+   * An access token that still passes `auth`, or a refresh token that still mints one,
+   * would make "reset" a reassurance rather than a fact ([ADR 0007]).
+   */
+  describe("POST /api/staff/:id/password", () => {
+    const TARGET_ID = "staffrt-reset-target";
+    const TARGET_EMAIL = `reset-target@${DOMAIN}`;
+    const NEW_PASSWORD = "reset-secret-9";
+
+    before(async () => {
+      const passwordHash = await hashPassword(PASSWORD);
+      await runAsPlatform(() =>
+        prisma.user.create({
+          data: {
+            id: TARGET_ID,
+            tenantId: TENANTS.a,
+            email: TARGET_EMAIL,
+            name: "Rae Reset",
+            globalRole: "STAFF",
+            passwordHash,
+          },
+        }),
+      );
+    });
+
+    it("sets the password and ends every session that used the old one", async () => {
+      // A real session first, so both halves of the revocation are observable.
+      const session = await dataOf<{ accessToken: string; refreshToken: string }>(
+        await request("POST", "/api/auth/login", undefined, {
+          email: TARGET_EMAIL,
+          password: PASSWORD,
+        }),
+      );
+      assert.equal((await request("GET", "/api/auth/me", session.accessToken)).status, 200);
+
+      const response = await request("POST", `/api/staff/${TARGET_ID}/password`, ownerToken, {
+        password: NEW_PASSWORD,
+      });
+      assert.equal(response.status, 200);
+      const body = await envelope(response);
+      assert.equal(body.message, "Password set. They were signed out on every device.");
+      // The response says nothing about the secret, and neither should it.
+      assert.equal(JSON.stringify(body).includes(NEW_PASSWORD), false);
+
+      // Both layers of the session are gone: `auth` compares `tokenVersion`, and the
+      // refresh row is revoked rather than merely left to expire.
+      const reuse = await request("GET", "/api/auth/me", session.accessToken);
+      assert.equal(reuse.status, 401);
+      assert.equal((await envelope(reuse)).code, "SESSION_INVALIDATED");
+      const refreshed = await request("POST", "/api/auth/refresh", undefined, {
+        refreshToken: session.refreshToken,
+      });
+      assert.equal(refreshed.status, 401);
+
+      // The credential itself changed, in both directions.
+      assert.equal(
+        (
+          await request("POST", "/api/auth/login", undefined, {
+            email: TARGET_EMAIL,
+            password: PASSWORD,
+          })
+        ).status,
+        401,
+      );
+      assert.equal(
+        (
+          await request("POST", "/api/auth/login", undefined, {
+            email: TARGET_EMAIL,
+            password: NEW_PASSWORD,
+          })
+        ).status,
+        200,
+      );
+
+      // Audited in the same transaction, and the audit row carries no secret.
+      const audit = await runAsPlatform(() =>
+        prisma.auditLog.findFirst({
+          where: { tenantId: TENANTS.a, action: "STAFF_PASSWORD_RESET", targetId: TARGET_ID },
+        }),
+      );
+      assert.ok(audit, "a reset must leave an audit row");
+      assert.deepEqual(audit.metadata, { globalRole: "STAFF" });
+      assert.equal(JSON.stringify(audit).includes(NEW_PASSWORD), false);
+    });
+
+    it("lets a manager recover a staff login, but never a peer's or the owner's", async () => {
+      assert.equal(
+        (
+          await request("POST", `/api/staff/${TARGET_ID}/password`, managerToken, {
+            password: PASSWORD,
+          })
+        ).status,
+        200,
+      );
+
+      // A credential write is a takeover primitive: recovering a peer manager would let
+      // one manager sign in as another, and the owner's would be escalation by password.
+      const owner = await request("POST", "/api/staff/staffrt-owner/password", managerToken, {
+        password: PASSWORD,
+      });
+      assert.equal(owner.status, 403);
+      assert.equal((await envelope(owner)).code, "ROLE_NOT_PERMITTED");
+
+      // Including their own account, which `/api/auth/change-password` exists for.
+      assert.equal(
+        (
+          await request("POST", "/api/staff/staffrt-manager/password", managerToken, {
+            password: PASSWORD,
+          })
+        ).status,
+        403,
+      );
+    });
+
+    it("refuses a staff token and an anonymous caller", async () => {
+      // The previous test put the password back, so a fresh staff session can be minted.
+      const staffToken = await tokenFor(TARGET_EMAIL);
+
+      assert.equal(
+        (
+          await request("POST", `/api/staff/${TARGET_ID}/password`, staffToken, {
+            password: PASSWORD,
+          })
+        ).status,
+        403,
+      );
+      assert.equal(
+        (
+          await request("POST", `/api/staff/${TARGET_ID}/password`, undefined, {
+            password: PASSWORD,
+          })
+        ).status,
+        401,
+      );
+    });
+
+    it("cannot reach another salon's staff, even from that salon's owner", async () => {
+      const response = await request("POST", "/api/staff/staffrt-other/password", ownerToken, {
+        password: PASSWORD,
+      });
+
+      assert.equal(response.status, 404);
+      assert.equal((await envelope(response)).code, "STAFF_NOT_FOUND");
+    });
+
+    it("409s for a POS PIN identity, which has no password to set", async () => {
+      const PIN_ID = "staffrt-reset-pin-only";
+      const [posPinHash, passwordHash] = await Promise.all([
+        hashPassword("246810"),
+        hashPassword(PASSWORD),
+      ]);
+      await runAsPlatform(() =>
+        prisma.user.create({
+          data: {
+            id: PIN_ID,
+            tenantId: TENANTS.a,
+            name: "Pin Only",
+            globalRole: "STAFF",
+            posPinHash,
+            passwordHash,
+          },
+        }),
+      );
+
+      try {
+        const response = await request("POST", `/api/staff/${PIN_ID}/password`, ownerToken, {
+          password: PASSWORD,
+        });
+
+        // A success here would be a lie: `auth.service` refuses a web session for a row
+        // with no email, so nothing would actually have been reset.
+        assert.equal(response.status, 409);
+        assert.equal((await envelope(response)).code, "NO_WEB_LOGIN");
+      } finally {
+        // No email, so `purge()` — which matches the fixture domain — would miss it.
+        await runAsPlatform(() => prisma.user.delete({ where: { id: PIN_ID } }));
+      }
+    });
+
+    it("422s on a password below the floor, naming the field", async () => {
+      const response = await request("POST", `/api/staff/${TARGET_ID}/password`, ownerToken, {
+        password: "short",
+      });
+
+      assert.equal(response.status, 422);
+      assert.deepEqual(fieldPaths(await envelope(response)), ["body.password"]);
+    });
+
+    it("holds an owner target to the stricter owner password policy", async () => {
+      // Ten characters: past the shared floor, short of `adminPasswordSchema`'s twelve.
+      const response = await request("POST", "/api/staff/staffrt-owner/password", ownerToken, {
+        password: "longenough",
+      });
+      const body = await envelope(response);
+
+      assert.equal(response.status, 422);
+      assert.deepEqual(fieldPaths(body), ["password"]);
+      assert.match(body.details?.[0]?.message ?? "", /12 characters/);
+    });
+
+    /**
+     * Last, because it invalidates the `ownerToken` the rest of this file signs in
+     * with: a self-reset is still a reset, and the caller's own token is on the list.
+     */
+    it("lets an owner reset their own password, and ends the session that did it", async () => {
+      const response = await request("POST", "/api/staff/staffrt-owner/password", ownerToken, {
+        password: "owner-recovered-secret-1",
+      });
+      assert.equal(response.status, 200);
+
+      assert.equal((await request("GET", "/api/auth/me", ownerToken)).status, 401);
+      // The owner has 2FA on, so a challenge at login is the proof the new password was
+      // accepted — and a 401 for the old one is the proof it was replaced.
+      assert.equal(
+        (
+          await request("POST", "/api/auth/login", undefined, {
+            email: `owner@${DOMAIN}`,
+            password: "owner-recovered-secret-1",
+          })
+        ).status,
+        200,
+      );
+      assert.equal(
+        (
+          await request("POST", "/api/auth/login", undefined, {
+            email: `owner@${DOMAIN}`,
+            password: PASSWORD,
+          })
+        ).status,
+        401,
+      );
+    });
+  });
 });

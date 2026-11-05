@@ -397,6 +397,21 @@ model Tenant {
   onlineDepositAmount  Int     @default(0)
   /// Fee charged when an online booking is marked NO_SHOW, in cents. 0 means none.
   onlineNoShowFee      Int     @default(0)
+  /// Salon-wide staff sign-in policy. When on, every member who is not the owner
+  /// must pass a six-digit email code at sign-in, and cannot switch their own
+  /// second factor off. Off by default so existing salons keep today's behaviour
+  /// until an owner opts in from Settings → Privacy & security.
+  ///
+  /// Sign-in is the enforcement point, not session creation: `login`, the
+  /// two-factor challenge and the refresh-token exchange all read this column
+  /// through `assertTenantMaySignIn`, so a staff member holding a session from
+  /// before the policy was switched on stops renewing it within one access-token
+  /// lifetime (15 minutes) instead of being signed out mid-shift.
+  ///
+  /// The owner (`globalRole = SUPER_ADMIN`) is excluded because the switch on that
+  /// account is the owner's own to set: `users.twoFactorEnabled` decides it, and the
+  /// money-moving writes re-check that column where they run.
+  requireStaffTwoFactor Boolean @default(false)
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
 

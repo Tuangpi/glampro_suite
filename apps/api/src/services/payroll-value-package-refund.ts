@@ -43,6 +43,11 @@ export async function refundPayrollValuePackageInTransaction(
   const actor = await tx.user.findFirst({ where: { id: scope.actorId, disabled: false } });
   if (!actor || !["SUPER_ADMIN", "MANAGER"].includes(actor.globalRole))
     throw forbidden("A salon owner or manager must approve value-package refunds.");
+  // A refund cancels unspent credit that may already carry payroll, so an owner
+  // approving it must be the verified account. `MANAGER` is not held to this:
+  // the second factor is the owner's own setting, and a manager has none to give.
+  if (actor.globalRole === "SUPER_ADMIN" && !actor.twoFactorEnabled)
+    throw forbidden("Only a verified salon owner can refund a value package.");
   const key = `value-package-refund:${input.idempotencyKey}`;
   const hash = createHash("sha256")
     .update(JSON.stringify({ ...input, holdingId, actorId: actor.id }))

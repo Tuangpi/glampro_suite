@@ -15,18 +15,18 @@
  *
  * The switch never flips optimistically. It keeps the server's position until the
  * request answers and the company has been re-read.
+ *
+ * The Subscription tab is `SubscriptionPanel`: it owns its own request, its own
+ * reason and its own messages, so the `reason` state below belongs to lifecycle
+ * and module changes only.
  */
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 import type {
   CompanyAdministration as Administration,
   CompanyAudit,
   CompanyLifecycleInput,
 } from "@glampro_suite/shared";
-import {
-  companyLifecycleSchema,
-  companyModuleSchema,
-  recordSubscriptionSchema,
-} from "@glampro_suite/shared";
+import { companyLifecycleSchema, companyModuleSchema } from "@glampro_suite/shared";
 
 import { AlertTriangle } from "@/components/icons";
 import Badge from "@/components/ui/Badge";
@@ -39,9 +39,9 @@ import Pagination from "@/components/ui/Pagination";
 import Skeleton from "@/components/ui/Skeleton";
 import Switch from "@/components/ui/Switch";
 import Table, { type TableColumn } from "@/components/ui/Table";
-import { dayToLocalInstant, formatDateInputValue } from "@/lib/utils";
 import { platformApi } from "./api";
 import type { DetailTab } from "./DetailTabs";
+import SubscriptionPanel from "./SubscriptionPanel";
 
 type ModuleRow = Administration["modules"][number];
 type ModuleChange = { code: string; name: string; enabled: boolean };
@@ -60,23 +60,6 @@ function formatExpiry(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
-}
-
-/**
- * `max` for a period start. The service records only a *current* period
- * (`recordCompanySubscription` refuses a start in the future), so the picker
- * greys the days it would reject instead of letting the request fail.
- */
-function todayInputValue(): string {
-  return formatDateInputValue(new Date());
-}
-
-/**
- * `min` for a period end. Both boundaries are stored at midnight, so an end of
- * "today" has already passed and tomorrow is the earliest day the service takes.
- */
-function tomorrowInputValue(): string {
-  return formatDateInputValue(new Date(Date.now() + 24 * 60 * 60 * 1000));
 }
 
 const MODULE_COLUMNS = (
@@ -219,29 +202,17 @@ export default function CompanyAdministration({
     });
   }
 
-  function subscription(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const values = new FormData(form);
-    void perform(async () => {
-      // The picker knows a day; the API stores an instant. Each boundary is that
-      // day at midnight in the operator's own timezone, so the day never shifts.
-      const startDate = dayToLocalInstant(String(values.get("startDate") ?? ""));
-      const endDate = dayToLocalInstant(String(values.get("endDate") ?? ""));
-      if (!startDate) throw new Error("Choose a valid period start date.");
-      if (!endDate) throw new Error("Choose a valid period end date.");
-      const input = recordSubscriptionSchema.safeParse({
-        startDate,
-        endDate,
-        amount: values.get("amount"),
-        currency: values.get("currency"),
-        reason,
-      });
-      if (!input.success) throw new Error(input.error.issues[0].message);
-      await platformApi.recordSubscription(id, input.data);
-      // Only after the server accepted it: a rejected period keeps its dates.
-      form.reset();
-    });
+  /**
+   * Re-read the company after the subscription panel records a period.
+   *
+   * It deliberately does not touch `error`/`notice`: the panel reports its own
+   * outcome inside itself, and `perform`'s "Change saved" banner would claim a
+   * change this component did not make.
+   */
+  async function refresh() {
+    setLoading(true);
+    setRevision((value) => value + 1);
+    await onChange();
   }
 
   function openModule(row: ModuleRow) {
@@ -309,18 +280,15 @@ export default function CompanyAdministration({
             className="flex flex-col gap-4 pt-2"
           >
             <Card
-              title="Subscription and company access"
-              description={
-                <span className="flex items-center gap-2">
-                  Effective status <Badge dot>{data.effectiveStatus}</Badge>
-                </span>
-              }
+              title="Company access"
+              description="Suspending, reactivating and cancelling this company."
             >
               <div className="flex flex-col gap-4 px-2 pt-2 pb-1">
                 <p className="text-sm text-ink-body">
-                  Lifecycle changes sign out all company sessions. Suspension allows a new read-only
-                  login; cancellation blocks access. Record a current period before reactivating an
-                  expired subscription.
+                  Every change here signs out all company sessions. Suspension allows a new
+                  read-only login; cancellation blocks access altogether. Reactivating needs a
+                  period that is already running — one scheduled to start later brings no access
+                  forward.
                 </p>
 
                 <Input
@@ -362,77 +330,13 @@ export default function CompanyAdministration({
               </div>
             </Card>
 
-            <Card
-              title="Recent subscription periods"
-              description="The most recent 100 records. Manual record only — no payment is charged or captured."
-            >
-              <Table
-                caption="Recent subscription periods"
-                rows={data.subscriptions}
-                rowKey={(row) => row.id}
-                columns={[
-                  { key: "start", header: "Start", cell: (row) => row.startDate },
-                  { key: "end", header: "End", cell: (row) => row.endDate },
-                  {
-                    key: "amount",
-                    header: "Amount",
-                    align: "right",
-                    cell: (row) => `${row.currency} ${row.amount}`,
-                  },
-                  { key: "status", header: "Status", cell: (row) => <Badge>{row.status}</Badge> },
-                ]}
-                empty={
-                  <EmptyState
-                    title="No subscription periods recorded."
-                    description="Record the current period so the company's access has a date range."
-                  />
-                }
-              />
-
-              <form className="mt-4 flex flex-col gap-3 px-2" onSubmit={subscription}>
-                <h4 className="text-sm font-bold text-ink">Record current subscription period</h4>
-                <p className="text-xs text-ink-muted">
-                  Pick the first and last day of the period. Both are recorded at midnight in your
-                  own timezone, and periods cannot overlap.
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <Input
-                    name="startDate"
-                    label="Period start"
-                    type="date"
-                    max={todayInputValue()}
-                    required
-                  />
-                  <Input
-                    name="endDate"
-                    label="Period end"
-                    type="date"
-                    min={tomorrowInputValue()}
-                    required
-                  />
-                  <Input
-                    name="amount"
-                    label="Subscription amount"
-                    pattern="(?:0|[1-9][0-9]{0,9})\.[0-9]{2}"
-                    placeholder="99.00"
-                    required
-                  />
-                  <Input
-                    name="currency"
-                    label="Currency"
-                    defaultValue="SGD"
-                    placeholder="SGD"
-                    pattern="[A-Z]{3}"
-                    required
-                  />
-                </div>
-                <div>
-                  <Button type="submit" loading={busy} disabled={reason.trim().length < 3}>
-                    Record subscription
-                  </Button>
-                </div>
-              </form>
-            </Card>
+            <SubscriptionPanel
+              companyId={id}
+              effectiveStatus={data.effectiveStatus}
+              subscriptions={data.subscriptions}
+              onRecorded={refresh}
+              onBusyChange={onBusyChange}
+            />
           </div>
 
           <div

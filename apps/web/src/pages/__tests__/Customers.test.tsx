@@ -18,6 +18,25 @@ vi.mock("@/components/customers/CustomerConsentPanel", () => ({
   default: () => <div>Customer consent panel</div>,
 }));
 
+/**
+ * The Add drawer reads the salon's published notice and, on a grant, records a
+ * consent event through a second request. Neither is the subject here — the
+ * consent surface has its own tests — so this keeps the page on the create path
+ * it is asserting, with no notice published and no consent call offered.
+ */
+vi.mock("@/hooks/useConsent", () => ({
+  usePrivacyNotice: () => ({ data: null, isPending: false }),
+  useRecordConsentForNewCustomer: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCustomerConsent: () => ({
+    data: undefined,
+    isPending: true,
+    isError: false,
+    isFetching: false,
+    refetch: vi.fn(),
+  }),
+  useRecordCustomerConsent: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 const {
   useCustomerList,
   useCreateCustomer,

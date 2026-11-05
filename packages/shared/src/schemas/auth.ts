@@ -51,6 +51,17 @@ export const authUserSchema = z.object({
    * sessions sit above every tenant and carry no tenant id.
    */
   tenantId: z.string().optional(),
+  /**
+   * Whether this person's own second factor is enrolled. The account-security
+   * card is state-driven: without this flag an enrolled member and a member who
+   * has never enrolled saw the same "Enable" button.
+   *
+   * It is the *personal* setting only. A salon that turns on
+   * `Tenant.requireStaffTwoFactor` challenges every staff sign-in regardless,
+   * which is why the card reads the policy from `GET /settings/profile` rather
+   * than inferring it from this flag.
+   */
+  twoFactorEnabled: z.boolean(),
 });
 
 export type AuthUser = z.infer<typeof authUserSchema>;
