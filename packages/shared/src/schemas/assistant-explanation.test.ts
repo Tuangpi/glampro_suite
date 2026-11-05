@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { it } from "node:test";
 import {
+  assistantQuestions,
+  assistantTopicKeywords,
   assistantExplanationInputSchema,
   assistantExplanationSchema,
 } from "./assistant-explanation.js";
@@ -41,7 +43,7 @@ it("bounds questions and rejects untrusted context, actions and invalid periods"
   );
 });
 
-it("requires consistent evidence for answered facts and none for refusals or policy", () => {
+it("requires consistent evidence for answered facts and none for refusals or clarifications", () => {
   const base = {
     status: "unsupported",
     mode: "deterministic",
@@ -53,7 +55,31 @@ it("requires consistent evidence for answered facts and none for refusals or pol
     limitations: [],
     suggestions: [],
   };
+  const evidence = {
+    incomeToday: "0.00",
+    completedSalePaid: "0.00",
+    refundsToday: "0.00",
+    netPaid: "0.00",
+    salesToday: 0,
+    averageTicket: "0.00",
+    appointmentsToday: 0,
+    newCustomersToday: 0,
+    lowStockCount: 0,
+    lowStockThreshold: 5,
+    timeZone: "Asia/Singapore",
+    from: "2026-10-23T16:00:00.000Z",
+    to: "2026-10-24T16:00:00.000Z",
+    asOf: "2026-10-24T01:00:00.000Z",
+  };
   assert.equal(assistantExplanationSchema.safeParse(base).success, true);
+  const answered = {
+    ...base,
+    status: "answered",
+    topic: "paid",
+    source: "owner-metrics",
+    evidence,
+  };
+  assert.equal(assistantExplanationSchema.safeParse(answered).success, true);
   assert.equal(
     assistantExplanationSchema.safeParse({
       ...base,
@@ -64,9 +90,19 @@ it("requires consistent evidence for answered facts and none for refusals or pol
     false,
   );
   assert.equal(
+    assistantExplanationSchema.safeParse({ ...answered, asOf: "2026-10-24T02:00:00.000Z" }).success,
+    false,
+  );
+  assert.equal(
+    assistantExplanationSchema.safeParse({ ...answered, evidence: null }).success,
+    false,
+  );
+  assert.equal(
     assistantExplanationSchema.safeParse({ ...base, source: "owner-metrics" }).success,
     false,
   );
+  assert.equal(assistantExplanationSchema.safeParse({ ...base, topic: "paid" }).success, false);
+  assert.equal(assistantExplanationSchema.safeParse({ ...base, evidence }).success, false);
   assert.equal(
     assistantExplanationSchema.safeParse({
       ...base,
@@ -74,15 +110,47 @@ it("requires consistent evidence for answered facts and none for refusals or pol
       topic: "rebooking",
       source: "rebooking-policy",
     }).success,
-    true,
+    false,
   );
   assert.equal(
     assistantExplanationSchema.safeParse({
       ...base,
       status: "answered",
-      topic: "rebooking",
-      source: "quiet-day-policy",
+      topic: "quietDays",
+      source: "owner-metrics",
     }).success,
     false,
+  );
+});
+
+it("keeps the keyword vocabulary in step with the supported topics", () => {
+  assert.deepEqual(
+    Object.keys(assistantTopicKeywords).sort(),
+    Object.keys(assistantQuestions).sort(),
+  );
+  assert.ok(!("rebooking" in assistantQuestions));
+  for (const [topic, keywords] of Object.entries(assistantTopicKeywords)) {
+    assert.ok(keywords.length > 0, topic);
+    assert.equal(new Set(keywords).size, keywords.length, topic);
+    for (const keyword of keywords) {
+      assert.equal(keyword, keyword.trim().toLowerCase(), keyword);
+      assert.ok(keyword.length > 0);
+    }
+  }
+  const suggested = Object.values(assistantQuestions);
+  assert.equal(suggested.length, 7);
+  assert.equal(
+    assistantExplanationSchema.safeParse({
+      status: "unsupported",
+      mode: "deterministic",
+      topic: null,
+      answer: "Unsupported.",
+      evidence: null,
+      source: null,
+      asOf: "2026-10-24T01:00:00.000Z",
+      limitations: [],
+      suggestions: suggested,
+    }).success,
+    true,
   );
 });

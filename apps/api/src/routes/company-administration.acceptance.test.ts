@@ -133,6 +133,7 @@ test(
         ["/lifecycle", { action: "suspend", reason }],
         ["/subscriptions", period],
         ["/modules", { code: "packages", enabled: true, expiresAt: null, reason }],
+        ["/modules/bulk", { enabled: true, expiresAt: null, reason }],
       ] as const;
       for (const token of [undefined, tokenA, ownerToken]) {
         for (const route of ["/administration", "/audit"])
@@ -364,6 +365,9 @@ test(
       );
       const expiredAdmin = await call(root + "/administration", operator);
       assert.equal(expiredAdmin.body.data.effectiveStatus, "EXPIRED");
+      // The stored column still says ACTIVE, which is why "Reactivate" would be refused
+      // and the console gates that button on the pair rather than on the badge alone.
+      assert.equal(expiredAdmin.body.data.status, "ACTIVE");
       assert.equal(
         (await call(root + "/lifecycle", operator, { action: "suspend", reason })).status,
         200,

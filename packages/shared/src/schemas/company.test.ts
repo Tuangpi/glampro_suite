@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   createCompanySchema,
+  updateCompanySchema,
   acceptOwnerInvitationSchema,
   companyListQuerySchema,
   companyListSchema,
+  companyUpdateResultSchema,
 } from "./company.js";
 const input = {
   name: "Salon A",
@@ -42,6 +44,62 @@ test("invitation passwords and tokens have strict bounds", () => {
     acceptOwnerInvitationSchema.safeParse({ ...value, tenantId: "foreign" }).success,
     false,
   );
+});
+test("an edit reuses creation's identity rules and always demands a reason", () => {
+  const change = { name: "Salon A", slug: "salon-a", reason: "Correcting the name" };
+  assert.equal(updateCompanySchema.safeParse(change).success, true);
+
+  for (const value of [
+    { ...change, reason: "" },
+    { ...change, reason: " no " },
+    { ...change, slug: "BAD SLUG" },
+    { ...change, name: " " },
+    // Privilege, status and ownership are server decisions, not form fields: a
+    // strict object refuses them rather than silently ignoring a smuggled one.
+    { ...change, status: "ACTIVE" },
+    { ...change, globalRole: "SUPER_ADMIN" },
+    { ...change, ownerUserId: "somebody-else" },
+  ])
+    assert.equal(updateCompanySchema.safeParse(value).success, false);
+
+  // The owner pair travels together: an address with no name cannot greet anyone,
+  // and a name with no address cannot be invited.
+  assert.equal(updateCompanySchema.safeParse({ ...change, ownerName: "Owner B" }).success, false);
+  assert.equal(
+    updateCompanySchema.safeParse({ ...change, ownerEmail: "owner-b@example.test" }).success,
+    false,
+  );
+  assert.equal(
+    updateCompanySchema.parse({
+      ...change,
+      ownerName: "Owner B",
+      ownerEmail: "Owner-B@Example.test",
+    }).ownerEmail,
+    "owner-b@example.test",
+  );
+});
+test("an edit's answer distinguishes a sent invitation from one never needed", () => {
+  const detail = {
+    id: "company-a",
+    name: "Salon A",
+    slug: "salon-a",
+    status: "ACTIVE",
+    subscriptionEndsAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    owner: null,
+    invitation: null,
+  };
+  // `null` is "no invitation was needed", not "we forgot to say".
+  assert.equal(
+    companyUpdateResultSchema.parse({ company: detail, invitationDelivery: null })
+      .invitationDelivery,
+    null,
+  );
+  assert.equal(
+    companyUpdateResultSchema.safeParse({ company: detail, invitationDelivery: "queued" }).success,
+    false,
+  );
+  assert.equal(companyUpdateResultSchema.safeParse({ company: detail }).success, false);
 });
 test("company pagination rejects unbounded requests", () => {
   assert.equal(companyListQuerySchema.safeParse({ pageSize: 100000 }).success, false);

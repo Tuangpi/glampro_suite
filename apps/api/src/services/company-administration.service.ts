@@ -2,12 +2,25 @@ import type {
   CompanyLifecycleInput,
   RecordSubscriptionInput,
   CompanyModuleInput,
+  CompanyModulesBulkInput,
+  CompanyModulesBulkResult,
   CompanyAuditQuery,
 } from "@glampro_suite/shared";
+import { UNENFORCED_MODULE_CODES } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
 import { runAsTenant } from "../lib/tenant-context.js";
 import { badRequest, conflict, notFound } from "../lib/http-error.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
+
+/**
+ * The add-ons no `requireModule` guard and no screen exists for.
+ *
+ * The catalogue lists them, so `GET /administration` has to report them; a bulk
+ * grant must not create rows that change nothing a salon can see, and the console
+ * already refuses to switch one on. Checking here as well keeps the API honest
+ * for a request that did not come from the console.
+ */
+const UNENFORCED = new Set<string>(UNENFORCED_MODULE_CODES);
 
 type Transaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 async function lockCompany(tx: Transaction, id: string) {
@@ -42,6 +55,9 @@ export async function companyAdministration(id: string) {
       ]);
       const now = new Date();
       return {
+        // Both: `status` is what the lifecycle verbs compare against, `effectiveStatus`
+        // is what the company can actually do now.
+        status: company.status,
         effectiveStatus: resolveTenantStatus(company.status, latest?.endDate ?? null),
         subscriptions: subscriptions.map((row) => ({
           id: row.id,
@@ -225,6 +241,99 @@ export async function changeCompanyModule(id: string, input: CompanyModuleInput,
     }),
   );
   return { success: true as const };
+}
+
+/**
+ * Grant or revoke **every add-on at once**, under one reason.
+ *
+ * The console shows a switch per module, so granting nine add-ons was nine
+ * confirmations and nine audit rows for one decision. This is the same decision
+ * carried once.
+ *
+ * Two rules make it safe to call with no target list:
+ *
+ * 1. **The server decides the set.** Core modules are always on and
+ *    `UNENFORCED_MODULE_CODES` have no screen behind them, so neither is touched;
+ *    a client cannot name a module the console would have disabled.
+ * 2. **Nothing already in the target state is rewritten.** Turning everything on
+ *    leaves an add-on that is already entitled alone — stamping a new term over a
+ *    grant an operator gave for a year would silently shorten it — and turning
+ *    everything off has nothing to do for an add-on that is already gone. Those
+ *    codes come back as `unchanged` so the console can say how many were skipped
+ *    rather than pretending the whole catalogue moved.
+ *
+ * One audit row, not one per module: the reason is the same for all of them, and
+ * twenty rows would fill a page of the activity tab with a single click. The codes
+ * it touched are in the metadata, so the detail is not lost.
+ */
+export async function changeCompanyModules(
+  id: string,
+  input: CompanyModulesBulkInput,
+  actorId: string,
+): Promise<CompanyModulesBulkResult> {
+  if (input.expiresAt && new Date(input.expiresAt) <= new Date())
+    throw badRequest("Choose a future module expiry.");
+  if (!input.enabled && input.expiresAt !== null)
+    throw badRequest("A revoked module cannot have an expiry.");
+  return runAsTenant(id, () =>
+    prisma.$transaction(async (tx) => {
+      await lockCompany(tx, id);
+      const [modules, grants] = await Promise.all([
+        tx.module.findMany({ orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
+        tx.tenantModule.findMany({ where: { tenantId: id } }),
+      ]);
+      const now = new Date();
+      const candidates = modules.filter((module) => !module.isCore && !UNENFORCED.has(module.code));
+      const grantOf = (moduleId: string) => grants.find((row) => row.moduleId === moduleId);
+      const targets = candidates.filter((module) => {
+        const grant = grantOf(module.id);
+        // Off: only a grant exists to remove, lapsed or not — the row is what the
+        // table shows as "Expired", and leaving it behind keeps the switch and the
+        // table disagreeing.
+        if (!input.enabled) return !!grant;
+        // On: everything without access now, which includes lapsed grants.
+        return !(grant && (grant.expiresAt === null || grant.expiresAt > now));
+      });
+      if (!targets.length)
+        throw conflict(
+          input.enabled
+            ? "Every add-on is already on for this company."
+            : "This company has no add-ons to turn off.",
+        );
+      const unchanged = candidates
+        .filter((module) => !targets.some((target) => target.id === module.id))
+        .map((module) => module.code);
+      if (input.enabled) {
+        for (const module of targets)
+          await tx.tenantModule.upsert({
+            where: { tenantId_moduleId: { tenantId: id, moduleId: module.id } },
+            create: { tenantId: id, moduleId: module.id, expiresAt: input.expiresAt },
+            update: { expiresAt: input.expiresAt },
+          });
+      } else {
+        await tx.tenantModule.deleteMany({
+          where: { tenantId: id, moduleId: { in: targets.map((module) => module.id) } },
+        });
+      }
+      const codes = targets.map((module) => module.code);
+      await tx.auditLog.create({
+        data: {
+          actorPlatformAdminId: actorId,
+          tenantId: id,
+          action: input.enabled ? "company.module.bulk_grant" : "company.module.bulk_revoke",
+          targetType: "Tenant",
+          targetId: id,
+          metadata: {
+            reason: input.reason,
+            codes,
+            unchanged,
+            after: { enabled: input.enabled, expiresAt: input.expiresAt },
+          },
+        },
+      });
+      return { changed: codes, unchanged };
+    }),
+  );
 }
 
 export async function companyAudit(id: string, query: CompanyAuditQuery) {

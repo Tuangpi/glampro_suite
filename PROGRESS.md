@@ -1,5 +1,262 @@
 # Glampro Suite — progress
 
+## November 5, 2026 — the dashboard asks, and answers; four panels come off
+
+The dashboard had five things happening at once: four tiles, an owner briefing, a tabbed
+tool strip (business questions / rebooking / quiet-day openings), and inside the rebooking
+tab a fourth panel for draft review. Three of them were read-only previews of work the
+owner had to go somewhere else to finish, and the fourth was a form pretending to be a
+conversation — one text box, one period select, one submit button, and every keystroke
+threw the answer away. The request was blunt: drop the briefing, the rebooking and the
+quiet-day panels, and make the business-questions widget an actual chat. That is a UI
+change with a deliberate backend boundary — the endpoints stay, the screens go.
+
+- **One panel replaces four.** `pages/Dashboard.tsx` mounts `<AssistantQuestions />` in a
+  labelled region and nothing else below the tiles, re-keyed on
+  `tenant:user:role:entitlements` so a sign-in change cannot inherit a transcript.
+  Deleted: `OwnerBriefing`, `DashboardTools`, `RebookingRecommendations`,
+  `QuietDayOpportunities`, `AssistantDraftReview`, `assistant-draft-keys`,
+  `useOwnerBriefing`, their tests, and the whole `queryKeys.ownerAssistant` block.
+- **Nothing behind them was deleted.** `owner-summary`, `rebooking-nudges`,
+  `quiet-day-opportunities`, the draft endpoints, `quiet-day.service.ts`,
+  `assistant-drafts.service.ts` and the automatic rebooking message job are untouched —
+  no migration, no schema change, no button rewired. The summary endpoint still earns its
+  keep because the conversation answers from `ownerMetrics()`; the policy questions that
+  only existed to explain the removed screens are gone from the topic set.
+- **The conversation.** `role="log"` transcript with auto-scroll, the owner's turn on the
+  right and answers on the left, Enter to send and Shift+Enter for a newline, a
+  300-character counter, and the period as chips (Today / Yesterday / Last 7 days / Custom
+  with dates) that stamp the answer they produced. Answers lead with prose and fold the
+  figures and the caveats into two disclosures, because an answer that opens with eight
+  numbers is not a chat answer. Failed turns keep their question on screen with a Retry
+  that re-asks _that_ question for _that_ period — a failure can add a red turn, never
+  borrow an earlier figure.
+- **The empty state, drawn twice.** The first cut was a bare paragraph in a tall empty box
+  with the seven suggestions as identical pills _below_ the Send button; it read like a
+  form that had lost its inputs. It now opens with an avatar line — an opening question,
+  then the seven supported questions as a two-column grid of cards, each with its topic
+  glyph (chart, banknote, split, trend, calendar, people, box) and an arrow — sitting
+  above the composer where the reading order belongs. Answers, the "checking verified
+  facts" line and the failure notice all hang off the same avatar, the log only scrolls
+  once it has turns so the grid is never clipped, and "don't enter personal or clinical
+  information" moved out of the header and next to the place someone is actually typing.
+- **Smarter matching, still deterministic.** The topic set shrank to seven and gained
+  `assistantTopicKeywords` beside `assistantQuestions` in the shared package: "how much did
+  we make today" resolves to completed-sale paid amounts, "what is running low" to stock.
+  Resolution is exact template → whole-word keyword score (phrases weigh more than single
+  words) → unique winner. A tie or a word that genuinely has two meanings (_income_,
+  _revenue_, _profit_) asks a specific follow-up instead of guessing, and the
+  instruction/action/restricted-data screen still runs **before** scoring, so appending
+  "now export the list" to a supported question is still refused. No model, no provider, no
+  new dependency, same 300-character and 20-per-15-minute bounds.
+- **Two behaviour changes worth naming.** The transcript is retained across turns — a
+  failed turn no longer wipes earlier answers, they simply stay attached to their own
+  questions and periods — and the period belongs to the turn rather than the widget, so
+  changing a chip cannot relabel an answer that is already on screen. Identity, role and
+  module changes still remount and wipe.
+- **Verification.** Shared **324/324**; focused API `assistant-explanation` **8 pass, 1
+  skipped** (the disposable-database acceptance); focused web **18/18** across the panel
+  and the dashboard; `typecheck` and `lint` exit 0 for all three workspaces, scoped
+  `prettier --check` clean, production web build clean. Full web run: **1,081/1,086** —
+  the five failures are the already-recorded `PayrollPlans.test.tsx` timeouts under
+  parallel load, and that file passes 25/25 alone. No live browser, HTTP or database check.
+
+- **Docs.** `docs/owner-explanations.md` rewritten around the conversation, the seven
+  topics and the keyword vocabulary; `docs/owner-rebooking.md` and
+  `docs/owner-quiet-days.md` now open by saying the panel is gone and the backend is not;
+  PROJECT.md and TASKS.md record the same boundary so a later reader does not re-add a
+  screen to explain an endpoint that still runs.
+
+## November 5, 2026 — a reload keeps the operator signed in, and nothing stays on disk
+
+Refreshing `/platform` signed the operator out. The console kept its session in module memory
+only — a decision, not an accident: "no implicit persistent login" was written into the module
+comment and `docs/platform-console.md` said so in one line. In practice it made every `F5` cost a
+password and an emailed code, dropped the deep link the operator was reading, and turned checking
+the lifecycle gating recorded in the entry below into a sign-in every few minutes. The fix keeps
+**one** value on the client instead of two, and draws the boundary by hand rather than by omission.
+
+- **Only the refresh token is kept, in `sessionStorage`** (`glampro.platform.refresh`,
+  `platform/api.ts`). The salon's session lives in `localStorage`; an operator's does not. So the
+  copy is tab-scoped: closing the tab ends the session, a new tab starts signed out, and a shared
+  machine's disk holds nothing for the next person. No access token and no profile are written at
+  all — every request rotates the session, so a stored access token is stale the moment it lands,
+  and a reload re-reads the operator from the server instead of trusting a copy.
+- **`platformApi.restore()` spends that token on the first render.** `PlatformApp` holds the route
+  table until the exchange answers, drawing "Restoring your session…" rather than the password
+  form — a form drawn first would flash a prompt at somebody who is already signed in. The route
+  the URL asked for is drawn afterwards, so reloading `/platform/companies/:id` lands on that
+  company. Concurrent callers share one exchange: `/refresh` rotates the row in place, so a second
+  spend of the same token would be refused, and React's strict mode does mount that effect twice.
+- **A refusal is final; an outage is not.** `401` (revoked, expired, password changed, operator
+  disabled) drops the entry and the sign-in page opens with the server's own sentence — "Your
+  platform session is no longer valid." A request that never reached the server keeps the entry,
+  because an outage should not cost an operator a second factor; the next reload tries again.
+  `logout` now clears the copy too, but only after the server has revoked the session, so a failed
+  sign-out still leaves both for a retry instead of a live session nobody can end.
+- **`restore()` answers a result, not an exception.** The one branch a UI cannot guess is "why am I
+  being asked again", so it comes back as `{ admin, error? }` and `PlatformLogin` takes it as the
+  sentence it opens with. A tab with no stored token asks the server nothing at all.
+- **The promise was written in four places and is corrected in all four**: the module comment, the
+  header of `PlatformApp.tsx`, the `docs/platform-console.md` line ("Sessions live in memory
+  only"), and the sentences on _Account & security_ and under the sign-in form. The doc now has a
+  **Sessions across a reload** section stating what is kept, what a duplicated tab costs, and which
+  failures forget the token.
+
+- **Verification.** Web: platform suite **85/85** — `api.test.ts` grew five cases (a reloaded tab
+  resumes from the kept token and the rotated one replaces it, one exchange for two callers, no
+  request without a token, a refused token forgotten, a token the server never saw kept) and
+  `PlatformApp.test.tsx` three (a deep link resumes, the form never flashes while the check runs,
+  a refused session says why). The full web run is 1125 pass of 1134 with 9 timeouts in
+  `PayrollPlans.test.tsx` — the same pre-existing slowness, worse this run because the suite shared
+  the machine with `tsc` and `eslint`; that file passes 25/25 alone. `typecheck` clean for
+  `tsconfig.app` and `tsconfig.node`, `eslint src/platform` clean, `prettier --check` clean.
+
+## November 5, 2026 — a lifecycle button that cannot work, and add-ons in one decision
+
+Two more dead ends on the company page, both the same shape as the last batch: a control that
+always accepted the click and always came back with an error, and a job that took one click per
+row. **Suspend**, **Reactivate** and **Cancel** were live whatever the company's state, so on a
+cancelled company two of the three existed only to answer `409`, and the button that would have
+worked sat in the same undifferentiated row. **Granting an add-on** was nine confirmations, nine
+reasons and nine audit rows for one decision — "give this salon everything" — and the same for
+taking it all away.
+
+- **The lifecycle buttons are gated on a rule the API already enforces**, held in one place
+  (`apps/web/src/platform/tenantStatus.ts`) and shown on the card: Suspend when
+  `effectiveStatus === "ACTIVE"`, Reactivate when the **stored** status is not `ACTIVE` _and_ the
+  latest period that has started has not ended, Cancel until the company is cancelled. The badge
+  is the effective status and returns `status` beside it in `companyAdministrationSchema`, because
+  the two rules read different values — a stored-`ACTIVE` company whose period lapsed reads
+  `EXPIRED` and cannot be reactivated, since "the company already has that status" is the API's
+  answer.
+- **The first cut of the Reactivate rule asked the wrong question**, and it was the same bug
+  inverted: it required a period _running now_, while `changeCompanyLifecycle` only refuses when
+  the latest **started** period has **ended**. So a suspended company with nothing on the
+  Subscription tab — provisioned before its first plan, which `resolveTenantStatus` deliberately
+  leaves `ACTIVE` — had a dimmed button the API would have accepted. `latestPeriod` now mirrors the
+  API's own query, `runningPeriod` derives from it, and the sentence separates "no period recorded
+  yet" (reactivate is offered, access still needs a period) from "its last period ended on _date_"
+  (record one first). A scheduled `PENDING` period counts as neither.
+- **A dimmed button explains itself in text, not a tooltip.** A disabled button takes no hover and
+  no focus, so the sentence beside the badge says why the dim one is dim — "Suspended, and its last
+  period ended on 6 October 2026. Record a period on the Subscription tab and reactivate then, or
+  cancel the company" — and names the way out, which is what stops a dimmed button from being a
+  dead end with a colour.
+- **`POST /api/platform/companies/:id/modules/bulk`** (`companyModulesBulkSchema`, `{ enabled,
+expiresAt, reason }`, `strict()`, no `codes`). The server decides the set: non-core, excluding
+  `UNENFORCED_MODULE_CODES`, so a client cannot widen it by naming a module the console disabled.
+  Nothing already in the target state is rewritten — a live grant keeps its own expiry rather than
+  having a new term stamped over a year one — and those codes come back in `unchanged`, so the
+  banner says "3 add-ons turned on. 2 were already on and left alone." instead of an untrue total.
+  A bulk revoke also deletes lapsed grants, because a lapsed row left behind would keep the table
+  saying "Expired" while its switch read off.
+- **One audit row per click** — `company.module.bulk_grant` / `.bulk_revoke`, metadata `{ reason,
+codes, unchanged, after }` — not one per module, and a batch that would change nothing answers
+  `409` rather than writing an empty row. The card header carries a count ("0 of 2 add-ons on, 1
+  lapsed") and dims whichever button has nothing to do, so the decision is taken before the click.
+- **One dialog for both scopes.** `ModuleChange` became a `single | bulk` union, so the reason
+  field, the date picker, the 30/90/365-day presets and the "a revocation carries no expiry" rule
+  are the same code for one add-on and for all of them.
+
+- **Verification.** Shared: 323/323 `node:test` pass, including the new bulk-schema cases (a `codes`
+  field, a revocation with an expiry, an unzoned date). API: 1518 tests, 1242 pass, 275 skipped
+  (database- and acceptance-gated), 1 pre-existing failure — `staff.routes` password reset answers
+  `503` because this machine has no SMTP. New `company-administration.service.test.ts` proves
+  against real rows that a bulk grant skips a live grant's expiry and never writes a `TenantModule`
+  for a core or unenforced module, that a bulk revoke removes lapsed rows, that the `400`/`409`
+  refusals write nothing, and that `/administration` reports stored `ACTIVE` with effective
+  `EXPIRED`. Web: platform suite **77/77** — including the new `tenantStatus.test.ts` (13 cases
+  reading `changeCompanyLifecycle` as a table, `PENDING`/cancelled rows included) and two more
+  gating cases on the card ("no period recorded yet", "a scheduled period is not a running one");
+  the full web run is 1120 pass of 1126 with 6 timeouts in `PayrollPlans.test.tsx` (unrelated to
+  this change) that pass 25/25 when the file runs alone — suite parallelism, not this work.
+  `typecheck` and `eslint` clean across the three workspaces; `prettier --check` clean.
+
+## November 5, 2026 — a company can be edited, and a module switch means something
+
+Three dead ends on the platform console, all of them the same shape: a fact the operator could
+read and could not change. **"Owner: No owner assigned"** appeared on three rows with no action
+anywhere that could fill it in — the console could create a company and then never change one, so
+the only way out was to delete it and start again (`resendOwnerInvitation` answered "This owner has
+no pending onboarding invitation", which is true and useless). **The Subscription tab** was three
+stacked cards plus a lifecycle card above them whose single "Change reason" input read as the
+reason for a renewal. **A module expiry** was a free-text ISO instant
+(`2026-11-23T00:00:00+08:00`) only a developer could type twice the same way, and five of the
+fifteen seeded add-ons had no screen behind them at all, so their switches flipped and nothing
+happened.
+
+- **New `PATCH /api/platform/companies/:id`** (`updateCompanySchema`, `updateCompany`). It corrects
+  the name and slug and, when the owner pair is present, gives the company the owner it never had:
+  a pending `SUPER_ADMIN`, the `tenants.ownerUserId` pointer, a 48-hour invitation, and a
+  `FOR UPDATE` lock on the tenant row so an edit cannot interleave with a suspend or a purge. Two
+  branches are refused rather than guessed at — a company that is not `ACTIVE` (an invitation it
+  could never accept) and an owner who has **already onboarded** (`409`: replacing them demotes
+  somebody who can sign in today, which is an ownership _transfer_, not a rename). Two audit rows,
+  `company.update` and `company.owner.assign`/`.update`, so "renamed" and "given to somebody else"
+  stay separate events.
+- **A saved edit is never lost to a mail server.** `createCompany` refuses up front with `503` when
+  SMTP or the portal origin is missing because nothing is written yet; an edit is already committed
+  when the invitation goes out, so `deliverQuietly` reports `invitationDelivery: "failed"` and the
+  console points at **Resend invitation** — a retry, not a second save. `null` means no invitation
+  was needed.
+- **The overview card can now be edited.** _Edit company_ opens a modal prefilled from the server;
+  the line under the owner facts ("No owner is recorded … _Assign an owner_") opens the same modal,
+  which is the dead end made a door. The owner fields are **disabled** once that owner has accepted,
+  so the `409` is a backstop rather than the thing the operator discovers. The form sends the owner
+  pair only when it actually differs: an untouched pair would ask the server to re-open the branch it
+  refuses, making a rename impossible.
+- **The Subscription tab is one card, one modal and one disclosure** (aggressive, as agreed).
+  `Plan` holds the status badge, the count of periods, access from/until, time left and amount.
+  `Record period` opens the form in a modal with its own reason; success is reported on the card the
+  operator is left looking at, and a rejection leaves the modal open with the days already picked.
+  `Subscription history` moved behind a `<details>` whose summary carries the count. The shared
+  always-visible "Change reason" input is gone from `CompanyAdministration`, and the reason now lives
+  inside each lifecycle confirmation — including a **new reactivate confirmation**, which the old
+  design reached only through a bare button whose rule lived in prose.
+- **A module expiry is a date.** `<input type="date">`, `min` = tomorrow (an expiry of "today" is
+  already past once stored at midnight), 30-day/90-day/1-year presets and an explicit _No expiry_;
+  `dayToLocalInstant` writes the operator's own offset, so the day they picked is the day the grant
+  ends. `UNENFORCED_MODULE_CODES` (`memberships`, `inventory`, `expenses`, `stock`,
+  `employeeCommission`) now render **"Not in this release"** with a disabled switch, because there is
+  no `requireModule` guard and no screen behind any of them — a switch that flips and changes nothing
+  is worse than no switch.
+- **A revocation reaches the open tab.** The rail already filters on entitlements, but those are read
+  once per session, so a module revoked from the console kept its entry until a reload. A
+  `403 MODULE_NOT_ENTITLED` now raises `ENTITLEMENTS_STALE_EVENT`; `AuthContext` re-reads the profile
+  once for the whole burst (three refused queries are not three `/auth/me` calls). The API was
+  already the boundary — this only stops the rail disagreeing with it.
+- **Tests.** New `apps/api/src/services/company.service.test.ts` (5, against the real database): the
+  ownerless company gets a pending owner + live invitation + two audit rows and a `failed` delivery;
+  a rename touches no owner row, issues no link and revokes none; an onboarded owner is `409` with
+  nothing half-applied; a suspended company gets no owner and no half-created user; a pending owner's
+  new address revokes the old link so exactly one works. Web: two `CompanyDetailPage` flows (assign an
+  owner end to end; rename an onboarded company sending no owner pair), the subscription panel's new
+  shape (form closed until asked for, history behind a closed disclosure, a stale failure cleared on
+  re-open), the lifecycle reason moved into the dialog, expiry by date and by preset, an unenforced
+  switch that refuses to open a dialog, `PATCH` on the encoded id, and the stale-entitlements signal
+  both raised and answered. Shared: `updateCompanySchema` reuses creation's identity rules, refuses a
+  half owner pair and refuses privilege/status/ownership fields, and `companyUpdateResultSchema`
+  distinguishes `null` from `failed`.
+
+**Verified.** Shared **322/322**; web `src/platform src/lib src/contexts` **127/127**; full web suite
+**1,094 passed / 8 failed** of 1,102 — all eight in `settings/PayrollPlans.test.tsx`, the 5s timeouts
+under parallel load already recorded for that untouched file, which passes **25/25** alone. API
+`tsc -p tsconfig.json --noEmit` exit 0, and `npm run test --workspace @glampro_suite/api` **1,237
+passed / 1 failed** of 1,513 (275 gated tests skipped); the single failure is
+`staff.routes.test.ts` → "lets an owner reset their own password", which expects `200` from a
+`POST /api/auth/login` for an owner with 2FA on: `dotenv/config` loads this machine's `.env`,
+`SMTP_HOST` is set there and no mail server is listening, so `sendTwoFactorCode` answers `503
+EMAIL_SEND_FAILED`. That file, its routes and its service are untouched by this change, and the new
+`company.service.test.ts` passes **5/5** against the same database. `eslint` exit 0 on all three
+workspaces; `prettier --check` clean on `apps/api/src`, `apps/web/src`, `packages/shared/src`, `docs`
+and this file.
+
+**Not verified.** No browser walkthrough: the edit modal, the subscription modal, the disclosure and
+the disabled switches are covered by executing tests, not by observation. Nothing was exercised
+against a real SMTP server, so `sent` is proven only by `createCompany`'s existing path and `failed`
+is what this suite observes. No schema, migration or database change was needed or made.
+
 ## November 5, 2026 — a subscription period may start in the future
 
 A company's next period could not be recorded until the day it began. `recordCompanySubscription`

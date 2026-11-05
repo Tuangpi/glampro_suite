@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type {
   CompanyListQuery,
   CreateCompanyInput,
+  UpdateCompanyInput,
   AcceptOwnerInvitationInput,
 } from "@glampro_suite/shared";
 import { prisma } from "../lib/prisma.js";
@@ -321,4 +322,191 @@ export async function acceptOwnerInvitation(input: AcceptOwnerInvitationInput) {
     }),
   );
   return { success: true as const };
+}
+/**
+ * `PATCH /api/platform/companies/:id` — correct a company's name and slug, and
+ * give it an owner it never had.
+ *
+ * The console could create a company and then never change it. A company whose
+ * `ownerUserId` was never written read "Not assigned" on every owner row, with no
+ * action anywhere that could fill it in, so the only way out was to delete the
+ * company and start again. This is that action.
+ *
+ * Two branches are refused rather than guessed at:
+ *
+ * - **A company that is not `ACTIVE`.** An invitation can only be accepted while
+ *   the company is active (`acceptOwnerInvitation`), so issuing one for a
+ *   suspended or cancelled company would produce a link that cannot work.
+ * - **An owner who has already onboarded.** Handing a working SUPER_ADMIN's
+ *   company to somebody else is an ownership *transfer* — it demotes a person who
+ *   can sign in today — and that needs its own decision, not a rename form's. It
+ *   answers `409` instead of quietly revoking access.
+ */
+export async function updateCompany(id: string, input: UpdateCompanyInput, actorId: string) {
+  const invitation = createRefreshToken();
+  let result: { inviteTo: string | null };
+  try {
+    result = await runAsPlatform(() =>
+      prisma.$transaction(async (tx) => {
+        // The same lock the lifecycle writer and the purge take: an edit and a
+        // suspend cannot interleave, and two edits cannot both claim the owner.
+        const rows = await tx.$queryRaw<
+          Array<{ id: string }>
+        >`SELECT id FROM tenants WHERE id = ${id} FOR UPDATE`;
+        if (!rows.length) throw notFound("Company not found.");
+        const company = await tx.tenant.findUniqueOrThrow({
+          where: { id },
+          include: { owner: true },
+        });
+        const owner = company.owner;
+        const before = {
+          name: company.name,
+          slug: company.slug,
+          ownerName: owner?.name ?? null,
+          ownerEmail: owner?.email ?? null,
+        };
+
+        await tx.tenant.update({
+          where: { id },
+          data: { name: input.name, slug: input.slug },
+        });
+
+        let inviteTo: string | null = null;
+        let ownerUserId: string | null = owner?.id ?? null;
+        let ownerAction: "assign" | "update" | null = null;
+
+        // Both halves or neither — `updateCompanySchema` enforces the pairing, so
+        // this branch is reached only when the operator touched the owner at all.
+        if (input.ownerName !== undefined && input.ownerEmail !== undefined) {
+          const ownerName = input.ownerName;
+          const ownerEmail = input.ownerEmail;
+          if (company.status !== "ACTIVE")
+            throw conflict("Reactivate this company before changing its owner.");
+          if (!owner) {
+            // The dead end itself: no owner was ever recorded. Create the pending
+            // account and point the company at it, exactly as `createCompany`
+            // does — an unknown random password, disabled until the invitation is
+            // accepted, and no raw password retained anywhere.
+            const passwordHash = await hashPassword(randomBytes(48).toString("base64url"));
+            const created = await tx.user.create({
+              data: {
+                tenantId: id,
+                name: ownerName,
+                email: ownerEmail,
+                globalRole: "SUPER_ADMIN",
+                disabled: true,
+                passwordHash,
+              },
+            });
+            await tx.tenant.update({ where: { id }, data: { ownerUserId: created.id } });
+            ownerUserId = created.id;
+            ownerAction = "assign";
+            inviteTo = ownerEmail;
+          } else {
+            if (
+              await tx.ownerInvitation.count({
+                where: { tenantId: id, userId: owner.id, acceptedAt: { not: null } },
+              })
+            )
+              throw conflict(
+                "This owner has already completed onboarding. Changing who owns a live company is a transfer, not an edit.",
+              );
+            await tx.user.update({
+              where: { id: owner.id },
+              data: { name: ownerName, email: ownerEmail },
+            });
+            ownerUserId = owner.id;
+            ownerAction = "update";
+            // A pending owner with no live invitation is the other half of the dead
+            // end: the account exists and the link to claim it does not.
+            const live = await tx.ownerInvitation.count({
+              where: {
+                tenantId: id,
+                userId: owner.id,
+                acceptedAt: null,
+                revokedAt: null,
+                expiresAt: { gt: new Date() },
+              },
+            });
+            if (owner.email !== ownerEmail || !live) inviteTo = ownerEmail;
+          }
+        }
+        // One live link at a time: a superseded invitation must not still work.
+        if (inviteTo && ownerUserId) {
+          await tx.ownerInvitation.updateMany({
+            where: { tenantId: id, userId: ownerUserId, acceptedAt: null, revokedAt: null },
+            data: { revokedAt: new Date() },
+          });
+          await tx.ownerInvitation.create({
+            data: {
+              tenantId: id,
+              userId: ownerUserId,
+              tokenHash: invitation.tokenHash,
+              expiresAt: new Date(Date.now() + 48 * 60 * 60_000),
+            },
+          });
+        }
+
+        await tx.auditLog.create({
+          data: {
+            actorPlatformAdminId: actorId,
+            tenantId: id,
+            action: "company.update",
+            targetType: "Tenant",
+            targetId: id,
+            metadata: {
+              reason: input.reason,
+              before,
+              after: {
+                name: input.name,
+                slug: input.slug,
+                ownerName: input.ownerName ?? before.ownerName,
+                ownerEmail: input.ownerEmail ?? before.ownerEmail,
+              },
+            },
+          },
+        });
+        // Who owns the company is its own audit fact: "renamed" and "given to
+        // somebody else" are different events to read back later.
+        if (ownerAction) {
+          await tx.auditLog.create({
+            data: {
+              actorPlatformAdminId: actorId,
+              tenantId: id,
+              action: `company.owner.${ownerAction}`,
+              targetType: "User",
+              targetId: ownerUserId,
+              metadata: { reason: input.reason, invited: inviteTo !== null },
+            },
+          });
+        }
+
+        return { inviteTo };
+      }),
+    );
+  } catch (error) {
+    return rethrowDuplicate(error);
+  }
+  const invitationDelivery = result.inviteTo
+    ? await deliverQuietly(result.inviteTo, invitation.token)
+    : null;
+  return { company: await companyDetail(id), invitationDelivery };
+}
+
+/**
+ * Deliver an invitation without letting a misconfigured environment turn a saved
+ * edit into an error.
+ *
+ * `createCompany` refuses up front with `503` when SMTP or the portal origin is
+ * missing, because nothing has been written yet and refusing is free. Here the
+ * company is already saved and the invitation row already exists, so the honest
+ * answer is `failed`: the console says the mail did not go out and points at
+ * "Resend invitation", which is a real retry rather than a second save.
+ */
+async function deliverQuietly(email: string, token: string) {
+  try {
+    return await deliver(email, token, invitationOrigin());
+  } catch {
+    return "failed" as const;
+  }
 }

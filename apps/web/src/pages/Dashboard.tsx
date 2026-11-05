@@ -2,8 +2,7 @@ import { Link } from "react-router";
 import { AlertTriangle, Banknote, Calendar, Package, Plus, Users } from "@/components/icons";
 import StatTile from "@/components/ui/StatTile";
 import Button from "@/components/ui/Button";
-import OwnerBriefing from "@/components/dashboard/OwnerBriefing";
-import DashboardTools from "@/components/dashboard/DashboardTools";
+import AssistantQuestions from "@/components/dashboard/AssistantQuestions";
 import { useAuth } from "@/contexts/AuthContext";
 import { useDashboardSummary } from "@/hooks/useDashboard";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
@@ -135,13 +134,14 @@ export default function Dashboard() {
           Loading today&rsquo;s figures…
         </p>
       )}
-      <OwnerBriefing />
-      <DashboardTools
-        key={`${tenant?.id}:${user?.id}:${user?.globalRole}:${entitlements
-          .map((entry) => entry.code)
-          .sort()
-          .join(",")}`}
-      />
+      <section aria-label="Business questions" className="min-w-0">
+        <AssistantQuestions
+          key={`${tenant?.id}:${user?.id}:${user?.globalRole}:${entitlements
+            .map((entry) => entry.code)
+            .sort()
+            .join(",")}`}
+        />
+      </section>
     </div>
   );
 }

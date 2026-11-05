@@ -1,5 +1,6 @@
 import {
   assistantQuestions,
+  assistantTopicKeywords,
   assistantExplanationInputSchema,
   assistantExplanationSchema,
   type AssistantExplanation,
@@ -17,17 +18,167 @@ const normalized = (text: string) =>
   text
     .trim()
     .toLowerCase()
-    .replace(/[?!.]+$/, "")
-    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
     .trim();
-/** Exact supported phrases only: never extract SQL, instructions or actions from text. */
-export function explanationTopic(question: string): Topic | null {
-  return (
-    (Object.keys(assistantQuestions) as Topic[]).find(
-      (topic) => normalized(assistantQuestions[topic]) === normalized(question),
-    ) ?? null
-  );
+const hasPhrase = (text: string, phrase: string) => ` ${text} `.includes(` ${normalized(phrase)} `);
+
+/**
+ * Instruction, action, restricted-data and prediction wording is refused *before*
+ * any keyword scoring, so appending "now export the list" to a supported question
+ * can never turn into an answer or a command.
+ */
+const refusedPhrases = [
+  "ignore",
+  "instruction",
+  "instructions",
+  "prompt",
+  "system",
+  "rule",
+  "rules",
+  "pretend",
+  "act as",
+  "bypass",
+  "override",
+  "forget",
+  "select",
+  "insert",
+  "update",
+  "delete",
+  "drop",
+  "alter",
+  "grant",
+  "union",
+  "export",
+  "download",
+  "send",
+  "sms",
+  "email",
+  "whatsapp",
+  "reply",
+  "queue",
+  "approve",
+  "publish",
+  "create",
+  "book",
+  "rebook",
+  "schedule",
+  "cancel",
+  "charge",
+  "refund this",
+  "discount",
+  "promotion",
+  "coupon",
+  "password",
+  "credential",
+  "credentials",
+  "secret",
+  "token",
+  "session",
+  "login",
+  "clinical",
+  "medical",
+  "diagnosis",
+  "allergy",
+  "allergies",
+  "signature",
+  "photo",
+  "attachment",
+  "private",
+  "personal",
+  "phone",
+  "address",
+  "birthday",
+  "birth date",
+  "consent record",
+  "note",
+  "notes",
+  "predict",
+  "forecast",
+  "tomorrow",
+  "next week",
+  "next month",
+  "another tenant",
+  "other company",
+  "all tenants",
+  "payroll",
+  "salary",
+  "commission",
+] as const;
+/** Single words that genuinely have two supported meanings, or ask for causality/comparison. */
+const ambiguousMoney = [
+  "income",
+  "revenue",
+  "turnover",
+  "earnings",
+  "sales",
+  "money",
+  "profit",
+  "margin",
+  "cash",
+  "till",
+] as const;
+const ambiguousGuidance = [
+  "why",
+  "cause",
+  "causes",
+  "because",
+  "compare",
+  "comparison",
+  "trend",
+  "last month",
+  "last year",
+  "how are we doing overall",
+] as const;
+
+export interface TopicMatch {
+  /** A supported topic, or null when the question is refused or needs a clarification. */
+  topic: Topic | null;
+  /** Which clarification to ask when no single topic wins. */
+  clarify: "money" | "guidance" | null;
 }
+
+/**
+ * Resolves a typed question to one supported topic: exact template first, then the
+ * shared keyword vocabulary. Refusal wording short-circuits, ties and vague wording
+ * ask for a clarification, and everything else is refused. No model is involved.
+ */
+export function matchExplanationTopic(question: string): TopicMatch {
+  const text = normalized(question);
+  if (!text) return { topic: null, clarify: null };
+  if (refusedPhrases.some((phrase) => hasPhrase(text, phrase)))
+    return { topic: null, clarify: null };
+  const topics = Object.keys(assistantQuestions) as Topic[];
+  const exact = topics.find((topic) => normalized(assistantQuestions[topic]) === text);
+  if (exact) return { topic: exact, clarify: null };
+  const scored = topics
+    .map((topic) => ({
+      topic,
+      score: assistantTopicKeywords[topic].reduce(
+        (total, keyword) => (hasPhrase(text, keyword) ? total + keyword.split(" ").length : total),
+        0,
+      ),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort((left, right) => right.score - left.score);
+  if (scored.length && scored[0]!.score > (scored[1]?.score ?? 0))
+    return { topic: scored[0]!.topic, clarify: null };
+  const clarify = ambiguousMoney.some((phrase) => hasPhrase(text, phrase))
+    ? "money"
+    : scored.length || ambiguousGuidance.some((phrase) => hasPhrase(text, phrase))
+      ? "guidance"
+      : null;
+  return { topic: null, clarify };
+}
+/** Topic-only form used by callers and tests that do not need the clarification kind. */
+export function explanationTopic(question: string): Topic | null {
+  return matchExplanationTopic(question).topic;
+}
+const clarifications = {
+  money:
+    "I only report verified figures, so I need to know which money figure you mean. Completed-sale paid amounts include every tender, including prepaid redemption. Net paid subtracts refunds recorded in the same window and can be negative. Revenue, profit and cash-only takings are not reported. Ask about paid amounts or net paid, then pick today, yesterday, last seven days or a custom range up to 31 days.",
+  guidance:
+    "I report one verified period at a time. I cannot compare periods, explain causes or predict results. You can ask how the business is doing, completed-sale paid amounts, refunds and net paid, average ticket, bookings, new customer records or low stock, for today, yesterday, last seven days or a custom range up to 31 days.",
+} as const;
 function explain(topic: Topic, f: OwnerSummary): string {
   switch (topic) {
     case "summary":
@@ -44,8 +195,6 @@ function explain(topic: Topic, f: OwnerSummary): string {
       return `${f.newCustomersToday} customer records were created in the selected window. This is not necessarily first-time visitors, visits or newly consenting marketing recipients.`;
     case "stock":
       return `${f.lowStockCount} currently active products are at or below the company's threshold of ${f.lowStockThreshold}. Stock is a current snapshot as of ${f.asOf}, not historical stock within the selected reporting window. No reorder quantity or purchasing action is inferred.`;
-    default:
-      throw new Error("Policy topics do not use business metrics.");
   }
 }
 
@@ -62,7 +211,8 @@ export async function assistantExplanation(
   if (!actor || !["SUPER_ADMIN", "MANAGER"].includes(actor.globalRole)) throw forbidden();
   const { entitled } = await moduleEntitlements();
   if (!entitled.has("dashboard")) throw forbidden();
-  const topic = explanationTopic(input.question);
+  const match = matchExplanationTopic(input.question);
+  const topic = match.topic;
   const base: AssistantExplanation = {
     status: "unsupported",
     mode: "deterministic",
@@ -76,51 +226,14 @@ export async function assistantExplanation(
       "No external AI provider is configured or called. Questions and answers are not saved as conversation history.",
       "Company-wide evidence, not outlet-filtered. Monetary values use the existing reporting units; no exchange conversion.",
     ],
-    suggestions: Object.entries(assistantQuestions)
-      .filter(
-        ([key]) =>
-          (key !== "rebooking" && key !== "quietDays") ||
-          (key === "rebooking"
-            ? entitled.has("customers") && entitled.has("appointments")
-            : entitled.has("catalogue") && entitled.has("appointments")),
-      )
-      .map(([, question]) => question),
+    suggestions: Object.values(assistantQuestions),
   };
   if (!topic) {
-    if (
-      [
-        "income",
-        "sales",
-        "why",
-        "how are we doing",
-        "what about last month",
-        "compare periods",
-      ].includes(normalized(input.question))
-    ) {
+    if (match.clarify) {
       base.status = "clarify";
-      base.answer =
-        "Please choose a specific supported question and an explicit period. Income may mean completed-sale paid amounts or net paid; they are different. Comparisons and causal explanations are not supported.";
+      base.answer = clarifications[match.clarify];
     }
     return assistantExplanationSchema.parse(base);
-  }
-  if (topic === "rebooking" || topic === "quietDays") {
-    const codes =
-      topic === "rebooking" ? ["customers", "appointments"] : ["catalogue", "appointments"];
-    if (!codes.every((code) => entitled.has(code)))
-      throw forbidden("Source module is not entitled.", "MODULE_NOT_ENTITLED");
-    return assistantExplanationSchema.parse({
-      ...base,
-      status: "answered",
-      source: topic === "rebooking" ? "rebooking-policy" : "quiet-day-policy",
-      answer:
-        topic === "rebooking"
-          ? "Rebooking recommendations require an overdue latest completed visit, the explicit service interval (or company fallback), current consent for the exact preferred enabled channel/destination, no upcoming booking and no conflicting recent, active or uncertain rebooking job. Open Rebooking recommendations for current recipient evidence. This answer does not check any individual customer and does not save, approve or send a message."
-          : "Quiet-day opportunities screen tomorrow through seven salon-local days for fewer than three non-cancelled booking starts per day, then run existing staff, shift, conflict and resource checks for one selected service. Search is bounded to ten staff and 120 slot checks, with at most one opening per day. Use Quiet-day opportunities for current evidence. This rule is not utilisation, demand, profit, a reservation or a guarantee; only regular-price suggestions are supported.",
-      limitations: [
-        ...base.limitations,
-        "Policy explanation only. The selected reporting period is not applied to eligibility or availability; no fresh recipient or slot search was performed.",
-      ],
-    });
   }
   const tenant = await prisma.tenant.findUnique({
     where: { id: scope.tenantId },
@@ -149,6 +262,7 @@ export async function assistantExplanation(
     return assistantExplanationSchema.parse({
       ...base,
       status: "clarify",
+      topic: null,
       answer:
         "Choose a reporting period ending no later than the salon's current local date. Future business performance is not known.",
     });
@@ -171,6 +285,7 @@ export async function assistantExplanation(
     return assistantExplanationSchema.parse({
       ...base,
       status: "unavailable",
+      topic: null,
       answer:
         "Verified business facts could not be loaded. No figures or previous answer have been substituted. Retry this question later. No language-provider fallback is enabled.",
     });

@@ -166,8 +166,8 @@ export default function Account({
               {admin.twoFactorEnabled ? "Email verification on" : "Password only"}
             </Badge>
             <p className="text-xs text-ink-muted">
-              Sessions are not saved across page reloads, and signing out revokes this one on the
-              server.
+              This tab keeps your session across a reload; closing it signs you out, and signing out
+              revokes the session on the server.
             </p>
           </div>
         </Card>

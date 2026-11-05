@@ -20,7 +20,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthUser } from "@glampro_suite/shared";
 
-import api, { downloadFile, getPaginated } from "@/lib/api";
+import api, { downloadFile, ENTITLEMENTS_STALE_EVENT, getPaginated } from "@/lib/api";
 import { clearSession, getRefreshToken, setSession } from "@/lib/auth-storage";
 
 /** Annotated so `globalRole` stays a `GlobalRole` union instead of widening. */
@@ -351,5 +351,45 @@ describe("getPaginated", () => {
       pageSize: 20,
       pageCount: 0,
     });
+  });
+});
+
+describe("a module the salon no longer has", () => {
+  it("raises the stale-entitlements signal instead of only failing the request", async () => {
+    setSession(STALE);
+    handler = async (config) =>
+      respond(config, 403, {
+        code: "MODULE_NOT_ENTITLED",
+        message: "This feature needs the giftCards add-on.",
+      });
+
+    const listener = vi.fn();
+    window.addEventListener(ENTITLEMENTS_STALE_EVENT, listener);
+    try {
+      // The request still fails: the caller sees the refusal and may show it.
+      await expect(api.get("/gift-cards")).rejects.toThrow();
+    } finally {
+      window.removeEventListener(ENTITLEMENTS_STALE_EVENT, listener);
+    }
+
+    // And the session is told to re-read itself, which is what removes the entry
+    // from the rail without a page reload.
+    expect(listener).toHaveBeenCalledOnce();
+  });
+
+  it("stays quiet for an ordinary refusal", async () => {
+    setSession(STALE);
+    handler = async (config) =>
+      respond(config, 403, { code: "FORBIDDEN", message: "Not your customer." });
+
+    const listener = vi.fn();
+    window.addEventListener(ENTITLEMENTS_STALE_EVENT, listener);
+    try {
+      await expect(api.get("/customers/c1")).rejects.toThrow();
+    } finally {
+      window.removeEventListener(ENTITLEMENTS_STALE_EVENT, listener);
+    }
+
+    expect(listener).not.toHaveBeenCalled();
   });
 });

@@ -127,6 +127,49 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
   navigation, single-tool mounting, access loss, loading/error/retry states,
   cached-metric suppression and expandable briefing dates with visible qualifications.
   Authenticated browser visual review not performed. No backend/database/dependency changes.
+- Follow-up November 5, 2026: the tabbed owner tools and the owner briefing were removed and the
+  dashboard now mounts one conversation panel. See ASK-CHAT below.
+
+### ASK-CHAT — Business questions as a conversation
+
+- Status: **DONE**. Implemented November 5, 2026 (local verification only).
+- Expected result: remove the owner briefing, rebooking recommendations, quiet-day
+  opportunities and saved-draft review from the dashboard; turn the business-questions
+  widget into a real chat; keep every answer deterministic and evidence-backed.
+- Completion check: dashboard/panel/assistant regressions, shared/API/web tests,
+  typecheck, lint, production web build and diff review.
+- Delivered: `pages/Dashboard.tsx` mounts only `<AssistantQuestions />`, re-keyed by
+  tenant/user/role/entitlement. Deleted `OwnerBriefing`, `DashboardTools`,
+  `RebookingRecommendations`, `QuietDayOpportunities`, `AssistantDraftReview`,
+  `assistant-draft-keys`, `useOwnerBriefing` and their tests, plus the whole
+  `queryKeys.ownerAssistant` block. Backend untouched: `owner-summary`,
+  `rebooking-nudges`, `quiet-day-opportunities`, the draft endpoints, their services,
+  tables and the automatic rebooking message job all remain; no migration.
+- Chat: `role="log"` transcript with auto-scroll, owner turns right/answers left, Enter
+  sends (Shift+Enter newlines), 300-char counter, per-turn period chips with custom dates
+  stamped on the answer, prose-first answer with folded evidence/limits, per-turn error
+  with Retry, 429 copy and entitled source links.
+- Empty state (revised same day): the greeting and the seven supported questions as a
+  two-column grid of topic cards (one icon per topic, question text from
+  `assistantQuestions`, arrow affordance), sitting above the composer instead of under
+  Send; answers, the "checking verified facts" line and the failure notice share one
+  small avatar; the log only scrolls once it has turns; the privacy note sits next to the
+  counter.
+- Matching: the shared topic set drops `rebooking`/`quietDays` (seven topics) and gains
+  `assistantTopicKeywords`. Exact template first, then whole-word keyword scoring, then
+  a unique winner; ties and vague money terms clarify with a specific follow-up; the
+  instruction/action/restricted-data guardrail runs before scoring. Same 300-character
+  and 20-per-15-minute bounds; no provider, no new dependency.
+- Behaviour change: a failed turn keeps earlier turns on screen but never reuses their
+  figures, and the transcript is deliberately retained across turns (it was cleared on
+  every edit before). Identity/role/module changes still remount and wipe it.
+- Evidence: shared 324/324; focused API 8 pass/1 skipped (`assistant-explanation`); full
+  web 1,081/1,086 with 5 `settings/PayrollPlans.test.tsx` timeouts under parallel load
+  (that file passes 25/25 alone); focused web 18/18; workspace typecheck and lint exit 0;
+  scoped Prettier and the production web build pass. No live browser, HTTP or database
+  check; no API suite rerun.
+- Docs: `docs/owner-explanations.md` rewritten; removal notes in
+  `docs/owner-rebooking.md` and `docs/owner-quiet-days.md`.
 
 ### REPORTS-UX — Simplify the reporting workspace
 
@@ -542,6 +585,10 @@ owner-facing experience; they do not authorize deployment or outbound messages.
   `settings/PayrollPlans.test.tsx` timeouts under parallel load, and that file passes 25/25 alone.
   Populated, zero-day, loading, error/retry, stale and refused states are covered by the passing
   tests; no live browser, HTTP or database check was performed.
+- Removal November 5, 2026: the briefing panel, `useOwnerBriefing`, its cache key and its fourteen
+  tests are gone — the dashboard now mounts the business-questions conversation instead. The
+  `GET /api/ai-assistant/owner-summary` endpoint and `ownerMetrics()` remain, because the
+  conversation answers from the same figures. See ASK-CHAT above.
 
 ### OA-03 — Service-aware rebooking recommendations
 
@@ -649,6 +696,11 @@ owner-facing experience; they do not authorize deployment or outbound messages.
   Production build/API/web typechecks, workspace lint and scoped formatting/diff pass.
 - No full API suite, owner browser UAT, application DB access, provider call,
   deployment, commit or push. See docs/owner-explanations.md. OA-07 next; not started.
+- ASK-CHAT follow-up November 5, 2026: the panel is a conversation over seven topics
+  (`rebooking`/`quietDays` removed with their screens). Wording resolves by exact
+  template, then the shared `assistantTopicKeywords` vocabulary, then a unique winner;
+  ties/vague money terms clarify and the guardrail still runs first. See the ASK-CHAT
+  entry above for the panel changes and evidence.
 
 ### OA-07 — Outcomes and release readiness
 

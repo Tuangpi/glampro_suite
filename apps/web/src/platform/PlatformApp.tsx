@@ -9,15 +9,20 @@
  * `/platform/companies/:id` are pages, and `/platform/account` is where the
  * operator's password and second factor live, on their own screen.
  *
- * The session is state here, not storage: `docs/platform-console.md` states that
- * an operator session is not saved across page reloads, and keeping that promise
- * is what keeps this console off a shared machine's disk.
+ * The session is state here, and one token in the tab's `sessionStorage`: the console
+ * exchanges that token for a fresh session on the first render, so a reload lands back
+ * where the operator was instead of asking for a password and a second factor again.
+ * `docs/platform-console.md` states what is kept and what is not — the access token is
+ * never written, closing the tab ends the session, and a new tab starts signed out.
+ *
+ * While that exchange is in flight nothing else renders: showing the sign-in form
+ * first would flash a password prompt at an operator who is already signed in.
  *
  * An unknown path under `/platform` falls back to the directory rather than a
  * blank screen, and an unauthenticated one goes to the sign-in page, carrying
  * nothing with it.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import type { PlatformAdminProfile } from "@glampro_suite/shared";
 
@@ -33,11 +38,33 @@ export default function PlatformApp() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [admin, setAdmin] = useState<PlatformAdminProfile | null>(null);
+  const [restoring, setRestoring] = useState(true);
+  const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
+  // One exchange per mount: the tab's kept refresh token, if it has one.
+  useEffect(() => {
+    let live = true;
+    void platformApi
+      .restore()
+      .then((resumed) => {
+        if (!live) return;
+        if (resumed.admin) setAdmin(resumed.admin);
+        setNotice(resumed.error ?? "");
+        setRestoring(false);
+      })
+      .catch(() => {
+        if (live) setRestoring(false);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+
   function signedIn(next: PlatformAdminProfile) {
     setAdmin(next);
+    setNotice("");
     setError("");
     navigate("/platform", { replace: true });
   }
@@ -48,6 +75,7 @@ export default function PlatformApp() {
     try {
       await platformApi.logout();
       setAdmin(null);
+      setNotice("");
       navigate("/platform/login", { replace: true });
     } catch (cause) {
       // Retain local state on logout failure so the operator can retry server
@@ -58,9 +86,19 @@ export default function PlatformApp() {
     }
   }
 
+  if (restoring) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-bg px-6">
+        <p role="status" className="text-sm text-ink-muted">
+          Restoring your session…
+        </p>
+      </div>
+    );
+  }
+
   if (!admin) {
     if (pathname !== "/platform/login") return <Navigate to="/platform/login" replace />;
-    return <PlatformLogin onSignedIn={signedIn} />;
+    return <PlatformLogin notice={notice} onSignedIn={signedIn} />;
   }
 
   return (

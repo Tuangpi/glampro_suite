@@ -10,15 +10,8 @@ const { useAuth, useDashboardSummary, refetch } = vi.hoisted(() => ({
 }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth }));
 vi.mock("@/hooks/useDashboard", () => ({ useDashboardSummary }));
-vi.mock("@/components/dashboard/OwnerBriefing", () => ({ default: () => <p>Owner snapshot</p> }));
 vi.mock("@/components/dashboard/AssistantQuestions", () => ({
   default: () => <p>Question workspace</p>,
-}));
-vi.mock("@/components/dashboard/RebookingRecommendations", () => ({
-  default: () => <p>Rebooking workspace</p>,
-}));
-vi.mock("@/components/dashboard/QuietDayOpportunities", () => ({
-  default: () => <p>Opening workspace</p>,
 }));
 
 const profile = (
@@ -79,34 +72,18 @@ it("shows a compact greeting, salon-local date and entitled shortcuts", () => {
   }
 });
 
-it("mounts only the selected assistant and supports keyboard navigation", () => {
+it("mounts the business-questions conversation and no tabbed owner tools", () => {
   mount();
-  expect(screen.getByText("Question workspace")).toBeInTheDocument();
-  expect(screen.queryByText("Rebooking workspace")).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("tab", { name: "Rebooking" }));
-  expect(screen.getByRole("tabpanel", { name: "Rebooking" })).toHaveTextContent(
-    "Rebooking workspace",
-  );
-  expect(screen.queryByText("Question workspace")).not.toBeInTheDocument();
-  fireEvent.keyDown(screen.getByRole("tab", { name: "Rebooking" }), { key: "End" });
-  expect(screen.getByRole("tab", { name: "Quiet-day openings" })).toHaveFocus();
-  expect(screen.getByText("Opening workspace")).toBeInTheDocument();
-  fireEvent.keyDown(screen.getByRole("tab", { name: "Quiet-day openings" }), { key: "Home" });
-  expect(screen.getByRole("tab", { name: "Business questions" })).toHaveFocus();
-});
-
-it.each(["STAFF", "CASHIER"])("does not expose owner tools for %s", (role) => {
-  useAuth.mockReturnValue(profile(role));
-  mount();
+  const region = screen.getByRole("region", { name: "Business questions" });
+  expect(within(region).getByText("Question workspace")).toBeInTheDocument();
   expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
-  expect(screen.queryByText("Question workspace")).not.toBeInTheDocument();
+  expect(screen.queryByRole("tab")).not.toBeInTheDocument();
 });
 
-it("filters shortcuts and assistant tools by entitlements", () => {
+it("filters the shortcuts by entitlement", () => {
   useAuth.mockReturnValue(profile("MANAGER", ["dashboard"]));
   mount();
   expect(screen.queryByRole("navigation", { name: "Dashboard shortcuts" })).not.toBeInTheDocument();
-  expect(screen.getAllByRole("tab")).toHaveLength(1);
 });
 
 it("hides the sale shortcut in a read-only salon", () => {
@@ -114,22 +91,6 @@ it("hides the sale shortcut in a read-only salon", () => {
   mount();
   expect(screen.queryByRole("link", { name: "New sale" })).not.toBeInTheDocument();
   expect(screen.getByRole("link", { name: "Appointments" })).toBeInTheDocument();
-});
-
-it("removes active tools immediately when permissions change", () => {
-  const view = mount();
-  fireEvent.click(screen.getByRole("tab", { name: "Rebooking" }));
-  useAuth.mockReturnValue(profile("MANAGER", ["dashboard"]));
-  view.rerender(
-    <MemoryRouter>
-      <Dashboard />
-    </MemoryRouter>,
-  );
-  expect(screen.queryByText("Rebooking workspace")).not.toBeInTheDocument();
-  expect(screen.getByRole("tab", { name: "Business questions" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
 });
 
 it("distinguishes loading from zero", () => {
@@ -140,7 +101,7 @@ it("distinguishes loading from zero", () => {
     isFetching: true,
   });
   mount();
-  expect(screen.getByRole("status")).toHaveTextContent("Loading today’s figures");
+  expect(screen.getByRole("status")).toHaveTextContent(/Loading today/);
   expect(screen.getAllByText("—")).toHaveLength(4);
 });
 

@@ -4,6 +4,7 @@ import {
   companyLifecycleSchema,
   recordSubscriptionSchema,
   companyModuleSchema,
+  companyModulesBulkSchema,
 } from "./company-administration.js";
 
 const period = {
@@ -68,4 +69,23 @@ test("module access requires boolean grants and an explicit nullable expiry", ()
     }).success,
     false,
   );
+});
+test("a bulk module change carries one reason and one term, never a target list", () => {
+  for (const change of [
+    { enabled: true, expiresAt: "2030-01-01T00:00:00+08:00", reason: "Annual renewal" },
+    { enabled: true, expiresAt: null, reason: "Annual renewal" },
+    { enabled: false, expiresAt: null, reason: "Contract ended" },
+  ])
+    assert.equal(companyModulesBulkSchema.safeParse(change).success, true, JSON.stringify(change));
+
+  for (const change of [
+    // A revocation has nothing to expire, exactly like the single-module body.
+    { enabled: false, expiresAt: "2030-01-01T00:00:00+08:00", reason: "Contract ended" },
+    // The server decides which modules a bulk change may touch.
+    { enabled: true, expiresAt: null, reason: "Annual renewal", codes: ["payroll"] },
+    { enabled: true, expiresAt: null, reason: " " },
+    { enabled: "true", expiresAt: null, reason: "Annual renewal" },
+    { enabled: true, expiresAt: "2030-01-01", reason: "Annual renewal" },
+  ])
+    assert.equal(companyModulesBulkSchema.safeParse(change).success, false, JSON.stringify(change));
 });

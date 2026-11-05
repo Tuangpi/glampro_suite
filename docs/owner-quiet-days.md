@@ -1,5 +1,12 @@
 # Future quiet-day opportunities — OA-04
 
+UI removal (November 5, 2026): the dashboard no longer mounts the quiet-day
+opportunities panel or the tabbed owner tools, and the assistant no longer offers a
+quiet-day policy question. `GET /api/ai-assistant/quiet-day-opportunities`,
+`quiet-day.service.ts` and the shared booking checks are unchanged; only the
+owner-facing preview was removed, so the screening rule below describes live backend
+behaviour rather than a screen.
+
 Owner/manager Dashboard previews are read-only and require dashboard, appointments
 and catalogue access. Select an active service; catalogue selection is paginated.
 No new main navigation, migration, offer, recipient list, approval or sending action

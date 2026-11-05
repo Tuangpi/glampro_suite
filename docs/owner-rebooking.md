@@ -1,5 +1,13 @@
 # Owner rebooking recommendations — OA-03
 
+UI removal (November 5, 2026): the dashboard no longer mounts the rebooking
+recommendations panel, its saved-draft review panel or the tabbed owner tools, and
+the assistant no longer offers a rebooking policy question. The read-only endpoints
+(`GET /api/ai-assistant/rebooking-nudges`), `rebooking-policy`, the draft services and
+tables, and the automatic rebooking message job are unchanged and still run; only the
+owner-facing preview was removed. The policy below therefore describes live backend
+behaviour rather than a screen.
+
 OA-05 update (October 24): SMS drafts now support explicit saving, versioned review,
 approval and controlled queueing. The read-only/temporary descriptions below record
 the original OA-03 boundary. Current workflow/policy: `docs/owner-draft-delivery.md`.

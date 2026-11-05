@@ -22,7 +22,7 @@ import type {
   ModuleEntitlement,
 } from "@glampro_suite/shared";
 
-import { get, post } from "@/lib/api";
+import { ENTITLEMENTS_STALE_EVENT, get, post } from "@/lib/api";
 import { clearSession, getRefreshToken, setSession } from "@/lib/auth-storage";
 import { clearSaleDraft, saleDraftIdentity } from "@/lib/sale-draft-storage";
 import { selectOutlet } from "@/lib/outlet-storage";
@@ -110,6 +110,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * A refused module means this browser's entitlement list is out of date.
+   *
+   * `visibleNavItems` filters the rail on the profile's entitlements, and the
+   * profile is read once per session — so an add-on revoked while a tab is open
+   * keeps its rail entry until the page is reloaded. The API refuses the route
+   * correctly; re-reading the profile is what makes the browser agree with it.
+   *
+   * `refreshing` keeps a screen that fires five queries at once from sending five
+   * `/auth/me` requests: one re-read answers all of them.
+   */
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    let refreshing = false;
+    const onStale = () => {
+      if (refreshing) return;
+      refreshing = true;
+      void refreshProfile()
+        // The next refused request asks again; there is nothing to report here,
+        // and an exception inside an event handler would surface as a page error.
+        .catch(() => undefined)
+        .finally(() => {
+          refreshing = false;
+        });
+    };
+
+    window.addEventListener(ENTITLEMENTS_STALE_EVENT, onStale);
+    return () => window.removeEventListener(ENTITLEMENTS_STALE_EVENT, onStale);
+  }, [status, refreshProfile]);
 
   const signIn = useCallback(
     async (email: string, password: string) => {

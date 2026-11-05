@@ -34,8 +34,11 @@ const HIGHLIGHTS = [
 
 export default function PlatformLogin({
   onSignedIn,
+  notice = "",
 }: {
   onSignedIn: (admin: PlatformAdminProfile) => void;
+  /** Why the console is asking again, when it had a session to resume and could not. */
+  notice?: string;
 }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -43,7 +46,7 @@ export default function PlatformLogin({
   const [challenge, setChallenge] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(notice);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -208,8 +211,8 @@ export default function PlatformLogin({
 
           <p className="mt-5 text-center text-xs text-ink-faint">
             {challenge
-              ? "Codes expire after ten minutes. Sessions are not saved across page reloads."
-              : "Sign-in may also ask for a six-digit email code. Sessions are not saved across page reloads."}
+              ? "Codes expire after ten minutes. This tab keeps your session, so a reload will not ask again."
+              : "Sign-in may also ask for a six-digit email code. This tab keeps your session, so a reload will not ask again."}
           </p>
         </div>
       </main>

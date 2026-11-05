@@ -272,8 +272,10 @@ authenticated visual browser review not performed.
 Platform company details include current effective status, the latest 100 subscription
 periods, module access and paginated company-administration audit history. Platform-only
 API endpoints under `/api/platform/companies/:id`: GET `/administration` and `/audit`,
-POST `/subscriptions`, `/lifecycle` and `/modules`. Each change requires a 3–500 character
-reason and takes its actor from the authenticated operator, never a request body.
+POST `/subscriptions`, `/lifecycle`, `/modules` and `/modules/bulk`. Each change requires a
+3–500 character reason and takes its actor from the authenticated operator, never a
+request body. `/administration` reports the stored `status` and the `effectiveStatus` the
+lifecycle verbs and the console's button gating are decided on.
 
 Manual subscription recording accepts a current period only (start at/before now,
 end after now), exact two-decimal amount and three-uppercase-letter currency. This
@@ -296,10 +298,14 @@ consider started ACTIVE/EXPIRED periods and expire exactly at endDate.
 
 Module grants use only the seeded catalogue, with optional future expiry. Core modules
 cannot be changed; grant/update/revoke is per company and checked on every module API
-request, including existing sessions. Existing JSON caps are preserved but no new cap
-editing/enforcement is claimed. Each subscription/lifecycle/grant write and its audit
-entry share one transaction and company lock. Audit listing is company-specific and
-restricted to `company.*` administrative events; no salon customer records or tokens.
+request, including existing sessions. A bulk grant/revoke (`POST /modules/bulk`) names no
+modules: the server decides the set (non-core, excluding `UNENFORCED_MODULE_CODES`),
+skips add-ons already in the target state and returns `{ changed, unchanged }`, writing a
+single `company.module.bulk_grant`/`.bulk_revoke` audit row per call. Existing JSON caps
+are preserved but no new cap editing/enforcement is claimed. Each
+subscription/lifecycle/grant write and its audit entry share one transaction and company
+lock. Audit listing is company-specific and restricted to `company.*` administrative
+events; no salon customer records or tokens.
 
 No schema/migration changes were needed. Real PostgreSQL/HTTP verification uses only
 the gated disposable database `saas04_acceptance` on loopback port 55442; fixture operator
@@ -471,6 +477,15 @@ company/user/15 minutes per API process, not a distributed quota. Existing tenan
 owner/manager and module boundaries apply. See docs/owner-explanations.md for limits
 and outstanding owner UAT/provider/operational release gates. No rollout performed.
 
+November 5 update (ASK-CHAT): the panel is now a conversation and the topic set is
+seven — `rebooking` and `quietDays` are gone along with the screens that explained
+them. Wording is resolved by exact template, then a shared whole-word keyword
+vocabulary, then a unique winner; ties and vague money words clarify, and the
+instruction/action/restricted-data guardrail still runs first. Answers stay
+deterministic (`source: "owner-metrics"`) with the same bounds, and the transcript is
+component state that a failed turn can never fill with earlier figures. No provider,
+dependency or migration was added.
+
 OA-05 implementation verified October 24: persisted SMS-only draft versions,
 exact sender/destination/body preview, explicit approval then idempotent queueing,
 append-only actor/version audit and execution-time authorization/eligibility checks.
@@ -492,6 +507,11 @@ only regular-price/0% suggestions and cannot alter or stack existing offers.
 Legacy historical promo draft API is separate and unchanged. No migration, offer
 publication, sending or deployment. Details: docs/owner-quiet-days.md.
 
+November 5 update: the quiet-day panel was removed from the dashboard together with the
+tabbed owner tools. `GET /api/ai-assistant/quiet-day-opportunities`,
+`quiet-day.service.ts` and the shared booking checks are unchanged; only the
+owner-facing preview and its assistant policy question were removed.
+
 OA-03 implementation verified October 24: explicit nullable service rebooking days
 inherit existing company Messaging days (28 if unset). Owner/manager dashboard
 recommendations use current global and exact preferred-channel marketing permission,
@@ -503,13 +523,21 @@ PostgreSQL. API/web builds now pass, resolving the prior broken assistant scaffo
 full API suite not rerun. Application rollout and owner browser walkthrough pending.
 Detailed policy and limitations: docs/owner-rebooking.md.
 
+November 5 update: the rebooking panel, the saved-draft review panel and the tabbed
+owner tools were removed from the dashboard. `GET /api/ai-assistant/rebooking-nudges`,
+`rebooking-policy`, the draft services/tables and the automatic rebooking message job
+are unchanged; only the owner-facing preview and its assistant policy question were
+removed.
+
 Follow-ups OA-01–OA-07 extend, rather than erase, TK2610-0029's correctness work.
 Deliver a dashboard briefing/evidence workspace, service-aware rebooking, future
 quiet-day opportunities, controlled approvals/delivery, bounded business questions
 and outcome/readiness checks. Reuse existing reporting, booking availability,
 channel consent and messaging jobs; never create independent duplicate outreach.
 Do not add a main navigation entry initially. Owner/manager and tenant/module
-boundaries remain mandatory; no new billing entitlement is assumed.
+boundaries remain mandatory; no new billing entitlement is assumed. As of November 5,
+the dashboard carries one conversation panel in place of the briefing and the tabbed
+owner tools; the endpoints behind those removed screens stay in service.
 
 Calculations and eligibility remain deterministic. Optional language generation
 must use validated evidence, not arbitrary SQL or direct action tools. No provider

@@ -99,6 +99,25 @@ export const CORE_MODULE_CODES = [
   "treatments",
 ] as const;
 
+/**
+ * Add-on modules that exist in the catalogue but have nothing behind them yet.
+ *
+ * They are seeded, they appear on the Modules panel, and granting one changes
+ * nothing: no route guards on them (`requireModule`) and no screen reads them.
+ * The panel says so — "Not available in this release" — and disables the switch,
+ * because a switch that flips and does nothing is worse than no switch at all.
+ *
+ * Removing a code from this list is the last step of shipping that module, and
+ * shipping it means adding the guards first.
+ */
+export const UNENFORCED_MODULE_CODES: readonly ModuleCode[] = [
+  "memberships",
+  "inventory",
+  "expenses",
+  "stock",
+  "employeeCommission",
+];
+
 export const DEFAULT_PAGE_SIZE = 20;
 export const MAX_PAGE_SIZE = 200;
 

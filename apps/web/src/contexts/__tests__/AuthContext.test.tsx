@@ -15,7 +15,13 @@ import type { AuthProfile, AuthSession } from "@glampro_suite/shared";
 
 const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
 
-vi.mock("@/lib/api", () => ({ get, post }));
+vi.mock("@/lib/api", () => ({
+  get,
+  post,
+  // The provider listens for this to re-read the profile when the API refuses a
+  // module the salon no longer has; the mock only needs the name.
+  ENTITLEMENTS_STALE_EVENT: "glampro:entitlements-stale",
+}));
 
 const { AuthProvider, useAuth } = await import("@/contexts/AuthContext");
 const { getRefreshToken, setSession } = await import("@/lib/auth-storage");
@@ -177,5 +183,31 @@ describe("signing out", () => {
     expect(post).toHaveBeenCalledWith("/auth/logout", { refreshToken: SESSION.refreshToken });
     expect(getRefreshToken()).toBeNull();
     expect(screen.getByTestId("tenant")).toHaveTextContent("-");
+  });
+});
+
+describe("entitlements going stale", () => {
+  it("re-reads the profile once when the API refuses a module", async () => {
+    setSession(SESSION);
+    get.mockResolvedValue(PROFILE);
+    renderProvider();
+    await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("authenticated"));
+    expect(get).toHaveBeenCalledTimes(1);
+
+    // Three refused queries in one screen must not become three `/auth/me` calls.
+    for (let index = 0; index < 3; index += 1)
+      window.dispatchEvent(new Event("glampro:entitlements-stale"));
+
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    expect(get).toHaveBeenLastCalledWith("/auth/me");
+  });
+
+  it("ignores the signal when there is no session to re-read", async () => {
+    renderProvider();
+    expect(await screen.findByText("anonymous")).toBeInTheDocument();
+
+    window.dispatchEvent(new Event("glampro:entitlements-stale"));
+    // Nothing is stored, so there is no profile to refresh.
+    expect(get).not.toHaveBeenCalled();
   });
 });

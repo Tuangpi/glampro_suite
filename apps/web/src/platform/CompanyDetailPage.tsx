@@ -11,10 +11,16 @@
  * actually fill in — deletion of a company and every row filed under it is not
  * that. Now the button opens a modal where the reason is required and the slug
  * has to be typed back, and the button stays disabled until both are true.
+ *
+ * The overview card is also the only place a company can be **changed** — its
+ * name, its slug, or the owner it may be missing entirely. "Owner: Not assigned"
+ * used to be a dead end: the fact was printed and nothing on the console could
+ * alter it, so a company created outside the console, or one whose owner row was
+ * lost, could only be repaired by deleting it and starting again.
  */
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router";
-import { companyPurgeSchema, type CompanyDetail } from "@glampro_suite/shared";
+import { companyPurgeSchema, updateCompanySchema, type CompanyDetail } from "@glampro_suite/shared";
 
 import { AlertTriangle } from "@/components/icons";
 import Badge, { type BadgeVariant } from "@/components/ui/Badge";
@@ -61,6 +67,15 @@ export default function CompanyDetailPage() {
   const [purgeSlug, setPurgeSlug] = useState("");
   const [purgeError, setPurgeError] = useState("");
   const [purging, setPurging] = useState(false);
+  /** The edit form. Its own draft, so abandoning it leaves nothing behind. */
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editSlug, setEditSlug] = useState("");
+  const [editOwnerName, setEditOwnerName] = useState("");
+  const [editOwnerEmail, setEditOwnerEmail] = useState("");
+  const [editReason, setEditReason] = useState("");
+  const [editError, setEditError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -83,7 +98,71 @@ export default function CompanyDetailPage() {
     };
   }, [id, revision]);
 
-  const busy = administrating || purging;
+  const busy = administrating || purging || saving;
+
+  /**
+   * Fill the edit form from what the server last reported.
+   *
+   * Prefilling the owner fields is what makes "assign an owner" the same form as
+   * "rename": when there is no owner they start empty, and the operator types the
+   * pairing that invites one.
+   */
+  function openEdit() {
+    if (!detail) return;
+    setEditName(detail.name);
+    setEditSlug(detail.slug);
+    setEditOwnerName(detail.owner?.name ?? "");
+    setEditOwnerEmail(detail.owner?.email ?? "");
+    setEditReason("");
+    setEditError("");
+    setEditOpen(true);
+  }
+
+  /**
+   * Save the edit.
+   *
+   * Owner fields travel only when they actually differ: sending an untouched pair
+   * would ask the server to re-open an owner branch that answers `409` once the
+   * owner has onboarded, which would make renaming a live company impossible.
+   */
+  async function saveCompany() {
+    if (!detail || saving) return;
+    setSaving(true);
+    setEditError("");
+    try {
+      const name = editName.trim();
+      const slug = editSlug.trim();
+      const ownerName = editOwnerName.trim();
+      const ownerEmail = editOwnerEmail.trim();
+      const wantsOwner = ownerName.length > 0 || ownerEmail.length > 0;
+      if (wantsOwner && (ownerName.length === 0 || ownerEmail.length === 0))
+        throw new Error("Give both the owner's name and email address, or leave both empty.");
+      const ownerTouched =
+        wantsOwner && (ownerName !== detail.owner?.name || ownerEmail !== detail.owner?.email);
+      const input = updateCompanySchema.safeParse({
+        name,
+        slug,
+        ...(ownerTouched ? { ownerName, ownerEmail } : {}),
+        reason: editReason.trim(),
+      });
+      if (!input.success) throw new Error(input.error.issues[0].message);
+      const result = await platformApi.updateCompany(detail.id, input.data);
+      setDetail(result.company);
+      setEditOpen(false);
+      setNotice(
+        result.invitationDelivery === "sent"
+          ? "Company saved and a new invitation sent. Previous links are invalid."
+          : result.invitationDelivery === "failed"
+            ? "Company saved, but the invitation email failed. Fix email settings, then use Resend invitation."
+            : "Company saved.",
+      );
+    } catch (cause) {
+      // The company is unchanged, so the modal stays open with what was typed.
+      setEditError(cause instanceof Error ? cause.message : "Company request failed.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function resendInvitation() {
     if (!detail) return;
@@ -136,7 +215,7 @@ export default function CompanyDetailPage() {
             {detail.status}
           </Badge>,
         ],
-        ["Owner", detail.owner?.name ?? "Not assigned"],
+        ["Owner", detail.owner?.name ?? "No owner assigned"],
         [
           // The company's latest plan expiry — read here for the same reason the
           // directory column shows it: an operator looking at one company should
@@ -146,14 +225,14 @@ export default function CompanyDetailPage() {
             ? new Date(detail.subscriptionEndsAt).toLocaleDateString()
             : "No plan recorded",
         ],
-        ["Owner email", detail.owner?.email ?? "Not assigned"],
+        ["Owner email", detail.owner?.email ?? "No owner assigned"],
         [
           "Owner access",
           detail.owner
             ? detail.owner.disabled
               ? "Disabled / pending onboarding"
               : "Enabled"
-            : "Not assigned",
+            : "No owner assigned",
         ],
         ...(invitation
           ? [
@@ -181,6 +260,13 @@ export default function CompanyDetailPage() {
     detail.invitation &&
     !detail.invitation.acceptedAt,
   );
+
+  /**
+   * An owner who has accepted is signed in as a working SUPER_ADMIN. The API
+   * refuses to replace them (`409`), so the two fields are read-only here rather
+   * than left to fail on save — a form that cannot be submitted should say so.
+   */
+  const ownerOnboarded = Boolean(detail?.invitation?.acceptedAt);
 
   return (
     <div className="flex flex-col gap-4">
@@ -247,15 +333,20 @@ export default function CompanyDetailPage() {
               title="Company overview"
               description="What this company is, and who owns it."
               actions={
-                canResend ? (
-                  <Button
-                    variant="secondary"
-                    disabled={busy}
-                    onClick={() => void resendInvitation()}
-                  >
-                    Resend invitation
+                <>
+                  <Button variant="secondary" disabled={busy} onClick={openEdit}>
+                    Edit company
                   </Button>
-                ) : null
+                  {canResend ? (
+                    <Button
+                      variant="secondary"
+                      disabled={busy}
+                      onClick={() => void resendInvitation()}
+                    >
+                      Resend invitation
+                    </Button>
+                  ) : null}
+                </>
               }
             >
               <dl className="grid gap-x-6 gap-y-3 px-2 pt-2 pb-1 sm:grid-cols-2">
@@ -266,6 +357,22 @@ export default function CompanyDetailPage() {
                   </div>
                 ))}
               </dl>
+              {/* The dead end this page used to be: "Owner: Not assigned" and no
+                  action anywhere that could assign one. The way out sits next to
+                  the fact rather than behind a menu. */}
+              {detail && !detail.owner ? (
+                <p className="px-2 pt-3 text-sm text-ink-body">
+                  No owner is recorded, so nobody can sign in as this company&rsquo;s owner.{" "}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={openEdit}
+                    className="font-bold text-purple underline disabled:opacity-60"
+                  >
+                    Assign an owner
+                  </button>
+                </p>
+              ) : null}
             </Card>
 
             <Card
@@ -385,6 +492,96 @@ export default function CompanyDetailPage() {
             required
             disabled={purging}
             hint={`Type ${detail?.slug ?? "the slug"} exactly to enable the delete button.`}
+          />
+        </form>
+      </Modal>
+
+      {/* The edit form. It carries the reason the audit log needs, and the owner
+          pair only matters while that owner is still pending — see `saveCompany`. */}
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Edit company"
+        description="Correct the company's details, or give it the owner it does not have yet."
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={saving} onClick={() => setEditOpen(false)}>
+              Keep as it is
+            </Button>
+            <Button
+              type="submit"
+              form="company-edit-form"
+              loading={saving}
+              disabled={!editName.trim() || !editSlug.trim() || editReason.trim().length < 3}
+            >
+              Save changes
+            </Button>
+          </div>
+        }
+      >
+        <form
+          id="company-edit-form"
+          className="flex flex-col gap-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveCompany();
+          }}
+        >
+          {editError ? (
+            <p role="alert" className="rounded-md bg-danger/5 px-3 py-2.5 text-sm text-danger">
+              {editError}
+            </p>
+          ) : null}
+          <Input
+            label="Company name"
+            value={editName}
+            onChange={(event) => setEditName(event.target.value)}
+            maxLength={160}
+            required
+            disabled={saving}
+          />
+          <Input
+            label="Company slug"
+            value={editSlug}
+            onChange={(event) => setEditSlug(event.target.value)}
+            placeholder="glampro-demo-salon"
+            minLength={3}
+            maxLength={64}
+            pattern="[a-z0-9]+(-[a-z0-9]+)*"
+            required
+            disabled={saving}
+            hint="Lowercase letters, numbers and single hyphens. This is the address the salon signs in at."
+          />
+          <Input
+            label="Owner name"
+            value={editOwnerName}
+            onChange={(event) => setEditOwnerName(event.target.value)}
+            maxLength={120}
+            disabled={saving || ownerOnboarded}
+            hint={
+              ownerOnboarded
+                ? "This owner has already set up their account, so the owner cannot be changed here."
+                : "Leave both owner fields empty to keep the current owner."
+            }
+          />
+          <Input
+            label="Owner email"
+            type="email"
+            value={editOwnerEmail}
+            onChange={(event) => setEditOwnerEmail(event.target.value)}
+            placeholder="owner@example.com"
+            disabled={saving || ownerOnboarded}
+            hint="Where the invitation to set a password is sent. Changing it revokes any pending invitation."
+          />
+          <Input
+            label="Reason for change"
+            value={editReason}
+            onChange={(event) => setEditReason(event.target.value)}
+            minLength={3}
+            maxLength={500}
+            required
+            disabled={saving}
+            hint="Recorded in the company audit history."
           />
         </form>
       </Modal>

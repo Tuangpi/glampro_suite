@@ -1,17 +1,21 @@
 /**
- * The Subscription tab of a company: what is paid for now, the form that records
- * one manual period, and the periods already recorded.
+ * The Subscription tab of a company: one card that answers "paid until when?",
+ * one modal that records the next period, and the periods already recorded
+ * behind a disclosure.
  *
- * Three questions, in the order an operator asks them:
+ * The tab used to be three stacked cards plus a lifecycle card, and it made an
+ * operator do the work: compare two ISO instants in a table, work out which row
+ * was live, and find the one card out of four that actually wrote. It now reads
+ * in the order the questions are asked:
  *
- * 1. **Until when is this company paid for?** The summary card answers it from the
- *    periods the server already returns, instead of leaving the operator to compare
- *    two ISO instants in a table and work out which row is the live one.
- * 2. **Record the next period.** The form is its own card with its own reason. It
- *    used to share one "Change reason" field with the lifecycle buttons above it,
- *    which read as if the reason belonged to suspending the company.
- * 3. **What was recorded before?** The history renders days and money rather than
- *    `2026-11-01T00:00:00+08:00`, and marks the row that is running now.
+ * 1. **Plan** — the status, the two boundaries, the time left and the amount.
+ *    Only what "paid until when?" needs.
+ * 2. **Record period** — behind one button, in a modal with its own reason field.
+ *    It used to share the section's single "Change reason" input with the
+ *    lifecycle buttons, which read as if a renewal's reason belonged to
+ *    suspending the company.
+ * 3. **History** — a `<details>` disclosure, because "what was recorded before?"
+ *    is the occasional question, not the daily one.
  *
  * **A period may start on any day.** The API used to refuse a start in the future,
  * which made the one thing an operator does on renewal — schedule next month —
@@ -29,12 +33,18 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import EmptyState from "@/components/ui/EmptyState";
 import Input from "@/components/ui/Input";
+import Modal from "@/components/ui/Modal";
 import Table, { type TableColumn } from "@/components/ui/Table";
 import { dayToLocalInstant, formatDate, formatDateInputValue, formatPrice } from "@/lib/utils";
 import { platformApi } from "./api";
+import {
+  TENANT_STATUS_LABEL,
+  TENANT_STATUS_TONE,
+  runningPeriod,
+  type TenantStatus,
+} from "./tenantStatus";
 
 type Period = CompanyAdministration["subscriptions"][number];
-type EffectiveStatus = CompanyAdministration["effectiveStatus"];
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -46,13 +56,6 @@ const STATUS_TONE: Record<Period["status"], BadgeVariant> = {
   CANCELLED: "neutral",
 };
 
-const EFFECTIVE_TONE: Record<EffectiveStatus, BadgeVariant> = {
-  ACTIVE: "success",
-  SUSPENDED: "warning",
-  EXPIRED: "danger",
-  CANCELLED: "neutral",
-};
-
 /**
  * The enum as a word. `ACTIVE` in a badge is a database value read aloud; "Active"
  * is what the rest of this screen's badges say ("Enabled", "Expired", "Core").
@@ -60,13 +63,6 @@ const EFFECTIVE_TONE: Record<EffectiveStatus, BadgeVariant> = {
 const STATUS_LABEL: Record<Period["status"], string> = {
   ACTIVE: "Active",
   PENDING: "Pending",
-  EXPIRED: "Expired",
-  CANCELLED: "Cancelled",
-};
-
-const EFFECTIVE_LABEL: Record<EffectiveStatus, string> = {
-  ACTIVE: "Active",
-  SUSPENDED: "Suspended",
   EXPIRED: "Expired",
   CANCELLED: "Cancelled",
 };
@@ -100,14 +96,6 @@ function phaseOf(row: Period, now: number): Phase {
 function daysUntil(now: number, value: string): string {
   const count = Math.max(0, Math.ceil((new Date(value).getTime() - now) / DAY_MS));
   return count === 1 ? "1 day" : `${count} days`;
-}
-
-/** The period that is running now, if any: the latest end among the ones that have started. */
-function runningPeriod(rows: Period[], now: number): Period | undefined {
-  return rows
-    .filter((row) => row.status === "ACTIVE" || row.status === "EXPIRED")
-    .filter((row) => phaseOf(row, now) === "current")
-    .sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
 }
 
 /** The earliest period that has been recorded but has not started yet. */
@@ -173,7 +161,7 @@ function Fact({ label, value }: { label: string; value: ReactNode }) {
 
 export interface SubscriptionPanelProps {
   companyId: string;
-  effectiveStatus: EffectiveStatus;
+  effectiveStatus: TenantStatus;
   subscriptions: Period[];
   /** Re-read the company once a period has been recorded. */
   onRecorded: () => Promise<void>;
@@ -194,6 +182,8 @@ export default function SubscriptionPanel({
   const [reason, setReason] = useState("");
   /** What the start picker holds: the end's earliest day is derived from it. */
   const [startDay, setStartDay] = useState("");
+  /** The record form lives in a modal; the card keeps one button. */
+  const [formOpen, setFormOpen] = useState(false);
 
   // `useState`'s initializer is the one place a component may read the clock: the
   // purity rule forbids `Date.now()` during render, and how long a period has left
@@ -201,6 +191,17 @@ export default function SubscriptionPanel({
   const [now] = useState(() => Date.now());
   const running = runningPeriod(subscriptions, now);
   const scheduled = scheduledPeriod(subscriptions, now);
+
+  /**
+   * Open the record form.
+   *
+   * A previous failure is cleared first: that alert belongs to the attempt that
+   * caused it, and re-opening the form is a new attempt.
+   */
+  function openForm() {
+    setError("");
+    setFormOpen(true);
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -234,6 +235,9 @@ export default function SubscriptionPanel({
       setStartDay("");
       setReason("");
       setNotice("Subscription period recorded.");
+      // Closed only after the server accepted it: a rejected period keeps the
+      // form open with the days the operator picked.
+      setFormOpen(false);
       await onRecorded();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to record this period.");
@@ -246,16 +250,35 @@ export default function SubscriptionPanel({
   return (
     <div className="flex flex-col gap-4">
       <Card
-        title="Current subscription"
+        title="Plan"
         description={
           <span className="flex flex-wrap items-center gap-2">
-            Effective status
-            <Badge variant={EFFECTIVE_TONE[effectiveStatus]} dot>
-              {EFFECTIVE_LABEL[effectiveStatus]}
+            <Badge variant={TENANT_STATUS_TONE[effectiveStatus]} dot>
+              {TENANT_STATUS_LABEL[effectiveStatus]}
             </Badge>
+            <span>
+              {subscriptions.length === 0
+                ? "No period recorded"
+                : `${subscriptions.length} period${subscriptions.length === 1 ? "" : "s"} recorded`}
+            </span>
           </span>
         }
+        actions={
+          <Button variant="secondary" disabled={busy} onClick={openForm}>
+            Record period
+          </Button>
+        }
       >
+        {/* A recorded period is reported here rather than in the form it just
+            closed: the card is what the operator is left looking at. */}
+        {notice ? (
+          <p
+            role="status"
+            className="mx-2 mt-2 rounded-md bg-success-soft px-3 py-2 text-sm text-success-text"
+          >
+            {notice}
+          </p>
+        ) : null}
         {running ? (
           <div className="flex flex-col gap-3 px-2 pt-2 pb-1">
             <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -286,17 +309,32 @@ export default function SubscriptionPanel({
           </div>
         ) : (
           <p className="px-2 pt-2 pb-1 text-sm text-ink-body">
-            No subscription period recorded. Until one is added below, the company has no dated
-            access window.
+            No subscription period recorded, so the company has no dated access window. Use{" "}
+            <span className="font-bold text-ink">Record period</span> to give it one.
           </p>
         )}
       </Card>
 
-      <Card
+      {/* The form is a modal, not a card: recording a period is an occasional
+          decision, and a permanently open form made the tab look like a settings
+          page with two summaries bolted on. */}
+      <Modal
+        open={formOpen}
+        onClose={() => setFormOpen(false)}
         title="Record a subscription period"
         description="Manual record only — nothing is charged or captured."
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" disabled={busy} onClick={() => setFormOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" form="record-subscription-form" loading={busy}>
+              Record subscription
+            </Button>
+          </div>
+        }
       >
-        <form className="flex flex-col gap-4 px-2 pt-2 pb-1" onSubmit={submit}>
+        <form id="record-subscription-form" className="flex flex-col gap-4" onSubmit={submit}>
           <p className="text-sm text-ink-body">
             Pick the first and last day of the period. Both are recorded at midnight in your own
             timezone, and periods cannot overlap.
@@ -366,32 +404,36 @@ export default function SubscriptionPanel({
             placeholder="Explain why this period is being recorded"
             hint="Required for the audit log. Stored with the period, not with the company."
           />
-
-          <div>
-            <Button type="submit" loading={busy}>
-              Record subscription
-            </Button>
-          </div>
         </form>
-      </Card>
+      </Modal>
 
-      <Card
-        title="Subscription history"
-        description="The most recent 100 periods, latest end date first."
-        flush
-      >
-        <Table
-          caption="Subscription periods"
-          rows={subscriptions}
-          rowKey={(row) => row.id}
-          columns={periodColumns(now)}
-          empty={
-            <EmptyState
-              title="No subscription periods recorded."
-              description="Record one above so the company's access has a date range."
-            />
-          }
-        />
+      {/* Behind a disclosure: the history is read when something needs checking,
+          not on every visit, and a 100-row table pushed the one card that matters
+          off the screen. The summary carries the count so a closed disclosure
+          still answers "is there any history?". */}
+      <Card flush>
+        <details className="group">
+          <summary className="flex cursor-pointer items-center justify-between gap-4 px-5 py-4">
+            <span className="text-base font-heavy text-ink">Subscription history</span>
+            <span className="text-sm text-ink-muted">
+              {subscriptions.length === 0
+                ? "Nothing recorded"
+                : `${subscriptions.length} period${subscriptions.length === 1 ? "" : "s"}, latest end first`}
+            </span>
+          </summary>
+          <Table
+            caption="Subscription periods"
+            rows={subscriptions}
+            rowKey={(row) => row.id}
+            columns={periodColumns(now)}
+            empty={
+              <EmptyState
+                title="No subscription periods recorded."
+                description="Record one so the company's access has a date range."
+              />
+            }
+          />
+        </details>
       </Card>
     </div>
   );

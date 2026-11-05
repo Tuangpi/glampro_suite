@@ -12,6 +12,7 @@ vi.mock("./api", () => ({
     companies: vi.fn(),
     company: vi.fn(),
     createCompany: vi.fn(),
+    updateCompany: vi.fn(),
     resendInvitation: vi.fn(),
     deleteCompany: vi.fn(),
   },
@@ -249,4 +250,81 @@ it("keeps the company when the server rejects the purge", async () => {
   expect(screen.getByLabelText("Reason for deletion")).toHaveValue(
     "Customer asked us to erase their data",
   );
+});
+
+it("gives a company the owner it never had, and reports the invitation", async () => {
+  vi.mocked(platformApi.company).mockResolvedValue({ ...company, owner: null, invitation: null });
+  render(<Harness path="/platform/companies/company-a" />);
+
+  // The fact that used to be the end of the road, and the action beside it.
+  expect((await screen.findAllByText("No owner assigned")).length).toBeGreaterThan(0);
+  fireEvent.click(screen.getByRole("button", { name: "Assign an owner" }));
+
+  const dialog = screen.getByRole("dialog", { name: "Edit company" });
+  fireEvent.change(within(dialog).getByLabelText("Owner name"), {
+    target: { value: "Owner B" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Owner email"), {
+    target: { value: "owner-b@example.test" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Reason for change"), {
+    target: { value: "Owner was never recorded" },
+  });
+
+  vi.mocked(platformApi.updateCompany).mockResolvedValue({
+    company: { ...company, owner: { ...company.owner, name: "Owner B" } },
+    invitationDelivery: "sent",
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+  await waitFor(() =>
+    expect(platformApi.updateCompany).toHaveBeenCalledWith("company-a", {
+      name: "Salon A",
+      slug: "salon-a",
+      ownerName: "Owner B",
+      ownerEmail: "owner-b@example.test",
+      reason: "Owner was never recorded",
+    }),
+  );
+  await screen.findByText(/Company saved and a new invitation sent/);
+});
+
+it("renames a company whose owner already onboarded without touching the owner", async () => {
+  vi.mocked(platformApi.company).mockResolvedValue({
+    ...company,
+    owner: { ...company.owner, disabled: false },
+    invitation: { ...company.invitation, acceptedAt: new Date().toISOString() },
+  });
+  render(<Harness path="/platform/companies/company-a" />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Edit company" }));
+  const dialog = screen.getByRole("dialog", { name: "Edit company" });
+  // A live owner cannot be replaced from this form, so the fields say so rather
+  // than letting the save fail with a 409.
+  expect(within(dialog).getByLabelText("Owner name")).toBeDisabled();
+  expect(within(dialog).getByLabelText("Owner email")).toBeDisabled();
+
+  fireEvent.change(within(dialog).getByLabelText("Company name"), {
+    target: { value: "Salon A Renamed" },
+  });
+  fireEvent.change(within(dialog).getByLabelText("Reason for change"), {
+    target: { value: "Correcting the salon's name" },
+  });
+
+  vi.mocked(platformApi.updateCompany).mockResolvedValue({
+    company: { ...company, name: "Salon A Renamed" },
+    invitationDelivery: null,
+  });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Save changes" }));
+
+  await waitFor(() =>
+    // No owner pair at all: sending an untouched one would ask the server to
+    // re-open a branch it refuses for an onboarded owner.
+    expect(platformApi.updateCompany).toHaveBeenCalledWith("company-a", {
+      name: "Salon A Renamed",
+      slug: "salon-a",
+      reason: "Correcting the salon's name",
+    }),
+  );
+  await screen.findByText("Company saved.");
 });

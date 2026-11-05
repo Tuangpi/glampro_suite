@@ -23,12 +23,12 @@ address bar disagreed with it.
 | `/platform/companies/:id` | `CompanyDetailPage` | Overview, subscription, module access, activity, purge |
 | `/platform/account`       | `Account`           | The operator's own password and second factor          |
 
-`PlatformApp.tsx` holds the route table and the in-memory session; `PlatformShell.tsx`
-draws the top bar with the two sections. Nothing renders before an operator is known:
-an unauthenticated address is redirected to `/platform/login`, and an unknown path
-under `/platform` falls back to the directory instead of a blank screen. Account &
-security is its own page so an operator changing their password is never standing next
-to a company's delete button.
+`PlatformApp.tsx` holds the route table and the session, restored from the tab on load;
+`PlatformShell.tsx` draws the top bar with the two sections. Nothing renders before an
+operator is known: an unauthenticated address is redirected to `/platform/login`, and an
+unknown path under `/platform` falls back to the directory instead of a blank screen.
+Account & security is its own page so an operator changing their password is never
+standing next to a company's delete button.
 
 ## Directory totals and plan end dates
 
@@ -105,9 +105,39 @@ action, not a console one: `npm run platform:bootstrap` (or a direct
 `platform_admins."twoFactorEnabled" = false` update), then re-enrol from
 _Account & security_.
 
-Sessions live in memory only; a page reload signs the operator out. The header has
-no "check session" button any more — the profile request it triggered gated nothing,
-and every real request already validates and rotates the session server-side.
+## Sessions across a reload
+
+An operator session survives a reload of the tab and nothing more
+(`apps/web/src/platform/api.ts`):
+
+- **Only the refresh token is kept**, in `sessionStorage` under
+  `glampro.platform.refresh`. No access token and no profile are written — every
+  request rotates the session, so a stored access token would be stale the moment it
+  was saved, and a reload re-reads the operator from the server instead of trusting a
+  copy. The salon's `localStorage` never holds operator credentials.
+- **Tab-scoped, not machine-scoped.** Closing the tab ends the session, a new tab
+  starts signed out, and nothing is left on a shared machine's disk for the next
+  person. A duplicated tab copies the token: the two then share one session, so
+  whichever rotates first signs the other out — the trade for not writing to disk.
+- **`restore()` trades the token on the first render.** `PlatformApp` renders
+  "Restoring your session…" while that exchange is in flight, then draws the route the
+  URL asked for, so a reload of `/platform/companies/:id` lands back on that company
+  rather than the directory or a password prompt. Concurrent callers share one
+  exchange, because `/refresh` rotates the row in place and a second spend of the same
+  token would be refused.
+- **A refusal is final; an outage is not.** `401` (revoked, expired,
+  password changed, operator disabled) drops the entry and the sign-in page says why.
+  A request that never reached the server keeps it, so being offline does not cost the
+  operator a second factor — the next reload tries again.
+- **Sign-out revokes and forgets.** `POST /api/platform/auth/logout` runs first; only
+  once the server has revoked the session is the entry removed, so a failed logout
+  leaves both copies in place for a retry rather than a live session nobody can end.
+
+The rest of the server-side rules are unchanged: the access token lives 15 minutes, the
+refresh token 30 days, `tokenVersion` and `status` are re-checked on every use, and
+signing out revokes the session immediately. The header has no "check session" button —
+the profile request it triggered gated nothing, and every real request already validates
+and rotates the session.
 
 ## Account & security
 
@@ -133,18 +163,99 @@ cards. `POST /api/platform/auth/password`, `…/two-factor/enroll`, `…/two-fac
   `audit_logs` row (`platform.password.change`, `platform.two_factor.enable`,
   `platform.two_factor.disable`).
 
+## Editing a company and its owner
+
+`PATCH /api/platform/companies/:id` with `{ name, slug, reason }` — plus an optional
+`{ ownerName, ownerEmail }` pair — corrects a company that already exists. The
+overview card's **Edit company** button opens it, and so does the line under the
+owner facts: "No owner is recorded … _Assign an owner_".
+
+That line is the point of the endpoint. The console could create a company but never
+_change_ one, so a company whose `ownerUserId` was never written read "No owner
+assigned" on three rows with no action anywhere that could fill it in — the only way
+out was to delete the company and start again.
+
+- **The owner pair travels together.** `updateCompanySchema` refuses one without the
+  other, and sending neither is how the operator says "keep the owner". The form
+  sends the pair only when it actually differs from what the server reported, because
+  an untouched pair would ask the server to re-open an owner branch it refuses.
+- **A pending owner can be corrected; a working one cannot.** Assigning an owner
+  creates the pending account exactly as creation does: an unknown random password
+  hash, the account disabled, and a 48-hour invitation. Editing a _pending_ owner
+  updates the name and address and issues a fresh invitation when the address
+  changes. An owner who has **accepted** answers `409` — replacing them demotes
+  somebody who can sign in today, which is an ownership _transfer_, not a rename. The
+  two fields are disabled in that case so it cannot be attempted by accident.
+- **Only an active company can be given an owner.** `acceptOwnerInvitation` refuses a
+  suspended or cancelled company, so an invitation issued there would mint a link
+  that cannot work; the API says "Reactivate this company before changing its owner."
+- **A saved edit is never lost to a mail server.** `createCompany` refuses up front
+  with `503` when SMTP or the portal origin is missing, because nothing has been
+  written yet. An edit is written in a transaction that locks the tenant row
+  `FOR UPDATE`, and the invitation goes out afterwards: if delivery fails the answer
+  is `invitationDelivery: "failed"` and the console points at **Resend invitation** —
+  a real retry rather than a second save. `null` means no invitation was needed.
+- **Two audit rows.** `company.update` records the before/after identity and the
+  reason; `company.owner.assign` (or `company.owner.update`) records the ownership
+  change on its own, because "renamed" and "given to somebody else" are different
+  events to read back later.
+
+## Company access and the lifecycle buttons
+
+The Company access card is a status badge, three buttons and one sentence:
+
+- **The badge is the effective status** — the stored column _and_ the periods, the same
+  answer `GET /administration` returns as `effectiveStatus`. A company whose stored
+  status is `ACTIVE` but whose last period has ended reads **Expired**.
+- **A button that cannot work is dimmed, and the sentence says why.** Suspend,
+  Reactivate and Cancel used to be live whatever the state, so two of the three always
+  answered `409`. Each is now gated on a rule `changeCompanyLifecycle` already enforces
+  (`apps/web/src/platform/tenantStatus.ts` holds all three):
+
+  | Button     | Offered when                                                          | Why the API refuses otherwise                                                                                                                          |
+  | ---------- | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+  | Suspend    | `effectiveStatus === "ACTIVE"`                                        | Only an `ACTIVE` company can be suspended — suspending something already closed says nothing.                                                          |
+  | Reactivate | stored status is not `ACTIVE` **and** the latest period has not ended | "The company already has that status"; or the latest period that started has ended — "Record a current subscription before reactivating this company." |
+  | Cancel     | stored status is not `CANCELLED`                                      | A cancelled company cannot be cancelled again.                                                                                                         |
+
+- **"No period at all" is not the same as "no period running".** A company provisioned
+  before its first plan has no rows on the Subscription tab, and `changeCompanyLifecycle`
+  lets that reactivation through (its query finds nothing to refuse). So the button is
+  offered, and the sentence says access still needs a period — dimming it here would be
+  a dimmed button the API would have accepted, which is the bug the gating exists to
+  fix. Only a period that _started and ended_ is a refusal, which also means a scheduled
+  `PENDING` period neither runs nor counts as the ended row the API refuses on.
+
+- **The reason is text, not a tooltip.** A disabled button takes no hover and no focus,
+  so the explanation sits in the sentence beside the badge. It also names the way out —
+  "record a new period on the Subscription tab, or cancel the company" — because a
+  dimmed button with no next step is a dead end with a colour.
+- **Both statuses are reported.** `companyAdministrationSchema` returns `status` (the
+  column) beside `effectiveStatus`: the badge shows the second and two of the three
+  rules read the first, so the console cannot decide them from one value.
+- **Suspension is not "expired".** A stored-`ACTIVE` company whose period lapsed reads
+  `EXPIRED` and its Reactivate button is dimmed, because the record still says `ACTIVE`.
+  The way forward is a new period — which brings access back on its own, without a
+  lifecycle change — or a cancellation.
+
 ## Recording a subscription period
 
-The Subscription tab is three cards in the order an operator asks the questions:
-**Current subscription** (what is paid for now, and until when), **Record a
-subscription period** (the next one) and **Subscription history** (what was
-recorded before). Only the middle card writes — `POST
-/api/platform/companies/:id/subscriptions`. Nothing is charged or captured; the
-record is what gives the company a dated period of access.
+The Subscription tab is **one card, one modal and one disclosure**:
 
-The card lives in `platform/SubscriptionPanel.tsx` and carries its own reason field.
-It used to share the section's one "Change reason" input with the lifecycle buttons,
-which read as if the reason for a renewal belonged to suspending the company.
+- **Plan** — the status badge, the count of recorded periods, when access starts and
+  ends, how long is left and the amount. Nothing here writes.
+- **Record period** — a button in that card's header opens the form in a modal. Only
+  this writes: `POST /api/platform/companies/:id/subscriptions`. Nothing is charged
+  or captured; the record is what gives the company a dated period of access.
+- **Subscription history** — a `<details>` disclosure holding the period table, with
+  the count in its summary so a closed disclosure still answers "is there any
+  history?".
+
+The tab used to be three stacked cards under a lifecycle card, and it borrowed that
+card's single "Change reason" input — so a renewal read as if its reason belonged to
+suspending the company. The reason now lives inside the form that needs it, the form
+is opened when an operator wants it, and the 100-row table no longer pushes the one
+card that matters off the screen.
 
 - **The operator picks days, the API stores instants.** `recordSubscriptionSchema`
   requires an offset (`2026-10-23T00:00:00+08:00`) because a bare `2026-10-23` is a
@@ -193,11 +304,44 @@ something to remember.
   once an `expiresAt` has passed; the row shows an `Expired <date>` badge and explains
   what turning it back on does, instead of quietly showing "not granted".
 - **Every change needs a reason.** `companyModuleSchema` requires one, so the switch
-  opens a confirmation with the reason field (and, when granting, an optional ISO
+  opens a confirmation with the reason field (and, when granting, an optional
   expiry). Revoking never sends an expiry — the schema rejects one.
+- **An expiry is a day, not a typed instant.** It used to be a free-text ISO field
+  (`2026-11-23T00:00:00+08:00`) that only a developer could fill in twice the same
+  way. It is now a `<input type="date">` whose `min` is tomorrow — an expiry of
+  "today" is already past once it is stored at midnight — with 30-day, 90-day and
+  1-year presets and an explicit **No expiry**. `dayToLocalInstant` attaches the
+  operator's own offset, so the grant ends at midnight on the day they picked.
+- **A module with nothing behind it says so.** `UNENFORCED_MODULE_CODES`
+  (`memberships`, `inventory`, `expenses`, `stock`, `employeeCommission`) have no
+  `requireModule` guard and no screen, so granting one changes nothing a salon can
+  see. Their switch is disabled and the row reads "Not in this release".
+- **Every add-on at once, for one decision.** **Turn all on** and **Turn all off** sit in
+  the card header and call `POST /:id/modules/bulk` with `{ enabled, expiresAt, reason }`
+  (`companyModulesBulkSchema`). The body names no modules: which ones may be granted is
+  platform data, so the server decides — core modules and `UNENFORCED_MODULE_CODES` are
+  never touched, and a `codes` field in the body is a `422`, not a widened set.
+- **A bulk grant does not rewrite a running one.** Only add-ons that are off or lapsed
+  are granted; one that is already entitled keeps its own expiry, because stamping a new
+  term over a year-long grant would silently shorten it. Those codes come back in
+  `unchanged`, and the banner reports both counts — "3 add-ons turned on. 2 were already
+  on and left alone." — rather than a total that is not true.
+- **A bulk revoke clears lapsed grants too.** Left behind, a lapsed row would keep the
+  table showing "Expired" while its switch read off.
+- **One audit row per click**, not one per module: `company.module.bulk_grant` /
+  `.bulk_revoke` with `{ reason, codes, unchanged, after }` in the metadata. A batch that
+  would change nothing answers `409` instead of writing an empty row, and both buttons are
+  dimmed when there is nothing to do — the count above the table ("0 of 2 add-ons on, 1
+  lapsed") says so before the click.
 - **The switch never moves optimistically.** It keeps the server's position while the
   request is in flight, and a rejected change leaves it where it was with the reason
   still typed in the open dialog.
+- **A revocation reaches the open tab.** The browser reads a salon's entitlements once
+  per session (`GET /auth/me`) and filters the rail on them, so an add-on revoked
+  while a tab is open keeps its rail entry. A `403 MODULE_NOT_ENTITLED` now raises
+  `ENTITLEMENTS_STALE_EVENT` (`lib/api.ts`), which `AuthContext` answers by re-reading
+  the profile once for the whole burst; the entry then leaves the rail. `requireModule`
+  was already the boundary — this only stops the rail from disagreeing with it.
 
 ## Deleting a company
 

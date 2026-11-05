@@ -2,19 +2,23 @@ import { Router } from "express";
 import {
   companyListQuerySchema,
   createCompanySchema,
+  updateCompanySchema,
   acceptOwnerInvitationSchema,
   idParamSchema,
   type CompanyListQuery,
   type CreateCompanyInput,
+  type UpdateCompanyInput,
   type AcceptOwnerInvitationInput,
   companyLifecycleSchema,
   recordSubscriptionSchema,
   companyModuleSchema,
+  companyModulesBulkSchema,
   companyAuditQuerySchema,
   companyPurgeSchema,
   type CompanyLifecycleInput,
   type RecordSubscriptionInput,
   type CompanyModuleInput,
+  type CompanyModulesBulkInput,
   type CompanyAuditQuery,
   type CompanyPurgeInput,
 } from "@glampro_suite/shared";
@@ -25,6 +29,7 @@ import {
   listCompanies,
   companyDetail,
   createCompany,
+  updateCompany,
   resendOwnerInvitation,
   acceptOwnerInvitation,
 } from "../services/company.service.js";
@@ -34,6 +39,7 @@ import {
   changeCompanyLifecycle,
   recordCompanySubscription,
   changeCompanyModule,
+  changeCompanyModules,
 } from "../services/company-administration.service.js";
 import { purgeCompany } from "../services/company-purge.service.js";
 
@@ -124,6 +130,33 @@ companiesRouter.post(
     }
   },
 );
+/**
+ * Every add-on at once, under one reason.
+ *
+ * A `POST` beside `/:id/modules` rather than a flag on it: the body is a different
+ * shape (no `code`), and the answer is a report of what moved rather than
+ * `{ success: true }`. It is a path of its own so a client that sends a `code` here
+ * gets a `422` instead of having the field ignored.
+ */
+companiesRouter.post(
+  "/:id/modules/bulk",
+  authLimiter,
+  validate(idParamSchema, "params"),
+  validate(companyModulesBulkSchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await changeCompanyModules(
+          validated<{ id: string }>(req, "params").id,
+          validated<CompanyModulesBulkInput>(req, "body"),
+          res.locals.platformAdmin.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 companiesRouter.get("/", validate(companyListQuerySchema, "query"), async (req, res, next) => {
   try {
     res.json({ data: await listCompanies(validated<CompanyListQuery>(req, "query")) });
@@ -138,6 +171,32 @@ companiesRouter.get("/:id", validate(idParamSchema, "params"), async (req, res, 
     next(error);
   }
 });
+/**
+ * Correct a company's identity, or give it an owner it never had.
+ *
+ * A `PATCH` on the company itself, not a fourth lifecycle action: lifecycle
+ * changes what the company may do, this changes what it *is*. Nothing about
+ * access moves here — a rename cannot suspend a salon.
+ */
+companiesRouter.patch(
+  "/:id",
+  authLimiter,
+  validate(idParamSchema, "params"),
+  validate(updateCompanySchema),
+  async (req, res, next) => {
+    try {
+      res.json({
+        data: await updateCompany(
+          validated<{ id: string }>(req, "params").id,
+          validated<UpdateCompanyInput>(req, "body"),
+          res.locals.platformAdmin.id,
+        ),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 companiesRouter.post("/", authLimiter, validate(createCompanySchema), async (req, res, next) => {
   try {
     res.status(201).json({

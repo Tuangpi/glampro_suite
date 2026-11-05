@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router";
+import type { PlatformAdminProfile } from "@glampro_suite/shared";
 import PlatformApp from "./PlatformApp";
 
 function Location() {
@@ -33,6 +34,7 @@ import { platformApi } from "./api";
 
 vi.mock("./api", () => ({
   platformApi: {
+    restore: vi.fn(),
     login: vi.fn(),
     verify: vi.fn(),
     logout: vi.fn(),
@@ -51,11 +53,16 @@ const admin = {
   twoFactorEnabled: true,
 };
 
-beforeEach(() => vi.resetAllMocks());
+beforeEach(() => {
+  vi.resetAllMocks();
+  // Every test below starts in a tab with no session until it says otherwise.
+  vi.mocked(platformApi.restore).mockResolvedValue({ admin: null });
+});
 
 async function login() {
   vi.mocked(platformApi.login).mockResolvedValue({ challenge: "a".repeat(64) });
-  fireEvent.change(screen.getByLabelText("Email"), { target: { value: admin.email } });
+  // The console checks the tab's stored session before it draws the form.
+  fireEvent.change(await screen.findByLabelText("Email"), { target: { value: admin.email } });
   fireEvent.change(screen.getByLabelText("Password"), { target: { value: "private-passphrase" } });
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await screen.findByLabelText("Verification code");
@@ -99,9 +106,9 @@ describe("operator console routing and session", () => {
     await login();
     expect(screen.queryByText("Company management")).not.toBeInTheDocument();
     await verify();
-    // An operator session is state, never storage.
+    // No credentials in `localStorage`: the tab-scoped token belongs to `platformApi`
+    // and is asserted in `api.test.ts`.
     expect(localStorage.length).toBe(0);
-    expect(sessionStorage.length).toBe(0);
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { name: "Operator sign in" });
@@ -129,6 +136,52 @@ describe("operator console routing and session", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Network down");
     // The session was never revoked, so the console stays and says so.
     expect(screen.getByRole("heading", { name: "Company management" })).toBeInTheDocument();
+  });
+
+  it("resumes the tab's session instead of asking for the password again", async () => {
+    vi.mocked(platformApi.restore).mockResolvedValue({ admin });
+    // A reload of a deep link: the operator stays on the page they were reading.
+    render(<App path="/platform/companies/company-a" />);
+
+    expect(await screen.findByRole("heading", { name: "Company detail" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Current path")).toHaveTextContent(
+      "/platform/companies/company-a",
+    );
+    expect(screen.queryByRole("heading", { name: "Operator sign in" })).not.toBeInTheDocument();
+    // It resumes from the tab's token only: no password, no verification code.
+    expect(platformApi.login).not.toHaveBeenCalled();
+    expect(platformApi.verify).not.toHaveBeenCalled();
+  });
+
+  it("does not flash the sign-in form while the tab's session is checked", async () => {
+    let resume!: (result: { admin: PlatformAdminProfile | null }) => void;
+    vi.mocked(platformApi.restore).mockReturnValue(
+      new Promise((resolve) => {
+        resume = resolve;
+      }),
+    );
+    render(<App path="/platform" />);
+
+    expect(screen.getByText("Restoring your session…")).toHaveAttribute("role", "status");
+    // The password form is never drawn for an operator who is already signed in.
+    expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+
+    resume({ admin });
+    expect(await screen.findByRole("heading", { name: "Company management" })).toBeInTheDocument();
+  });
+
+  it("says why a stored session could not be resumed", async () => {
+    vi.mocked(platformApi.restore).mockResolvedValue({
+      admin: null,
+      error: "Your platform session is no longer valid.",
+    });
+    render(<App path="/platform/companies/company-a" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Your platform session is no longer valid.",
+    );
+    expect(screen.getByRole("heading", { name: "Operator sign in" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Current path")).toHaveTextContent("/platform/login");
   });
 
   it("navigates between the directory and the account page", async () => {

@@ -119,6 +119,21 @@ function redirectToLogin(): void {
   window.location.assign(`/login?next=${encodeURIComponent(next)}`);
 }
 
+/**
+ * Fired when the API refuses a request because the salon is not entitled to that
+ * module.
+ *
+ * The browser reads the salon's entitlements once per session (`GET /auth/me`), so
+ * a module revoked from the console keeps its rail entry until the next reload.
+ * The refusal is the correct answer — the rail is what is stale — so the session
+ * re-reads its profile and the entry disappears without a manual reload.
+ *
+ * An event rather than an import of the auth context: this module is imported by
+ * that context, and a cycle between the two would be the sort that only fails in
+ * production.
+ */
+export const ENTITLEMENTS_STALE_EVENT = "glampro:entitlements-stale";
+
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   async (error) => {
@@ -160,6 +175,10 @@ api.interceptors.response.use(
         // the cold-start bootstrap on the login screen.
         redirectToLogin();
       }
+    } else if (status === 403 && data?.code === "MODULE_NOT_ENTITLED") {
+      // Not a failure to report: the module is gone and the refusal is right. Tell
+      // the session, which re-reads `/auth/me` and drops the entry from the rail.
+      window.dispatchEvent(new Event(ENTITLEMENTS_STALE_EVENT));
     } else if (status !== undefined && status >= 500) {
       // Surface unexpected server failures globally; pages still handle their
       // own 4xx cases.

@@ -55,6 +55,15 @@ function panel(
   );
 }
 
+/**
+ * The record form lives in a modal now, behind one button. Every test that writes
+ * a period starts here, which is also the assertion that nothing is rendered until
+ * the operator asks for it.
+ */
+function openForm() {
+  fireEvent.click(screen.getByRole("button", { name: "Record period" }));
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.mocked(platformApi.recordSubscription).mockResolvedValue(undefined);
@@ -75,6 +84,9 @@ it("accepts a period that starts in the future", async () => {
 
   // The picker no longer caps the start at today: scheduling the next period is
   // what an operator does on renewal, and the API accepts it.
+  expect(screen.queryByLabelText("Period start")).not.toBeInTheDocument();
+  openForm();
+
   expect(screen.getByLabelText("Period start")).not.toHaveAttribute("max");
 
   const startDay = dayInput(5);
@@ -101,10 +113,10 @@ it("accepts a period that starts in the future", async () => {
     reason: "Scheduled renewal",
   });
 
-  // The operator's days are only spent once the server accepted them.
+  // The operator's days are only spent once the server accepted them, and the
+  // modal is what closes: the outcome is reported on the card it leaves behind.
   expect(screen.getByRole("status")).toHaveTextContent("Subscription period recorded.");
-  expect(screen.getByLabelText("Period start")).toHaveValue("");
-  expect(screen.getByLabelText("Reason for this period")).toHaveValue("");
+  expect(screen.queryByLabelText("Period start")).not.toBeInTheDocument();
 
   // The section above owns the busy flag; the panel reports into it.
   expect(onBusyChange).toHaveBeenNthCalledWith(1, true);
@@ -121,7 +133,7 @@ it("summarises the running period and names the scheduled one", () => {
   });
   render(panel([running, scheduled]));
 
-  const summary = "Current subscription";
+  const summary = "Plan";
   expect(fact(summary, "Access from")).toBe(formatDate(running.startDate));
   expect(fact(summary, "Access until")).toBe(formatDate(running.endDate));
   expect(fact(summary, "Amount")).toBe(formatPrice("99.00", "SGD"));
@@ -151,13 +163,14 @@ it("explains a scheduled period instead of claiming access", () => {
   expect(screen.getByText(/No period is running now/)).toBeInTheDocument();
   // The rule the reactivate button depends on, said where the operator meets it.
   expect(screen.getByText(/brings no access forward/)).toBeInTheDocument();
-  expect(fact("Current subscription", "Access from")).toBe(formatDate(scheduled.startDate));
+  expect(fact("Plan", "Access from")).toBe(formatDate(scheduled.startDate));
   // The status is the company's, not the scheduled period's.
   expect(screen.getByText("Expired")).toBeInTheDocument();
 });
 
 it("refuses a reason of only spaces without spending the picked days", async () => {
   render(panel([]));
+  openForm();
 
   const startDay = dayInput(0);
   fireEvent.change(screen.getByLabelText("Period start"), { target: { value: startDay } });
@@ -185,6 +198,7 @@ it("reports a rejection in the form and keeps the days to retry", async () => {
       onRecorded={onRecorded}
     />,
   );
+  openForm();
 
   const startDay = dayInput(0);
   fireEvent.change(screen.getByLabelText("Period start"), { target: { value: startDay } });
@@ -205,6 +219,42 @@ it("reports a rejection in the form and keeps the days to retry", async () => {
 it("says what would fill an empty history", () => {
   render(panel([]));
 
-  expect(screen.getByText(/Until one is added below/)).toBeInTheDocument();
+  expect(screen.getByText(/no dated access window/)).toBeInTheDocument();
   expect(screen.getByText("No subscription periods recorded.")).toBeInTheDocument();
+});
+
+it("keeps the form and the history closed until they are asked for", () => {
+  render(panel([period()]));
+
+  // One card answering "paid until when", one button that writes, and a
+  // disclosure. Nothing else competes for attention.
+  expect(screen.getByRole("heading", { name: "Plan" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("Period end")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Record period" })).toBeInTheDocument();
+
+  const history = screen.getByText("Subscription history").closest("details");
+  expect(history).not.toBeNull();
+  expect(history).not.toHaveAttribute("open");
+  // The count is in the summary, so a closed disclosure still answers the question.
+  expect(history).toHaveTextContent("1 period, latest end first");
+});
+
+it("will not open the form again from a stale failed attempt", async () => {
+  vi.mocked(platformApi.recordSubscription).mockRejectedValue(new Error("Overlapping period."));
+  render(panel([]));
+
+  openForm();
+  fireEvent.change(screen.getByLabelText("Period start"), { target: { value: dayInput(0) } });
+  fireEvent.change(screen.getByLabelText("Period end"), { target: { value: dayInput(30) } });
+  fireEvent.change(screen.getByLabelText("Subscription amount"), { target: { value: "99.00" } });
+  fireEvent.change(screen.getByLabelText("Reason for this period"), {
+    target: { value: "Manual period" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Record subscription" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Overlapping period.");
+
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  openForm();
+  // The failure belonged to the attempt that caused it, not to the form.
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
