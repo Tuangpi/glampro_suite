@@ -48,6 +48,7 @@ import { queryKeys } from "@/constants/queryKeys";
 import { useAuth } from "@/contexts/AuthContext";
 import { del, get, getPaginated, post } from "@/lib/api";
 import { discountedPrice } from "@/lib/money";
+import { getPosIdentity } from "@/lib/pos-identity";
 import {
   clearSaleDraft,
   holdAttemptKey,
@@ -146,8 +147,18 @@ export function addCartLine(
   item: SaleItem,
   staffId: string | undefined,
   isMember: boolean,
+  sellerId?: string,
 ): { lines: CartLine[]; added: boolean } {
-  const key = cartLineKey({ itemType: item.kind, itemId: item.id, staffId });
+  const attribution = sellerId ? { sellers: [{ staffId: sellerId, share: 10000 }] } : undefined;
+  const base = { itemType: item.kind, itemId: item.id, staffId };
+  // A sole matching line keeps the operator's edited/cleared attribution when its
+  // quantity grows. Defaults belong to new lines, not to each added unit.
+  const bareKey = cartLineKey(base);
+  const existing = lines.filter(
+    (line) => cartLineKey({ ...line, attribution: undefined }) === bareKey,
+  );
+  const key =
+    existing.length === 1 ? cartLineKey(existing[0]!) : cartLineKey({ ...base, attribution });
 
   if (lines.some((line) => cartLineKey(line) === key)) {
     return {
@@ -176,6 +187,7 @@ export function addCartLine(
         price: isMember && item.memberPrice !== null ? item.memberPrice : item.price,
         memberPrice: item.memberPrice,
         ...(staffId ? { staffId } : {}),
+        ...(attribution ? { attribution } : {}),
       },
     ],
     added: true,
@@ -387,7 +399,9 @@ export function useSaleCart(): SaleCart {
     addItem: (item, staffId, isMember) => {
       let added = false;
       update((lines) => {
-        const next = addCartLine(lines, item, staffId, isMember);
+        const till = getPosIdentity();
+        const sellerId = till && till.expiresAt > Date.now() ? till.staffId : user?.id;
+        const next = addCartLine(lines, item, staffId, isMember, sellerId);
         added = next.added;
         return next.lines;
       });

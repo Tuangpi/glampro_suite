@@ -45,11 +45,29 @@ import {
   payrollStatementLineQuerySchema,
   type PayrollStatementLineQuery,
 } from "../services/payroll-report.js";
+import { previewTillCommission, tillPreviewSchema } from "../services/payroll-till-preview.js";
+import { ownPayrollSessions, ownSessionsQuerySchema } from "../services/payroll-own-sessions.js";
+import {
+  commissionDetail,
+  commissionDetailWorkbook,
+  commissionDetailQuerySchema,
+} from "../services/payroll-commission-detail.js";
+import { cartPreviewSchema, previewPayrollCart } from "../services/payroll-cart-preview.js";
 
 /** This boundary never accepts source records, a loader, or a calculation snapshot.
  * Response projections omit raw inputs and protect salary information. */
 export const payrollCloseRouter = Router();
 payrollCloseRouter.use(auth, requireModule("staff"));
+payrollCloseRouter.get(
+  "/my-sessions",
+  requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),
+  validate(ownSessionsQuerySchema, "query"),
+  (req, res, next) => {
+    void ownPayrollSessions(validated(req, "query"))
+      .then((data) => res.json({ data }))
+      .catch(next);
+  },
+);
 const period = (req: Parameters<RequestHandler>[0]) =>
   payrollPeriodKeySchema.parse(req.params.period);
 const handle =
@@ -62,6 +80,24 @@ const handle =
 const management = requireRole("SUPER_ADMIN", "MANAGER");
 const owner = requireRole("SUPER_ADMIN");
 const writable = requireWritableTenant();
+payrollCloseRouter.post(
+  "/cart-preview",
+  requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),
+  validate(cartPreviewSchema),
+  handle((req) => previewPayrollCart(validated(req, "body"))),
+);
+payrollCloseRouter.post(
+  "/till-preview",
+  management,
+  validate(tillPreviewSchema),
+  handle(async (req) => {
+    const progress = await readStoredPayrollProgress();
+    return previewTillCommission(
+      await readStoredPayrollClose(progress.periodKey),
+      validated(req, "body"),
+    );
+  }),
+);
 const download =
   (fn: (req: Parameters<RequestHandler>[0]) => Promise<PayrollExportFile>): RequestHandler =>
   (req, res, next) => {
@@ -76,6 +112,18 @@ const download =
       })
       .catch(next);
   };
+payrollCloseRouter.get(
+  "/commission-detail",
+  management,
+  validate(commissionDetailQuerySchema, "query"),
+  handle((req) => commissionDetail(validated(req, "query"))),
+);
+payrollCloseRouter.get(
+  "/commission-detail.xlsx",
+  management,
+  validate(commissionDetailQuerySchema, "query"),
+  download((req) => commissionDetailWorkbook(validated(req, "query"))),
+);
 const revision = z.strictObject({ expectedRevision: z.number().int().safe().nonnegative() });
 const reasoned = revision.extend({ reason: z.string().trim().min(3).max(1000) });
 const adjustment = revision.extend({

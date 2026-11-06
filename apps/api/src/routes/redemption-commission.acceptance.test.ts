@@ -146,6 +146,7 @@ test(
             customerId: buyer.id,
             lines: [{ itemType: "PACKAGE", itemId: pkg.id, quantity: 1 }],
             payments: [{ method: "CASH", amount: 100 }],
+            collection: { currency: "SGD", allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "10000" }] },
           });
           const holding = await prisma.customerPackageHolding.findFirstOrThrow({
             where: { saleLineId: { in: purchase.lines.map((line) => line.id) } },

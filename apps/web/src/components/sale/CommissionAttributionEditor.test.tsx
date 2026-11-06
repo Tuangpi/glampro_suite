@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import CommissionAttributionEditor from "./CommissionAttributionEditor";
@@ -8,6 +8,29 @@ const team = [
   { id: "ben", name: "Ben" },
 ];
 describe("CommissionAttributionEditor", () => {
+  it("shows named seller and performer chips with independent splits", () => {
+    render(
+      <CommissionAttributionEditor
+        sellers={team}
+        performers={team}
+        disabled={false}
+        onChange={vi.fn()}
+        value={{
+          sellers: [{ staffId: "amy", share: 10000 }],
+          performers: [
+            { staffId: "amy", share: 7500 },
+            { staffId: "ben", share: 2500 },
+          ],
+        }}
+      />,
+    );
+    expect(
+      within(screen.getByRole("group", { name: "Sold by" })).getByText("Amy · 100%"),
+    ).toBeInTheDocument();
+    const performers = within(screen.getByRole("group", { name: "Performed by" }));
+    expect(performers.getByText("Amy · 75%")).toBeInTheDocument();
+    expect(performers.getByText("Ben · 25%")).toBeInTheDocument();
+  });
   it("records seller and performer independently, including the same person", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

@@ -945,6 +945,7 @@ export default function Sale() {
             ) : null}
             <CartPanel
               lines={cart.lines}
+              customerId={customer?.id}
               isMember={isMember}
               staffForService={staffForService}
               needsCustomer={needsCustomer && !customer}

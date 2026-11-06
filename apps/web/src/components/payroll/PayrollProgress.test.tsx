@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("@/lib/api", () => ({ ...mocks, getErrorMessage: (e: Error) => e.message }));
+vi.mock("./OwnPayrollSessions", () => ({ default: () => <p>Own recorded sessions</p> }));
 import PayrollProgress from "./PayrollProgress";
 
 /** A calculated, unapproved month: real figures, but an estimate. */
@@ -66,6 +67,31 @@ function frozen() {
     approval: { at: "2026-10-02T02:00:00.000Z" },
   };
 }
+
+it("shows own base activity by type without pretending pooled commission is per-type money", async () => {
+  mocks.get.mockResolvedValue({
+    ...estimated(),
+    scope: "SELF",
+    rows: [
+      {
+        ...estimated().rows[0],
+        activity: [{ commissionType: "PKG_RED", baseAmount: "100.0000", units: "2.0000" }],
+      },
+    ],
+  });
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <PayrollProgress selfOnly />
+    </QueryClientProvider>,
+  );
+  expect(
+    await screen.findByRole("table", { name: "Your activity by commission type" }),
+  ).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "PKG_RED" })).toBeInTheDocument();
+  expect(screen.getByText(/not live session attendance/)).toBeInTheDocument();
+});
 
 function uncalculated() {
   return {
@@ -151,6 +177,20 @@ it("renders one staff member's own line as a compact panel", async () => {
   expect(screen.getByText("To next band")).toBeInTheDocument();
   expect(screen.getByText("Estimated commission")).toBeInTheDocument();
   expect(screen.getByText("1000.0001")).toBeInTheDocument();
+  expect(screen.queryByText("Own recorded sessions")).not.toBeInTheDocument();
+});
+
+it("allows My earnings to show sessions in compact mode without accepting a salon response", async () => {
+  mocks.get.mockResolvedValue({ ...estimated(), scope: "SELF" });
+  mount(<PayrollProgress selfOnly compact showSessions />);
+  expect(await screen.findByText("Own recorded sessions")).toBeInTheDocument();
+});
+
+it("does not mount self-service sessions for a salon-scoped progress response", async () => {
+  mocks.get.mockResolvedValue(estimated());
+  mount(<PayrollProgress selfOnly compact showSessions />);
+  await screen.findByText("2026-09 · SGD · Asia/Singapore");
+  expect(screen.queryByText("Own recorded sessions")).not.toBeInTheDocument();
 });
 
 it("says so when the caller has no statement in the month", async () => {

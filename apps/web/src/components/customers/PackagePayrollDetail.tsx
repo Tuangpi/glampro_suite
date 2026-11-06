@@ -140,80 +140,102 @@ export default function PackagePayrollDetail({
             onChange={(event) => setReason(event.target.value)}
             disabled={busy || !canManage}
           />
-          <ul>
-            {data.sessions.map((row, index) => (
-              <li key={row.id} className="my-3 border border-line p-3">
-                #{index + 1} · {row.usedAt} · {row.quantity} session(s) · base{" "}
-                {row.baseAmount ?? "Unavailable"} · {row.revertedAt ? "Voided" : "Active"}
-                <p>
-                  Performed by:{" "}
-                  {row.performers
-                    ?.map((person) => `${person.staffId} ${person.share / 100}%`)
-                    .join(", ") ?? "Unavailable"}
-                  ; signature: {row.signature ? "Recorded" : "Not recorded"}
-                </p>
-                {canManage && !row.revertedAt && row.revision !== null ? (
-                  <Button
-                    disabled={busy || reason.trim().length < 3 || data.refunded}
-                    onClick={() =>
-                      void perform(() =>
-                        post(`/sales/${row.saleId}/redemptions/${row.id}/void`, {
-                          idempotencyKey: `${key}:void:${row.id}:${row.revision}`,
-                          expectedRevision: row.revision,
-                          reason,
-                        }),
-                      )
-                    }
-                  >
-                    Void session
-                  </Button>
-                ) : null}
-                {canManage && !row.revertedAt && row.revision !== null ? (
-                  <div>
-                    <CommissionAttributionEditor
-                      key={`${row.id}:${row.revision}`}
-                      value={
-                        corrections[row.id]?.revision === row.revision
-                          ? { performers: corrections[row.id]?.performers }
-                          : undefined
-                      }
-                      performers={staff.data?.data ?? []}
-                      disabled={busy}
-                      onChange={(value) =>
-                        setCorrections((current) => ({
-                          ...current,
-                          [row.id]: { revision: row.revision!, performers: value?.performers },
-                        }))
-                      }
-                    />
-                    <Button
-                      disabled={
-                        busy ||
-                        corrections[row.id]?.revision !== row.revision ||
-                        !corrections[row.id]?.performers ||
-                        reason.trim().length < 3
-                      }
-                      onClick={() =>
-                        void perform(() =>
-                          post(
-                            `/sales/${row.saleId}/redemptions/${row.id}/attribution-corrections`,
-                            {
-                              idempotencyKey: `${key}:correct:${row.id}:${row.revision}`,
-                              expectedRevision: row.revision,
-                              performers: corrections[row.id]?.performers,
-                              reason,
-                            },
-                          ),
-                        )
-                      }
-                    >
-                      Correct session staff
-                    </Button>
-                  </div>
-                ) : null}
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <caption className="sr-only">Session usage log</caption>
+              <thead>
+                <tr>
+                  <th>Session</th>
+                  <th>Customer signed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.sessions.map((row, index) => (
+                  <tr key={row.id} className="border border-line">
+                    <td className="p-3">
+                      #{index + 1} · {row.usedAt} · {row.quantity} session(s) · base{" "}
+                      {row.baseAmount ?? "Unavailable"} · {row.revertedAt ? "Voided" : "Active"}
+                      <p>
+                        Performed by:{" "}
+                        {row.performers
+                          ?.map((person) => `${person.staffId} ${person.share / 100}%`)
+                          .join(", ") ?? "Unavailable"}
+                      </p>
+                      {canManage && !row.revertedAt && row.revision !== null ? (
+                        <Button
+                          disabled={busy || reason.trim().length < 3 || data.refunded}
+                          onClick={() =>
+                            void perform(() =>
+                              post(`/sales/${row.saleId}/redemptions/${row.id}/void`, {
+                                idempotencyKey: `${key}:void:${row.id}:${row.revision}`,
+                                expectedRevision: row.revision,
+                                reason,
+                              }),
+                            )
+                          }
+                        >
+                          Void session
+                        </Button>
+                      ) : null}
+                      {canManage && !row.revertedAt && row.revision !== null ? (
+                        <div>
+                          <CommissionAttributionEditor
+                            key={`${row.id}:${row.revision}`}
+                            value={
+                              corrections[row.id]?.revision === row.revision
+                                ? { performers: corrections[row.id]?.performers }
+                                : undefined
+                            }
+                            performers={staff.data?.data ?? []}
+                            disabled={busy}
+                            onChange={(value) =>
+                              setCorrections((current) => ({
+                                ...current,
+                                [row.id]: {
+                                  revision: row.revision!,
+                                  performers: value?.performers,
+                                },
+                              }))
+                            }
+                          />
+                          <Button
+                            disabled={
+                              busy ||
+                              corrections[row.id]?.revision !== row.revision ||
+                              !corrections[row.id]?.performers ||
+                              reason.trim().length < 3
+                            }
+                            onClick={() =>
+                              void perform(() =>
+                                post(
+                                  `/sales/${row.saleId}/redemptions/${row.id}/attribution-corrections`,
+                                  {
+                                    idempotencyKey: `${key}:correct:${row.id}:${row.revision}`,
+                                    expectedRevision: row.revision,
+                                    performers: corrections[row.id]?.performers,
+                                    reason,
+                                  },
+                                ),
+                              )
+                            }
+                          >
+                            Correct session staff
+                          </Button>
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="p-3 align-top">
+                      {row.signature === undefined
+                        ? "Unavailable"
+                        : row.signature
+                          ? "Recorded"
+                          : "Not recorded"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {canManage && !data.refunded && !data.missingEvidence.length ? (
             <section className="space-y-2 border border-line p-3">
               <h3 className="font-bold">Refund unused package consideration</h3>

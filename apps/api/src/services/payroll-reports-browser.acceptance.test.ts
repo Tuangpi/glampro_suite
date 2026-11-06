@@ -14,6 +14,7 @@ import { runAtOutlet } from "../lib/tenant-context.js";
 import { signAccessToken } from "../lib/tokens.js";
 import { Browser } from "../test-support/chrome-browser.js";
 import { payrollCloseFixture } from "../test-support/payroll-close-fixture.js";
+import { payrollReportingFixture } from "../test-support/payroll-reporting-fixture.js";
 import { createSale } from "./sale.service.js";
 
 /**
@@ -41,7 +42,7 @@ async function seedHoldingHistory(
   module: string,
 ) {
   return fixture.scope(async () => {
-    for (const code of ["catalogue", "packages", "sales", "customers"]) {
+    for (const code of ["catalogue", "packages", "sales", "customers", "reports"]) {
       const row = await prisma.module.upsert({
         where: { code },
         update: {},
@@ -100,6 +101,7 @@ test(
     assert.ok(env.corsOrigins.includes(origin), "Set CORS_ORIGINS=http://127.0.0.1:55175");
     const f = await payrollCloseFixture(4, true);
     const customerId = await seedHoldingHistory(f, "holding history");
+    const reporting = await payrollReportingFixture(f);
     const directory = await mkdtemp(join(tmpdir(), "cp006-chrome-"));
     const browser = new Browser(directory);
     const server = createApp().listen(0, "127.0.0.1");
@@ -346,18 +348,19 @@ test(
           assert.ok(all.text.startsWith("Period,Staff ID,Staff,"));
           assert.ok(all.text.endsWith("\r\n"));
           const rows = all.text.split("\r\n").slice(1, -1);
-          assert.equal(rows.length, 4, "one ledger row per frozen base line");
+          assert.equal(rows.length, 5, "four service bases plus the package purchase base");
           assert.deepEqual(rows.map((row) => row.split(",")[2]).sort(), [
             "Close Cashier",
             "Close Manager",
             "Close Owner",
+            "Close Staff",
             "Close Staff",
           ]);
           const filtered = await ledger(
             `/api/payroll-close/2026-09/exports/ledger.csv?staffId=${f.staffId}`,
           );
           const filteredRows = filtered.text.split("\r\n").slice(1, -1);
-          assert.equal(filteredRows.length, 1);
+          assert.equal(filteredRows.length, 2);
           assert.equal(filteredRows[0]!.split(",")[2], "Close Staff");
         },
       );
@@ -493,12 +496,109 @@ test(
         },
       );
 
+      await reporting.seedSessions(currentPeriod);
+      await t.test(
+        "management report panels filter approved bases and show distinct utilisation units",
+        async () => {
+          await navigate(f.managerId, "MANAGER", "/reports", text("Customer balances"));
+          await browser.evaluate(
+            `[...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Customer balances').click()`,
+          );
+          await browser.wait(text("Commission detail"));
+          await browser.wait(text("No approved payroll snapshot for this month."));
+          await fill("Commission month", "2026-09");
+          await browser.wait(`document.querySelector('caption') && ${text("matching base lines")}`);
+          await fill("Package ID", reporting.pkg.id);
+          await browser.wait(text("1 matching base lines"));
+          const table = `[...document.querySelectorAll('table')].find(table => table.querySelector('caption')?.textContent === 'Approved commission bases')`;
+          assert.equal(await browser.evaluate(`${table}.querySelectorAll('tbody tr').length`), 1);
+          assert.equal(
+            await browser.evaluate(
+              `${table}.innerText.includes(${JSON.stringify(reporting.customer.id)})`,
+            ),
+            true,
+          );
+          await browser.wait(
+            `${button("Export commission detail (Excel)")} && !${button("Export commission detail (Excel)")}.disabled`,
+          );
+          const file = await exportBytes(
+            `/api/payroll-close/commission-detail.xlsx?period=2026-09&packageId=${reporting.pkg.id}`,
+          );
+          assert.equal(file.status, 200);
+          assert.deepEqual(file.magic.slice(0, 2), [80, 75]);
+          const utilisation = `[...document.querySelectorAll('table')].find(table => table.querySelector('caption')?.textContent === 'Package utilisation')`;
+          await browser.wait(
+            `${utilisation}?.innerText.includes('Reporting four-session package')`,
+          );
+          assert.deepEqual(
+            await browser.evaluate(
+              `[...${utilisation}.querySelector('tbody tr').cells].map(cell => cell.textContent)`,
+            ),
+            [reporting.pkg.name, "1", "2", "1"],
+          );
+          await fill("Package ID", "missing-evidence");
+          await browser.wait(text("0 matching base lines"));
+          assert.equal(await browser.evaluate(`${table}.querySelectorAll('tbody tr').length`), 0);
+          await fill("Package ID", reporting.pkg.id);
+          await fill("Through payroll month (optional)", "2026-10");
+          await browser.wait(text("1 matching base lines"));
+          const range = await exportBytes(
+            `/api/payroll-close/commission-detail.xlsx?period=2026-09&throughPeriod=2026-10&packageId=${reporting.pkg.id}`,
+          );
+          assert.equal(range.status, 200);
+          assert.deepEqual(range.magic.slice(0, 2), [80, 75]);
+        },
+      );
+
+      await t.test(
+        "staff sees only own recorded sessions and no signature or customer identity",
+        async () => {
+          await navigate(
+            f.staffId,
+            "STAFF",
+            "/settings?section=my-payroll",
+            text("My recorded package sessions"),
+          );
+          const section = `document.querySelector('[aria-label="My recorded package sessions"]')`;
+          await browser.wait(
+            `${section}.innerText.includes('your share 100% · VOIDED') && ${section}.innerText.includes('your share 100% · ACTIVE')`,
+          );
+          const response = (await browser.evaluate(
+            `fetch('/api/payroll-close/my-sessions?period=${currentPeriod}',{headers:{Authorization:'Bearer '+localStorage.getItem('glampro.accessToken')}}).then(r=>r.json())`,
+          )) as { data: { rows: { status: string }[]; total: number } };
+          assert.equal(response.data.total, 2);
+          assert.deepEqual(
+            response.data.rows.map((row) => row.status),
+            ["VOIDED", "ACTIVE"],
+          );
+          assert.equal(JSON.stringify(response).includes("synthetic-recorded-signature"), false);
+          assert.equal(JSON.stringify(response).includes(reporting.customer.id), false);
+        },
+      );
+
+      await t.test(
+        "customer session drawer distinguishes recorded and unsigned evidence, including voids",
+        async () => {
+          await navigate(
+            f.ownerId,
+            "SUPER_ADMIN",
+            `/customers/${reporting.customer.id}?tab=packages`,
+            text("Balances and actions"),
+          );
+          await click(`Purchase & payments for ${reporting.pkg.name}`);
+          await browser.wait(text("Customer signed"));
+          await browser.wait(`${text("Recorded")} && ${text("Not recorded")}`);
+          assert.equal(await browser.evaluate(text("synthetic-recorded-signature")), false);
+          assert.equal(await browser.evaluate(text("Voided")), true);
+        },
+      );
+
       await t.test("customer profile renders the holding history of a real purchase", async () => {
         await navigate(
           f.ownerId,
           "SUPER_ADMIN",
-          `/customers/${customerId}`,
-          text("Package and credit history"),
+          `/customers/${customerId}?tab=packages`,
+          text("Balances and actions"),
         );
         await browser.wait(`document.querySelector('dl[aria-label="Holding totals"]')`);
         const totals = String(

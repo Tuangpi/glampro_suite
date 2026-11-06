@@ -114,6 +114,18 @@ export function payrollProgressRow(
     lines: lines.length,
     baseAmount: total4(lines, "baseAmount"),
     units: total4(lines, "units"),
+    activity: [...new Set(lines.map((line) => line.commissionType))]
+      .sort()
+      .map((commissionType) => {
+        const active = lines.filter(
+          (line) => line.commissionType === commissionType && line.status !== "REVERSED",
+        );
+        return {
+          commissionType,
+          baseAmount: total4(active, "baseAmount"),
+          units: total4(active, "units"),
+        };
+      }),
     components: statement.result.components.map((row) => ({
       key: row.componentKey,
       name: row.componentName,

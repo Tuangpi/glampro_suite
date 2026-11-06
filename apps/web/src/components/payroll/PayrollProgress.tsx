@@ -5,6 +5,7 @@ import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Table, { type TableColumn } from "@/components/ui/Table";
+import OwnPayrollSessions from "./OwnPayrollSessions";
 
 /**
  * CP-006 month-to-date progress (FR-RPT-04, FR-POS-09).
@@ -29,6 +30,8 @@ export interface PayrollProgressProps {
   /** True for a self-service read: the server narrows the answer to the caller's line. */
   selfOnly?: boolean;
   compact?: boolean;
+  /** My earnings opts in; the compact till card must not load session history. */
+  showSessions?: boolean;
   title?: string;
 }
 
@@ -92,6 +95,7 @@ export default function PayrollProgress({
   period,
   selfOnly = false,
   compact = false,
+  showSessions = !compact,
   title = "Month-to-date progress",
 }: PayrollProgressProps) {
   const query = useQuery({
@@ -219,6 +223,37 @@ export default function PayrollProgress({
                 Figures are copied from the stored calculation snapshot ({data.calculation?.version}{" "}
                 {data.calculation?.inputHash.slice(0, 12)}), not recalculated here.
               </p>
+            )}
+            {selfOnly && own?.activity && (
+              <section aria-label="My commission activity" className="space-y-2">
+                <h3 className="font-bold">My commission activity</h3>
+                <p className="text-xs text-ink-muted">
+                  Activity from the last calculation, not live session attendance. Commission is
+                  pooled by plan component, not allocated to each type.
+                </p>
+                <table className="w-full text-left text-sm">
+                  <caption className="sr-only">Your activity by commission type</caption>
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Base (4 dp)</th>
+                      <th>Units</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {own.activity.map((row) => (
+                      <tr key={row.commissionType}>
+                        <td>{row.commissionType}</td>
+                        <td>{row.baseAmount}</td>
+                        <td>{row.units}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            )}
+            {selfOnly && data.scope === "SELF" && showSessions && (
+              <OwnPayrollSessions key={data.periodKey} period={data.periodKey} />
             )}
           </>
         )}

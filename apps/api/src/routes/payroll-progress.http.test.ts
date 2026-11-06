@@ -67,6 +67,22 @@ async function request(path: string, bearer: string | null = token(), outletId?:
   });
 }
 
+test("commission detail refuses staff and cashiers before opening a report transaction", async () => {
+  for (const denied of ["STAFF", "CASHIER"] as const) {
+    role = denied;
+    const count = transactions;
+    const response = await request("/commission-detail?period=2026-09");
+    assert.equal(response.status, 403);
+    assert.equal(transactions, count);
+  }
+});
+
+test("commission detail validates filters and does not parse its route as a month", async () => {
+  role = "MANAGER";
+  assert.equal((await request("/commission-detail?period=not-a-month")).status, 422);
+  assert.equal((await request("/commission-detail?period=2026-09&unknown=1")).status, 422);
+});
+
 before(async () => {
   replace(prisma.user, "findUnique", async () => ({
     id: actorId,

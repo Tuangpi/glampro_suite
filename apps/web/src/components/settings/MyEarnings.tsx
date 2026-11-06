@@ -47,7 +47,7 @@ export default function MyEarnings() {
     );
   return (
     <>
-      <PayrollProgress selfOnly compact title="Your month-to-date progress" />
+      <PayrollProgress selfOnly compact showSessions title="Your month-to-date progress" />
       <Card
         title="Your frozen statements"
         description="Approved payroll months that include you, newest first."

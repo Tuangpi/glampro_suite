@@ -1706,8 +1706,16 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       reached the drawer by riding along on `SalonFormattingContext`, which already reads
       `GET /settings/profile`, so the preview costs no extra request; nothing is written
       and the sale's line still decides what payroll stores. **Web-only** as well, so the
-      October 28 STOP order is untouched. Still open: seller/performer chips, till default
-      and automatic commission estimates (N6/N7); "customer signed" column (N10). **N4 is
+      October 28 STOP order is untouched. **November 6 continuation:** N6/N7 now show
+      named split chips and default a new cart line's seller to the unexpired PIN-switched
+      staff identity or authenticated operator. Quantity additions retain edited/cleared
+      attribution; existing and resumed drafts are not defaulted. Performers are never
+      inferred from the till. A non-posting marginal plan preview is available for
+      management on ordinary non-GST service/product lines with a supported stored plan;
+      missing plans, category/outlet constraints, packages, GST and staff-level access
+      explicitly show unavailable. This is not full source-aware N6/N7 acceptance.
+      N10 now has a Customer signed column: Recorded / Not recorded / Unavailable,
+      derived from session evidence and retained on voided rows. **N4 is
       reclassified, not started:** its remaining half — an Override % and an
       effective-from date on the package drawer — is not a screen-only change.
       `payrollPackageSettingsSchema` has three modes and every consumer branches on
@@ -1716,11 +1724,25 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       `effectiveAt`, edited in Settings › Commission rules. Making the drawer edit or read
       those rules is a product decision recorded in [DECISIONS.md](DECISIONS.md); the
       drawer keeps its truthful "applies to new purchases only" note until it is made.
-      Next slice: N6/N7.
-- [ ] TODO — **(g) §12 reports.** Commission detail (filterable ledger plus Excel),
-      My commission (staff self-service), and package utilisation
-      (sold/redeemed/expired). Reuse the CP-006 export and own-data patterns rather than
-      new endpoints where possible.
+      November 6 follow-up: mounted Chrome now verifies the Customer signed column
+      with recorded/unsigned evidence and voids. Full source-aware estimates and their
+      broader POS browser acceptance remain open.
+- [ ] IN PROGRESS — **(g) §12 reports.** November 6 continuation: Reports now mounts
+      approved monthly commission-base detail with staff/type/date/customer/package
+      filters and matching Excel export. Customer/package references require captured
+      source evidence; no per-line award is invented from pooled plan commission.
+      Existing My earnings is reused (not duplicated): type-level bases/units plus
+      server-scoped recorded package sessions; unknown legacy attribution is not inferred.
+      Package utilisation reports lifetime completed-sale packs, non-reverted redeemed
+      sessions and current expired-unused sessions in distinct units. All new management
+      services recheck database roles; self-service accepts no staff-id override.
+      November 6 follow-up: disposable-DB/mounted-HTTP and Chrome acceptance cover the
+      implemented reporting slice; My earnings now explicitly mounts recorded sessions
+      despite its compact progress card. Synthetic historical session evidence is used
+      for these read tests, not an end-to-end correction/void writer acceptance claim.
+      Remaining: cross-month detail, complete reversal
+      source lineage, and agreed net sold/expiry-history semantics if required beyond
+      the explicitly labelled operational counts.
 - [x] CLOSED — **(b) Policy fields: not required by client decision.** Every field is
       either declined or already matches the agreed behaviour, so no switch is built.
       Declined: `period_start_day` (Q8 — no salon closes on anything but the calendar

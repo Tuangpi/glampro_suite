@@ -18,6 +18,13 @@ const { useReportOverview, useZReport, usePackageValuationReport, getErrorMessag
 
 vi.mock("@/hooks/useReports", () => ({ useReportOverview, useZReport, usePackageValuationReport }));
 vi.mock("@/lib/api", () => ({ getErrorMessage }));
+vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ user: { globalRole: "MANAGER" } }) }));
+vi.mock("@/components/reports/CommissionDetailPanel", () => ({
+  default: () => <p>Commission detail panel</p>,
+}));
+vi.mock("@/components/reports/PackageUtilisationPanel", () => ({
+  default: () => <p>Package utilisation panel</p>,
+}));
 vi.mock("@/components/reports/PackageValuationActivation", () => ({
   default: () => <p>Activation controls</p>,
 }));

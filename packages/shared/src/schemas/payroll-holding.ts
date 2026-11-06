@@ -65,7 +65,8 @@ export const payrollHoldingDetailSchema = z.object({
       revision: z.number().int().nullable(),
       performers: commissionSharesSchema.nullable(),
       baseAmount: z.string().nullable(),
-      signature: z.string().nullable(),
+      /** Null is known unsigned evidence; absence means an older/unavailable read. */
+      signature: z.string().nullable().optional(),
     }),
   ),
 });

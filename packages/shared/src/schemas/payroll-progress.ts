@@ -25,6 +25,7 @@ import { z } from "zod";
 
 import {
   payrollCalcMethodSchema,
+  payrollCommissionTypeSchema,
   payrollDecimalSchema,
   payrollPeriodKeySchema,
 } from "../commission-payroll/contracts.js";
@@ -95,6 +96,16 @@ export const payrollProgressRowSchema = z.strictObject({
   baseAmount: payrollDecimalSchema,
   units: payrollDecimalSchema,
   components: z.array(payrollProgressComponentSchema),
+  /** Base activity by type, not an invented allocation of pooled commission. */
+  activity: z
+    .array(
+      z.object({
+        commissionType: payrollCommissionTypeSchema,
+        baseAmount: payrollDecimalSchema,
+        units: payrollDecimalSchema,
+      }),
+    )
+    .optional(),
 });
 export type PayrollProgressRow = z.infer<typeof payrollProgressRowSchema>;
 

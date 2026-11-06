@@ -9,8 +9,12 @@ vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({ user: { id: "staff-a", globalRole: auth.role } }),
 }));
 vi.mock("@/components/payroll/PayrollProgress", () => ({
-  default: ({ selfOnly }: { selfOnly?: boolean }) => (
-    <section aria-label="Own progress" data-self-only={String(selfOnly)} />
+  default: ({ selfOnly, showSessions }: { selfOnly?: boolean; showSessions?: boolean }) => (
+    <section
+      aria-label="Own progress"
+      data-self-only={String(selfOnly)}
+      data-show-sessions={String(showSessions)}
+    />
   ),
 }));
 import MyEarnings from "./MyEarnings";
@@ -115,6 +119,7 @@ it("shows only the caller's own month-to-date progress", async () => {
   mount();
   const own = await screen.findByLabelText("Own progress");
   expect(own).toHaveAttribute("data-self-only", "true");
+  expect(own).toHaveAttribute("data-show-sessions", "true");
   expect(mocks.get).toHaveBeenCalledWith("/payroll-close/statements");
 });
 

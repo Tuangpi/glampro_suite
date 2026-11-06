@@ -16,6 +16,7 @@ import { validate, validated } from "../middleware/validate.js";
 import { dashboardSummary, reportOverview, zReport } from "../services/report.service.js";
 import { packageValuationReport } from "../services/package-valuation-report.service.js";
 import { activatePackageValuation } from "../services/package-valuation.service.js";
+import { packageUtilisation } from "../services/package-utilisation.js";
 
 /**
  * Reports — handoff screen 05's tiles (`/api/reports`).
@@ -27,6 +28,19 @@ import { activatePackageValuation } from "../services/package-valuation.service.
  * fresh `db:reset` (`docs/mvp.md` → M3).
  */
 export const reportsRouter = Router();
+reportsRouter.get(
+  "/package-utilisation",
+  auth,
+  requireModule("reports"),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  async (_req, res, next) => {
+    try {
+      res.json({ data: await packageUtilisation() });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 reportsRouter.post(
   "/package-valuation/activation",

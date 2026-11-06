@@ -105,9 +105,35 @@ export default function CommissionAttributionEditor({
         {open ? "Close commission attribution" : "Commission attribution"}
       </Button>
       {!open && value ? (
-        <p className="text-xs text-ink-muted">
-          {value.sellers?.length ?? 0} seller(s) · {value.performers?.length ?? 0} therapist(s)
-        </p>
+        <div className="space-y-2">
+          {(["sellers", "performers"] as const).map((kind) =>
+            value[kind]?.length ? (
+              <div
+                key={kind}
+                role="group"
+                aria-label={kind === "sellers" ? "Sold by" : "Performed by"}
+              >
+                <p className="text-xs font-bold text-ink-muted">
+                  {kind === "sellers" ? "Sold by" : "Performed by"}
+                </p>
+                <ul className="mt-1 flex flex-wrap gap-1">
+                  {value[kind]!.map((row) => (
+                    <li
+                      key={row.staffId}
+                      className="rounded-full bg-surface-2 px-2 py-1 text-xs text-ink"
+                    >
+                      {(kind === "sellers" ? sellers : performers)?.find(
+                        (staff) => staff.id === row.staffId,
+                      )?.name ?? "Unavailable staff"}
+                      {" · "}
+                      {row.share / 100}%
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null,
+          )}
+        </div>
       ) : null}
       {open ? (
         <div className="space-y-3 rounded-md border border-line p-3">

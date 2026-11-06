@@ -1,5 +1,71 @@
 # Glampro Suite — progress
 
+## November 6, 2026 — reporting read acceptance and My earnings visibility
+
+- Fixed an actual mounted-screen gap: My earnings uses compact progress, which
+  unintentionally hid recorded sessions. It now explicitly opts in; compact POS
+  progress still does not fetch sessions, and salon-scoped responses cannot mount them.
+- Existing calculated-but-unapproved commission detail now returns `approved: false`
+  rather than failing while building an approved export model. Draft Excel is still
+  refused with 409. Added regressions for this and latest/malformed session evidence:
+  an old own attribution cannot override a newer correction or invalid snapshot.
+- Added real PostgreSQL/mounted-HTTP reporting acceptance and expanded real Chrome
+  coverage: approved filters, XLSX bytes/all filtered rows despite page selection,
+  package units, SELF session scope, void labels, signature recorded/unsigned states,
+  post-token role changes, outlet refusal and tenant isolation. Read inventories prove
+  unchanged closes/audits, sources, sessions, zero earnings and zero activations/cutovers.
+- Fixtures use real completed purchase/collection and authoritative close writers;
+  session evidence is explicitly synthetic history installed after approval. This is
+  read acceptance, not full redemption/correction/void writer acceptance. Incomplete
+  synthetic history was initially rejected by the authoritative loader as expected;
+  database event-type and ordinal guards also caught fixture errors and were retained.
+- Final sequential verification: **web 1235/1235 across 131 files** (`--maxWorkers=4`),
+  **shared 337/337**, **Chrome 13/13**, **focused API/real-DB/HTTP 54/54**. API/web typechecks, lint and
+  shared/API/web builds passed. Earlier overlapping broad jobs reproduced two
+  PayrollPlans timeouts; removing redundant clear-before-replace events avoided
+  unnecessary exact-curve recalculation, with no timeout or worker-config changes.
+- Broad API verification is not green: an unrelated owner-password/2FA login test
+  expects 200 but receives 503, reproduced standalone (**31/32**). The initial broad
+  run also caught a missing reports entitlement in the foreign-salon test fixture;
+  that fixture was fixed and the focused real-DB suite passed. Final broad rerun:
+  **1559 total; 1283 passed, 1 failed, 275 skipped**, with only the same standalone
+  password-reset/2FA login failure (`staff.routes.test.ts:910`). No unrelated auth
+  behavior or assertions were changed. Logs: `/tmp/glampro-ui-reporting-*.log`.
+- Existing migrations applied only to a newly created loopback disposable PostgreSQL
+  cluster at port 55485, `payroll_close_test`, `/tmp/cp005-ui-reporting-*`; no seed,
+  new migration, deployment, production change, earnings activation, commit or push.
+  Temporary cluster `/tmp/cp005-ui-reporting-_pb22ytx` was stopped with `pg_ctl`
+  after verification; data/logs remain locally for diagnosis.
+  CP-008 remains IN PROGRESS for source-aware estimates, cross-month detail, reversal
+  lineage, large-month reads and the remaining acceptance listed in the continuation doc.
+
+## November 6, 2026 — attribution chips, signature history and report continuation
+
+- Seller/performer chips show names and split percentages. New cart lines default sellers
+  from the unexpired PIN identity or authenticated operator; existing/held drafts,
+  intentional clearing and edited attribution survive. Performers are never inferred.
+- A management-only, non-posting plan-delta preview uses stored monthly calculation inputs.
+  Unsupported tax/package/funding/category/outlet/fallback cases say unavailable; this is
+  not complete N6/N7 source-aware estimate acceptance or earnings activation.
+- Session usage has a Customer signed column (Recorded / Not recorded / Unavailable),
+  retaining correction and void workflows. No clinical consent evidence is substituted.
+- Reports gains approved-month commission-base filters and matching Excel; My earnings
+  reuses SELF scope and adds type-level activity and recorded own package sessions;
+  package utilisation separates completed-sale packs, redeemed sessions and current
+  expired-unused sessions. New report services recheck database roles. No salary leaks
+  into detail or own-session responses.
+- Verification: full web suite **1233/1233, 131 files** with `--maxWorkers=4`; focused API
+  regression/HTTP suites **68/68**. API/web typechecks, ESLint, shared/API/web builds
+  passed. Focused affected web workflows **109/109**; PayrollPlans **27/27** standalone.
+- Default-parallel PayrollPlans remains unreliable: runs reproduced editor timeouts and
+  refetch races. Submitted-value tests avoid unnecessary per-character curve recalculation,
+  pagination waits for ready controls, and timeouts/global worker settings are unchanged.
+  An accidental removed reorder click during test edits was restored before the final green run.
+- Scope, endpoint contracts and remaining acceptance are recorded in
+  `docs/commission_payroll/UI_REPORTING_CONTINUATION.md`; CP-008 (f2)/(g) remain IN PROGRESS.
+  No new migrations, seeds, deployment, production changes or earnings activation.
+  No full API suite, disposable-DB or mounted-browser acceptance for the new paths was run.
+
 ## November 6, 2026 — the receipt carries the salon's own mark
 
 A printed receipt left the counter with the salon's name and nothing else, and the

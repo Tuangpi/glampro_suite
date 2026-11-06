@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -79,6 +79,11 @@ function mount(canEdit = true, staffId?: string) {
   );
   return client;
 }
+/** These integration tests assert submitted values, not per-keystroke behaviour.
+ * One change avoids recalculating the exact curve for every character under load. */
+function enter(label: string, value: string) {
+  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+}
 it("offers scoped assignments without changing the single staff timeline or trusting client scope", async () => {
   const data = configuration();
   data.plans[0]!.outletIds = ["branch-a", "branch-b"];
@@ -90,7 +95,7 @@ it("offers scoped assignments without changing the single staff timeline or trus
   expect(screen.getByText(/One plan timeline per staff member/)).toBeInTheDocument();
   await user.selectOptions(screen.getByLabelText("Assignment plan"), "hair");
   expect(screen.getByRole("option", { name: "Hair — selected outlets" })).toBeInTheDocument();
-  await user.type(screen.getByLabelText("Payroll change reason"), "Branch coverage");
+  enter("Payroll change reason", "Branch coverage");
   await user.click(screen.getByRole("button", { name: "Assign selected staff" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/assignments", {
@@ -111,7 +116,7 @@ it("limits the staff panel to the selected identity and saves profiles independe
   expect(await screen.findByLabelText("Payroll change reason")).toBeInTheDocument();
   expect(screen.queryByLabelText("New or duplicate plan name")).not.toBeInTheDocument();
   expect(screen.queryByRole("option", { name: "Ben" })).not.toBeInTheDocument();
-  await user.type(screen.getByLabelText("Payroll change reason"), "Salary review");
+  enter("Payroll change reason", "Salary review");
   await user.click(screen.getByRole("button", { name: "Save salary profile" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
@@ -126,8 +131,7 @@ it("preserves unsaved salary fields while changing audit pages", async () => {
   mount();
   const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Basic monthly salary"));
-  await user.type(screen.getByLabelText("Basic monthly salary"), "1200");
+  enter("Basic monthly salary", "1200");
   await user.click(screen.getByRole("button", { name: "Next audit page" }));
   await waitFor(() =>
     expect(mocks.get).toHaveBeenCalledWith("/payroll-configuration", { historyPage: 2 }),
@@ -139,8 +143,8 @@ it("saves metadata with a reason and does not overwrite unsaved rule edits", asy
   const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
   await user.clear(screen.getByLabelText("Plan description"));
-  await user.type(screen.getByLabelText("Plan description"), "Revised description");
-  await user.type(screen.getByLabelText("Plan change reason"), "Metadata review");
+  enter("Plan description", "Revised description");
+  enter("Plan change reason", "Metadata review");
   await user.click(screen.getByRole("button", { name: "Save plan metadata" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/plans/hair/metadata", {
@@ -152,7 +156,10 @@ it("saves metadata with a reason and does not overwrite unsaved rule edits", asy
       outletIds: [],
     }),
   );
-  await user.type(screen.getByLabelText("Component name"), " revised");
+  enter(
+    "Component name",
+    `${(screen.getByLabelText("Component name") as HTMLInputElement).value} revised`,
+  );
   expect(screen.getByRole("button", { name: "Save plan metadata" })).toBeDisabled();
 });
 
@@ -166,7 +173,9 @@ it("navigates audit pages using server totals rather than truncating history", a
   await waitFor(() =>
     expect(mocks.get).toHaveBeenCalledWith("/payroll-configuration", { historyPage: 2 }),
   );
-  expect(await screen.findByRole("button", { name: "Previous audit page" })).toBeEnabled();
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Previous audit page" })).toBeEnabled(),
+  );
 });
 it("uses the shared exact calculator and explains the historical preview", async () => {
   mount();
@@ -212,7 +221,7 @@ it("requires a reason and publishes only the saved revision", async () => {
   await user.click(screen.getByRole("button", { name: "Publish saved version" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Enter a change reason");
   expect(mocks.post).not.toHaveBeenCalled();
-  await user.type(screen.getByLabelText("Plan change reason"), "Approved sample");
+  enter("Plan change reason", "Approved sample");
   await user.click(screen.getByRole("button", { name: "Publish saved version" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/plans/hair/publish", {
@@ -226,9 +235,9 @@ it("edits components without mutating published rules and prevents publishing un
   const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
   await user.clear(screen.getByLabelText("Component name"));
-  await user.type(screen.getByLabelText("Component name"), "New cash name");
+  enter("Component name", "New cash name");
   expect(screen.getByRole("button", { name: "Publish saved version" })).toBeDisabled();
-  await user.type(screen.getByLabelText("Plan change reason"), "Rename component");
+  enter("Plan change reason", "Rename component");
   await user.click(screen.getByRole("button", { name: "Save plan draft" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
@@ -244,9 +253,11 @@ it("edits components without mutating published rules and prevents publishing un
 });
 it("does not silently rebase a draft when a newer revision arrives", async () => {
   const client = mount();
-  const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
-  await user.type(screen.getByLabelText("Component name"), " changed");
+  enter(
+    "Component name",
+    `${(screen.getByLabelText("Component name") as HTMLInputElement).value} changed`,
+  );
   const next = configuration();
   next.plans[0]!.revision = 2;
   mocks.get.mockResolvedValue(next);
@@ -271,7 +282,7 @@ it("bulk assigns selected staff with the assignment revision", async () => {
   await screen.findByText("Calculated commission: S$546.40");
   await user.click(screen.getByLabelText("Amy"));
   await user.selectOptions(screen.getByLabelText("Assignment plan"), "hair");
-  await user.type(screen.getByLabelText("Plan change reason"), "New assignment");
+  enter("Plan change reason", "New assignment");
   await user.click(screen.getByRole("button", { name: "Assign selected staff" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/assignments", {
@@ -294,11 +305,11 @@ it("requires a reason for structured salary saves and retains edits after server
   const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
   await user.clear(screen.getByLabelText("Basic monthly salary"));
-  await user.type(screen.getByLabelText("Basic monthly salary"), "1234.56");
+  enter("Basic monthly salary", "1234.56");
   await user.click(screen.getByRole("button", { name: "Save salary profile" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Enter a change reason");
   expect(mocks.post).not.toHaveBeenCalled();
-  await user.type(screen.getByLabelText("Plan change reason"), "Salary review");
+  enter("Plan change reason", "Salary review");
   mocks.post.mockRejectedValueOnce(new Error("Revision conflict"));
   await user.click(screen.getByRole("button", { name: "Save salary profile" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Revision conflict");
@@ -317,8 +328,8 @@ it("routes structured join-date settings with required reason and revision", asy
   const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
   await user.clear(screen.getByLabelText("Staff join date"));
-  await user.type(screen.getByLabelText("Staff join date"), "2026-08-01");
-  await user.type(screen.getByLabelText("Plan change reason"), "Correct employment date");
+  enter("Staff join date", "2026-08-01");
+  enter("Plan change reason", "Correct employment date");
   await user.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/staff/amy/settings", {
@@ -336,8 +347,8 @@ it("routes structured salon settings with required reason and revision", async (
   await screen.findByText("Calculated commission: S$546.40");
   await user.click(screen.getByText("Salon commission settings (configuration only)"));
   await user.clear(screen.getByLabelText("Minimum package deposit percentage"));
-  await user.type(screen.getByLabelText("Minimum package deposit percentage"), "45");
-  await user.type(screen.getByLabelText("Plan change reason"), "New deposit policy");
+  enter("Minimum package deposit percentage", "45");
+  enter("Plan change reason", "New deposit policy");
   await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/settings", {
@@ -353,12 +364,14 @@ it("does not discard salary edits or rebase them when configuration is refreshed
   const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
   await user.clear(screen.getByLabelText("Basic monthly salary"));
-  await user.type(screen.getByLabelText("Basic monthly salary"), "1200");
+  enter("Basic monthly salary", "1200");
   const next = configuration();
   next.staff[0]!.profile = { ...next.staff[0]!.profile!, revision: 1, basicSalary: "1500" };
   mocks.get.mockResolvedValue(next);
   await client.invalidateQueries({ queryKey: ["payroll-configuration"] });
-  expect(await screen.findByRole("alert")).toHaveTextContent("Salary profile changed");
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent("Salary profile changed"),
+  );
   expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("1200");
   expect(screen.getByRole("button", { name: "Save salary profile" })).toBeDisabled();
 });
@@ -366,11 +379,9 @@ it("saves structured stage and incentive edits in the revision-bound draft", asy
   mount();
   const user = userEvent.setup();
   await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Stage 1 name"));
-  await user.type(screen.getByLabelText("Stage 1 name"), "Probation");
-  await user.clear(screen.getByLabelText("Incentive 1 row 1 award"));
-  await user.type(screen.getByLabelText("Incentive 1 row 1 award"), "125.50");
-  await user.type(screen.getByLabelText("Plan change reason"), "New stage and award");
+  enter("Stage 1 name", "Probation");
+  enter("Incentive 1 row 1 award", "125.50");
+  enter("Plan change reason", "New stage and award");
   await user.click(screen.getByRole("button", { name: "Save plan draft" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
@@ -414,7 +425,7 @@ it("saves normalized category filters and reordered components", async () => {
   await user.type(screen.getByLabelText("Excluded category keys (comma-separated)"), "retail");
   await user.tab();
   await user.click(screen.getByRole("button", { name: "Move Product up" }));
-  await user.type(screen.getByLabelText("Plan change reason"), "Filter and reorder");
+  enter("Plan change reason", "Filter and reorder");
   await user.click(screen.getByRole("button", { name: "Save plan draft" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
@@ -547,8 +558,11 @@ it("leaves a stored gift-card rule alone when another field of its component cha
   mount();
   const user = userEvent.setup();
   await screen.findByLabelText("Component name");
-  await user.type(screen.getByLabelText("Component name"), " revised");
-  await user.type(screen.getByLabelText("Plan change reason"), "Rename component");
+  enter(
+    "Component name",
+    `${(screen.getByLabelText("Component name") as HTMLInputElement).value} revised`,
+  );
+  enter("Plan change reason", "Rename component");
   await user.click(screen.getByRole("button", { name: "Save plan draft" }));
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(

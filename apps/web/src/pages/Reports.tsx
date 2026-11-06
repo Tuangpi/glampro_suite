@@ -30,6 +30,9 @@ import { formatDateInputValue } from "@/lib/utils";
 import { instantFromSalonDate, toSalonDate } from "@/lib/salon-time";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import PackageValuationPanel from "@/components/reports/PackageValuationPanel";
+import CommissionDetailPanel from "@/components/reports/CommissionDetailPanel";
+import PackageUtilisationPanel from "@/components/reports/PackageUtilisationPanel";
+import { useAuth } from "@/contexts/AuthContext";
 
 type DatePreset = "today" | "week" | "month" | "custom";
 
@@ -96,6 +99,8 @@ function Figure({ label, value }: { label: string; value: React.ReactNode }) {
 }
 
 export default function Reports() {
+  const { user } = useAuth();
+  const canReadCommission = ["SUPER_ADMIN", "MANAGER"].includes(user?.globalRole ?? "");
   const { formatDate, formatPrice, formatDateTime, timeZone } = useSalonFormatting();
   const [activeTab, setActiveTab] = useState("overview");
   const [preset, setPreset] = useState<DatePreset>("month");
@@ -465,6 +470,8 @@ export default function Reports() {
         customerBalances
       )}
       <PackageValuationPanel />
+      {canReadCommission && <CommissionDetailPanel />}
+      {canReadCommission && <PackageUtilisationPanel />}
     </div>
   );
 

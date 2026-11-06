@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -172,6 +172,23 @@ async function reason() {
     "Approved correction",
   );
 }
+it.each([undefined, null, "stored-signature"])(
+  "shows recorded customer signature evidence (%s) in the session column",
+  async (signature) => {
+    mocks.get.mockResolvedValue(withSession({ signature, revertedAt: "2026-10-29T00:00:00.000Z" }));
+    setup();
+    const table = await screen.findByRole("table", { name: "Session usage log" });
+    expect(
+      within(table).getByRole("columnheader", { name: "Customer signed" }),
+    ).toBeInTheDocument();
+    expect(
+      within(table).getByRole("cell", {
+        name: signature === undefined ? "Unavailable" : signature ? "Recorded" : "Not recorded",
+      }),
+    ).toBeInTheDocument();
+    expect(within(table).getByText(/Voided/)).toBeInTheDocument();
+  },
+);
 async function selectTherapist() {
   await userEvent.click(screen.getByRole("button", { name: "Commission attribution" }));
   await userEvent.click(screen.getByRole("button", { name: "Add therapist" }));

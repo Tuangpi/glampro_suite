@@ -269,6 +269,13 @@ amount` for the package **sale** (`PackageFormDrawer.tsx:434-453`) and for
 
 ### g) Three of the five §12 reports do not exist
 
+**November 6 continuation (supersedes the missing labels below):** a monthly approved
+commission-base report and filtered Excel export now exist, as does lifetime operational
+package utilisation. "My earnings" already existed with repaired caller scoping; it now
+adds type-level base activity and recorded own package sessions. The original no-name-match
+finding below was not proof of missing self-service. These changes remain IN PROGRESS for
+DB/browser acceptance and the limitations recorded in TASKS.md; they do not activate earnings.
+
 - **Commission detail (ledger) with filters and Excel export** — missing as a
   report. The closest surfaces are approved-month drill-down
   (`PayrollReport.tsx:106`) and the filtered CSV export produced at approval,

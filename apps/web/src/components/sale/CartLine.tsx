@@ -16,6 +16,7 @@
 import { useId, useState } from "react";
 import type { CommissionAttribution } from "@glampro_suite/shared";
 import CommissionAttributionEditor from "./CommissionAttributionEditor";
+import CartCommissionPreview from "./CartCommissionPreview";
 
 import { Minus, Plus, Trash } from "@/components/icons";
 import IconButton from "@/components/ui/IconButton";
@@ -51,6 +52,7 @@ export interface CartLineProps {
   disabled: boolean;
   sellerOptions?: StaffOption[];
   onAttribution?: (key: string, value: CommissionAttribution | undefined) => void;
+  customerId?: string;
 }
 
 export default function CartLine({
@@ -66,6 +68,7 @@ export default function CartLine({
   disabled,
   sellerOptions,
   onAttribution,
+  customerId,
 }: CartLineProps) {
   const { formatPrice } = useSalonFormatting();
   const key = cartLineKey(line);
@@ -112,6 +115,13 @@ export default function CartLine({
           performers={line.itemType === "SERVICE" ? staffOptions : undefined}
           disabled={disabled}
           onChange={(value) => onAttribution(key, value)}
+        />
+      ) : null}
+      {onAttribution && sellerOptions ? (
+        <CartCommissionPreview
+          line={line}
+          customerId={customerId}
+          staff={sellerOptions ?? staffOptions}
         />
       ) : null}
       <div className="flex items-start justify-between gap-2">

@@ -626,7 +626,15 @@ describe("performer identities", () => {
       expect(post).toHaveBeenCalledWith(
         "/sales",
         expect.objectContaining({
-          lines: [{ itemType: "SERVICE", itemId: "s1", quantity: 1, staffId: "sam-b" }],
+          lines: [
+            {
+              itemType: "SERVICE",
+              itemId: "s1",
+              quantity: 1,
+              staffId: "sam-b",
+              attribution: { sellers: [{ staffId: "user-1", share: 10000 }] },
+            },
+          ],
         }),
       ),
     );
@@ -741,7 +749,14 @@ describe("taking payment", () => {
 
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith("/sales", {
-        lines: [{ itemType: "SERVICE", itemId: "s1", quantity: 1 }],
+        lines: [
+          {
+            itemType: "SERVICE",
+            itemId: "s1",
+            quantity: 1,
+            attribution: { sellers: [{ staffId: "user-1", share: 10000 }] },
+          },
+        ],
         payments: [{ method: "CASH", amount: 80 }],
         // Q16: minted per attempt, so a double-tap replays rather than re-charges.
         idempotencyKey: expect.stringMatching(/^[0-9a-f-]{32,36}$/),
@@ -1080,7 +1095,14 @@ describe("holding a cart", () => {
 
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith("/sales", {
-        lines: [{ itemType: "SERVICE", itemId: "s1", quantity: 1 }],
+        lines: [
+          {
+            itemType: "SERVICE",
+            itemId: "s1",
+            quantity: 1,
+            attribution: { sellers: [{ staffId: "user-1", share: 10000 }] },
+          },
+        ],
         // No tender: the key protects an unchanged retry after a lost response.
         hold: true,
         idempotencyKey: expect.any(String),
@@ -1401,7 +1423,15 @@ describe("discounting a line", () => {
     // catalogue's own price, which is the thing the till must not be able to name.
     await waitFor(() => {
       expect(post).toHaveBeenCalledWith("/sales", {
-        lines: [{ itemType: "SERVICE", itemId: "s1", quantity: 1, discountPercent: 25 }],
+        lines: [
+          {
+            itemType: "SERVICE",
+            itemId: "s1",
+            quantity: 1,
+            discountPercent: 25,
+            attribution: { sellers: [{ staffId: "user-1", share: 10000 }] },
+          },
+        ],
         payments: [{ method: "CASH", amount: 60 }],
         idempotencyKey: expect.stringMatching(/^[0-9a-f-]{32,36}$/),
       });
@@ -1436,7 +1466,12 @@ describe("discounting a line", () => {
 
     await waitFor(() => {
       const [call] = post.mock.calls;
-      expect(call?.[1].lines[0]).toEqual({ itemType: "SERVICE", itemId: "s1", quantity: 1 });
+      expect(call?.[1].lines[0]).toEqual({
+        itemType: "SERVICE",
+        itemId: "s1",
+        quantity: 1,
+        attribution: { sellers: [{ staffId: "user-1", share: 10000 }] },
+      });
     });
   });
 });

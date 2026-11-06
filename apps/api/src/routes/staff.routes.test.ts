@@ -27,6 +27,10 @@ const databaseUrl = process.env["DATABASE_URL"];
 process.env.DATABASE_URL ??= "postgresql://glampro:glampro@127.0.0.1:5432/glampro_test";
 process.env.JWT_SECRET ??= "staff-routes-test-secret";
 process.env.NODE_ENV = "test";
+// This suite verifies credential reset/session invalidation, not delivery through
+// a developer's SMTP service. Use the application's existing test JSON transport;
+// real loopback mail delivery is covered by security acceptance suites.
+process.env.SMTP_HOST = "";
 
 const { createApp } = await import("../app.js");
 const { prisma } = await import("../lib/prisma.js");

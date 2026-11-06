@@ -31,6 +31,7 @@ export interface CartPanelProps {
   lines: CartLineState[];
   /** Whether the sale's customer carries a membership reference. */
   isMember: boolean;
+  customerId?: string;
   /** Narrowed picker for one service line: `User.departments ∩ Service.departmentId`. */
   staffForService: (serviceId: string) => StaffOption[];
   /** A granting line forces a customer, or the credit is issued to nobody. */
@@ -55,6 +56,7 @@ export interface CartPanelProps {
 export default function CartPanel({
   lines,
   isMember,
+  customerId,
   staffForService,
   needsCustomer,
   disabled,
@@ -180,6 +182,7 @@ export default function CartPanel({
               <CartLine
                 key={cartLineKey(line)}
                 line={line}
+                customerId={customerId}
                 unitPrice={unitPrice}
                 listPrice={listPrice}
                 attribution={line.itemType === "SERVICE" ? "service" : "none"}
