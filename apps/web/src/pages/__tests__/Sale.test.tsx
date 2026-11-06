@@ -337,7 +337,9 @@ describe("sale workspace", () => {
     const user = userEvent.setup();
     renderSale();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
-    expect(useCartServices).toHaveBeenLastCalledWith(["s1"]);
+    // The package panel reads covered services of its own (none for a walk-in), so the
+    // cart's line is asserted by presence rather than by being the last call.
+    expect(useCartServices).toHaveBeenCalledWith(["s1"]);
     expect(screen.queryByRole("option", { name: /Nail staff/ })).not.toBeInTheDocument();
   });
   it("keeps secondary panels closed and customer selection beside the cart", () => {

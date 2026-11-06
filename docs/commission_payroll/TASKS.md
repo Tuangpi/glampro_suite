@@ -1675,18 +1675,32 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       labels are DONE (November 6, 2026): the rules grid says "Value package
       sales/spending" instead of "stored-credit", and the statement drill-down prints
       `Value package spend (VP_SPEND)` — name plus stored code, never the name alone;
-      N14's gift-card half is moot under Q9. Still open: session-value preview while
+      N14's gift-card half is moot under Q9. **N8 is DONE (November 6, 2026):** the till
+      carries a "Packages & credit" panel under the customer picker
+      (`ActivePackagesPanel.tsx`) that lists the attached customer's holdings from
+      `GET /customers/:id/holdings` — packages first, then credit, soonest expiry first
+      and no-expiry last (`lib/customer-holdings.ts`, with the purchase-date tiebreak
+      documented as unavailable on the wire) — and states, per row, sessions left,
+      `paidSessionsRemaining` (or "Payment evidence unavailable"), unpaid sessions that
+      need a manager PIN, a package balance still due, expiry, and the covered services.
+      **Redeem 1** rings up what the package covers (an inline picker appears only when
+      the package funds several sellable services; a service already in the cart is
+      reused rather than duplicated) and opens the payment sheet with that holding
+      already chosen via `PaymentDialog`'s new `initialTender` prop; **Pay with credit**
+      opens the same sheet on a `PREPAID_CREDIT` tender without adding a line. Web-only:
+      no API route, shared schema, migration or `sale.service.ts` change, so the
+      October 28 STOP order is untouched. Still open: session-value preview while
       adding a session (N5); seller/performer chips, till default and automatic
-      commission estimates (N6/N7); active-packages panel with "Redeem 1" and expiry
-      ordering (N8); "customer signed" column (N10). **N4 is reclassified, not
-      started:** its remaining half — an Override % and an effective-from date on the
-      package drawer — is not a screen-only change. `payrollPackageSettingsSchema` has
-      three modes and every consumer branches on `mode === "FIXED"`, so a percentage
-      option would silently pay the plan rate; the capability already exists as a
-      package-scope `CommissionRule` with a rate and `effectiveAt`, edited in Settings ›
-      Commission rules. Making the drawer edit or read those rules is a product decision
-      recorded in [DECISIONS.md](DECISIONS.md); the drawer keeps its truthful "applies to
-      new purchases only" note until it is made. Next slice: N5 or N8.
+      commission estimates (N6/N7); "customer signed" column (N10). **N4 is
+      reclassified, not started:** its remaining half — an Override % and an
+      effective-from date on the package drawer — is not a screen-only change.
+      `payrollPackageSettingsSchema` has three modes and every consumer branches on
+      `mode === "FIXED"`, so a percentage option would silently pay the plan rate; the
+      capability already exists as a package-scope `CommissionRule` with a rate and
+      `effectiveAt`, edited in Settings › Commission rules. Making the drawer edit or read
+      those rules is a product decision recorded in [DECISIONS.md](DECISIONS.md); the
+      drawer keeps its truthful "applies to new purchases only" note until it is made.
+      Next slice: N5.
 - [ ] TODO — **(g) §12 reports.** Commission detail (filterable ledger plus Excel),
       My commission (staff self-service), and package utilisation
       (sold/redeemed/expired). Reuse the CP-006 export and own-data patterns rather than

@@ -1,5 +1,55 @@
 # Commission & Payroll progress
 
+## November 6, 2026 — CP-008 (f2) N8: the till shows what a customer can still spend
+
+- **The panel is a shortcut, not a second decision-maker.** `GET /customers/:id/holdings`
+  already answered both ledgers for the payment sheet, but only once the cashier had
+  opened it, and one holding at a time in a dropdown. `ActivePackagesPanel` puts the same
+  answer beside the customer picker: packages then credit, sessions left, expiry, covered
+  services, and how many remaining sessions are actually paid for. **The amount a holding
+  pays is still computed only by the sheet** (`packageCoverage` + `redeemPayments`) and
+  re-computed by the server, so nothing here can disagree with the ledger — the panel
+  only chooses _which_ holding to spend and _what_ to ring up.
+- **"Redeem 1" rings up what the package is for, once.** A package pays for a service, so
+  the action adds that service line and opens the sheet; if the cashier already rang it
+  up, the existing line is reused instead of adding a second unit the customer is not
+  having. A package that funds several sellable services gets an inline picker; one with
+  none on sale offers no action at all, because the sale would be refused at post time.
+- **Credit is the same machinery with a different question.** Prepaid credit pays whatever
+  the cart owes, so its row says "Pay with credit" and adds no line — it just opens the
+  sheet on a `PREPAID_CREDIT` tender. `PaymentDialog` grew one optional prop,
+  `initialTender`, that seeds the tender draft on mount; its amount stays derived, never
+  typed. Cleared on close, after a sale, on a held-cart pickup and on a customer change,
+  so a later cart cannot inherit a redemption nobody asked for.
+- **Ordering admits what the wire does not carry.** Soonest expiry first, no-expiry last,
+  then name, then id. The sheet states the server order as "earliest expiry first, then
+  purchase date"; the holdings payload has no purchase date (only `purchaseSaleId`), so
+  the panel documents the difference in `lib/customer-holdings.ts` rather than inventing
+  a date to sort by.
+- **The unpaid-session rule is stated, not hidden.** `paidSessionsRemaining` is how many
+  remaining sessions have payment evidence — the server's own `used + quantity <= paid`
+  test (`payroll-package-session.ts:73`). When it is short the row says a manager PIN is
+  needed and still opens the sheet, because the Q4 override is a real path and the
+  cashier is the one who fetches the manager. `null` reads "Payment evidence
+  unavailable", the sheet's own words, and an outstanding package balance is named with
+  the reminder that collecting it is a separate sale.
+- **Web-only.** No API route, shared schema, migration or `sale.service.ts` change; the
+  October 28 STOP order on server edits is untouched.
+- **Verification.** `active-packages-panel.test.tsx` 19/19 (four panel states, ordering
+  incl. no-expiry and a name tiebreak, packages-above-credit, singular session copy,
+  unpaid / missing-evidence / balance-due copy, expired and fully-used refusals, an
+  a covered service no longer on sale, still-loading services, single- and multi-service
+  redemption,
+  the disabled till, and both credit behaviours) and
+  `payment-dialog-initial-tender.test.tsx` 3/3 (the sheet opens on the chosen holding,
+  posts `{ method: "PACKAGE", amount: 50, holdingId }` with the amount it derived, and
+  still opens on cash when nothing was chosen). One existing assertion in
+  `Sale.test.tsx` moved from "last `useCartServices` call" to "called with", because the
+  page now resolves package coverage of its own. Full web suite 1195 tests: everything
+  passes except `PayrollPlans.test.tsx`'s 5 s timeouts under parallel load, which pass
+  86/86 when that file is run on its own. `tsc` typecheck, ESLint and Prettier clean.
+- **Next.** N5 (session-value preview), then N6/N7 and N10, then (g) the §12 reports.
+
 ## November 6, 2026 — CP-008 (f2) starts with N14: value packages get one name
 
 - **The mismatch was a naming one, not a data one.** The rules grid labelled

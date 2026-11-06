@@ -45,6 +45,7 @@ import {
 } from "@glampro_suite/shared";
 
 import { Search } from "@/components/icons";
+import ActivePackagesPanel from "@/components/sale/ActivePackagesPanel";
 import DirectTipsPanel from "@/components/sale/DirectTipsPanel";
 import PosPayrollProgress from "@/components/sale/PosPayrollProgress";
 import PosStaffSwitch from "@/components/sale/PosStaffSwitch";
@@ -130,6 +131,16 @@ export default function Sale() {
   );
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [checkoutError, setCheckoutError] = useState<string | null>(null);
+  /**
+   * The holding the cashier picked on the package panel, which the sheet this till
+   * opens next spends — carried with its method, because a package pays for one service
+   * while credit pays whatever the cart owes. Cleared wherever the customer or the sale
+   * changes, so a later cart never inherits a redemption nobody asked for.
+   */
+  const [redeem, setRedeem] = useState<{
+    method: "PACKAGE" | "PREPAID_CREDIT";
+    holdingId: string;
+  } | null>(null);
   const [receipt, setReceipt] = useState<SaleDetail | null>(null);
   const [historicalReceipt, setHistoricalReceipt] = useState(false);
   const [heldPage, setHeldPage] = useState(1);
@@ -298,6 +309,42 @@ export default function Sale() {
   }
 
   /**
+   * Spends one session of a package, or pays with credit (CP-008 f2 · N8): rings up
+   * what the package is for and opens the sheet with that holding already chosen.
+   *
+   * The line is only added when the cart holds none of it — a cashier who already rang
+   * the haircut up is redeeming against *that* line, and adding a second unit would
+   * charge for a service the customer is not having. Credit (`item === null`) adds
+   * nothing at all: it pays whatever the cart already owes.
+   */
+  function handleRedeem(
+    redemption: { method: "PACKAGE" | "PREPAID_CREDIT"; holdingId: string },
+    item: SaleItem | null,
+  ) {
+    if (cartLocked || holdAction.current || checkoutOpen) return;
+    if (isReadOnly) {
+      showToast("error", "This salon's subscription is suspended, so the till cannot take money.");
+      return;
+    }
+
+    if (item !== null) {
+      const alreadyRung = cart.lines.some(
+        (line) => line.itemType === item.kind && line.itemId === item.id,
+      );
+      if (!alreadyRung && !cart.addItem(item, undefined, isMember)) {
+        showToast(
+          "info",
+          `The cart holds at most ${MAX_SALE_LINES} lines. Remove one to add this.`,
+        );
+        return;
+      }
+    }
+
+    setRedeem(redemption);
+    openCheckout();
+  }
+
+  /**
    * A scan or a typed code, resolved to one product and put in the cart.
    *
    * The lookup is the server's **exact** barcode answer (`?barcode=`), never the
@@ -398,6 +445,7 @@ export default function Sale() {
       setCheckoutOpen(false);
       setCustomer(null);
       setHeldSaleId(null);
+      setRedeem(null);
       setReceipt(sale);
       showToast(
         "success",
@@ -467,6 +515,7 @@ export default function Sale() {
       cart.setLines(lines);
       setCustomer(heldCustomer);
       setHeldSaleId(sale.id);
+      setRedeem(null);
       setCheckoutError(null);
       showToast("info", "Cart picked up at current catalogue prices. Payment checks prices again.");
     } catch (error) {
@@ -587,6 +636,7 @@ export default function Sale() {
     setCheckoutError(null);
     setCustomer(null);
     setHeldSaleId(null);
+    setRedeem(null);
     setVoidOpen(false);
     setVoidError(null);
     setRefundOpen(false);
@@ -825,7 +875,16 @@ export default function Sale() {
             className="flex min-w-0 scroll-mt-24 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-purple lg:sticky lg:top-24"
           >
             <Card title="Customer">
-              <CustomerPicker customer={customer} onSelect={setCustomer} disabled={cartLocked} />
+              <CustomerPicker
+                customer={customer}
+                onSelect={(next) => {
+                  // A different customer holds different credit, so a holding chosen for
+                  // the last one is not this sale's to spend.
+                  setRedeem(null);
+                  setCustomer(next);
+                }}
+                disabled={cartLocked}
+              />
               {isMember ? (
                 <p className="mt-2 text-xs font-bold text-purple">Member pricing applied</p>
               ) : null}
@@ -835,6 +894,11 @@ export default function Sale() {
                 </p>
               ) : null}
             </Card>
+            <ActivePackagesPanel
+              customerId={customer?.id ?? null}
+              disabled={cartLocked}
+              onRedeem={handleRedeem}
+            />
             {/* FR-POS-09: the seller's own base and band progress, never a colleague's. */}
             <PosPayrollProgress />
             {heldSaleId ? (
@@ -982,9 +1046,13 @@ export default function Sale() {
           hasCustomer={customer !== null}
           needsCustomer={needsCustomer}
           hasManualDiscount={cart.lines.some((line) => (line.discountPercent ?? 0) > 0)}
+          initialTender={redeem}
           isPending={createSale.isPending || completeSale.isPending}
           errorMessage={checkoutError}
-          onClose={() => setCheckoutOpen(false)}
+          onClose={() => {
+            setCheckoutOpen(false);
+            setRedeem(null);
+          }}
           onConfirm={(payments, key, voucherCode, collection) =>
             void takePayment(payments, key, voucherCode, collection)
           }

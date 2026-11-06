@@ -95,6 +95,13 @@ export interface PaymentDialogProps {
    * sale after the money has been counted.
    */
   hasManualDiscount: boolean;
+  /**
+   * A sheet opened from the customer's package panel arrives with the tender already
+   * chosen: the cashier picked the holding to spend on the till, and asking them to
+   * pick it again here would only offer a way to spend a different one by accident.
+   * A redemption row's amount is derived (`amountFor`), so the draft carries none.
+   */
+  initialTender?: { method: "PACKAGE" | "PREPAID_CREDIT"; holdingId: string } | null;
   /** The write is in flight; every control is frozen so one attempt stays one attempt. */
   isPending: boolean;
   /** The server's refusal, shown above the tenders. */
@@ -118,6 +125,7 @@ export default function PaymentDialog({
   hasCustomer,
   needsCustomer,
   hasManualDiscount,
+  initialTender = null,
   isPending,
   errorMessage,
   onClose,
@@ -127,9 +135,18 @@ export default function PaymentDialog({
   // One key per mount, i.e. per attempt — see the module comment.
   const [idempotencyKey] = useState(newIdempotencyKey);
   // One tender, pre-filled with the exact total: the overwhelmingly common case
-  // is a customer handing over the whole amount in one way.
+  // is a customer handing over the whole amount in one way. A sheet opened on a
+  // holding starts on that redemption instead — with no amount, because the row's
+  // amount is derived from what the holding covers rather than typed.
   const [tenders, setTenders] = useState<TenderDraft[]>(() => [
-    { id: nextTenderId++, method: "CASH", amount: centsToPrice(totalCents) },
+    initialTender === null
+      ? { id: nextTenderId++, method: "CASH", amount: centsToPrice(totalCents) }
+      : {
+          id: nextTenderId++,
+          method: initialTender.method,
+          amount: "",
+          holdingId: initialTender.holdingId,
+        },
   ]);
 
   // The voucher step (ADR 0020): the code is previewed against the server's own
