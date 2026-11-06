@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { fixed, exact, sum } from "@glampro_suite/shared";
-import { openPayrollClose } from "./payroll-close-state.js";
+import { add, exact, fixed, sum, ZERO } from "@glampro_suite/shared";
+import {
+  adjustPayrollClose,
+  approvePayrollClose,
+  calculatePayrollClose,
+  openPayrollClose,
+} from "./payroll-close-state.js";
 import {
   approvedPayrollExportState,
   calculatedPayrollExportState,
+  EXPORT_PERIOD,
+  exportInputs,
+  exportOwner,
 } from "./payroll-export.test-helper.js";
 import { frozenPayrollExportModel } from "./payroll-export-data.js";
 import {
@@ -66,6 +74,79 @@ test("staff rows carry commission, incentives and bases but no salary", () => {
   const serialized = JSON.stringify(report);
   for (const field of ["basicSalary", "fixedOvertime", "takeHome", "levy"])
     assert.ok(!serialized.includes(field), `report must not expose ${field}`);
+});
+
+/** Approved snapshot with one manual commission adjustment, to prove the columns reconcile. */
+function commissionAdjustedState() {
+  const opened = adjustPayrollClose(
+    openPayrollClose(EXPORT_PERIOD),
+    0,
+    {
+      id: "adj-commission",
+      staffId: "staff-a",
+      kind: "COMMISSION_ADJ",
+      amount: "12.50",
+      reason: "Retrospective rate correction",
+      actorId: "owner",
+    },
+    exportOwner,
+  );
+  const calculated = calculatePayrollClose(
+    opened,
+    opened.revision,
+    exportInputs,
+    exportOwner,
+    "2026-10-01T00:10:00.000Z",
+  );
+  return approvePayrollClose(
+    calculated,
+    calculated.revision,
+    exportInputs,
+    exportOwner,
+    "2026-10-02T02:00:00.000Z",
+    "September payroll approved",
+  );
+}
+
+const componentTotal = (row: { commissionComponents: { amount: string }[] }) =>
+  row.commissionComponents.reduce((total, item) => add(total, exact(item.amount)), ZERO);
+
+test("commission is split by plan component and reconciles to the frozen total", () => {
+  assert.deepEqual(report.commissionColumns, [
+    { key: "svc", name: "Service commission" },
+    { key: "flat_rules", name: "Flat rules" },
+  ]);
+  const row = report.staff.find((item) => item.staff.id === "staff-a")!;
+  assert.deepEqual(row.commissionComponents, [
+    { componentKey: "svc", componentName: "Service commission", amount: "200.00" },
+  ]);
+  assert.equal(row.commissionAdjustments, "0.00");
+  for (const staffRow of report.staff)
+    assert.equal(
+      fixed(add(componentTotal(staffRow), exact(staffRow.commissionAdjustments)), 2),
+      staffRow.payroll.commission,
+      "components plus adjustments must equal the frozen commission",
+    );
+});
+
+test("a manual commission adjustment keeps its own column and the total still reconciles", () => {
+  const adjusted = payrollPeriodReport(commissionAdjustedState());
+  const row = adjusted.staff.find((item) => item.staff.id === "staff-a")!;
+  assert.equal(row.commissionAdjustments, "12.50");
+  assert.equal(row.payroll.commission, "212.50");
+  assert.equal(fixed(add(componentTotal(row), exact(row.commissionAdjustments)), 2), "212.50");
+});
+
+test("the salary-derived ratio is serialized for an owner reader only", () => {
+  const owner = payrollPeriodReport(state, true);
+  assert.equal(owner.staff[0]!.payrollSalesPct, model.staff[0]!.payroll.payrollSalesPct);
+  assert.equal(owner.staff[0]!.alert, model.staff[0]!.payroll.alert);
+  const manager = payrollPeriodReport(state);
+  for (const row of manager.staff) {
+    assert.ok(!("payrollSalesPct" in row), "a manager never reads the salary-derived ratio");
+    assert.ok(!("alert" in row));
+  }
+  assert.ok(!JSON.stringify(manager).includes("payrollSalesPct"));
 });
 
 test("a statement with no frozen lines still appears with empty base aggregates", () => {

@@ -65,7 +65,6 @@ export const payrollSettingsSchema = z.strictObject({
   negativeBase: z.enum(["CARRY_FORWARD", "WRITE_OFF"]),
   minimumDepositPct: percentage,
   refundAdminFee: money,
-  requireAttribution: z.boolean(),
 });
 export const payrollSettingsWriteSchema = payrollSettingsSchema.extend({
   expectedRevision: revision,
@@ -76,8 +75,18 @@ export const PAYROLL_DEFAULT_SETTINGS: z.infer<typeof payrollSettingsSchema> = {
   negativeBase: "CARRY_FORWARD",
   minimumDepositPct: "30",
   refundAdminFee: "100",
-  requireAttribution: true,
 };
+/** SETTINGS events written before the v0.9 alignment review can still carry the
+ * retired `requireAttribution` switch. It never had a production reader —
+ * attribution is enforced by `CommissionAttributionPolicy` — so historical reads
+ * drop that key before the strict schema runs, while new writes cannot set it. */
+export const payrollSettingsReadSchema = z.preprocess(
+  (value) =>
+    typeof value === "object" && value !== null && !Array.isArray(value)
+      ? Object.fromEntries(Object.entries(value).filter(([key]) => key !== "requireAttribution"))
+      : value,
+  payrollSettingsSchema,
+);
 
 export type PayrollPlanMetadata = z.infer<typeof payrollPlanMetadataSchema>;
 export type PayrollCreatePlan = z.infer<typeof payrollCreatePlanSchema>;

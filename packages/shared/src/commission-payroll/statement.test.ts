@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { assemblePayrollStatement, type PayrollStatementInput } from "./statement.js";
+import {
+  assemblePayrollStatement,
+  payrollAdjustmentTotal,
+  payrollCommissionColumns,
+  type PayrollStatementInput,
+} from "./statement.js";
+import { fixed } from "./decimal.js";
 import { hairPayrollExample } from "./examples.js";
 
 function fixture(): PayrollStatementInput {
@@ -226,6 +232,43 @@ test("statement owns a deep copy of profile, identity, inputs and results", () =
   assert.equal(statement.inputs.profile.basicSalary, "2000");
   assert.equal(statement.inputs.calculation.lines[0].baseAmount, "1000.0000");
   assert.equal(statement.payroll.takeHome, "2200.00");
+});
+
+test("one adjustment kind totals exactly and ignores other kinds", () => {
+  const adjustments = [
+    { kind: "COMMISSION_ADJ", amount: "10.00" },
+    { kind: "COMMISSION_ADJ", amount: "-3.25" },
+    { kind: "ADDITION", amount: "99.00" },
+  ].map((row, index) => ({
+    ...row,
+    kind: row.kind as PayrollStatementInput["adjustments"][number]["kind"],
+    id: `adj-${index}`,
+    staffId: "departed",
+    actorId: "owner",
+    reason: "Manual correction",
+  }));
+  assert.equal(fixed(payrollAdjustmentTotal(adjustments, "COMMISSION_ADJ"), 2), "6.75");
+  assert.equal(fixed(payrollAdjustmentTotal(adjustments, "DEDUCTION"), 2), "0.00");
+});
+
+test("component columns follow first appearance and list each key once", () => {
+  assert.deepEqual(
+    payrollCommissionColumns([
+      { components: [{ componentKey: "svc", componentName: "Service commission" }] },
+      {
+        components: [
+          { componentKey: "svc", componentName: "Service commission (v2)" },
+          { componentKey: "fixed", componentName: "Package fixed commission" },
+        ],
+      },
+      { components: [] },
+    ]),
+    [
+      { key: "svc", name: "Service commission" },
+      { key: "fixed", name: "Package fixed commission" },
+    ],
+  );
+  assert.deepEqual(payrollCommissionColumns([]), []);
 });
 
 test("rejects cross-staff and duplicate adjustments, negative deductions and fractional cents", () => {

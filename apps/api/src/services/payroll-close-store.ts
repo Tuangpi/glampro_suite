@@ -358,7 +358,7 @@ export async function readStoredPayrollClose(period: string) {
  * amounts only — never salary or take-home. The same transaction verifies the stored
  * snapshot so a newer draft can never appear here.
  */
-export async function readStoredPayrollReport(period: string) {
+export async function readStoredPayrollReport(period: string, owner = false) {
   const scope = context();
   const periodKey = payrollPeriodKeySchema.parse(period);
   return prisma.$transaction(async (tx) => {
@@ -366,7 +366,7 @@ export async function readStoredPayrollReport(period: string) {
     await actor(tx, false);
     const verified = await verifiedPayrollClose(tx, periodKey);
     if (!verified) throw conflict("Approve payroll before reporting on frozen statements.");
-    return payrollPeriodReport(verified.state);
+    return payrollPeriodReport(verified.state, owner);
   });
 }
 

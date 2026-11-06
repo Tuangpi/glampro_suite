@@ -1,5 +1,37 @@
 # Commission & Payroll decisions
 
+## November 6, 2026 — Spec v0.9 alignment: one switch retired, three divergences recorded
+
+[SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) reviewed the v0.9 specification
+against the code and found the money aligned but the configuration surface
+incomplete. This entry records the decisions taken now; the remaining fixes are
+tracked as CP-008 in [TASKS.md](TASKS.md).
+
+- **`requireAttribution` is retired, not wired.** The payroll setting was stored,
+  defaulted to true and rendered in Settings, but no production code ever read it.
+  Real enforcement is `CommissionAttributionPolicy` (`requireSellers`,
+  `requireServicePerformers`, `requireRedemptionPerformers`) in Team › Attribution.
+  Keeping two switches would leave one of them a lie, so the field is gone from the
+  write contract and the form. Historical `SETTINGS` events that still carry it are
+  read through `payrollSettingsReadSchema`, which accepts the key and drops it —
+  without that, the strict schema would block every month whose settings event
+  predates this change with `HISTORICAL_SALON_SETTINGS_UNAVAILABLE`. No money or
+  attribution behaviour changes.
+- **The ledger stays a foundation; the close stays the authority.** The
+  specification's "one ledger line per commission event is the source of truth" is
+  implemented as an immutable, hash-pinned primitive, but it is not the reporting
+  path. Authoritative payroll is derived at month-end close from verified source
+  evidence and reconciled against rate provenance frozen at sale. This is
+  deliberate, not an omission, and should not be re-reported as a defect.
+- **Collected, GST-exclusive, discount-netted bases are invariants.** They are fixed
+  by design, not missing `salon_commission_policy` switches. Turning any of them off
+  removes a reconciliation guarantee the close verifiers currently enforce, so it is
+  a business decision with a recorded cost — never an implementation detail.
+- **The UI will settle on one name for value packages.** "Value package" is
+  `STORED_CREDIT_SALE` / `STORED_CREDIT_SPEND` in rules and `VP_SALE` / `VP_SPEND`
+  in payroll. Same meaning, different labels; the mismatch costs review time until
+  the screens adopt one.
+
 ## November 4, 2026 — CP-007 cutover is prospective, attested and reversible
 
 - **Prospective, never retroactive.** Activation writes one row per salon and one

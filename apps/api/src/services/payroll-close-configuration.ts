@@ -5,7 +5,7 @@ import {
   payrollPeriodKeySchema,
   payrollPlanVersionSchema,
   payrollProfileSchema,
-  payrollSettingsSchema,
+  payrollSettingsReadSchema,
   resolvePayrollPlan,
 } from "@glampro_suite/shared";
 import { salonDayBounds } from "../lib/wall-clock.js";
@@ -98,7 +98,7 @@ export function resolvePayrollCloseConfiguration(raw: PayrollCloseConfigurationR
           createdAt: row.createdAt.toISOString(),
         };
   const settingsEvent = latest("SETTINGS", "company");
-  const settings = payrollSettingsSchema.safeParse(settingsEvent?.payload);
+  const settings = payrollSettingsReadSchema.safeParse(settingsEvent?.payload);
   if (!settings.success)
     block("HISTORICAL_SALON_SETTINGS_UNAVAILABLE", null, settingsEvent?.id ?? null);
   const assignmentEvent = latest("ASSIGNMENT", "company", false);

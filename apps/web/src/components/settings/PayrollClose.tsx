@@ -8,6 +8,7 @@ import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import PayrollCarry from "./PayrollCarry";
 import PayrollReport from "./PayrollReport";
+import PayrollSalesRatio from "./PayrollSalesRatio";
 
 interface CloseView {
   periodKey: string;
@@ -17,7 +18,11 @@ interface CloseView {
   calculation: {
     statements: (Omit<PayrollStatement, "payroll"> & {
       payroll: Partial<PayrollStatement["payroll"]>;
+      /** Server-totaled COMMISSION_ADJ: components + this = payroll.commission. */
+      commissionAdjustments?: string;
     })[];
+    /** Plan-component commission columns, in the order the server lists them. */
+    commissionColumns: { key: string; name: string }[];
     calculatedAt: string;
   } | null;
   approval: { at: string; reason: string } | null;
@@ -107,6 +112,7 @@ export default function PayrollClose({
   }
   const busy = mutation.isPending || query.isFetching || download.isPending;
   const approved = state?.status === "APPROVED";
+  const commissionColumns = state?.calculation?.commissionColumns ?? [];
   return (
     <Card title="Monthly payroll close">
       <p>
@@ -158,8 +164,16 @@ export default function PayrollClose({
                   <th>Staff</th>
                   {isOwner && <th>Salary</th>}
                   <th>Commission</th>
+                  {/* SRS FR-CAL-01: commission per plan component. The engine pools
+                      commission per component, so these are exactly the amounts it
+                      paid, and with the adjustments column they add up to Commission. */}
+                  {commissionColumns.map((column) => (
+                    <th key={column.key}>{column.name}</th>
+                  ))}
+                  <th>Commission adj.</th>
                   <th>Incentive</th>
                   <th>Collection</th>
+                  {isOwner && <th>Payroll / sales %</th>}
                   <th>Calculation detail</th>
                   {isOwner && <th>Take home</th>}
                 </tr>
@@ -173,8 +187,24 @@ export default function PayrollClose({
                     </td>
                     {isOwner && <td>{row.payroll.basicSalary}</td>}
                     <td>{row.payroll.commission}</td>
+                    {commissionColumns.map((column) => (
+                      <td key={column.key}>
+                        {row.result?.components.find(
+                          (component) => component.componentKey === column.key,
+                        )?.amount ?? "—"}
+                      </td>
+                    ))}
+                    <td>{row.commissionAdjustments ?? "—"}</td>
                     <td>{row.payroll.incentive}</td>
                     <td>{row.payroll.collection}</td>
+                    {isOwner && (
+                      <td>
+                        <PayrollSalesRatio
+                          pct={row.payroll.payrollSalesPct}
+                          alert={row.payroll.alert}
+                        />
+                      </td>
+                    )}
                     <td>
                       {row.result && (
                         <details>
@@ -191,6 +221,14 @@ export default function PayrollClose({
               </tbody>
             </table>
           </div>
+          {state.calculation && (
+            <p className="text-sm text-ink-muted">
+              Component columns are the plan components the commission was pooled under; with the
+              commission adjustment column they add up to Commission. Payroll / sales % is take-home
+              plus the company levy over the collected amount, red above the staff member’s alert
+              percentage.
+            </p>
+          )}
           {!state.calculation && <p>Calculate to load authoritative staff and payroll inputs.</p>}
           <ul>
             {state.adjustments.map((row) => (

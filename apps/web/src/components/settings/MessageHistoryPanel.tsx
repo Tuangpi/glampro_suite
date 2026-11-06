@@ -74,7 +74,9 @@ export default function MessageHistoryPanel({ canRetry }: { canRetry: boolean })
       setRetryError("");
       showToast("success", "Message queued again.");
       // Every page of the record, not just this one: a retry moves the job's row.
-      void client.invalidateQueries({ queryKey: queryKeys.messaging.history(tenant?.id, page).slice(0, 2) });
+      void client.invalidateQueries({
+        queryKey: queryKeys.messaging.history(tenant?.id, page).slice(0, 2),
+      });
     },
     onError: (cause) => setRetryError(getErrorMessage(cause)),
   });

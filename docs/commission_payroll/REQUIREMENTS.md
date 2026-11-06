@@ -119,6 +119,29 @@ SRS screens C1–C7 and C17–C20 map to CP-003; C8–C13 and C16 to CP-004
 and CP-006; C14–C15 to CP-005 and CP-006. Seed definitions and migration
 requirements in SRS section 11 map to CP-003 and CP-007 respectively.
 
+## Spec v0.9 open confirmations (§13)
+
+Source: [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) §7. Each answer below
+changes money or scope, so the behaviour listed is **provisional** and recorded here
+only so the next review checks against agreed policy instead of a spreadsheet
+snapshot. None of it is accepted policy. Items that need code are tracked as CP-008.
+
+| #   | Question                        | Current behaviour (provisional)                                                                             |
+| --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| 1   | Package sale basis              | Collected (deposits plus instalments); the specification's recommended option                               |
+| 2   | Redemption base                 | Session value (net ÷ sessions) with a per-package fixed-dollar override; no list price                      |
+| 3   | Clawback on refund              | Prorated on the refunded amount plus `refundAdminFee`; no N-day window, no "none" mode                      |
+| 4   | Redeem before fully paid        | Blocked once used exceeds paid (option a), with audited manager-PIN override                                |
+| 5   | FOC commission                  | Percentage of the full service list price                                                                   |
+| 6   | Seller and therapist same staff | Both accrue; sale and redemption stay separate events                                                       |
+| 7   | Payroll/Sales threshold         | Formula matches; the value comes from per-staff `salesAlertPct` and is unconfirmed                          |
+| 8   | Commission period start day     | Calendar month only; no `period_start_day`                                                                  |
+| 9   | Gift cards                      | `GC_SALE` is declared but has no producer or rule kind; must not be promised as delivered                   |
+| 10  | Fixed-dollar rates in the grid  | Percentages only on the rules grid; fixed dollar exists on the package drawer                               |
+| 11  | Tiered commission in the grid   | Plans support tiers; the rules grid does not                                                                |
+| 12  | Posting versus month-end close  | Close-derived authority, see [DECISIONS.md](DECISIONS.md); not till-time posting                            |
+| 13  | Payroll/Sales % visibility      | Owner-only: both payroll tables show it (red above alert); managers see component columns but not the ratio |
+
 ## Reference audit caveats
 
 - Supplied SRS AS-IS descriptions predate some current code. Inspect real code;

@@ -76,6 +76,9 @@ describe("salon profile contract", () => {
     onlineDepositAmount: 0,
     onlineNoShowFee: 0,
     requireStaffTwoFactor: false,
+    // Present but empty: the logo is a body of its own, so the profile always carries
+    // the key (null when no image was uploaded) rather than omitting it.
+    logoUrl: null,
     owner: null,
     subscriptionEndsAt: "2027-03-31T00:00:00.000Z",
     createdAt: "2026-01-01T00:00:00.000Z",

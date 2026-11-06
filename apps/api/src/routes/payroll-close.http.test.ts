@@ -382,8 +382,21 @@ test("the approved report returns frozen totals, breakdowns and never salary", a
   assert.ok(data.approval.at, "the approval the report belongs to stays visible");
   for (const field of ["basicSalary", "takeHome", "fixedOvertime", "levy"])
     assert.ok(!text.includes(field), `report must not expose ${field}`);
+  assert.ok(text.includes("commissionColumns"), "the report declares its component columns");
+  assert.ok(
+    text.includes("commissionComponents") && text.includes("commissionAdjustments"),
+    "commission is split by plan component plus adjustments",
+  );
+  assert.ok(text.includes("payrollSalesPct"), "the owner reads the salary-derived Payroll/Sales %");
   role = "MANAGER";
-  assert.equal((await request(REPORT)).status, 200, "managers may read commission figures");
+  const managerResponse = await request(REPORT);
+  assert.equal(managerResponse.status, 200, "managers may read commission figures");
+  const managerText = await managerResponse.text();
+  assert.ok(managerText.includes("commissionComponents"));
+  assert.ok(
+    !managerText.includes("payrollSalesPct"),
+    "a manager never reads the salary-derived Payroll/Sales %",
+  );
   assert.equal(transactions, 2);
 });
 

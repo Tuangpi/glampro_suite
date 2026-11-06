@@ -163,12 +163,13 @@ payrollCloseRouter.get(
 /**
  * CP-006 report reads: management-visible frozen figures and a base-line drill-down.
  * Neither route can return salary, and both refuse a month that is not an approved
- * snapshot with the same 409 the exports use.
+ * snapshot with the same 409 the exports use. The salary-derived Payroll/Sales % is
+ * serialized for an owner reader only, matching the close table's owner-only columns.
  */
 payrollCloseRouter.get(
   "/:period/report",
   management,
-  handle((req) => readStoredPayrollReport(period(req))),
+  handle((req) => readStoredPayrollReport(period(req), req.user!.globalRole === "SUPER_ADMIN")),
 );
 payrollCloseRouter.get(
   "/:period/statements/:staffId/lines",

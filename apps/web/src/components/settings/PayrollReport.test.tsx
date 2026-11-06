@@ -13,6 +13,11 @@ function report() {
     timeZone: "Asia/Singapore",
     calculation: { version: "3", inputHash: "abc", calculatedAt: "2026-10-01T00:10:00.000Z" },
     approval: { at: "2026-10-02T02:00:00.000Z", reason: "September payroll approved" },
+    commissionColumns: [
+      { key: "svc", name: "Service commission" },
+      { key: "package_fixed", name: "Package fixed commission" },
+      { key: "flat_rules", name: "Flat rules" },
+    ],
     totals: {
       staff: 2,
       lines: 3,
@@ -26,6 +31,17 @@ function report() {
       {
         staff: { id: "staff-a", name: "Alice Tan", disabled: false },
         payroll: { commission: "590.25", incentive: "50.00", collection: "3000.0000" },
+        commissionComponents: [
+          { componentKey: "svc", componentName: "Service commission", amount: "500.00" },
+          {
+            componentKey: "package_fixed",
+            componentName: "Package fixed commission",
+            amount: "90.25",
+          },
+        ],
+        commissionAdjustments: "0.00",
+        payrollSalesPct: "92.85",
+        alert: true,
         lines: 2,
         baseAmount: "2150.5000",
         units: "3.0000",
@@ -35,6 +51,12 @@ function report() {
       {
         staff: { id: "staff-b", name: "Bob", disabled: true },
         payroll: { commission: "50.00", incentive: "0.00", collection: "0.0000" },
+        commissionComponents: [
+          { componentKey: "flat_rules", componentName: "Flat rules", amount: "40.00" },
+        ],
+        commissionAdjustments: "10.00",
+        payrollSalesPct: null,
+        alert: false,
         lines: 1,
         baseAmount: "250.2500",
         units: "3.0000",
@@ -42,6 +64,19 @@ function report() {
         commissionTypes: ["SVC"],
       },
     ],
+  };
+}
+
+/** The manager's payload: the server omits the salary-derived ratio entirely. */
+function withoutRatio(view: ReturnType<typeof report>) {
+  return {
+    ...view,
+    staff: view.staff.map((row) => {
+      const copy: Partial<typeof row> = { ...row };
+      delete copy.payrollSalesPct;
+      delete copy.alert;
+      return copy;
+    }),
   };
 }
 
@@ -119,6 +154,39 @@ it("shows the frozen period totals and per-staff breakdown", async () => {
   expect(screen.getByText("outlet-a, outlet-b")).toBeInTheDocument();
   expect(screen.getByText("Bob (departed)")).toBeInTheDocument();
   expect(screen.getByText(/never recalculated/)).toBeInTheDocument();
+});
+
+it("splits frozen commission by plan component and shows the owner's ratio alert", async () => {
+  mount();
+  await screen.findByText("Frozen staff breakdown for 2026-09");
+  for (const name of [
+    "Service commission",
+    "Package fixed commission",
+    "Flat rules",
+    "Commission adj.",
+    "Payroll / sales %",
+  ])
+    expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
+  expect(screen.getByText("500.00")).toBeInTheDocument();
+  expect(screen.getByText("90.25")).toBeInTheDocument();
+  expect(screen.getByText("40.00")).toBeInTheDocument();
+  expect(screen.getByText("10.00")).toBeInTheDocument();
+  expect(screen.getByText("92.85% above alert")).toBeInTheDocument();
+  // A component the statement never earned is a dash, not a zero: staff-a has no
+  // flat rules, staff-b has neither service nor package commission, and a month
+  // with no collection has no ratio.
+  expect(screen.getAllByText("—")).toHaveLength(4);
+});
+
+it("hides the salary-derived ratio column when the server did not send it", async () => {
+  mocks.get.mockImplementation((url: string) =>
+    Promise.resolve(url.endsWith("/lines") ? linesPage() : withoutRatio(report())),
+  );
+  mount();
+  await screen.findByText("Frozen staff breakdown for 2026-09");
+  expect(screen.getByRole("columnheader", { name: "Service commission" })).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Payroll / sales %" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/above alert/)).not.toBeInTheDocument();
 });
 
 it("drills into frozen base lines with the captured source record", async () => {

@@ -1,7 +1,7 @@
 import {
   payrollAssignmentSchema,
   payrollPlanVersionSchema,
-  payrollSettingsSchema,
+  payrollSettingsReadSchema,
   payrollBusinessDateSchema,
   resolvePayrollPlan,
 } from "@glampro_suite/shared";
@@ -61,7 +61,7 @@ export function resolvePayrollPreviewConfiguration(input: {
   const assignments = payrollAssignmentSchema.array().parse(assignment?.payload ?? []);
   const versions = input.versions.map((v) => payrollPlanVersionSchema.parse(v));
   const settings = latest("SETTINGS", "company", true);
-  const settingsEvidence = payrollSettingsSchema.safeParse(settings?.payload);
+  const settingsEvidence = payrollSettingsReadSchema.safeParse(settings?.payload);
   const rows = input.staff.flatMap((staff) => {
     const selected = resolvePayrollPlan(staff.id, input.periodKey, assignments, versions);
     if (selected?.version.planId !== input.planId) return [];

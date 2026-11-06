@@ -1,5 +1,49 @@
 # Commission & Payroll progress
 
+## November 6, 2026 — CP-008 (f1): the payroll tables show where the commission came from
+
+- **What was missing and why the review's wording needed correcting.** N11 asked for
+  "per-type columns"; the engine does not and cannot attribute commission per item type.
+  Commission is pooled per **plan component** (`PayrollStaffPeriodResult.components`), so
+  a component covering `SVC` + `PKG_SALE` + `VP_SALE` pays one amount and any per-type
+  split would be invented. The SRS itself says "commission per component" (FR-CAL-01,
+  §9 "Commission & payroll (period): per staff – plan, stage, commission per component…"),
+  so the columns are component columns and `TASKS.md` records the correction rather than
+  quietly shipping a different metric.
+- **Both tables, one definition.** `payrollCommissionColumns` (shared, next to
+  `assemblePayrollStatement`) returns the period's component columns in first-appearance
+  order, one entry per key even when a later plan version renamed it. The close view and
+  the report each ship that array plus `commissionAdjustments` per statement
+  (`payrollAdjustmentTotal` — extracted from the statement's own local helper, so the
+  displayed adjustment is the number the statement subtracted/added, not a re-derivation).
+  Row identity on screen: components + adjustments = `Commission`, and a component the
+  statement never earned reads as a dash, never as a zero.
+- **The ratio is salary-derived, so it stays owner-only.** `payrollSalesPct` is
+  (take-home + company levy) ÷ collection, i.e. it exposes salary through the back door.
+  The close view already redacted it for managers; the report now does too — the router
+  passes `owner = globalRole === "SUPER_ADMIN"` and the row only carries
+  `payrollSalesPct`/`alert` for an owner. Managers keep every component column. A null
+  ratio (nothing collected) renders a dash; above `salesAlertPct` the badge turns red
+  **and** says "above alert", because colour alone must not carry the meaning.
+- **No money changed.** No engine, loader, snapshot or export maths was touched:
+  components and adjustments are copied from the frozen statement, the reconciliation
+  identity is asserted in tests, and both exports already carried the same numbers.
+- **Verification.** shared `node --import tsx --test "src/commission-payroll/*.test.ts"`
+  → 97 tests / 6 suites, 0 failed (2 new); API payroll set
+  (`src/services/payroll*.test.ts`, `src/routes/payroll*.test.ts`) → 778 tests, 550
+  passed, 228 DB-gated skips, 0 failed; web payroll settings files → 29 tests passed
+  (`PayrollClose` 12, `PayrollReport` 6, `PayrollSettingsForms` 11). `tsc -b` for shared,
+  api and web exits 0; ESLint and Prettier clean on every touched file.
+- **Full web suite caveat, measured not assumed.** Two consecutive `vitest run`
+  invocations over all 123 files failed 25 then 8 tests, in different files
+  (`PayrollPlans` settings timeouts, Login, Products, Reports, Sale, Staff,
+  `SaleCollectionsPanel`, `CompanyAdministration`, Messaging). Every one of those files
+  passes when re-run alone, the failing sets differ between the two runs, and none of
+  them import the changed modules — 5 s test timeouts under 123-file parallelism, not a
+  regression from this change.
+- **Next.** CP-008 remaining: (f2) N4–N8/N10/N14 screens, (g) §12 reports, then (b), (e)
+  and (a), which wait on the client's §7 answers Q1, Q3, Q4 and Q9.
+
 ## November 4, 2026 — the other copy of the same debug hack: platform operator MFA restored
 
 - **The revert in the previous entry was incomplete.** It fixed

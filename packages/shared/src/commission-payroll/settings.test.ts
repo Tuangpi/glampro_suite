@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   PAYROLL_DEFAULT_SETTINGS,
   payrollSettingsWriteSchema,
+  payrollSettingsReadSchema,
   payrollAssignmentWriteSchema,
   payrollProfileWriteSchema,
   payrollStaffSettingsSchema,
@@ -24,6 +25,23 @@ test("payroll settings enforce exact strings, bounded percentages, revisions and
   ])
     assert.equal(payrollSettingsWriteSchema.safeParse({ ...input, ...patch }).success, false);
 });
+test("retired attribution switch stays readable in history but cannot be written", () => {
+  // SETTINGS events written before the v0.9 review carry `requireAttribution`, a
+  // switch no production code ever read. Reads must keep accepting them so old
+  // months stay closable; new writes must not resurrect it.
+  const legacy = { ...PAYROLL_DEFAULT_SETTINGS, requireAttribution: false };
+  assert.deepEqual(payrollSettingsReadSchema.parse(legacy), PAYROLL_DEFAULT_SETTINGS);
+  assert.equal(
+    payrollSettingsReadSchema.safeParse({ ...legacy, minimumDepositPct: "101" }).success,
+    false,
+  );
+  assert.equal(
+    payrollSettingsWriteSchema.safeParse({ ...legacy, expectedRevision: 0, reason: "Legacy" })
+      .success,
+    false,
+  );
+});
+
 test("salary profile changes require owner-service validation inputs without float money", () => {
   const input = {
     basicSalary: "2000.50",

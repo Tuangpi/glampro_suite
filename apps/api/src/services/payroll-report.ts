@@ -2,7 +2,9 @@ import { z } from "zod";
 import {
   exact,
   fixed,
+  payrollAdjustmentTotal,
   payrollBusinessDateSchema,
+  payrollCommissionColumns,
   payrollCommissionTypeSchema,
   sum,
   type PayrollBaseLine,
@@ -22,8 +24,11 @@ import {
  *
  * Every figure comes from the frozen approved snapshot through the same export model the
  * workbook and payslips use, so the report cannot drift from a downloaded file (TC-20).
+ * Commission is split by the plan component the engine actually pooled it under, plus the
+ * manual commission adjustments, so the columns reconcile to `payroll.commission`.
  * Salary fields are deliberately absent: managers may read this report, and the salary /
- * take-home boundary stays with the owner-only exports.
+ * take-home boundary stays with the owner-only exports. The salary-derived Payroll/Sales %
+ * follows that same boundary and is only serialized for an owner reader.
  */
 
 /** Filters accepted by the drill-down. Strict, so an unknown filter fails instead of being
@@ -43,6 +48,19 @@ export interface PayrollReportStaffRow {
   staff: PayrollStatement["staff"];
   /** Frozen statement money. Never salary, and never split by outlet or line type. */
   payroll: { commission: string; incentive: string; collection: string };
+  /**
+   * How the frozen commission splits across plan components, exactly as the
+   * engine pooled it. No per-type allocation is invented here.
+   */
+  commissionComponents: { componentKey: string; componentName: string; amount: string }[];
+  /** Manual commission adjustments: `payroll.commission` = components + this. */
+  commissionAdjustments: string;
+  /**
+   * Salary-derived KPI. Present only when the caller may read salary (owner), so
+   * managers keep the report's "never salary" boundary intact.
+   */
+  payrollSalesPct?: string | null;
+  alert?: boolean;
   lines: number;
   baseAmount: string;
   units: string;
@@ -70,6 +88,8 @@ export interface PayrollPeriodReport {
   endsAt: string;
   calculation: { version: string; inputHash: string; calculatedAt: string };
   approval: { at: string; reason: string };
+  /** Plan-component commission columns for this period, in first-appearance order. */
+  commissionColumns: { key: string; name: string }[];
   /** Whole-month aggregates of the frozen statements, independent of any filter. */
   totals: PayrollReportTotals;
   staff: PayrollReportStaffRow[];
@@ -80,8 +100,14 @@ const baseTotal = (lines: readonly PayrollBaseLine[], field: "baseAmount" | "uni
   fixed(sum(lines.map((line) => exact(line[field]))), 4);
 
 /** Period summary and per-staff breakdown. Unapproved months are refused by the export model. */
-export function payrollPeriodReport(state: PayrollCloseState): PayrollPeriodReport {
+export function payrollPeriodReport(state: PayrollCloseState, owner = false): PayrollPeriodReport {
   const model = frozenPayrollExportModel(state);
+  const adjustmentsByStaff = new Map(
+    (state.calculation?.statements ?? []).map((statement) => [
+      statement.staff.id,
+      statement.inputs.adjustments,
+    ]),
+  );
   const rows: PayrollReportStaffRow[] = model.staff.map((row) => {
     const dates = row.lines.map((item) => item.businessDate).sort();
     return {
@@ -91,6 +117,16 @@ export function payrollPeriodReport(state: PayrollCloseState): PayrollPeriodRepo
         incentive: row.payroll.incentive,
         collection: row.payroll.collection,
       },
+      commissionComponents: row.result.components.map((component) => ({
+        componentKey: component.componentKey,
+        componentName: component.componentName,
+        amount: component.amount,
+      })),
+      commissionAdjustments: fixed(
+        payrollAdjustmentTotal(adjustmentsByStaff.get(row.staff.id) ?? [], "COMMISSION_ADJ"),
+        2,
+      ),
+      ...(owner ? { payrollSalesPct: row.payroll.payrollSalesPct, alert: row.payroll.alert } : {}),
       lines: row.lines.length,
       baseAmount: baseTotal(row.lines, "baseAmount"),
       units: baseTotal(row.lines, "units"),
@@ -117,6 +153,7 @@ export function payrollPeriodReport(state: PayrollCloseState): PayrollPeriodRepo
       calculatedAt: model.calculation.calculatedAt,
     },
     approval: { at: model.approval.at, reason: model.approval.reason },
+    commissionColumns: payrollCommissionColumns(model.staff.map((row) => row.result)),
     totals: {
       staff: rows.length,
       lines: allLines.length,

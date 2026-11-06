@@ -227,7 +227,6 @@ it("submits structured salon settings and preserves nullable cutoff semantics", 
   await user.type(screen.getByLabelText("Minimum package deposit percentage"), "35.5");
   await user.clear(screen.getByLabelText("Refund administration fee"));
   await user.type(screen.getByLabelText("Refund administration fee"), "99.90");
-  await user.click(screen.getByLabelText("Require staff attribution"));
   await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));
   expect(save).toHaveBeenLastCalledWith({
     expectedRevision: 5,
@@ -235,7 +234,6 @@ it("submits structured salon settings and preserves nullable cutoff semantics", 
     negativeBase: "WRITE_OFF",
     minimumDepositPct: "35.5",
     refundAdminFee: "99.90",
-    requireAttribution: false,
   });
   await user.clear(screen.getByLabelText("Join-after cutoff day (blank = no cutoff)"));
   await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));

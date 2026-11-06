@@ -3,18 +3,28 @@ import { useQuery } from "@tanstack/react-query";
 import { get, getErrorMessage } from "@/lib/api";
 import Button from "@/components/ui/Button";
 import PayrollStatementLines from "./PayrollStatementLines";
+import PayrollSalesRatio from "./PayrollSalesRatio";
 
 /**
  * CP-006 period report: frozen totals plus a per-staff breakdown with drill-down.
  *
  * Shown for an approved month to the owner and to managers, because it carries commission,
  * incentives, collections and base amounts only — never salary or take-home. Every figure
- * is copied from the approved snapshot the server verifies in one transaction.
+ * is copied from the approved snapshot the server verifies in one transaction. Commission is
+ * split by the plan component the engine pooled it under, and the salary-derived Payroll/Sales
+ * % column appears only when the server sent it, which it does for an owner reader.
  */
 
 interface ReportStaffRow {
   staff: { id: string; name: string; disabled: boolean };
   payroll: { commission: string; incentive: string; collection: string };
+  /** The plan components the frozen commission was actually pooled under. */
+  commissionComponents: { componentKey: string; componentName: string; amount: string }[];
+  /** Manual commission adjustments: components + this = payroll.commission. */
+  commissionAdjustments: string;
+  /** Salary-derived KPI. Absent unless the server considered the reader an owner. */
+  payrollSalesPct?: string | null;
+  alert?: boolean;
   lines: number;
   baseAmount: string;
   units: string;
@@ -28,6 +38,7 @@ export interface PayrollReportView {
   timeZone: string;
   calculation: { version: string; inputHash: string; calculatedAt: string };
   approval: { at: string; reason: string };
+  commissionColumns: { key: string; name: string }[];
   totals: {
     staff: number;
     lines: number;
@@ -62,6 +73,9 @@ export default function PayrollReport({ period }: { period: string }) {
   });
   const data = query.data;
   const showOutlets = Boolean(data?.staff.some((row) => row.outlets.length > 0));
+  const commissionColumns = data?.commissionColumns ?? [];
+  /** The owner's response carries the salary-derived ratio; a manager's does not. */
+  const showSalesRatio = Boolean(data?.staff.some((row) => row.payrollSalesPct !== undefined));
   return (
     <section aria-label="Payroll period report" className="space-y-3">
       <h3 className="font-semibold">Period report</h3>
@@ -95,8 +109,15 @@ export default function PayrollReport({ period }: { period: string }) {
                 <tr>
                   <th>Staff</th>
                   <th>Commission</th>
+                  {/* SRS FR-CAL-01: commission per plan component, exactly as the
+                      engine pooled it, then the manual commission adjustments. */}
+                  {commissionColumns.map((column) => (
+                    <th key={column.key}>{column.name}</th>
+                  ))}
+                  <th>Commission adj.</th>
                   <th>Incentive</th>
                   <th>Collected</th>
+                  {showSalesRatio && <th>Payroll / sales %</th>}
                   <th>Base lines</th>
                   <th>Base amount (4 dp)</th>
                   {/* A frozen snapshot can still carry outlet names from before the
@@ -114,8 +135,21 @@ export default function PayrollReport({ period }: { period: string }) {
                       {row.staff.disabled ? " (departed)" : ""}
                     </td>
                     <td>{row.payroll.commission}</td>
+                    {commissionColumns.map((column) => (
+                      <td key={column.key}>
+                        {row.commissionComponents.find(
+                          (component) => component.componentKey === column.key,
+                        )?.amount ?? "—"}
+                      </td>
+                    ))}
+                    <td>{row.commissionAdjustments}</td>
                     <td>{row.payroll.incentive}</td>
                     <td>{row.payroll.collection}</td>
+                    {showSalesRatio && (
+                      <td>
+                        <PayrollSalesRatio pct={row.payrollSalesPct} alert={row.alert} />
+                      </td>
+                    )}
                     <td>{row.lines}</td>
                     <td>{row.baseAmount}</td>
                     {showOutlets && <td>{row.outlets.join(", ") || "—"}</td>}

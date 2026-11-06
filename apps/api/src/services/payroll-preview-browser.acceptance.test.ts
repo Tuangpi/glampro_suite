@@ -748,7 +748,6 @@ test(
             negativeBase: "CARRY_FORWARD",
             minimumDepositPct: "42.5",
             refundAdminFee: "77.77",
-            requireAttribution: true,
           }),
         );
         await click("Reload and discard plan draft");

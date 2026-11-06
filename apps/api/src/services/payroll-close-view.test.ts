@@ -6,6 +6,7 @@ import {
   payrollInputHash,
 } from "./payroll-close-state.js";
 import { payrollCloseView, payrollCommissionStatementView } from "./payroll-close-view.js";
+import { approvedPayrollExportState } from "./payroll-export.test-helper.js";
 
 test("close HTTP projections remove raw evidence and restrict manager/self salary fields without changing stored state", () => {
   const state = calculatePayrollClose(
@@ -65,4 +66,22 @@ test("close HTTP projections remove raw evidence and restrict manager/self salar
   assert.ok(!owner.includes("inputs"));
   assert.ok(!owner.includes("secretInventory"));
   assert.equal(payrollInputHash(state), hash);
+});
+
+test("both roles read component columns and adjustments; only an owner reads the ratio", () => {
+  const approved = approvedPayrollExportState();
+  const manager = payrollCloseView(approved, false);
+  const owner = payrollCloseView(approved, true);
+  assert.deepEqual(manager.calculation!.commissionColumns, [
+    { key: "svc", name: "Service commission" },
+    { key: "flat_rules", name: "Flat rules" },
+  ]);
+  for (const view of [manager, owner]) {
+    const serialized = JSON.stringify(view);
+    assert.ok(serialized.includes("commissionAdjustments"), "the adjustments column is not salary");
+    assert.ok(serialized.includes("Service commission"));
+  }
+  assert.ok(!JSON.stringify(manager).includes("payrollSalesPct"));
+  assert.ok(!JSON.stringify(manager).includes("basicSalary"));
+  assert.ok(JSON.stringify(owner).includes("payrollSalesPct"));
 });

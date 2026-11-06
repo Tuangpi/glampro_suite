@@ -14,6 +14,7 @@ function report() {
     timeZone: "Asia/Singapore",
     calculation: { version: "1", inputHash: "hash", calculatedAt: "2026-10-01" },
     approval: { at: "2026-10-01", reason: "Reviewed" },
+    commissionColumns: [{ key: "svc", name: "Service commission" }],
     totals: {
       staff: 1,
       lines: 1,
@@ -27,6 +28,10 @@ function report() {
       {
         staff: { id: "staff-r", name: "Rita Report", disabled: false },
         payroll: { commission: "12.30", incentive: "0.00", collection: "0.0000" },
+        commissionComponents: [
+          { componentKey: "svc", componentName: "Service commission", amount: "12.30" },
+        ],
+        commissionAdjustments: "0.00",
         lines: 1,
         baseAmount: "123.0000",
         units: "1.0000",
@@ -46,15 +51,32 @@ function state() {
     approval: null,
     payout: null,
     calculation: {
+      commissionColumns: [
+        { key: "svc", name: "Service commission" },
+        { key: "package_fixed", name: "Package fixed commission" },
+      ],
       statements: [
         {
           staff: { id: "staff", name: "Amy", disabled: true },
+          result: {
+            components: [
+              { componentKey: "svc", componentName: "Service commission", amount: "12.30" },
+              {
+                componentKey: "package_fixed",
+                componentName: "Package fixed commission",
+                amount: "4.00",
+              },
+            ],
+          },
+          commissionAdjustments: "0.00",
           payroll: {
             basicSalary: "2000.00",
-            commission: "12.30",
+            commission: "16.30",
             incentive: "0.00",
             collection: "0.0000",
-            takeHome: "2012.30",
+            takeHome: "2016.30",
+            payrollSalesPct: "92.85",
+            alert: true,
           },
         },
       ],
@@ -233,4 +255,68 @@ it("frozen exports download the approved snapshot and report the filename", asyn
     ),
   );
   expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it("shows commission per plan component, the adjustment column and the owner's ratio", async () => {
+  mount();
+  await load();
+  for (const name of [
+    "Service commission",
+    "Package fixed commission",
+    "Commission adj.",
+    "Payroll / sales %",
+  ])
+    expect(screen.getByRole("columnheader", { name })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "Commission" })).toBeInTheDocument();
+  expect(screen.getByText("12.30")).toBeInTheDocument();
+  expect(screen.getByText("4.00")).toBeInTheDocument();
+  expect(screen.getByText("16.30")).toBeInTheDocument();
+  // The adjustment column reads 0.00 for a month with no manual commission change,
+  // which is the incentive's own figure too.
+  expect(screen.getAllByText("0.00")).toHaveLength(2);
+  expect(screen.getByText("92.85% above alert")).toBeInTheDocument();
+  expect(screen.getByText(/plan components the commission was pooled under/)).toBeInTheDocument();
+});
+
+it("managers read the component columns but never the salary-derived ratio", async () => {
+  mount(false);
+  await load();
+  expect(screen.getByRole("columnheader", { name: "Service commission" })).toBeInTheDocument();
+  expect(screen.queryByRole("columnheader", { name: "Payroll / sales %" })).not.toBeInTheDocument();
+  expect(screen.queryByText(/above alert/)).not.toBeInTheDocument();
+});
+
+it("a missing component and a month with no collection read as dashes, not zeros", async () => {
+  const fixture = state();
+  const statement = fixture.calculation.statements[0];
+  mocks.get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.endsWith("/report")
+        ? report()
+        : {
+            ...fixture,
+            calculation: {
+              ...fixture.calculation,
+              statements: [
+                {
+                  ...statement,
+                  result: {
+                    components: [
+                      { componentKey: "svc", componentName: "Service commission", amount: "12.30" },
+                    ],
+                  },
+                  payroll: { ...statement.payroll, payrollSalesPct: null, alert: false },
+                },
+              ],
+            },
+          },
+    ),
+  );
+  mount();
+  await load();
+  expect(screen.getByText("12.30")).toBeInTheDocument();
+  expect(screen.getAllByText("—")).toHaveLength(2);
+  expect(
+    screen.getByRole("columnheader", { name: "Package fixed commission" }),
+  ).toBeInTheDocument();
 });

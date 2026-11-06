@@ -4,6 +4,8 @@
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
 - **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **DONE for local acceptance** as of November 4, 2026: M1 frozen exports, M2 period report/drill-down, M3 customer holding history, M4 MTD/POS progress, M5 own-data staff self-service and mounted-Chrome browser acceptance (**10/10**, twice). Not release or earnings activation; the only disclosed remainder is a human opening the workbook in a spreadsheet application and printing the payslip PDF.
+- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN** as of November 6, 2026: (c) dead `requireAttribution` switch retired and (f1) N11 on-screen component and Payroll/Sales % columns are DONE; (a), (b), (d), (e), (f2), (g) remain. Source review: `SPEC_V0_9_ALIGNMENT.md`.
+
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
 
@@ -1597,3 +1599,81 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
   Production migration/activation/deployment requires separate explicit authorization.
 - Coverage: NFR-01–NFR-07, SRS seed/migration provisions, all cross-feature
   acceptance and release gating. Historical user acceptance is not CP acceptance.
+
+## CP-008 — Spec v0.9 alignment (open)
+
+- Status: **OPEN.** Source: [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md)
+  (November 6, 2026). That review found the money aligned and the configuration/UI
+  surface incomplete. Items are ordered as the review recommends: cheap unblocked
+  fixes first, money-changing policy work last, because it waits on the client's §7
+  answers. Decision record: [DECISIONS.md](DECISIONS.md) November 6, 2026.
+- Scope warning: this section is neither release acceptance nor earnings activation.
+  Nothing here changes POS posting or the cutover guard in CP-007.
+
+### Checklist
+
+- [x] DONE — **(c) Retire the dead `requireAttribution` switch.** It was stored,
+      defaulted to true and rendered in Settings, but no production code read it; real
+      enforcement is `CommissionAttributionPolicy` (Team › Attribution). The field is
+      gone from `payrollSettingsSchema`/`payrollSettingsWriteSchema` and the form, and
+      `payrollSettingsReadSchema` accepts and drops it in historical `SETTINGS` events so
+      months that predate this change still close instead of failing with
+      `HISTORICAL_SALON_SETTINGS_UNAVAILABLE`.
+      Verified: `settings.test.ts` (legacy payload parses, write rejects),
+      `payroll-preview-inputs.test.ts`, `payroll-close-configuration.test.ts`,
+      `PayrollSettingsForms.test.tsx`, and `tsc --noEmit` for shared, api and web.
+- [ ] TODO — **(d) Gift-card commission.** `GC_SALE` exists in the payroll contract
+      (`packages/shared/src/commission-payroll/contracts.ts:26`) with no producer and no
+      rule kind (`packages/shared/src/schemas/commission.ts:3-11`). Blocked on the
+      client's gift-card answer: build the source loader plus rule kind, or hide
+      `GC_SALE` from plan components and statement labels until then. Do not let plans
+      promise a component that can never produce a line.
+- [x] DONE — **(f1) N11 on-screen columns.** Both payroll tables now carry the split the
+      engine actually pays. One column per **plan component** (`svc`, `package_fixed`,
+      `flat_rules`, …) — the review's "per-type" heading is recorded as per-component
+      because commission is pooled per component (SRS FR-CAL-01 "commission per
+      component"): a component covering several item types still pays one amount, so a
+      per-type split would be invented — plus a `Commission adj.` column, which makes the
+      row reconcile exactly: components + adjustments = `payroll.commission`. The
+      `Payroll / sales %` column shows `payrollSalesPct` and turns red with an
+      "above alert" label when the staff member's `salesAlertPct` is exceeded. That ratio
+      is salary-derived, so the API serializes it only for an owner reader and only the
+      owner's table renders it; managers keep every component column. A component a
+      statement never earned reads as a dash, never as a zero.
+      Verified: `statement.test.ts` (column order/dedup, one-kind adjustment total),
+      `payroll-report.test.ts` (component split, `components + adjustments = commission`
+      with and without a `COMMISSION_ADJ`, ratio owner-only), `payroll-close-view.test.ts`,
+      `payroll-close.http.test.ts` (owner JSON carries `payrollSalesPct`, manager JSON does
+      not), `PayrollClose.test.tsx`, `PayrollReport.test.tsx`, `tsc --noEmit` for shared,
+      api and web, eslint and prettier.
+- [ ] TODO — **(f2) Remaining N4–N8, N10, N14 screen items.** Override % and
+      effective-from on the package drawer (N4); session-value preview while adding a
+      session (N5); seller/performer chips, till default and automatic commission
+      estimates (N6/N7); active-packages panel with "Redeem 1" and expiry ordering (N8);
+      "customer signed" column (N10); gift-card and value-package labels (N14).
+- [ ] TODO — **(g) §12 reports.** Commission detail (filterable ledger plus Excel),
+      My commission (staff self-service), and package utilisation
+      (sold/redeemed/expired). Reuse the CP-006 export and own-data patterns rather than
+      new endpoints where possible.
+- [ ] TODO — **(b) Policy fields.** `period_start_day` and `clawback_days` do not
+      exist anywhere; `redemption_basis`, `foc_basis`, `clawback_mode`, `rounding` and
+      `allow_redeem_before_paid` need switches over behaviour that is currently fixed.
+      `period_start_day` is the expensive one (period key, month locking, carry, close
+      snapshots, exports). Deposit basis, GST and discount netting stay fixed per the
+      decisions record — flipping them off removes reconciliation guarantees.
+- [ ] TODO — **(e) Fixed-dollar rule amounts.** `CommissionRule` has no calc-method
+      or fixed-amount column (`apps/api/prisma/schema.prisma:1781-1799`). Adding
+      `FIXED_AMOUNT` touches every close loader, the provenance verifier and the
+      grid/API contracts; it is not a UI-only change.
+- [ ] TODO — **(a) Ledger as the source of truth.** Post a ledger line at POS for
+      every commission event and drive reports from the ledger, permanently reconciled
+      against the close. Highest cost of the set; do it only if the client insists on
+      the §5 architecture instead of the close-derived authority recorded in
+      DECISIONS.md.
+- [ ] TODO — **Client §7 answers recorded.** Q1, Q3, Q4 and Q9 gate (b), (d) and
+      (e). Record answers in [REQUIREMENTS.md](REQUIREMENTS.md) so the next review
+      checks against agreed policy rather than a spreadsheet snapshot.
+
+- Completion check: every item above either implemented with tests or explicitly
+  deferred with the client's decision recorded; `npm run verify` green; no change to
+  approved payroll, POS posting, or the cutover guard without separate authorization.

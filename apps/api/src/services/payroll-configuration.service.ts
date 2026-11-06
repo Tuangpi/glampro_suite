@@ -9,7 +9,7 @@ import {
   payrollSettingsWriteSchema,
   payrollPlanDefinitionSchema,
   payrollAssignmentSchema,
-  payrollSettingsSchema,
+  payrollSettingsReadSchema,
   payrollProfileSchema,
   payrollMonthEnd,
   payrollPlanMetadataSchema,
@@ -696,7 +696,7 @@ export async function readPayrollConfiguration(historyPage = 1) {
       })),
       settings: {
         revision: settings?.revision ?? 0,
-        ...payrollSettingsSchema.parse(settings?.payload ?? PAYROLL_DEFAULT_SETTINGS),
+        ...payrollSettingsReadSchema.parse(settings?.payload ?? PAYROLL_DEFAULT_SETTINGS),
       },
       assignments: { revision: assignments?.revision ?? 0, rows },
       staff: await Promise.all(

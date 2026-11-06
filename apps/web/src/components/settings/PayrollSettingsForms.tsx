@@ -9,7 +9,6 @@ import {
   type PayrollSettingsWrite,
 } from "@glampro_suite/shared";
 import Button from "@/components/ui/Button";
-import Checkbox from "@/components/ui/Checkbox";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 
@@ -346,14 +345,10 @@ export function PayrollSalonSettingsForm({ value, canEdit, save }: FormProps<Set
         value={fields.refundAdminFee}
         onChange={(e) => form.setFields({ ...form.fields, refundAdminFee: e.target.value })}
       />
-      <Checkbox
-        label="Require staff attribution"
-        checked={fields.requireAttribution}
-        onChange={(e) => form.setFields({ ...form.fields, requireAttribution: e.target.checked })}
-      />
       <p className="text-sm text-ink-muted">
-        Configuration only. Checkout and earnings behavior remains unchanged until controlled
-        cutover.
+        Staff attribution requirements are enforced by the Team › Attribution policy, not by a
+        switch here. Configuration only. Checkout and earnings behavior remains unchanged until
+        controlled cutover.
       </p>
     </FormFrame>
   );

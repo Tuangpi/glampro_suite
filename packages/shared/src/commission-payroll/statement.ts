@@ -1,9 +1,10 @@
 import { z } from "zod";
 import { payrollDecimalSchema } from "./contracts.js";
 import { type PayrollStaffPeriodInput } from "./period.js";
+import { type PayrollComponentResult } from "./component.js";
 import { calculateScopedPayrollStaffPeriod } from "./scoped-period.js";
 import { payrollProfileSchema } from "./settings.js";
-import { add, cmp, div, exact, fixed, mul, neg, sum, ZERO } from "./decimal.js";
+import { add, cmp, div, exact, fixed, mul, neg, sum, ZERO, type Exact } from "./decimal.js";
 
 const id = z.string().trim().min(1).max(128);
 export const payrollAdjustmentSchema = z
@@ -20,6 +21,46 @@ export const payrollAdjustmentSchema = z
       context.addIssue({ code: "custom", message: "Only commission adjustments may be negative." });
   });
 export type PayrollAdjustment = z.infer<typeof payrollAdjustmentSchema>;
+
+/**
+ * Exact sum of one adjustment kind, deliberately unrounded: the statement rounds
+ * once after adding it to commission, and the report views show the same total.
+ */
+export function payrollAdjustmentTotal(
+  adjustments: readonly PayrollAdjustment[],
+  kind: PayrollAdjustment["kind"],
+): Exact {
+  return sum(adjustments.filter((row) => row.kind === kind).map((row) => exact(row.amount)));
+}
+
+/** The identity a component keeps across statements: key plus display name. */
+export interface PayrollCommissionColumn {
+  key: string;
+  name: string;
+}
+
+/**
+ * Per-component commission columns for a period's statements.
+ *
+ * The specification's "commission per component" table (FR-CAL-01) is what the
+ * engine can actually attribute: commission is pooled per plan component, so a
+ * component that covers several item types still pays a single amount and a
+ * per-type split would be invented. Columns keep first-appearance order, list a
+ * component key once even when a later plan version renamed it, and a statement
+ * without that component renders as a dash rather than a zero.
+ */
+export function payrollCommissionColumns(
+  results: readonly {
+    components: readonly Pick<PayrollComponentResult, "componentKey" | "componentName">[];
+  }[],
+): PayrollCommissionColumn[] {
+  const columns = new Map<string, string>();
+  for (const result of results)
+    for (const component of result.components)
+      if (!columns.has(component.componentKey))
+        columns.set(component.componentKey, component.componentName);
+  return [...columns].map(([key, name]) => ({ key, name }));
+}
 
 /** Complete calculation inputs are retained, not re-resolved when an approved statement is read. */
 export interface PayrollStatementInput {
@@ -46,8 +87,7 @@ export function assemblePayrollStatement(raw: PayrollStatementInput) {
   if (adjustments.some((row) => row.staffId !== staff.id))
     throw new Error("Statement contains another staff member's adjustment.");
   const result = calculateScopedPayrollStaffPeriod(raw.calculation);
-  const total = (kind: PayrollAdjustment["kind"]) =>
-    sum(adjustments.filter((row) => row.kind === kind).map((row) => exact(row.amount)));
+  const total = (kind: PayrollAdjustment["kind"]) => payrollAdjustmentTotal(adjustments, kind);
   // Round salary components independently, so displayed statement lines reconcile to the cent.
   const basicSalary = fixed(exact(profile.basicSalary), 2);
   const fixedOvertime = fixed(exact(profile.fixedOvertime), 2);
