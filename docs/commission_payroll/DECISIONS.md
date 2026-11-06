@@ -31,6 +31,13 @@ tracked as CP-008 in [TASKS.md](TASKS.md).
   `STORED_CREDIT_SALE` / `STORED_CREDIT_SPEND` in rules and `VP_SALE` / `VP_SPEND`
   in payroll. Same meaning, different labels; the mismatch costs review time until
   the screens adopt one.
+- **`GC_SALE` is vocabulary, not a promise.** The payroll commission types keep the
+  gift-card value, but the plan editor stopped offering it: no loader writes a
+  `GC_SALE` base line, so a component counting it would pay nothing while telling
+  the salon it would. The value cannot simply be deleted — the definition schema is
+  strict and published versions may already hold it, so removal would fail a
+  legitimate close in order to tidy a form. For the same reason the statement's line
+  filter keeps the type: it reports what was posted, not what might be.
 
 ## November 4, 2026 — CP-007 cutover is prospective, attested and reversible
 

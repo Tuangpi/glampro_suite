@@ -34,6 +34,26 @@ import {
   PayrollPlanMetadataForm,
 } from "./PayrollSettingsForms";
 
+/**
+ * The commission types a plan component may count. `GC_SALE` is deliberately absent:
+ * no producer writes a gift-card sale base line, so offering it would promise
+ * commission on revenue the close can never see (CP-008 (d)).
+ *
+ * Only this picker is narrowed. `payrollCommissionTypeSchema` keeps the full
+ * vocabulary, because it is strict and already-published definitions may hold
+ * `GC_SALE` — dropping the value there would make a saved definition unparseable
+ * and block a close. A component that counts it keeps counting it untouched.
+ */
+const COMPONENT_COMMISSION_TYPES: readonly PayrollComponent["commissionTypes"][number][] = [
+  "SVC",
+  "PRD",
+  "PKG_SALE",
+  "PKG_RED",
+  "FOC",
+  "VP_SALE",
+  "VP_SPEND",
+];
+
 interface Version {
   id: string;
   versionNo: number;
@@ -415,24 +435,15 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
                   onChange={(e) => editComponent({ name: e.target.value })}
                 />
                 <div className="flex flex-wrap gap-3" aria-label="Sales that count">
-                  {[
-                    "SVC",
-                    "PRD",
-                    "PKG_SALE",
-                    "PKG_RED",
-                    "FOC",
-                    "VP_SALE",
-                    "VP_SPEND",
-                    "GC_SALE",
-                  ].map((type) => (
+                  {COMPONENT_COMMISSION_TYPES.map((type) => (
                     <label key={type}>
                       <input
                         type="checkbox"
-                        checked={component.commissionTypes.includes(type as never)}
+                        checked={component.commissionTypes.includes(type)}
                         onChange={(e) =>
                           editComponent({
                             commissionTypes: e.target.checked
-                              ? [...component.commissionTypes, type as never]
+                              ? [...component.commissionTypes, type]
                               : component.commissionTypes.filter((v) => v !== type),
                           })
                         }

@@ -4,7 +4,7 @@
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
 - **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **DONE for local acceptance** as of November 4, 2026: M1 frozen exports, M2 period report/drill-down, M3 customer holding history, M4 MTD/POS progress, M5 own-data staff self-service and mounted-Chrome browser acceptance (**10/10**, twice). Not release or earnings activation; the only disclosed remainder is a human opening the workbook in a spreadsheet application and printing the payslip PDF.
-- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN** as of November 6, 2026: (c) dead `requireAttribution` switch retired and (f1) N11 on-screen component and Payroll/Sales % columns are DONE; (a), (b), (d), (e), (f2), (g) remain. Source review: `SPEC_V0_9_ALIGNMENT.md`.
+- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN** as of November 6, 2026: (c) dead `requireAttribution` switch retired, (f1) N11 on-screen component and Payroll/Sales % columns, and (d)'s hide-half (plan components no longer offer gift-card commission) are DONE; (a), (b), (e), (f2), (g) and (d)'s build-half remain. Source review: `SPEC_V0_9_ALIGNMENT.md`.
 
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
@@ -1622,12 +1622,27 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       Verified: `settings.test.ts` (legacy payload parses, write rejects),
       `payroll-preview-inputs.test.ts`, `payroll-close-configuration.test.ts`,
       `PayrollSettingsForms.test.tsx`, and `tsc --noEmit` for shared, api and web.
-- [ ] TODO — **(d) Gift-card commission.** `GC_SALE` exists in the payroll contract
-      (`packages/shared/src/commission-payroll/contracts.ts:26`) with no producer and no
-      rule kind (`packages/shared/src/schemas/commission.ts:3-11`). Blocked on the
-      client's gift-card answer: build the source loader plus rule kind, or hide
-      `GC_SALE` from plan components and statement labels until then. Do not let plans
-      promise a component that can never produce a line.
+- [x] DONE (hide-half) — **(d) Gift-card commission.** `GC_SALE` existed in the payroll
+      contract (`packages/shared/src/commission-payroll/contracts.ts:26`) with no producer
+      and no rule kind (`packages/shared/src/schemas/commission.ts:3-11`). The plan editor
+      no longer offers it: `PayrollPlans.tsx` holds the seven types that do have producers
+      in a module-level `COMPONENT_COMMISSION_TYPES`, so a plan can no longer promise a
+      component that can never produce a line. The build-half — source loader plus rule
+      kind — stays blocked on the client's gift-card answer (Q9).
+      **The enum member stays on purpose.** `payrollCommissionTypeSchema` is strict, and a
+      definition saved while the picker still offered `GC_SALE` has to keep parsing at
+      close; deleting the value would turn a form tidy-up into a failed month end. Nothing
+      rewrites stored definitions either: `editComponent` patches only the field being
+      edited, so a component that already counts `GC_SALE` keeps counting it.
+      **Deliberate deviation from the review's wording:** the `GC_SALE` entry in
+      `PayrollStatementLines.tsx:23` is left alone. That filter reads stored base lines and
+      promises nothing about future revenue; narrowing it would hide audited rows from the
+      drill-down whose whole job is to show them. Labels stay raw codes — friendly
+      gift-card names are (f2)/N14.
+      Verified: `PayrollPlans.test.tsx` — the `GC_SALE` checkbox is absent, the seven
+      producing types are present, and a stored `["SVC", "GC_SALE"]` survives an edit to an
+      unrelated component field into the draft save; `tsc -p tsconfig.app.json --noEmit`
+      for web, `tsc --noEmit` for shared, eslint and prettier.
 - [x] DONE — **(f1) N11 on-screen columns.** Both payroll tables now carry the split the
       engine actually pays. One column per **plan component** (`svc`, `package_fixed`,
       `flat_rules`, …) — the review's "per-type" heading is recorded as per-component

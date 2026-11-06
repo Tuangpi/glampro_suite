@@ -23,6 +23,9 @@ export const payrollCommissionTypeSchema = z.enum([
   "FOC",
   "VP_SALE",
   "VP_SPEND",
+  // Vocabulary, not a promise: nothing writes a gift-card sale base line yet, so the
+  // plan editor stopped offering it (CP-008 (d)). The value stays because this schema
+  // is strict and a definition saved while it was offered must still parse at close.
   "GC_SALE",
 ]);
 export const payrollCalcMethodSchema = z.enum([

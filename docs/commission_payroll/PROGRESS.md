@@ -1,5 +1,37 @@
 # Commission & Payroll progress
 
+## November 6, 2026 — CP-008 (d), hide-half: a plan can no longer promise gift-card commission
+
+- **The defect was money, not tidiness.** The plan component picker offered `GC_SALE`
+  next to `SVC` and `PRD`, but nothing produces a gift-card sale base line: no close or
+  preview loader emits one and `commission.ts` has no rule kind for it. A component
+  counting `GC_SALE` therefore pays exactly zero, while the picker, the plan draft and
+  the published version all say it pays — an owner could promise staff commission the
+  close is structurally unable to pay and only find out at month end. The option is
+  gone: `PayrollPlans.tsx` keeps the seven types that do have producers in a
+  module-level `COMPONENT_COMMISSION_TYPES`.
+- **The picker narrows; the contract does not.** `payrollCommissionTypeSchema` keeps
+  `GC_SALE`. That schema is strict, so deleting the member would stop every definition
+  saved while the option was offered from parsing — a form tidy-up that fails a
+  legitimate close. Stored definitions are also never rewritten: `editComponent` patches
+  only the field being edited, so a component that already counts `GC_SALE` keeps
+  counting it, and a test pins that round trip through an unrelated name edit into the
+  draft save. No engine, loader, snapshot or export maths changed, so no money moved.
+- **One deliberate deviation from the review's wording.** (d) also proposed hiding
+  `GC_SALE` from "statement labels". The type list in `PayrollStatementLines.tsx` is
+  untouched: that filter reads stored base lines and promises nothing about future
+  revenue, and narrowing it would hide audited rows from the drill-down whose whole
+  purpose is to show them. Friendly gift-card names remain (f2)/N14 work.
+- **Verification.** `PayrollPlans.test.tsx` 27 tests pass in isolation (2 new: the
+  checkbox is absent while the seven producing types remain, and a stored
+  `["SVC", "GC_SALE"]` survives an edit to another component field).
+  `tsc -p tsconfig.app.json --noEmit` (web) and `tsc -p tsconfig.json --noEmit`
+  (shared) exit 0 after `build:shared`; ESLint and Prettier clean on every touched file.
+  Full-suite `vitest run` keeps the caveat recorded in the (f1) entry below: this file
+  times out under 123-file parallelism and passes alone.
+- **Next.** (d)'s build-half — a gift-card source loader plus rule kind — still waits on
+  the client's Q9 answer.
+
 ## November 6, 2026 — CP-008 (f1): the payroll tables show where the commission came from
 
 - **What was missing and why the review's wording needed correcting.** N11 asked for
@@ -41,8 +73,9 @@
   passes when re-run alone, the failing sets differ between the two runs, and none of
   them import the changed modules — 5 s test timeouts under 123-file parallelism, not a
   regression from this change.
-- **Next.** CP-008 remaining: (f2) N4–N8/N10/N14 screens, (g) §12 reports, then (b), (e)
-  and (a), which wait on the client's §7 answers Q1, Q3, Q4 and Q9.
+- **Next.** CP-008 remaining: (d)'s build-half (a gift-card source loader and rule kind,
+  still waiting on Q9), (f2) N4–N8/N10/N14 screens, (g) §12 reports, then (b), (e) and
+  (a), which wait on the client's §7 answers Q1, Q3, Q4 and Q9.
 
 ## November 4, 2026 — the other copy of the same debug hack: platform operator MFA restored
 

@@ -523,3 +523,43 @@ it("renders a salon with no plans yet instead of reading a definition off a null
   expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
   expect(screen.getByText(/without a plan \(flat fallback\)/)).toBeInTheDocument();
 });
+
+it("stops offering gift-card commission that nothing can produce", async () => {
+  // CP-008 (d): no loader writes a GC_SALE base line, so a component that counted it
+  // would promise commission on revenue the close can never see. The picker narrows;
+  // the contract keeps the value (see the round-trip test below).
+  mount();
+  await screen.findByLabelText("Component name");
+  expect(screen.queryByRole("checkbox", { name: "GC_SALE" })).not.toBeInTheDocument();
+  // The seven types that do have producers remain, so this is a narrowing, not a purge.
+  for (const type of ["SVC", "PRD", "PKG_SALE", "PKG_RED", "FOC", "VP_SALE", "VP_SPEND"])
+    expect(screen.getByRole("checkbox", { name: type })).toBeInTheDocument();
+});
+
+it("leaves a stored gift-card rule alone when another field of its component changes", async () => {
+  const data = configuration();
+  const stored = data.plans[0]!.versions[0]!.definition.components[0]!;
+  // A definition saved while the picker still offered GC_SALE must survive an edit to
+  // an unrelated field: the schema is strict, so unlinking the checkbox and the value
+  // would strand that definition rather than fix it.
+  stored.commissionTypes = ["SVC", "GC_SALE"];
+  mocks.get.mockResolvedValue(data);
+  mount();
+  const user = userEvent.setup();
+  await screen.findByLabelText("Component name");
+  await user.type(screen.getByLabelText("Component name"), " revised");
+  await user.type(screen.getByLabelText("Plan change reason"), "Rename component");
+  await user.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/payroll-configuration/plans/hair/draft",
+      expect.objectContaining({
+        definition: expect.objectContaining({
+          components: expect.arrayContaining([
+            expect.objectContaining({ commissionTypes: ["SVC", "GC_SALE"] }),
+          ]),
+        }),
+      }),
+    ),
+  );
+});
