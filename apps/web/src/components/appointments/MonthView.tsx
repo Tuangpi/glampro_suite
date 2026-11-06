@@ -98,18 +98,8 @@ export default function MonthView({
   const cells = monthGridDays(salonDay);
   const byDay = bookingsOnDays(appointments, cells, timeZone);
 
-  if (appointments.length === 0) {
-    return (
-      <div className="p-5">
-        <EmptyState
-          title="Nothing booked that month"
-          description="Move the month, or book the first appointment and it will appear here."
-          icon={<Calendar />}
-        />
-      </div>
-    );
-  }
-
+  // A clear month still draws its dates: the grid is the month itself, and a
+  // card in its place would hide where the empty days are.
   return (
     <div className="rounded-card overflow-hidden border border-line bg-surface">
       {/* Weekday heads, Monday first — the same first day `monthGridDays` pads to. */}

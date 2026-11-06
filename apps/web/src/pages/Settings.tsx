@@ -10,14 +10,16 @@
  *   PATCH contract is `.strict()` so a field smuggled in is a 422, not a silent
  *   write (AGENTS.md: nothing that belongs to the platform console is editable
  *   here).
- * - **The team summary reads `GET /api/staff`** — the same endpoint the staff
- *   screen reads. A second "summary" endpoint could disagree with the team
- *   page, and one question gets one answer (ADR 0010's shape).
+ *
+ * The staff roster is deliberately absent from this screen: the Staff category
+ * repeats the `/staff` table and adds nothing the staff page does not already
+ * answer, so Settings stays about configuration and commission defaults.
  */
 import { useState } from "react";
 import PrivacyNoticeCard from "@/components/settings/PrivacyNoticeCard";
 import StaffSecurityPolicyCard from "@/components/settings/StaffSecurityPolicyCard";
 import MessagingCard from "@/components/settings/MessagingCard";
+import SalonLogoCard from "@/components/settings/SalonLogoCard";
 import CommissionRules from "@/components/settings/CommissionRules";
 import MyEarnings from "@/components/settings/MyEarnings";
 import PayrollPlans from "@/components/settings/PayrollPlans";
@@ -26,16 +28,12 @@ import PayrollWorkspace from "@/components/settings/PayrollWorkspace";
 import CommissionMatrix from "@/components/settings/CommissionMatrix";
 import CommissionAttributionPolicy from "@/components/settings/CommissionAttributionPolicy";
 
-import { Link, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
+import { OUTLETS_UI_ENABLED } from "@/constants/outlets";
 import Outlets from "@/pages/Outlets";
 
-import type {
-  ModuleSummary,
-  StaffSummary,
-  UpdateSalonOperatingHoursInput,
-} from "@glampro_suite/shared";
+import type { ModuleSummary, UpdateSalonOperatingHoursInput } from "@glampro_suite/shared";
 
-import { Briefcase, Settings as SettingsIcon } from "@/components/icons";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
@@ -43,8 +41,8 @@ import Checkbox from "@/components/ui/Checkbox";
 import Input from "@/components/ui/Input";
 import Skeleton from "@/components/ui/Skeleton";
 import Table, { type TableColumn } from "@/components/ui/Table";
+import Tabs from "@/components/ui/Tabs";
 import { showToast } from "@/components/ui/toast-store";
-import { ROLE_BADGE, ROLE_LABELS } from "@/constants/staff";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useModules,
@@ -53,13 +51,12 @@ import {
   useUpdateSalonOperatingHours,
   useUpdateSalonProfile,
 } from "@/hooks/useSettings";
-import { useStaffList } from "@/hooks/useStaff";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
 import TwoFactorCard from "@/components/TwoFactorCard";
 
-const SETTINGS_SECTIONS = [
+const ALL_SETTINGS_SECTIONS = [
   { id: "salon", label: "Salon details", description: "Business details, tax and preferences." },
   {
     id: "outlets",
@@ -74,7 +71,7 @@ const SETTINGS_SECTIONS = [
   {
     id: "team",
     label: "Team & commissions",
-    description: "Your team and company commission defaults.",
+    description: "Staff rates, pay plans and commission rules.",
   },
   {
     id: "payroll",
@@ -89,7 +86,7 @@ const SETTINGS_SECTIONS = [
   {
     id: "messages",
     label: "Customer messages",
-    description: "WhatsApp, SMS and appointment reminders.",
+    description: "Channels, timing and what was delivered.",
   },
   {
     id: "privacy",
@@ -103,7 +100,20 @@ const SETTINGS_SECTIONS = [
   },
 ] as const;
 
-type SettingsSection = (typeof SETTINGS_SECTIONS)[number]["id"];
+/**
+ * Outlets are parked (`OUTLETS_UI_ENABLED`), so the category is filtered out of
+ * the visible list rather than deleted from it: the render guard below and the
+ * `SettingsSection` union still describe the whole screen for the day it returns.
+ *
+ * The filter is what keeps a stale `/settings?section=outlets` link harmless —
+ * `activeSection` resolves against this visible list, so a category that is not
+ * offered falls back to Salon details exactly like any unknown section.
+ */
+const SETTINGS_SECTIONS = ALL_SETTINGS_SECTIONS.filter(
+  (section) => OUTLETS_UI_ENABLED || section.id !== "outlets",
+);
+
+type SettingsSection = (typeof ALL_SETTINGS_SECTIONS)[number]["id"];
 
 export default function Settings() {
   const { isReadOnly, user } = useAuth();
@@ -169,7 +179,8 @@ export default function Settings() {
             ))}
           </nav>
           <p className="mt-4 text-xs text-ink-muted">
-            Drafts stay here when you switch categories. Save each form before leaving Settings.
+            Drafts stay here when you switch categories or tabs. Save each form before leaving
+            Settings.
           </p>
         </aside>
         <div className="min-w-0">
@@ -191,8 +202,9 @@ export default function Settings() {
                     </h3>
                     <p className="mt-1 text-sm text-ink-muted">{section.description}</p>
                   </header>
+                  {section.id === "salon" && <SalonLogoCard canEdit={canEdit} />}
                   {section.id === "salon" && <ProfileCard canEdit={canEdit} />}
-                  {section.id === "outlets" && <Outlets />}
+                  {OUTLETS_UI_ENABLED && section.id === "outlets" && <Outlets />}
                   {section.id === "booking" && <OperatingHoursCard canEdit={canEdit} />}
                   {section.id === "team" && <TeamSettings canEdit={canEdit} />}
                   {section.id === "payroll" && <PayrollWorkspace />}
@@ -225,27 +237,74 @@ function FeatureSettings() {
   );
 }
 
+/**
+ * Team & commissions — five separate jobs, so they are five tabs rather than
+ * five stacked panels: rates per person, company overrides, pay plans, the
+ * month so far, and what a sale must record. The old single scroll put three
+ * dense tables and four "Reload" buttons on one page, and the reader had to
+ * find the one they came for.
+ *
+ * The URL owns the tab (`?team=`) the way it owns `?section=`, so a link can
+ * open a colleague on the exact panel. `keepMounted` keeps the panels alive
+ * once rendered: a half-edited matrix or plan draft survives a look at another
+ * tab, which is the same promise this screen makes for category switching.
+ *
+ * The staff roster is not here. `/staff` owns that list; this category is
+ * configuration only.
+ */
+const TEAM_TABS = [
+  { id: "rates", label: "Staff rates" },
+  { id: "rules", label: "Company rules" },
+  { id: "plans", label: "Pay plans" },
+  { id: "progress", label: "This month" },
+  { id: "attribution", label: "Attribution" },
+] as const;
+
+type TeamTab = (typeof TEAM_TABS)[number]["id"];
+
 function TeamSettings({ canEdit }: { canEdit: boolean }) {
   const { user } = useAuth();
-  const team = useStaffList({ page: 1, pageSize: 50, status: "active" });
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("team");
+  const activeTab: TeamTab = TEAM_TABS.find((tab) => tab.id === requested)?.id ?? "rates";
+  // Panels mount on first visit and stay mounted, so opening the category loads
+  // one panel rather than five, and a visited draft is never thrown away.
+  const [visited, setVisited] = useState<TeamTab[]>([activeTab]);
+
+  function selectTab(tab: TeamTab) {
+    setVisited((current) => (current.includes(tab) ? current : [...current, tab]));
+    setParams(
+      (current) => {
+        const next = new URLSearchParams(current);
+        next.set("team", tab);
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  const panels: Record<TeamTab, React.ReactNode> = {
+    rates: visited.includes("rates") ? <CommissionMatrix canEdit={canEdit} /> : null,
+    rules: visited.includes("rules") ? <CommissionRules canEdit={canEdit} /> : null,
+    plans: visited.includes("plans") ? (
+      <PayrollPlans canEdit={canEdit && user?.globalRole === "SUPER_ADMIN"} />
+    ) : null,
+    progress: visited.includes("progress") ? <PayrollProgress /> : null,
+    attribution: visited.includes("attribution") ? (
+      <CommissionAttributionPolicy canEdit={canEdit} />
+    ) : null,
+  };
+
+  if (user?.globalRole !== "SUPER_ADMIN" && user?.globalRole !== "MANAGER") return null;
+
   return (
-    <>
-      <TeamCard
-        rows={team.data?.data ?? []}
-        total={team.data?.total ?? 0}
-        isPending={team.isPending}
-        isError={team.isError}
-      />
-      {(user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER") && (
-        <>
-          <CommissionAttributionPolicy canEdit={canEdit} />
-          <PayrollPlans canEdit={canEdit && user?.globalRole === "SUPER_ADMIN"} />
-          <PayrollProgress />
-          <CommissionMatrix canEdit={canEdit} />
-          <CommissionRules canEdit={canEdit} />
-        </>
-      )}
-    </>
+    <Tabs
+      label="Team and commissions sections"
+      activeId={activeTab}
+      onChange={(id) => selectTab(id as TeamTab)}
+      keepMounted
+      items={TEAM_TABS.map((tab) => ({ ...tab, content: panels[tab.id] }))}
+    />
   );
 }
 
@@ -499,88 +558,6 @@ function ModulesCard({
           rows={modules ?? []}
           rowKey={(row) => row.code}
           className="rounded-none border-0"
-        />
-      )}
-    </Card>
-  );
-}
-
-/** Staff and roles — the same rows the staff screen lists, summarised here. */
-function TeamCard({
-  rows,
-  total,
-  isPending,
-  isError,
-}: {
-  rows: StaffSummary[];
-  total: number;
-  isPending: boolean;
-  isError: boolean;
-}) {
-  const columns: TableColumn<StaffSummary>[] = [
-    {
-      key: "name",
-      header: "Name",
-      cell: (row) => (
-        <div className="min-w-0">
-          <p className="truncate font-bold text-ink">{row.name}</p>
-          <p className="truncate text-xs text-ink-muted">{row.email}</p>
-        </div>
-      ),
-    },
-    {
-      key: "role",
-      header: "Role",
-      cell: (row) => (
-        <Badge variant={ROLE_BADGE[row.globalRole]}>{ROLE_LABELS[row.globalRole]}</Badge>
-      ),
-    },
-    { key: "position", header: "Position", cell: (row) => row.position ?? "—" },
-  ];
-
-  return (
-    <Card
-      title="Staff and roles"
-      description={
-        isPending
-          ? "Loading the team…"
-          : `${total} active ${total === 1 ? "account" : "accounts"} in this salon.`
-      }
-      actions={
-        // A link, not a `Button`: it navigates, and the rail's own styles are
-        // what make it look like one — a button that pretends to be a link is
-        // the wrong element for Enter and middle-click alike.
-        <Link
-          to="/staff"
-          className="inline-flex h-control items-center gap-1.5 rounded-md border border-line px-4 text-sm font-medium text-ink-body transition hover:bg-surface-muted"
-        >
-          <Briefcase aria-hidden />
-          Manage staff
-        </Link>
-      }
-    >
-      {isPending ? (
-        <div className="flex flex-col gap-3">
-          <Skeleton className="h-9" />
-          <Skeleton className="h-9" />
-        </div>
-      ) : isError ? (
-        <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
-          The team could not be loaded.
-        </p>
-      ) : (
-        <Table
-          caption="Active staff and their roles"
-          columns={columns}
-          rows={rows}
-          rowKey={(row) => row.id}
-          className="rounded-none border-0"
-          empty={
-            <p className="px-5 py-6 text-sm text-ink-muted">
-              <SettingsIcon aria-hidden className="mr-1.5 inline" />
-              No staff accounts yet.
-            </p>
-          }
         />
       )}
     </Card>

@@ -173,8 +173,43 @@ const escape = (value: unknown) =>
     /[&<>"']/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
   );
-const page = (title: string, body: string) =>
-  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${escape(title)}</title></head><body><main><h1>${escape(title)}</h1>${body}</main></body></html>`;
+
+/** Up to two initials — the same fallback the web app's `SalonMark` draws. */
+const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]!.toUpperCase())
+    .join("") || "S";
+
+/**
+ * The stylesheet every public page shares.
+ *
+ * Inline because these pages have no build step and no second request to spend: a
+ * customer may be reading a receipt link once, on a phone, over a weak connection.
+ * Templates stay data-only and every interpolation is escaped, so the only thing a
+ * `style-src 'unsafe-inline'` can be made to do here is restyle the page.
+ */
+const PAGE_CSS = [
+  "body{margin:0;background:#f8fafc;color:#111827;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:15px;line-height:1.5}",
+  "main{max-width:32rem;margin:0 auto;padding:2rem 1.25rem;background:#fff;min-height:100vh}",
+  "h1{font-size:1.125rem;margin:0 0 .25rem}",
+  ".mark{display:block;width:32px;height:32px;border-radius:8px;margin:0 0 .75rem;object-fit:contain}",
+  ".initials{display:flex;align-items:center;justify-content:center;background:#111827;color:#fff;font-size:.8125rem;font-weight:600}",
+  ".salon{margin:0 0 1rem;color:#374151;font-size:.875rem}",
+  "ul{padding-left:1.25rem;margin:0 0 1rem}",
+  "li{margin:.25rem 0}",
+  "table{width:100%;border-collapse:collapse;margin:0 0 1rem}",
+  "td{padding:.1875rem 0}",
+  "td:last-child{text-align:right}",
+  "tr.total td{font-weight:700;border-top:1px solid #e5e7eb;padding-top:.5rem}",
+  "p{margin:.5rem 0}",
+  "button{font:inherit;padding:.5rem .875rem;border-radius:8px;border:1px solid #111827;background:#111827;color:#fff;cursor:pointer}",
+].join("");
+
+const page = (title: string, body: string, mark = "") =>
+  `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${escape(title)}</title><style>${PAGE_CSS}</style></head><body><main>${mark}<h1>${escape(title)}</h1>${body}</main></body></html>`;
 export const publicMessagingRouter = Router();
 publicMessagingRouter.use(
   rateLimit({ windowMs: 60000, limit: 60, standardHeaders: "draft-8", legacyHeaders: false }),
@@ -185,7 +220,11 @@ publicMessagingRouter.use((_req, res, next) => {
     "Referrer-Policy": "no-referrer",
     "X-Robots-Tag": "noindex, nofollow",
     "Content-Security-Policy":
-      "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      // `img-src 'self'` is the salon's logo — same origin, and the only image a
+      // public page ever draws. `style-src 'unsafe-inline'` is the page's own
+      // stylesheet and nothing else: scripts stay refused by `default-src 'none'`, so
+      // an injected style can restyle the page and cannot read or send anything.
+      "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
   });
   next();
 });
@@ -229,9 +268,39 @@ publicMessagingRouter.get(
         new Intl.NumberFormat(salon.locale, { style: "currency", currency: "SGD" }).format(
           Number(v),
         );
+      // Only a sale that carried tax is a tax invoice, so the number travels with it.
+      const gst = Number(sale.taxAmount) > 0 ? sale.gstRegistrationNumber : null;
+      const row = (label: string, value: string) =>
+        `<tr><td>${escape(label)}</td><td>${escape(value)}</td></tr>`;
+      const totalRow = (label: string, value: string) =>
+        `<tr class="total"><td>${escape(label)}</td><td>${escape(value)}</td></tr>`;
+      // The mark is the salon's own image when it has one, and its initials otherwise.
+      const mark = salon.logoUrl
+        ? `<img class="mark" src="${escape(salon.logoUrl)}" alt="${escape(salon.name)}" width="32" height="32">`
+        : `<span class="mark initials" aria-hidden="true">${escape(initialsOf(salon.name))}</span>`;
+      const when = new Intl.DateTimeFormat(salon.locale, {
+        timeZone: salon.timeZone,
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(sale.soldAt));
       return page(
         `${salon.name} — Receipt #${sale.receiptNumber ?? ""}`,
-        `${sale.status === "VOID" ? "<p>VOIDED RECEIPT</p>" : ""}${sale.refundedAt ? "<p>REFUND RECORDED</p>" : ""}<p>${escape(new Intl.DateTimeFormat(salon.locale, { timeZone: salon.timeZone, dateStyle: "medium", timeStyle: "short" }).format(new Date(sale.soldAt)))}</p>${sale.gstRegistrationNumber ? `<p>GST Reg No: ${escape(sale.gstRegistrationNumber)}</p>` : ""}<ul>${sale.lines.map((l) => `<li>${l.quantity} × ${escape(l.itemName)} — ${escape(money(l.netLineTotal))}</li>`).join("")}</ul><p>Discount: ${escape(money(sale.discountAmount))}</p><p>Voucher discount: ${escape(money(sale.voucherDiscountAmount))}</p><p>Includes GST (${escape(sale.taxRate)}%): ${escape(money(sale.taxAmount))}</p><p>Total: ${escape(money(sale.totalAmount))}</p><p>Paid: ${escape(money(sale.paidAmount))}</p><p>Outstanding: ${escape(money(sale.outstandingAmount))}</p>${sale.refundAmount ? `<p>Refund: ${escape(money(sale.refundAmount))}</p>` : ""}`,
+        `${sale.status === "VOID" ? "<p><strong>VOIDED RECEIPT</strong></p>" : ""}${sale.refundedAt ? "<p><strong>REFUND RECORDED</strong></p>" : ""}<p class="salon">${escape(when)}${gst ? ` · GST Reg No: ${escape(gst)}` : ""}</p><ul>${sale.lines.map((l) => `<li>${l.quantity} × ${escape(l.itemName)} — ${escape(money(l.netLineTotal))}</li>`).join("")}</ul><table>${[
+          Number(sale.discountAmount) > 0 ? row("Discount", money(sale.discountAmount)) : "",
+          Number(sale.voucherDiscountAmount) > 0
+            ? row("Voucher discount", money(sale.voucherDiscountAmount))
+            : "",
+          Number(sale.taxAmount) > 0
+            ? row(`Includes GST (${Number(sale.taxRate)}%)`, money(sale.taxAmount))
+            : "",
+          totalRow("Total", money(sale.totalAmount)),
+          row("Paid", money(sale.paidAmount)),
+          Number(sale.outstandingAmount) > 0
+            ? totalRow("Outstanding", money(sale.outstandingAmount))
+            : "",
+          sale.refundAmount ? row("Refund", money(sale.refundAmount)) : "",
+        ].join("")}</table>`,
+        mark,
       );
     });
     res.type("html").send(html);

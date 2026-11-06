@@ -10,17 +10,26 @@ import { createSalonFormatters, DEFAULT_SALON_FORMATTING } from "@/lib/utils";
  * calendar, report and dashboard code can read the timezone without reaching for
  * a second context. Defaults are the standalone fallback, used by public routes
  * and by tests that render outside the provider.
+ *
+ * The salon's name and logo ride along for the same reason the timezone does:
+ * a receipt header draws all three, and a second fetch of `GET /settings/profile`
+ * on the till screen would be a second answer to one question.
  */
 const DEFAULT_FORMATTING_VALUE = {
   ...createSalonFormatters(DEFAULT_SALON_FORMATTING),
   timeZone: DEFAULT_SALON_FORMATTING.timeZone,
   locale: DEFAULT_SALON_FORMATTING.locale,
+  /** Empty outside the provider, which draws no salon block rather than a wrong one. */
+  salonName: "",
+  salonLogoUrl: null as string | null,
 };
 
 const SalonFormattingContext = createContext<
   ReturnType<typeof createSalonFormatters> & {
     timeZone: string;
     locale: string;
+    salonName: string;
+    salonLogoUrl: string | null;
   }
 >(DEFAULT_FORMATTING_VALUE);
 
@@ -46,10 +55,12 @@ function AuthenticatedFormatting({
   const profile = useSalonProfile(tenantId);
   const locale = profile.data?.locale ?? DEFAULT_SALON_FORMATTING.locale;
   const timeZone = profile.data?.timeZone ?? DEFAULT_SALON_FORMATTING.timeZone;
+  const salonName = profile.data?.name ?? "";
+  const salonLogoUrl = profile.data?.logoUrl ?? null;
   const formatters = useMemo(() => createSalonFormatters({ locale, timeZone }), [locale, timeZone]);
   const value = useMemo(
-    () => ({ ...formatters, timeZone, locale }),
-    [formatters, timeZone, locale],
+    () => ({ ...formatters, timeZone, locale, salonName, salonLogoUrl }),
+    [formatters, timeZone, locale, salonName, salonLogoUrl],
   );
 
   if (!profile.data && profile.isPending) return <PageLoading label="Loading salon preferences…" />;

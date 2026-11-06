@@ -7,10 +7,13 @@ import {
   createPackageSchema,
   createProductSchema,
   createServiceSchema,
+  createValuePackageSchema,
   giftCardSummarySchema,
   productSummarySchema,
   updatePackageSchema,
   updateProductSchema,
+  updateValuePackageSchema,
+  valuePackageSummarySchema,
 } from "./catalogue.js";
 
 describe("catalogueListQuerySchema", () => {
@@ -239,5 +242,95 @@ describe("createGiftCardSchema", () => {
 
   it("leaves the expiry optional, which is what never-expiring means", () => {
     assert.equal(createGiftCardSchema.safeParse({ name: "Card", value: 50 }).success, true);
+  });
+});
+
+describe("createValuePackageSchema", () => {
+  it("refuses credit of zero, because nothing is what the customer paid for", () => {
+    assert.equal(
+      createValuePackageSchema.safeParse({ name: "Nothing", price: 100, credit: 0 }).success,
+      false,
+    );
+    assert.equal(
+      createValuePackageSchema.safeParse({ name: "Something", price: 100, credit: 0.01 }).success,
+      true,
+    );
+  });
+
+  it("allows credit below the price, which is a bad deal rather than an invalid one", () => {
+    // The editor warns instead of refusing: a salon may sell a worse deal than cash,
+    // and the contract has no business inventing a floor the till does not apply.
+    const parsed = createValuePackageSchema.safeParse({
+      name: "Worse than cash",
+      price: 100,
+      credit: 90,
+    });
+    assert.equal(parsed.success, true);
+  });
+
+  it("coerces the money a form types and requires both numbers", () => {
+    const parsed = createValuePackageSchema.parse({
+      name: "Prepaid",
+      price: "545.00",
+      credit: "600",
+    });
+    assert.equal(parsed.price, 545);
+    assert.equal(parsed.credit, 600);
+
+    assert.equal(
+      createValuePackageSchema.safeParse({ name: "Prepaid", price: 545 }).success,
+      false,
+    );
+  });
+
+  it("takes no explicit status and no expiry as the defaults, not as zeroes", () => {
+    const parsed = createValuePackageSchema.parse({ name: "Prepaid", price: 1, credit: 2 });
+    assert.equal(parsed.status, undefined, "the column's default decides, not the wire");
+    assert.equal(parsed.validityDays, undefined, "no expiry is absent, not 0 days");
+  });
+});
+
+describe("updateValuePackageSchema", () => {
+  it("distinguishes an absent service list from clearing it", () => {
+    assert.deepEqual(updateValuePackageSchema.parse({ serviceIds: [] }).serviceIds, []);
+    assert.equal(updateValuePackageSchema.parse({}).serviceIds, undefined);
+  });
+
+  it("distinguishes an absent description from clearing it, and an absent price from 0", () => {
+    assert.equal(updateValuePackageSchema.parse({ description: null }).description, null);
+    assert.equal(updateValuePackageSchema.parse({}).description, undefined);
+    // `price: 0` is a real (free) package; only an absent key means "unchanged".
+    assert.equal(updateValuePackageSchema.parse({ price: 0 }).price, 0);
+    assert.equal(updateValuePackageSchema.parse({}).price, undefined);
+  });
+});
+
+describe("valuePackageSummarySchema", () => {
+  const row = {
+    id: "vp1",
+    name: "$600 credit for $545",
+    status: "ACTIVE",
+    price: "545.00",
+    credit: "600.00",
+    validityDays: null,
+    description: null,
+    serviceCount: 0,
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("rejects a numeric price or credit, so a Decimal never arrives as a float", () => {
+    assert.equal(valuePackageSummarySchema.safeParse({ ...row, price: 545 }).success, false);
+    assert.equal(valuePackageSummarySchema.safeParse({ ...row, credit: 600 }).success, false);
+  });
+
+  it("keeps price and credit as separate facts", () => {
+    const parsed = valuePackageSummarySchema.parse(row);
+    assert.equal(parsed.price, "545.00");
+    assert.equal(parsed.credit, "600.00");
+  });
+
+  it("leaves validityDays null rather than inventing an expiry", () => {
+    assert.equal(valuePackageSummarySchema.parse(row).validityDays, null);
   });
 });

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import {
   configurePrivacyNoticeSchema,
   type ConfigurePrivacyNoticeInput,
@@ -15,11 +16,14 @@ import {
 
 import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { validate, validated } from "../middleware/validate.js";
-import { unauthorized } from "../lib/http-error.js";
+import { badRequest, unauthorized } from "../lib/http-error.js";
 import {
+  MAX_LOGO_BYTES,
+  deleteSalonLogo,
   getSalonOperatingHours,
   getSalonProfile,
   listModules,
+  saveSalonLogo,
   updateSalonOperatingHours,
   updateSalonProfile,
   updateSalonSecurityPolicy,
@@ -88,6 +92,56 @@ settingsRouter.patch(
 
       const input = validated<UpdateSalonProfileInput>(req, "body");
       res.status(200).json({ data: await updateSalonProfile(input) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * The salon's logo: one image, replacing whatever was there.
+ *
+ * `multer` reads the bytes into memory under a size cap of its own, so an oversized
+ * upload is refused before it is buffered; the service re-checks the length and
+ * sniffs the magic bytes, because a client's `Content-Type` is a claim. `fields: 0`
+ * says the body is the file and nothing else — a logo is not a JSON field.
+ *
+ * Same roles as the profile write: a manager may rebrand the salon, a stylist may
+ * not, and a suspended salon may change nothing at all.
+ */
+const uploadLogo = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: MAX_LOGO_BYTES, files: 1, fields: 0 },
+}).single("logo");
+
+settingsRouter.post(
+  "/logo",
+  auth,
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  (req, res, next) =>
+    uploadLogo(req, res, (error: unknown) => {
+      if (error) return next(badRequest("Choose a JPEG or PNG image up to 512 KB."));
+      next();
+    }),
+  async (req, res, next) => {
+    try {
+      if (!req.file) throw badRequest("Choose a JPEG or PNG image up to 512 KB.");
+      res.status(201).json({ data: await saveSalonLogo(req.file.buffer) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+settingsRouter.delete(
+  "/logo",
+  auth,
+  requireWritableTenant(),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  async (_req, res, next) => {
+    try {
+      res.status(200).json({ data: await deleteSalonLogo() });
     } catch (error) {
       next(error);
     }

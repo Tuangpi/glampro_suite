@@ -142,18 +142,9 @@ export default function CalendarView({
 
   const showingToday = dayKey(salonDay) === dayKey(salonToday);
 
-  if (appointments.length === 0) {
-    return (
-      <div className="p-5">
-        <EmptyState
-          title="Nothing booked that day"
-          description="Move the date, or book the first appointment and it will appear on the grid."
-          icon={<Calendar />}
-        />
-      </div>
-    );
-  }
-
+  // A quiet day still draws its frame: the grid is the desk's picture of the
+  // day's opening hours, and an empty-state card would take the calendar away
+  // exactly when someone wants to read where the free time is.
   return (
     <div className="min-w-0 max-w-full rounded-card overflow-auto border border-line bg-surface">
       <div style={{ minWidth: 68 + columns.length * 140 }}>

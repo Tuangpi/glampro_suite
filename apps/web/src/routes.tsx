@@ -62,7 +62,9 @@ const routes: RouteObject[] = [
       // Screen 11. The API refuses the profile write for anyone else
       // (`requireRole("SUPER_ADMIN", "MANAGER")`), which is the actual boundary.
       { path: "settings", element: lazyRoute(<Settings />) },
-      { path: "outlets", element: <Navigate to="/settings?section=outlets" replace /> },
+      // Outlet management is parked (`constants/outlets.ts`), so the old URL lands
+      // on Settings itself rather than on a section that no longer renders.
+      { path: "outlets", element: <Navigate to="/settings" replace /> },
       { path: "*", element: lazyRoute(<NotFound />) },
     ],
   },

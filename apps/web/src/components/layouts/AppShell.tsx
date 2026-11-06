@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from "react-router";
 
 import { Bell, LogOut, Plus, Search } from "@/components/icons";
 import { activeNavItem, visibleNavItems } from "@/constants/navigation";
+import { OUTLETS_UI_ENABLED } from "@/constants/outlets";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useSaleCart } from "@/hooks/useSale";
@@ -138,7 +139,10 @@ export default function AppShell() {
               />
             </label>
 
-            <OutletPicker />
+            {/* Parked with `OUTLETS_UI_ENABLED`: a salon with no branches saw
+                nothing here anyway, and the picker is the only control that
+                could leave a branch scope behind. */}
+            {OUTLETS_UI_ENABLED && <OutletPicker />}
             <button
               type="button"
               className="flex h-control w-control items-center justify-center rounded-md bg-surface-2 text-ink-body transition hover:bg-line-soft"

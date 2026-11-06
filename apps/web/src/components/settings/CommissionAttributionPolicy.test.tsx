@@ -88,9 +88,7 @@ it("keeps conflicting edits and reloads only on explicit discard", async () => {
   expect(screen.getByLabelText("Attribution policy change reason")).toHaveValue("Keep my reason");
   expect(mocks.post).toHaveBeenCalledTimes(1);
   mocks.get.mockResolvedValue({ ...optional, revision: "other", requireServicePerformers: true });
-  await user.click(
-    screen.getByRole("button", { name: "Reload attribution policy and discard draft" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Reload and discard draft" }));
   await waitFor(() =>
     expect(screen.getByRole("checkbox", { name: "Require sellers" })).not.toBeChecked(),
   );
@@ -129,7 +127,7 @@ it("does not treat a load failure as optional defaults and allows retry", async 
   mount();
   expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load");
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-  await userEvent.setup().click(screen.getByRole("button", { name: "Reload attribution policy" }));
+  await userEvent.setup().click(screen.getByRole("button", { name: "Reload" }));
   expect(await screen.findByRole("checkbox", { name: "Require sellers" })).not.toBeChecked();
 });
 it("blocks controls during a publication and prevents duplicate submission", async () => {
@@ -150,9 +148,7 @@ it("blocks controls during a publication and prevents duplicate submission", asy
   await user.dblClick(publish);
   expect(mocks.post).toHaveBeenCalledTimes(1);
   expect(screen.getByRole("checkbox", { name: "Require sellers" })).toBeDisabled();
-  expect(
-    screen.getByRole("button", { name: "Reload attribution policy and discard draft" }),
-  ).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Reload and discard draft" })).toBeDisabled();
   await act(async () => finish({ ...optional, revision: "saved" }));
   expect(await screen.findByText(/Attribution policy published/)).toBeInTheDocument();
 });
@@ -162,9 +158,7 @@ it("retains draft flags and reason after a failed explicit reload", async () => 
   await user.click(await screen.findByRole("checkbox", { name: "Require sellers" }));
   await user.type(screen.getByLabelText("Attribution policy change reason"), "Do not lose draft");
   mocks.get.mockRejectedValue(new Error("Reload failed"));
-  await user.click(
-    screen.getByRole("button", { name: "Reload attribution policy and discard draft" }),
-  );
+  await user.click(screen.getByRole("button", { name: "Reload and discard draft" }));
   expect(await screen.findByText("Reload failed")).toHaveAttribute("role", "alert");
   expect(screen.getByRole("checkbox", { name: "Require sellers" })).toBeChecked();
   expect(screen.getByLabelText("Attribution policy change reason")).toHaveValue(

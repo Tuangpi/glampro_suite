@@ -204,6 +204,9 @@ logs. Do not add third-party scripts or analytics to these pages.
    preferred channel for automatic booking messages.
 7. Receipt messages use the explicitly selected channel and its service consent.
    The saved sale customer is required; no arbitrary phone recipient is accepted.
+   The receipt screen offers only the channels the salon has switched on — a
+   disabled channel is named with where to enable it rather than hidden, and if the
+   settings cannot be loaded the screen sends nothing rather than guessing.
 
 Phone changes withdraw channel permissions rather than transferring them to a
 new destination. Data-consent withdrawal withdraws all channel permissions;

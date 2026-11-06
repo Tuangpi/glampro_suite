@@ -62,7 +62,9 @@ it("uses the saved branch timezone for edits instead of the active calendar zone
     />,
   );
   expect(screen.getByLabelText("Starts at")).toHaveValue("2030-03-06T10:00");
-  expect(screen.getByText(/Outlet: West/)).toHaveTextContent("America/Los_Angeles");
+  // The outlet sentence is parked; the saved branch zone it disclosed is not —
+  // the times below still belong to the booking's own outlet.
+  expect(screen.getByText(/Times use/)).toHaveTextContent("America/Los_Angeles");
 });
 
 // The drawer's edit path also renders the secure-link buttons, which read the

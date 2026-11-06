@@ -6,9 +6,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/components/settings/PrivacyNoticeCard", () => ({
   default: () => <div>Privacy notice settings</div>,
 }));
-vi.mock("@/pages/Outlets", () => ({
-  default: () => <input aria-label="Outlet draft" />,
-}));
 vi.mock("@/components/settings/MessagingCard", () => ({
   default: () => <div>WhatsApp and SMS settings</div>,
 }));
@@ -23,7 +20,8 @@ const {
   useUpdateSalonSecurityPolicy,
   useSalonOperatingHours,
   useUpdateSalonOperatingHours,
-  useStaffList,
+  useUploadSalonLogo,
+  useDeleteSalonLogo,
   mutateAsync,
   getValidationDetails,
 } = vi.hoisted(() => ({
@@ -33,7 +31,8 @@ const {
   useUpdateSalonSecurityPolicy: vi.fn(),
   useSalonOperatingHours: vi.fn(),
   useUpdateSalonOperatingHours: vi.fn(),
-  useStaffList: vi.fn(),
+  useUploadSalonLogo: vi.fn(),
+  useDeleteSalonLogo: vi.fn(),
   mutateAsync: vi.fn(),
   getValidationDetails: vi.fn(() => ({})),
 }));
@@ -46,8 +45,9 @@ vi.mock("@/hooks/useSettings", () => ({
   useUpdateSalonSecurityPolicy,
   useSalonOperatingHours,
   useUpdateSalonOperatingHours,
+  useUploadSalonLogo,
+  useDeleteSalonLogo,
 }));
-vi.mock("@/hooks/useStaff", () => ({ useStaffList }));
 vi.mock("@/components/settings/CommissionRules", () => ({
   default: () => <section aria-label="Company commission defaults" />,
 }));
@@ -105,6 +105,8 @@ beforeEach(() => {
       locale: "en-SG",
       gstEnabled: false,
       gstRegistrationNumber: null,
+      // No logo uploaded, so the receipt prints the initials monogram.
+      logoUrl: null,
       // Still on the API payload: the screen no longer edits them, and a profile
       // save must leave the stored values alone.
       onlineBookingEnabled: false,
@@ -144,34 +146,10 @@ beforeEach(() => {
     isPending: false,
     isError: false,
   });
-  useStaffList.mockReturnValue({
-    data: {
-      data: [
-        {
-          id: "staff-1",
-          name: "Stella Stylist",
-          email: "stella@example.com",
-          globalRole: "STAFF",
-          position: "Senior stylist",
-          phone: null,
-          avatar: null,
-          disabled: false,
-          departmentIds: [],
-          departmentNames: [],
-          createdAt: "2026-01-02T00:00:00.000Z",
-          updatedAt: "2026-01-02T00:00:00.000Z",
-        },
-      ],
-      total: 1,
-      page: 1,
-      pageSize: 50,
-      pageCount: 1,
-    },
-    isPending: false,
-    isError: false,
-  });
   useUpdateSalonProfile.mockReturnValue({ mutateAsync, isPending: false });
   useUpdateSalonSecurityPolicy.mockReturnValue({ mutateAsync, isPending: false });
+  useUploadSalonLogo.mockReturnValue({ mutateAsync, isPending: false });
+  useDeleteSalonLogo.mockReturnValue({ mutateAsync, isPending: false });
   useSalonOperatingHours.mockReturnValue({
     data: {
       tenantId: "tenant-1",
@@ -202,18 +180,24 @@ function renderSettings(category = "salon") {
 }
 
 describe("Settings", () => {
-  it.each(["SUPER_ADMIN", "MANAGER"])("shows attribution policy for %s", (role) => {
-    auth.role = role;
-    renderSettings("team");
-    expect(screen.getByRole("region", { name: "Commission attribution policy" })).toHaveAttribute(
-      "data-editable",
-      "true",
-    );
-    expect(screen.getByRole("region", { name: "Commission matrix" })).toHaveAttribute(
-      "data-editable",
-      "true",
-    );
-  });
+  it.each(["SUPER_ADMIN", "MANAGER"])(
+    "opens team & commissions on staff rates and reaches attribution for %s",
+    async (role) => {
+      auth.role = role;
+      renderSettings("team");
+      // Staff rates is the tab the category opens on, because it is the job an
+      // owner arrives with; the other four are one click away.
+      expect(screen.getByRole("region", { name: "Commission matrix" })).toHaveAttribute(
+        "data-editable",
+        "true",
+      );
+      await userEvent.click(screen.getByRole("tab", { name: "Attribution" }));
+      expect(screen.getByRole("region", { name: "Commission attribution policy" })).toHaveAttribute(
+        "data-editable",
+        "true",
+      );
+    },
+  );
   it("hides attribution policy from staff", () => {
     auth.role = "STAFF";
     renderSettings("team");
@@ -221,38 +205,75 @@ describe("Settings", () => {
       screen.queryByRole("region", { name: "Commission attribution policy" }),
     ).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Commission matrix" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("tablist", { name: "Team and commissions sections" }),
+    ).not.toBeInTheDocument();
   });
-  it("passes suspended read-only state to attribution policy", () => {
+  it("passes suspended read-only state to attribution policy", async () => {
     auth.readOnly = true;
     renderSettings("team");
-    expect(screen.getByRole("region", { name: "Commission attribution policy" })).toHaveAttribute(
-      "data-editable",
-      "false",
-    );
     expect(screen.getByRole("region", { name: "Commission matrix" })).toHaveAttribute(
       "data-editable",
       "false",
     );
+    await userEvent.click(screen.getByRole("tab", { name: "Attribution" }));
+    expect(screen.getByRole("region", { name: "Commission attribution policy" })).toHaveAttribute(
+      "data-editable",
+      "false",
+    );
   });
-  it("opens outlets from a direct link without loading salon settings", () => {
+  it("opens the team tab named in the URL", () => {
+    render(
+      <MemoryRouter initialEntries={["/settings?section=team&team=plans"]}>
+        <Settings />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("tab", { name: "Pay plans" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("region", { name: "Versioned commission plans" })).toHaveAttribute(
+      "data-editable",
+      "true",
+    );
+  });
+  it("mounts a team panel on first visit and keeps it when the tab changes", async () => {
+    const { container } = renderSettings("team");
+    expect(screen.getByRole("region", { name: "Commission matrix" })).toBeVisible();
+    expect(container.querySelector('[aria-label="Versioned commission plans"]')).toBeNull();
+
+    await userEvent.click(screen.getByRole("tab", { name: "Pay plans" }));
+
+    expect(screen.getByRole("region", { name: "Versioned commission plans" })).toBeVisible();
+    // The visited matrix panel stays mounted so an unsaved rate draft is not
+    // thrown away by a look at another tab — but it leaves the accessibility
+    // tree, so `region` queries only ever see the open tab.
+    expect(container.querySelector('[aria-label="Commission matrix"]')).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Commission matrix" })).not.toBeInTheDocument();
+  });
+  // Outlet management is parked (`constants/outlets.ts`). The category must not be
+  // offered at all — a disabled control would still promise a screen — and a link
+  // saved from before the hide has to land somewhere real rather than on a
+  // category that draws nothing.
+  it("keeps the parked outlets category off the settings screen", () => {
+    renderSettings();
+    expect(
+      within(screen.getByLabelText("Settings category")).queryByRole("option", { name: "Outlets" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(screen.getByRole("navigation", { name: "Settings categories" })).queryByRole(
+        "button",
+        { name: "Outlets" },
+      ),
+    ).not.toBeInTheDocument();
+  });
+
+  it("falls back to salon details for a parked outlets link", () => {
     render(
       <MemoryRouter initialEntries={["/settings?section=outlets"]}>
         <Settings />
       </MemoryRouter>,
     );
-    expect(screen.getByRole("region", { name: "Outlets" })).toBeVisible();
-    expect(screen.getByLabelText("Settings category")).toHaveValue("outlets");
-    expect(useSalonProfile).not.toHaveBeenCalled();
-  });
-
-  it("loads outlets on demand and preserves outlet drafts across categories", async () => {
-    renderSettings();
-    expect(screen.queryByLabelText("Outlet draft")).not.toBeInTheDocument();
-    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "outlets");
-    await userEvent.type(screen.getByLabelText("Outlet draft"), "East branch");
-    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "salon");
-    await userEvent.selectOptions(screen.getByLabelText("Settings category"), "outlets");
-    expect(screen.getByLabelText("Outlet draft")).toHaveValue("East branch");
+    expect(screen.getByRole("region", { name: "Salon details" })).toBeVisible();
+    expect(screen.getByLabelText("Settings category")).toHaveValue("salon");
+    expect(useSalonProfile).toHaveBeenCalled();
   });
 
   it("falls back to salon details for an unknown section", () => {
@@ -272,9 +293,14 @@ describe("Settings", () => {
       "aria-current",
       "page",
     );
-    expect(screen.getByText("Stella Stylist")).toBeVisible();
+    await userEvent.click(screen.getByRole("tab", { name: "Company rules" }));
     expect(screen.getByRole("region", { name: "Company commission defaults" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "Manage staff" })).toHaveAttribute("href", "/staff");
+    // The roster belongs to the Staff screen. This category configures
+    // commission defaults and must not render a second copy of that table.
+    expect(screen.queryByRole("link", { name: "Manage staff" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("table", { name: "Active staff and their roles" }),
+    ).not.toBeInTheDocument();
   });
 
   it("starts with only salon details and loads other categories on demand", async () => {
@@ -282,7 +308,6 @@ describe("Settings", () => {
     expect(screen.getByRole("region", { name: "Salon details" })).toBeVisible();
     expect(screen.queryByText("Business hours")).not.toBeInTheDocument();
     expect(useModules).not.toHaveBeenCalled();
-    expect(useStaffList).not.toHaveBeenCalled();
 
     await userEvent.selectOptions(screen.getByLabelText("Settings category"), "booking");
     const booking = screen.getByRole("region", { name: "Booking & hours" });
@@ -371,15 +396,20 @@ describe("Settings", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders the profile, purchased modules and the real team summary in their categories", async () => {
+  it("renders the profile and purchased modules in their categories", async () => {
     renderSettings();
     expect(screen.getByDisplayValue("Ava Salon")).toBeInTheDocument();
     expect(screen.getByText("ava-salon")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText("Settings category"), "features");
     expect(screen.getByText("Reports")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText("Settings category"), "team");
-    expect(screen.getByText("Stella Stylist")).toBeInTheDocument();
-    expect(screen.getByText("Senior stylist")).toBeInTheDocument();
+    // The team category is commission configuration only — the staff list is
+    // the Staff screen's job.
+    expect(
+      screen.queryByRole("table", { name: "Active staff and their roles" }),
+    ).not.toBeInTheDocument();
+    await userEvent.click(screen.getByRole("tab", { name: "Company rules" }));
+    expect(screen.getByRole("region", { name: "Company commission defaults" })).toBeVisible();
   });
 
   it("lists modules by access, with no renewal date for the salon to read", async () => {

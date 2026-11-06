@@ -235,6 +235,47 @@ test("an outlet-scoped caller is narrowed to their own line instead of a salon t
   assert.deepEqual(body.data.rows, []);
 });
 
+test("an owner asking for their own line is not given someone else's", async () => {
+  role = "SUPER_ADMIN";
+  actorId = "owner";
+  closes = [frozen("2026-09")];
+  const response = await request("/progress?period=2026-09&scope=SELF");
+  assert.equal(response.status, 200);
+  const body = (await response.json()) as {
+    data: { scope: string; rows: { staff: { id: string } }[]; totals: { staff: number } };
+  };
+  // The owner holds no statement, so the answer is empty rather than the two staff rows
+  // a salon read returns — that table is what a "Your …" card must never show.
+  assert.equal(body.data.scope, "SELF");
+  assert.deepEqual(body.data.rows, []);
+  assert.equal(body.data.totals.staff, 0);
+});
+
+test("a manager can ask for their own line while still being allowed the salon table", async () => {
+  role = "MANAGER";
+  actorId = "manager";
+  closes = [frozen("2026-09")];
+  const own = await request("/progress?period=2026-09&scope=SELF");
+  assert.equal(own.status, 200);
+  const ownBody = (await own.json()) as { data: { scope: string; rows: unknown[] } };
+  assert.equal(ownBody.data.scope, "SELF");
+  assert.deepEqual(ownBody.data.rows, []);
+  // Without the flag the same caller still gets the salon table, so the flag narrowed.
+  const salon = await request("/progress?period=2026-09");
+  assert.equal(salon.status, 200);
+  const salonBody = (await salon.json()) as { data: { scope: string; rows: unknown[] } };
+  assert.equal(salonBody.data.scope, "SALON");
+  assert.equal(salonBody.data.rows.length, 2);
+});
+
+test("the scope flag can only narrow: a salon read is refused", async () => {
+  role = "MANAGER";
+  closes = [frozen("2026-09")];
+  assert.equal((await request("/progress?period=2026-09&scope=SALON")).status, 422);
+  assert.equal((await request("/progress?period=2026-09&scope=self")).status, 422);
+  assert.equal(transactions, 0);
+});
+
 test("an uncalculated month reports nothing and defaults to the salon's current month", async () => {
   const response = await request("/progress");
   assert.equal(response.status, 200);

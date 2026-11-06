@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
-import type { PayrollProgressView } from "@glampro_suite/shared";
+import type { PayrollProgressRow, PayrollProgressView } from "@glampro_suite/shared";
 import { get, getErrorMessage } from "@/lib/api";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
+import Table, { type TableColumn } from "@/components/ui/Table";
 
 /**
  * CP-006 month-to-date progress (FR-RPT-04, FR-POS-09).
@@ -16,6 +17,11 @@ import Card from "@/components/ui/Card";
  *
  * `compact` renders one staff member's own line as a small definition list, which is
  * what the POS surface has room for.
+ *
+ * `selfOnly` is a **request**, not a label: it sends `scope=SELF` so the server narrows
+ * the answer to the caller. A salon-wide answer must never be rendered here under a
+ * "Your …" heading — an owner or manager holds a commission statement too, and the first
+ * row of the salon table is whoever the loader happened to put first.
  */
 export interface PayrollProgressProps {
   /** Payroll month; omitted reads the salon's current month. */
@@ -36,6 +42,52 @@ function Figure({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
+/**
+ * The salon-wide table. Columns are the same ten figures the API returns, in
+ * reading order, with the money right-aligned so a manager can scan the column
+ * rather than parse ten mixed-width cells.
+ */
+const COLUMNS: TableColumn<PayrollProgressRow>[] = [
+  {
+    key: "staff",
+    header: "Staff",
+    cell: (row) => (
+      <span className="font-medium text-ink">
+        {row.staff.name}
+        {row.staff.disabled ? <span className="text-ink-muted"> (departed)</span> : null}
+      </span>
+    ),
+  },
+  {
+    key: "plan",
+    header: "Plan",
+    cell: (row) => row.planName ?? (row.planId ? "—" : "Flat fallback"),
+  },
+  {
+    key: "stage",
+    header: "Stage",
+    cell: (row) =>
+      row.tenureMonth ? `${row.stageName} · month ${row.tenureMonth}` : row.stageName,
+  },
+  { key: "tier", header: "Tier component", cell: (row) => row.mainComponent ?? "—" },
+  { key: "base", header: "Base month to date", align: "right", cell: (row) => row.mainBase },
+  {
+    key: "rate",
+    header: "Rate now",
+    align: "right",
+    cell: (row) => (row.currentRate ? `${row.currentRate}%` : "—"),
+  },
+  { key: "gap", header: "To next band", align: "right", cell: (row) => row.gapToNext ?? "—" },
+  { key: "commission", header: "Commission", align: "right", cell: (row) => row.commission },
+  { key: "incentive", header: "Incentive", align: "right", cell: (row) => row.incentive },
+  {
+    key: "estimate",
+    header: "Estimated total",
+    align: "right",
+    cell: (row) => <span className="font-heavy text-ink">{row.estimate}</span>,
+  },
+];
+
 export default function PayrollProgress({
   period,
   selfOnly = false,
@@ -45,11 +97,23 @@ export default function PayrollProgress({
   const query = useQuery({
     queryKey: ["payroll-progress", period ?? "current", selfOnly],
     queryFn: () =>
-      get<PayrollProgressView>("/payroll-close/progress", period ? { period } : undefined),
+      get<PayrollProgressView>(
+        "/payroll-close/progress",
+        // A self-service card asks the server to narrow, and it sends that even for an
+        // owner or manager: scope is decided there, not by which row happens to be first.
+        period || selfOnly
+          ? { ...(period ? { period } : {}), ...(selfOnly ? { scope: "SELF" } : {}) }
+          : undefined,
+      ),
     staleTime: 0,
   });
   const data = query.data;
-  const rows = data?.rows ?? [];
+  /**
+   * A "Your …" card renders a self-scoped answer only. If the server hands back the salon
+   * table here — an older API, a lost flag — the honest answer is the empty state, not
+   * another staff member's commission under the caller's own heading.
+   */
+  const rows = selfOnly ? (data?.scope === "SELF" ? data.rows : []) : (data?.rows ?? []);
   const own = rows[0];
   const currency = data?.currency ?? "SGD";
   return (
@@ -101,7 +165,7 @@ export default function PayrollProgress({
                   ? `Estimated from the calculation taken ${data.calculation.calculatedAt}. Later sales and redemptions appear after the month is recalculated; approval freezes it.`
                   : `No payroll has been calculated for ${data.periodKey} yet, so there is nothing to estimate. An owner or manager can calculate the month under Settings → Payroll close.`}
             </p>
-            {data.rows.length === 0 && (
+            {rows.length === 0 && (
               <p>
                 {selfOnly
                   ? `No payroll statement for you in ${data.periodKey}.`
@@ -129,61 +193,26 @@ export default function PayrollProgress({
                 <Figure label="Estimated commission" value={own.estimate} />
               </dl>
             )}
-            {!compact && data.rows.length > 0 && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                  <caption>Month-to-date commission progress for {data.periodKey}</caption>
-                  <thead>
-                    <tr>
-                      <th>Staff</th>
-                      <th>Plan</th>
-                      <th>Stage</th>
-                      <th>Tier component</th>
-                      <th>Base month to date</th>
-                      <th>Rate now</th>
-                      <th>To next band</th>
-                      <th>Commission</th>
-                      <th>Incentive</th>
-                      <th>Estimated total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.rows.map((row) => (
-                      <tr key={row.staff.id}>
-                        <td>
-                          {row.staff.name}
-                          {row.staff.disabled ? " (departed)" : ""}
-                        </td>
-                        <td>{row.planName ?? (row.planId ? "—" : "Flat fallback")}</td>
-                        <td>
-                          {row.tenureMonth
-                            ? `${row.stageName} · month ${row.tenureMonth}`
-                            : row.stageName}
-                        </td>
-                        <td>{row.mainComponent ?? "—"}</td>
-                        <td>{row.mainBase}</td>
-                        <td>{row.currentRate ? `${row.currentRate}%` : "—"}</td>
-                        <td>{row.gapToNext ?? "—"}</td>
-                        <td>{row.commission}</td>
-                        <td>{row.incentive}</td>
-                        <td>{row.estimate}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td colSpan={4}>
-                        {data.totals.staff} staff · {data.totals.lines} base lines
-                      </td>
-                      <td>{data.totals.baseAmount}</td>
-                      <td colSpan={2} />
-                      <td>{data.totals.commission}</td>
-                      <td>{data.totals.incentive}</td>
-                      <td>{data.totals.estimate}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+            {!compact && rows.length > 0 && (
+              <Table
+                caption={`Month-to-date commission progress for ${data.periodKey}`}
+                columns={COLUMNS}
+                rows={rows}
+                rowKey={(row) => row.staff.id}
+                className="rounded-lg"
+                footer={
+                  <tr className="text-sm">
+                    <td className="px-4 py-3 text-ink-muted" colSpan={4}>
+                      {data.totals.staff} staff · {data.totals.lines} base lines
+                    </td>
+                    <td className="px-4 py-3 text-right">{data.totals.baseAmount}</td>
+                    <td className="px-4 py-3" colSpan={2} />
+                    <td className="px-4 py-3 text-right">{data.totals.commission}</td>
+                    <td className="px-4 py-3 text-right">{data.totals.incentive}</td>
+                    <td className="px-4 py-3 text-right font-heavy">{data.totals.estimate}</td>
+                  </tr>
+                }
+              />
             )}
             {data.basis !== "NOT_CALCULATED" && (
               <p className="text-xs text-ink-muted">

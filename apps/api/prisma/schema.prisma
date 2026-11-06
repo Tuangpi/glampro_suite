@@ -344,6 +344,7 @@ model Tenant {
   prepaidFamilyEvents PrepaidFamilyEvent[]
   prepaidBalanceEvents PrepaidBalanceEvent[]
   messagingSettings MessagingSettings?
+  logo TenantLogo?
   channelConsents ChannelConsent[]
   channelConsentEvents ChannelConsentEvent[]
   messageJobs MessageJob[]
@@ -475,6 +476,26 @@ model Tenant {
 
   @@index([status])
   @@map("tenants")
+}
+
+/// The salon's logo, shown on the printed receipt, the emailed receipt and the
+/// public receipt link.
+///
+/// The bytes live in Postgres for the same reason `CustomerPhoto` keeps its own
+/// there: a deployment needs no writable volume, and restoring a backup brings the
+/// logo back with the rest of the tenant's data. One row per salon — `tenantId` is
+/// the primary key, so a new upload replaces the previous image instead of
+/// accumulating orphans. `mimeType` is derived from the bytes on upload, never
+/// taken from the request (`services/settings.service.ts` → `logoMimeType`).
+model TenantLogo {
+  tenantId String @id
+  mimeType String
+  content Bytes
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_logos")
 }
 
 /// One-time company-owner enrollment. Tokens are stored only as SHA-256 hashes.

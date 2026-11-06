@@ -42,6 +42,28 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
 
 ## Maintenance — approved October 24, 2026
 
+### VPKG — Value package catalogue (fifth `/products` tab)
+
+- Status: **DONE** (local). November 6, 2026.
+- Expected result: prepaid credit is editable in the catalogue the way bundles and
+  gift cards are — a list tab, an Add/Edit drawer, and an API that refuses what the
+  contract refuses. Reuse the existing `packages` add-on and the existing
+  `ValuePackage`/`ValuePackageService` models; no schema migration.
+- Completion check: shared contract + validation tests, API route tests over a real
+  database (add-on gate on reads **and** writes, `credit: 0`, foreign `serviceId`,
+  tenant-scoped 404, status filter, no `DELETE`), web page tests for the tab and its
+  columns, plus typecheck/lint/formatting.
+- Decisions: writes are manager/owner-only (`requireRole("SUPER_ADMIN","MANAGER")`),
+  stricter than `/api/gift-cards`, because the row sets a price and a credit. No
+  `DELETE` route — the holdings/link cascade would erase purchase history, so
+  `status: INACTIVE` is the retirement path. Service links are descriptive only
+  (ADR 0019, credit is fungible). `PATCH /api/packages/prepaid/:id/validity` kept.
+- Evidence: API `value-packages.routes.test.ts` 9/9 pass; web `Products.test.tsx` 20/20
+  pass; shared `catalogue.test.ts` passes; api and web typecheck clean; eslint clean on
+  changed files; prettier clean. Authenticated browser review not performed.
+  `packages/shared` `settings.test.ts` has two pre-existing failures from the unrelated
+  salon-logo workstream and is not part of this change.
+
 ### CART-UX — Polish the seller cart
 
 - Status: **DONE**. Approved and completed October 25, 2026.
@@ -111,6 +133,13 @@ deliverables remain separate follow-ups; this confirmation does not authorize ex
   selected outlet context; no company-wide search contract was added.
 - UI verification: focused 40/40; full web 786/786 across 94 files; lint,
   typecheck and production build pass. Browser visual review remains unperformed.
+- Follow-up November 6, 2026: the outlet UI is parked behind
+  `OUTLETS_UI_ENABLED` (`apps/web/src/constants/outlets.ts`, `false`), which
+  supersedes the two routing statements above. The Settings → Outlets category is
+  filtered out of the desktop menu and mobile select, `/outlets` redirects to
+  `/settings`, and the session clears any stored branch selection on load. The
+  API, schema and public booking branch selection are untouched. Evidence in
+  PROGRESS.md.
 
 ### DASHBOARD-UX — Simplify the daily dashboard
 

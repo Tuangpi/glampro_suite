@@ -21,6 +21,12 @@
  *
  * Controlled: `activeId` plus `onChange`. The panel is rendered for the active
  * tab only, so a tab that switches views should keep its own state above.
+ *
+ * `keepMounted` is the one exception: it renders every panel and hides the
+ * inactive ones with `hidden`, for tab sets whose panels hold unsaved drafts
+ * (the Settings commission tabs). A hidden panel is not focusable and is not in
+ * the accessibility tree, so only the active panel is reachable — the same
+ * reading order as the default behaviour, with the draft still alive.
  */
 import { useId, useRef } from "react";
 
@@ -41,10 +47,23 @@ export interface TabsProps {
   items: TabItem[];
   activeId: string;
   onChange: (id: string) => void;
+  /**
+   * Render every panel and hide the inactive ones with `hidden`, instead of
+   * mounting the active panel alone. Opt in when a panel owns an unsaved draft
+   * that must survive a look at another tab.
+   */
+  keepMounted?: boolean;
   className?: string;
 }
 
-export default function Tabs({ label, items, activeId, onChange, className }: TabsProps) {
+export default function Tabs({
+  label,
+  items,
+  activeId,
+  onChange,
+  keepMounted = false,
+  className,
+}: TabsProps) {
   const baseId = useId();
   const tabs = useRef<Record<string, HTMLButtonElement | null>>({});
 
@@ -90,6 +109,8 @@ export default function Tabs({ label, items, activeId, onChange, className }: Ta
   };
 
   const active = items.find((item) => item.id === activeId);
+  // The active panel alone by default; every panel when drafts must survive.
+  const panels = keepMounted ? items : active ? [active] : [];
 
   return (
     <div className={cn("flex flex-col", className)}>
@@ -139,17 +160,22 @@ export default function Tabs({ label, items, activeId, onChange, className }: Ta
         })}
       </div>
 
-      {active ? (
-        <div
-          role="tabpanel"
-          id={`${baseId}-panel-${active.id}`}
-          aria-labelledby={`${baseId}-tab-${active.id}`}
-          tabIndex={0}
-          className="pt-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple"
-        >
-          {active.content}
-        </div>
-      ) : null}
+      {panels.map((item) => {
+        const isActive = item.id === activeId;
+        return (
+          <div
+            key={item.id}
+            role="tabpanel"
+            id={`${baseId}-panel-${item.id}`}
+            aria-labelledby={`${baseId}-tab-${item.id}`}
+            hidden={keepMounted ? !isActive : undefined}
+            tabIndex={isActive ? 0 : -1}
+            className="pt-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple"
+          >
+            {item.content}
+          </div>
+        );
+      })}
     </div>
   );
 }

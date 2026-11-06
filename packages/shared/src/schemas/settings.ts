@@ -83,6 +83,16 @@ export const salonProfileSchema = z.object({
    * security switch must not depend on them.
    */
   requireStaffTwoFactor: z.boolean(),
+  /**
+   * Where the salon's logo can be read — `/api/public/tenants/{slug}/logo`, a
+   * relative path so it resolves through the web app's own origin (and its dev
+   * proxy). `null` until a manager uploads one; every surface that shows it falls
+   * back to the salon's initials.
+   *
+   * Read-only here, and written through `POST`/`DELETE /api/settings/logo` rather
+   * than the profile form: an image is a body of its own, not a JSON field.
+   */
+  logoUrl: z.string().nullable(),
   owner: z.object({ id: z.string(), name: z.string(), email: z.string() }).nullable(),
   /**
    * When the salon's subscription lapses — the latest `Subscription.endDate`,

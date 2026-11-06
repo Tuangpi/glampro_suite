@@ -15,8 +15,18 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
 import Skeleton from "@/components/ui/Skeleton";
+import Table, { type TableColumn } from "@/components/ui/Table";
 import { useDepartments } from "@/hooks/useDepartments";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
+
+/** Reads as a sentence in the history table; the API value is the raw enum. */
+const SCOPE_LABELS: Record<CommissionScope, string> = {
+  COMPANY: "Company",
+  STAFF: "Staff",
+  DEPARTMENT: "Department",
+  ITEM: "Item",
+  PACKAGE: "Package",
+};
 
 export default function CommissionRules({
   staffId,
@@ -106,29 +116,86 @@ export default function CommissionRules({
       );
     }
   }
-  function rows(values: CommissionRuleView[]) {
+  const ruleColumns: TableColumn<CommissionRuleView>[] = [
+    {
+      key: "kind",
+      header: "Type",
+      cell: (row) => COMMISSION_KIND_LABELS[row.itemKind] ?? row.itemKind,
+    },
+    {
+      key: "scope",
+      header: "Applies to",
+      cell: (row) => `${SCOPE_LABELS[row.scope]}${row.targetName ? ` · ${row.targetName}` : ""}`,
+    },
+    {
+      key: "rate",
+      header: "Rate",
+      align: "right",
+      cell: (row) => (row.rate === null ? "Inherit" : `${row.rate}%`),
+    },
+    {
+      key: "effective",
+      header: "Effective",
+      cell: (row) => `${formatDateTime(row.effectiveAt)} (${timeZone})`,
+    },
+    {
+      key: "published",
+      header: "Published",
+      cell: (row) => (
+        <div>
+          <div>
+            {formatDateTime(row.createdAt)} · {row.actorName}
+          </div>
+          <div className="text-xs text-ink-muted">{row.reason}</div>
+        </div>
+      ),
+    },
+  ];
+  function rulesTable(values: CommissionRuleView[], caption: string) {
     return (
-      <ul className="space-y-2">
-        {values.map((row) => (
-          <li key={row.id} className="text-sm">
-            {row.itemKind} · {row.scope} {row.targetName ?? ""} ·{" "}
-            {row.rate === null ? "Inherit" : `${row.rate}%`}
-            {" · Effective "}
-            {formatDateTime(row.effectiveAt)} ({timeZone})
-            <div className="text-xs text-ink-muted">
-              Published {formatDateTime(row.createdAt)} by {row.actorName}: {row.reason}
-            </div>
-          </li>
-        ))}
-      </ul>
+      <Table
+        caption={caption}
+        columns={ruleColumns}
+        rows={values}
+        rowKey={(row) => row.id}
+        className="rounded-lg"
+      />
     );
   }
   return (
     <Card
       title={staffId ? "Advanced commissions" : "Company commission defaults"}
-      description="Item → package → department → staff → company. Rates never stack. New kinds remain disabled for earnings pending collection and reporting cutover."
+      description="Precedence: item, package, department, staff, then company. Rates never stack."
+      actions={
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          disabled={config.isFetching || publish.isPending}
+          onClick={async () => {
+            const result = await config.refetch();
+            if (result.isError) {
+              setError(getErrorMessage(result.error));
+              return;
+            }
+            setDraftRevision(null);
+            setReason("");
+            setTarget("");
+            setRate("0");
+            setInherit(false);
+            setEffectiveAt("");
+            setError("");
+            void client.invalidateQueries({ queryKey: ["commissions", "preview"] });
+          }}
+        >
+          {draftRevision ? "Reload commission rules and discard draft" : "Refresh commission rules"}
+        </Button>
+      }
     >
       <div className="flex flex-col gap-3">
+        <p className="text-sm text-ink-muted">
+          New kinds remain disabled for earnings pending collection and reporting cutover.
+        </p>
         {config.isPending && (
           // Shaped like the rules list below, inside the same card, so the section is
           // the size it will be once the rules arrive.
@@ -150,28 +217,6 @@ export default function CommissionRules({
             </button>
           </p>
         )}
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={config.isFetching || publish.isPending}
-          onClick={async () => {
-            const result = await config.refetch();
-            if (result.isError) {
-              setError(getErrorMessage(result.error));
-              return;
-            }
-            setDraftRevision(null);
-            setReason("");
-            setTarget("");
-            setRate("0");
-            setInherit(false);
-            setEffectiveAt("");
-            setError("");
-            void client.invalidateQueries({ queryKey: ["commissions", "preview"] });
-          }}
-        >
-          {draftRevision ? "Reload commission rules and discard draft" : "Refresh commission rules"}
-        </Button>
         {error && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
         {staleDraft && (
@@ -196,16 +241,20 @@ export default function CommissionRules({
                 FOC.
               </p>
             )}
-            <h4>Current rules</h4>
-            {config.data.current.length ? rows(config.data.current) : <p>No published rules.</p>}
+            <h4 className="mt-2 text-sm font-bold text-ink">Current rules</h4>
+            {config.data.current.length ? (
+              rulesTable(config.data.current, "Commission rules in force")
+            ) : (
+              <p>No published rules.</p>
+            )}
             {!!config.data.scheduled.length && (
               <>
-                <h4>Scheduled rules</h4>
+                <h4 className="mt-2 text-sm font-bold text-ink">Scheduled rules</h4>
                 <p className="text-sm">
                   To supersede a scheduled rule, publish a replacement for the same scope and
                   effective time. A change effective now does not cancel future rules.
                 </p>
-                {rows(config.data.scheduled)}
+                {rulesTable(config.data.scheduled, "Commission rules scheduled to start later")}
               </>
             )}
             {canEdit && (
@@ -215,9 +264,11 @@ export default function CommissionRules({
                   if (!draftRevision && config.data)
                     setDraftRevision({ revision: config.data.revision });
                 }}
-                className="flex flex-col gap-3"
+                className="flex flex-col gap-3 rounded-lg border border-line bg-surface-muted p-3"
               >
-                <legend>Publish a replacement rule</legend>
+                <legend className="px-1 text-sm font-bold text-ink">
+                  Publish a replacement rule
+                </legend>
                 <Select
                   label="Commission item type"
                   value={kind}
@@ -384,21 +435,27 @@ export default function CommissionRules({
                 )}
               </>
             )}
-            <h4>Publication history</h4>
-            {rows(config.data.history)}
-            <div className="flex gap-3">
+            <h4 className="mt-2 text-sm font-bold text-ink">Publication history</h4>
+            {config.data.history.length ? (
+              rulesTable(config.data.history, "Commission rule publication history")
+            ) : (
+              <p className="text-sm text-ink-muted">No commission rules have been published yet.</p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 variant="secondary"
+                size="sm"
                 disabled={page === 1 || config.isFetching}
                 onClick={() => setPage(page - 1)}
               >
                 Previous commission history
               </Button>
-              <span>Page {page}</span>
+              <span className="text-sm text-ink-muted">Page {page}</span>
               <Button
                 type="button"
                 variant="secondary"
+                size="sm"
                 disabled={page * 20 >= config.data.total || config.isFetching}
                 onClick={() => setPage(page + 1)}
               >

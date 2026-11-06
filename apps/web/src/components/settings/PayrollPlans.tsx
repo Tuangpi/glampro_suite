@@ -1091,7 +1091,10 @@ function PayrollAssignments({
               <p key={r.id}>
                 {data.plans.find((p) => p.id === r.planId)?.name ?? r.planId}: {r.fromDate} to{" "}
                 {r.toDate ?? "ongoing"} ·{" "}
-                {r.outletIds?.length ? `Outlets: ${r.outletIds.join(", ")}` : "All outlets"}
+                {/* Outlet attribution is parked: a salon without branches only ever
+                    reaches the salon-wide case, so name that rather than a scope it
+                    has no way to configure. */}
+                {r.outletIds?.length ? `Outlets: ${r.outletIds.join(", ")}` : "Salon-wide"}
               </p>
             ))}
         </div>

@@ -354,6 +354,87 @@ export const updatePackageSchema = z
 export type UpdatePackageInput = z.infer<typeof updatePackageSchema>;
 
 /**
+ * Prepaid credit — the **value package**. Legacy `valuepackages`.
+ *
+ * The second shape of "pay up front": a bundle sells a number of **sessions**, a
+ * value package sells **money** and hands back more of it. Both live under the
+ * `packages` add-on, which is why this row has no module code of its own.
+ *
+ * `price` and `credit` are deliberately two numbers: what the customer pays and what
+ * they may spend are different facts, and the gap between them *is* the offer. The
+ * till shows `credit` so the customer can see what they are getting.
+ *
+ * The linked services are **descriptive only**. Credit is fungible (ADR 0019), so
+ * `ValuePackageService` restricts nothing — the editor's picker records what the
+ * package was designed for and the till prints "· N services" from the same links.
+ */
+export const valuePackageSummarySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  status: catalogStatusSchema,
+  /** What the customer pays. Legacy `price`. */
+  price: z.string(),
+  /** What the customer may spend. Legacy `amount`. */
+  credit: z.string(),
+  validityDays: packageValidityDaysSchema,
+  description: z.string().nullable(),
+  /** How many services it was designed for — the count, not the ids. */
+  serviceCount: z.number().int(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type ValuePackageSummary = z.infer<typeof valuePackageSummarySchema>;
+
+/** The same row plus the services it was designed for, which only the editor reads. */
+export const valuePackageDetailSchema = valuePackageSummarySchema.extend({
+  services: z.array(z.object({ id: z.string(), name: z.string() })),
+});
+
+export type ValuePackageDetail = z.infer<typeof valuePackageDetailSchema>;
+
+/**
+ * Credit that grants nothing is a price with no promise attached, so create asks
+ * for more than zero. It may be **less** than the price — a salon can sell a worse
+ * deal than cash, and the till only ever shows both numbers — but the editor warns
+ * rather than refuses.
+ */
+const creditSchema = moneySchema.refine((value) => value > 0, "Credit must be more than zero.");
+
+export const createValuePackageSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(200),
+  price: moneySchema,
+  credit: creditSchema,
+  validityDays: packageValidityDaysSchema.optional(),
+  description: z.string().trim().max(2000).optional(),
+  status: catalogStatusSchema.optional(),
+  /** Descriptive only — credit is fungible, so these restrict nothing (ADR 0019). */
+  serviceIds: z.array(z.string().min(1).max(64)).max(200).optional(),
+});
+
+export type CreateValuePackageInput = z.infer<typeof createValuePackageSchema>;
+
+/**
+ * Updating a value package.
+ *
+ * `serviceIds` follows the rule every other field here follows — **absent means
+ * unchanged**, with `[]` as the way to say "designed for nothing in particular".
+ * Editing `price`, `credit` or `validityDays` only affects **future** purchases: a
+ * holding snapshots the credit and the net paid at the moment of sale.
+ */
+export const updateValuePackageSchema = z.object({
+  name: z.string().trim().min(1, "Name is required").max(200).optional(),
+  price: moneySchema.optional(),
+  credit: creditSchema.optional(),
+  validityDays: packageValidityDaysSchema.optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  status: catalogStatusSchema.optional(),
+  serviceIds: z.array(z.string().min(1).max(64)).max(200).optional(),
+});
+
+export type UpdateValuePackageInput = z.infer<typeof updateValuePackageSchema>;
+
+/**
  * A gift-card **template**. Legacy `giftcards`.
  *
  * The card a customer holds is a `CustomerGiftCardHolding`, not this row: this is

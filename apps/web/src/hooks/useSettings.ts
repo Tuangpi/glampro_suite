@@ -1,10 +1,9 @@
 /**
  * Settings data — handoff screen 11 (`/api/settings`).
  *
- * Two reads and one write. The staff/roles summary is deliberately **not**
- * here: it is `useStaffList` reading the same `GET /api/staff` the staff screen
- * reads, because a second endpoint that summarised the team could disagree with
- * the team page, and one answer per question is the rule (ADR 0010's shape).
+ * Profile, module grants and business hours. The staff roster is deliberately
+ * **not** here: it belongs to the Staff screen, and Settings no longer
+ * duplicates that list (one question, one answer — ADR 0010's shape).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
@@ -17,7 +16,7 @@ import type {
 } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
-import { get, patch } from "@/lib/api";
+import { del, get, patch, post } from "@/lib/api";
 
 /** The salon's profile, including saved timezone and formatting locale. */
 export function useSalonProfile(tenantId?: string) {
@@ -73,6 +72,49 @@ export function useUpdateSalonSecurityPolicy() {
   return useMutation({
     mutationFn: (input: UpdateSalonSecurityInput) =>
       patch<SalonProfile>("/settings/security", input),
+    onSuccess: (profile) => {
+      void queryClient.setQueryData(queryKeys.settings.general(), profile);
+      void queryClient.setQueryData(queryKeys.settings.general(profile.id), profile);
+    },
+  });
+}
+
+/**
+ * Uploads the salon's logo and replaces whatever was there.
+ *
+ * Its own endpoint and its own mutation rather than a field on the profile form:
+ * an image travels as multipart, while `PATCH /settings/profile` carries required
+ * JSON that a rebrand has no business sending. The response is the whole profile,
+ * so the same cache write as a rename keeps the receipt header and the Settings
+ * card in step.
+ */
+export function useUploadSalonLogo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (file: File) => {
+      const body = new FormData();
+      body.append("logo", file);
+      return post<SalonProfile>("/settings/logo", body);
+    },
+    onSuccess: (profile) => {
+      void queryClient.setQueryData(queryKeys.settings.general(), profile);
+      void queryClient.setQueryData(queryKeys.settings.general(profile.id), profile);
+    },
+  });
+}
+
+/**
+ * Removes the logo, falling back to the initials monogram.
+ *
+ * Deleting one that is not there succeeds — "no logo from now on" is the state
+ * the salon is in either way — so the button does not need to know first.
+ */
+export function useDeleteSalonLogo() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => del<SalonProfile>("/settings/logo"),
     onSuccess: (profile) => {
       void queryClient.setQueryData(queryKeys.settings.general(), profile);
       void queryClient.setQueryData(queryKeys.settings.general(profile.id), profile);

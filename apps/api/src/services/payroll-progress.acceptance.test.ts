@@ -307,6 +307,17 @@ test("CP-006 progress and self-service read real payroll rows", { skip: !enabled
   assert.equal(atOutlet.scope, "SELF");
   assert.deepEqual(atOutlet.rows, []);
 
+  // An owner or manager asking for a self read gets their own line — here none — instead
+  // of the salon table a "Your month-to-date progress" card must never show.
+  const ownManager = await runAsTenant(
+    tenantId,
+    () => readStoredPayrollProgress("2026-09", "SELF"),
+    ids.manager,
+  );
+  assert.equal(ownManager.scope, "SELF");
+  assert.deepEqual(ownManager.rows, []);
+  assert.equal(ownManager.totals.staff, 0);
+
   // A month nobody calculated is not invented, and the default month is the salon's own.
   const uncalculated = await runAsTenant(
     tenantId,

@@ -6,6 +6,7 @@ import {
   getPublicAvailability,
   createPublicBooking,
 } from "../services/public-booking.service.js";
+import { getPublicSalonLogo } from "../services/settings.service.js";
 
 const handle =
   (
@@ -37,6 +38,29 @@ async function createHandler(req: Request, res: Response) {
   res.status(201).json({ data });
 }
 
+/**
+ * The salon's logo, for the public booking page, the public receipt link and the
+ * emailed receipt.
+ *
+ * Unauthenticated by design — the people who need it are a customer holding a
+ * receipt link and an email client fetching a remote image. `nosniff` and an
+ * explicit `Content-Disposition: inline` keep it from being re-interpreted as
+ * anything but an image, and the five-minute public cache is short enough that a
+ * re-upload lands quickly (`logoUrl` carries the `updatedAt` as a version marker,
+ * so the URL changes when the image does).
+ */
+async function logoHandler(req: Request, res: Response) {
+  const slug = String(req.params.slug);
+  const logo = await getPublicSalonLogo(slug);
+  res.set({
+    "Content-Type": logo.mimeType,
+    "Cache-Control": "public, max-age=300",
+    "X-Content-Type-Options": "nosniff",
+    "Content-Disposition": "inline",
+  });
+  res.send(logo.content);
+}
+
 const bases = [
   "/booking/:slug",
   "/tenants/:slug",
@@ -50,3 +74,8 @@ for (const base of bases) {
   publicBookingRouter.get(`${base}/config`, handle(configHandler));
   publicBookingRouter.post(base, handle(createHandler));
 }
+
+// No `/booking/:slug/logo` alias: the logo's one home is the tenant, because the
+// emailed receipt and the public receipt page both address a salon by slug and the
+// booking prefix exists only for the booking API's own clients.
+publicBookingRouter.get("/tenants/:slug/logo", handle(logoHandler));

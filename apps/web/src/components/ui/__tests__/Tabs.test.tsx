@@ -23,6 +23,34 @@ function ControlledTabs({
   return <Tabs label="Appointments" items={items} activeId={active} onChange={setActive} />;
 }
 
+/** `keepMounted` panels each own a draft; this wrapper proves it survives a switch. */
+function DraftTabs() {
+  const [active, setActive] = useState("all");
+  const [note, setNote] = useState("");
+  return (
+    <Tabs
+      label="Appointments"
+      activeId={active}
+      onChange={setActive}
+      keepMounted
+      items={[
+        {
+          id: "all",
+          label: "All",
+          content: (
+            <input
+              aria-label="Draft note"
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+            />
+          ),
+        },
+        { id: "today", label: "Today", content: <p>Today only</p> },
+      ]}
+    />
+  );
+}
+
 describe("Tabs", () => {
   it("names the tab set", () => {
     render(<ControlledTabs />);
@@ -108,6 +136,38 @@ describe("Tabs", () => {
     await user.click(screen.getByRole("tab", { name: "This week" }));
 
     expect(onChange).toHaveBeenCalledWith("week");
+  });
+
+  it("keeps a hidden panel mounted when keepMounted is set, with its draft", async () => {
+    const user = userEvent.setup();
+    render(<DraftTabs />);
+
+    await user.type(screen.getByLabelText("Draft note"), "Keep me");
+    await user.click(screen.getByRole("tab", { name: "Today" }));
+
+    // The inactive panel is still mounted, but out of sight and out of the
+    // accessibility tree: only the visible panel is a `tabpanel` now.
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+    expect(screen.getByText("Today only")).toBeVisible();
+    expect(screen.getByLabelText("Draft note")).not.toBeVisible();
+    expect(screen.getByLabelText("Draft note").closest("[role='tabpanel']")).toHaveAttribute(
+      "hidden",
+    );
+
+    await user.click(screen.getByRole("tab", { name: "All" }));
+
+    expect(screen.getByLabelText("Draft note")).toHaveValue("Keep me");
+    expect(screen.getByLabelText("Draft note")).toBeVisible();
+  });
+
+  it("unmounts the inactive panel by default", async () => {
+    const user = userEvent.setup();
+    render(<ControlledTabs initial="all" />);
+
+    await user.click(screen.getByRole("tab", { name: "Today" }));
+
+    expect(screen.getByText("Today only")).toBeInTheDocument();
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
   });
 
   // Pinned by class name — jsdom does no Tailwind layout, so this guards

@@ -194,7 +194,14 @@ export async function getPackage(id: string): Promise<PackageDetail> {
   return toPackageDetail(row);
 }
 
-/** Prepaid credit has no general catalogue editor; configure future grants only. */
+/**
+ * Prepaid credit's validity, set on its own.
+ *
+ * Kept because the endpoint predates the catalogue editor and a caller may still use
+ * it; the Value packages tab now writes the same column through
+ * `PATCH /api/value-packages/:id` (`value-package.service.ts`). Both go through the
+ * same Prisma update and the same shared schema, so they cannot disagree.
+ */
 export async function updatePrepaidValidity(id: string, validityDays: number | null) {
   const updated = await prisma.valuePackage.updateMany({
     where: { id },

@@ -3,6 +3,15 @@
 HOURS-01 extends the previously company-wide booking calendar. It does not
 change shared customer/credit identity, stock, sale attribution or company roles.
 
+> **Status, November 6, 2026 — the outlet UI is parked.** The steps below that
+> start at **Outlets → Operating hours** or in the top-bar picker are unreachable
+> while `OUTLETS_UI_ENABLED` is `false` (`apps/web/src/constants/outlets.ts`).
+> Nothing in this document's enforcement changed: with no branch selected the
+> calendar is consolidated, the editor still uses each booking's saved branch
+> time zone, and public booking still asks for a branch whenever the company has
+> outlets. The hours API, the override table and `assertOutletBookingHours` are
+> untouched.
+
 ## Configure and book
 
 - Managers/owners: Outlets → Operating hours. Save a full week in the outlet's

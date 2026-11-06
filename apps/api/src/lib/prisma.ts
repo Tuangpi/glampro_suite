@@ -30,6 +30,7 @@ export const TENANT_SCOPED_MODELS = [
   "Outlet",
   "OwnerInvitation",
   "MessagingSettings",
+  "TenantLogo",
   "ChannelConsent",
   "ChannelConsentEvent",
   "MessageJob",

@@ -140,6 +140,16 @@ export const queryKeys = {
     detail: (id: string) => ["giftCards", "detail", id] as const,
   },
 
+  /**
+   * The fifth tab: prepaid credit. It shares the `packages` add-on, so a salon
+   * without the add-on gets nothing to fetch and invalidates both lists together when
+   * it buys the module.
+   */
+  valuePackages: {
+    list: () => ["valuePackages", "list"] as const,
+    detail: (id: string) => ["valuePackages", "detail", id] as const,
+  },
+
   staff: {
     list: () => ["staff", "list"] as const,
     detail: (id: string) => ["staff", "detail", id] as const,
@@ -173,5 +183,22 @@ export const queryKeys = {
     modules: () => ["settings", "modules"] as const,
     businessHours: () => ["settings", "businessHours"] as const,
     users: () => ["settings", "users"] as const,
+  },
+
+  /**
+   * Outbound messages.
+   *
+   * `settings` is read in two rooms — the panel that edits it and the share dialog
+   * that decides which channels it may offer — so the key is written once here: a
+   * save in Settings has to move the buttons on a receipt that is already open.
+   */
+  messaging: {
+    settings: (tenantId?: string) =>
+      tenantId
+        ? (["messaging", "settings", tenantId] as const)
+        : (["messaging", "settings"] as const),
+    /** The delivery record. Paged, so the page is part of the key. */
+    history: (tenantId: string | undefined, page: number) =>
+      ["messaging", "history", tenantId, page] as const,
   },
 } as const;

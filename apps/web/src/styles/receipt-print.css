@@ -68,6 +68,20 @@
   white-space: normal;
 }
 
+/* The salon's mark is measured in millimetres on a roll: 32px is 8.5mm at 96dpi,
+   which fits an 80mm slip and swamps a 58mm one, so the narrow layout shrinks it
+   rather than letting the image set the page width. */
+.receipt-print-root .receipt-salon-mark {
+  width: 32px;
+  height: 32px;
+  padding: 1px;
+}
+
+.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-salon-mark {
+  width: 26px;
+  height: 26px;
+}
+
 .receipt-print-root:not([data-receipt-paper="standard"]) .receipt-actions {
   flex-shrink: 1;
 }

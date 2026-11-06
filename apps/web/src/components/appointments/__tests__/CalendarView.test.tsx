@@ -4,8 +4,9 @@
  * Rendered with its columns and rows passed in, exactly as the page does, so the
  * assertions are about what the grid *draws*: a column per performer plus an
  * Unassigned column, a block placed under its own staff head by its real time,
- * and the empty/read-only states. The block's position is checked through the
- * geometry module it shares, not through pixel-sniffing the DOM.
+ * a quiet day that still draws its frame, and the read-only state. The block's
+ * position is checked through the geometry module it shares, not through
+ * pixel-sniffing the DOM.
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -94,9 +95,18 @@ describe("CalendarView", () => {
     expect(block).toHaveStyle({ height: `${HOUR_HEIGHT}px` });
   });
 
-  it("shows the empty state when the day has nothing booked", () => {
-    render(<CalendarView day={DAY} appointments={[]} columns={COLUMNS} onEdit={vi.fn()} />);
-    expect(screen.getByText("Nothing booked that day")).toBeInTheDocument();
+  it("draws the day grid even when nothing is booked", () => {
+    const { container } = render(
+      <CalendarView day={DAY} appointments={[]} columns={COLUMNS} onEdit={vi.fn()} />,
+    );
+
+    // The frame *is* the day's opening hours, so a quiet day keeps its columns and
+    // its gutter instead of being replaced by a card that hides where the free time is.
+    expect(container.querySelector('[data-column="staff-1"]')).not.toBeNull();
+    expect(container.querySelector('[data-column="unassigned"]')).not.toBeNull();
+    expect(screen.getByText("08:00")).toBeInTheDocument();
+    expect(container.querySelectorAll("[data-appointment]")).toHaveLength(0);
+    expect(screen.queryByText("Nothing booked that day")).not.toBeInTheDocument();
   });
 
   it("opens the editor through onEdit when a block is clicked", async () => {
@@ -122,10 +132,14 @@ describe("CalendarView", () => {
   });
 
   it("shows a loading skeleton while pending", () => {
-    render(
+    const { container } = render(
       <CalendarView day={DAY} appointments={[]} columns={COLUMNS} isPending onEdit={vi.fn()} />,
     );
+
+    expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
     expect(screen.queryByText("Mina Customer")).not.toBeInTheDocument();
+    // A grid before the read lands would publish staff columns nobody has confirmed.
+    expect(container.querySelectorAll("[data-column]")).toHaveLength(0);
   });
 });
 

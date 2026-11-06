@@ -159,6 +159,17 @@ All 45 migrations replay and focused live acceptance passes on disposable
 PostgreSQL. Application rollout is not performed. Detailed policy and migration
 instructions: docs/multi-outlet.md. Unrelated owner-assistant errors remain.
 
+November 6, 2026: the outlet browser surface is parked behind `OUTLETS_UI_ENABLED`
+(`apps/web/src/constants/outlets.ts`). The Settings → Outlets category and the
+top-bar picker are hidden, `/outlets` redirects to Settings, and the session clears
+any stored branch selection on load so the salon runs tenant-wide. The pivot is
+presentation only: schema, outlets API, `x-outlet-id` validation, role guards and
+the public booking branch selection are unchanged, and the picker's cart-clearing
+reload described above applies again when the flag returns. Wording that named a
+branch the desk could no longer see was removed with it (appointment list column,
+editor sentence, payroll report column). Hidden is not secured — the API remains
+the boundary. Details: docs/multi-outlet.md, PROGRESS.md.
+
 ### Branch booking extension — HOURS-01, October 24, 2026
 
 HOURS-01 scope extension approved October 24, 2026: add full branch-aware booking
@@ -640,6 +651,26 @@ No migration, automatic sending, deployment or external AI authorization is impl
   application migration and browser checks complete and accepted the expiry slice
   on October 22, 2026; application rollout/browser verification is user-reported,
   not an agent walkthrough or production verification.
+
+- Value package catalogue (November 6, 2026): the fifth `/products` tab, prepaid credit
+  as a first-class catalogue row — `ValuePackage` ("pay 545, get 600 to spend") with
+  its `ValuePackageService` links, created and edited in a drawer. It reuses the
+  existing `packages` add-on rather than introducing a module, and needs no migration:
+  the model, the POS sale/redemption/commission/payroll paths and the holdings
+  snapshot already existed. New mount `/api/value-packages` (`GET` list/detail open to
+  authenticated staff with the add-on; `POST`/`PATCH` manager/owner-only, stricter than
+  `/api/gift-cards` because the row sets money). `credit` must exceed zero; `credit`
+  below `price` is accepted with an inline warning rather than refused. There is **no
+  DELETE** — `ValuePackageService` and `CustomerValuePackageHolding` cascade from the
+  row, so `status: INACTIVE` retires a package from the till and leaves its history
+  intact. Linked services are descriptive only: credit is fungible (ADR 0019). Edits
+  affect future purchases only, because a holding snapshots its credit and net paid.
+  `PATCH /api/packages/prepaid/:id/validity` is retained and writes the same column
+  through the same schema. Route tests (`value-packages.routes.test.ts`) cover the
+  add-on gate for reads and writes, `credit: 0`, a foreign `serviceId`, tenant-scoped
+  404, the status filter and the absent DELETE, against a disposable local database;
+  `Products.test.tsx` covers the fifth tab, its two money columns and the
+  add-on-not-enabled state. Browser and production verification are not performed.
 
 - Authentication follow-up (SEC-01, October 22, 2026): SUPER_ADMIN is the owner/admin
   role. Password-verified owner login always requires an email code; successful
@@ -1314,6 +1345,16 @@ query/overnight semantics need review. Five mocked/geometry files, 88 tests pass
 then; not proof of deployed reads, clashes, rollback or complete availability.
 Sources: calendar-geometry, CalendarView/WeekView/MonthView, Appointments and useAppointments.
 
+**November 6, 2026 — the frame is drawn even with nothing booked.** Day, week and month no
+longer replace the grid with an empty-state card ("Nothing booked that day/week/month"); a
+range with zero bookings renders its staff columns, its seven day tracks or its padded dates,
+and the header's _Book appointment_ button is the way out. This supersedes the earlier Month
+reasoning that no cells at all were safer than an empty grid: someone reading free time needs
+the calendar, and handoff screen 06 draws it with no bookings. What still bounds the drawing is
+unchanged — the disclosed 08:00–20:00 gutter (Month shows off-hours bookings) and the `Showing
+first N of M` ceiling on a multi-page read. `isPending` still withholds the grid behind
+skeletons and `isError` still shows the retry card; the list view keeps its own empty states.
+
 ### ADR 0019
 
 **Accepted October 19, 2026 — local rails are recorded tenders, and credit redemption is a
@@ -1450,19 +1491,19 @@ browser geometry or accessible control labels across every consumer.
 
 ### Design 5
 
-| Screen | Route / flow            | Intended substance                                                   |
-| ------ | ----------------------- | -------------------------------------------------------------------- |
-| 01     | /sale                   | Searchable catalogue/tabs and always-visible cart                    |
-| 02     | Receipt step in /sale   | Single checkout with payments[], not cash/card/split endpoints       |
-| 03     | Flow over /appointments | Who/What/When/With, service-derived duration                         |
-| 04     | None                    | Live dashboard, subdued delete, cart badge reference fixes           |
-| 05     | /                       | Income, today's sales, low stock and open-cart indicators            |
-| 06     | /appointments           | Calendar/list                                                        |
-| 07     | /customers              | Customer list/profile entry                                          |
-| 08     | /products               | Products/Services/Packages/Gift cards tabs; entitlement-aware states |
-| 09     | /staff                  | Staff list, no fabricated shift/rating values                        |
-| 10     | /reports                | Manager/super-admin nav                                              |
-| 11     | /settings               | Manager/super-admin nav                                              |
+| Screen | Route / flow            | Intended substance                                                                  |
+| ------ | ----------------------- | ----------------------------------------------------------------------------------- |
+| 01     | /sale                   | Searchable catalogue/tabs and always-visible cart                                   |
+| 02     | Receipt step in /sale   | Single checkout with payments[], not cash/card/split endpoints                      |
+| 03     | Flow over /appointments | Who/What/When/With, service-derived duration                                        |
+| 04     | None                    | Live dashboard, subdued delete, cart badge reference fixes                          |
+| 05     | /                       | Income, today's sales, low stock and open-cart indicators                           |
+| 06     | /appointments           | Calendar/list                                                                       |
+| 07     | /customers              | Customer list/profile entry                                                         |
+| 08     | /products               | Products/Services/Packages/Gift cards/Value packages tabs; entitlement-aware states |
+| 09     | /staff                  | Staff list, no fabricated shift/rating values                                       |
+| 10     | /reports                | Manager/super-admin nav                                                             |
+| 11     | /settings               | Manager/super-admin nav                                                             |
 
 Do not treat old phase assignments or placeholders as current task status. No separate
 Services route (ADR 0005). Exclude unsupported membership tiers, staff ratings/shifts,

@@ -26,6 +26,7 @@ import { ENTITLEMENTS_STALE_EVENT, get, post } from "@/lib/api";
 import { clearSession, getRefreshToken, setSession } from "@/lib/auth-storage";
 import { clearSaleDraft, saleDraftIdentity } from "@/lib/sale-draft-storage";
 import { selectOutlet } from "@/lib/outlet-storage";
+import { OUTLETS_UI_ENABLED } from "@/constants/outlets";
 
 export type AuthStatus = "loading" | "authenticated" | "anonymous";
 
@@ -110,6 +111,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * Outlet selection is a tab-local hint (`lib/outlet-storage`), and every request
+   * that carries it is scoped to that branch — sales attributed there, reports
+   * filtered, and salon-wide payroll close refused until it is cleared.
+   *
+   * With the picker parked there is no visible way to clear it, so the session
+   * clears it instead. A branch chosen before the picker went away must not keep
+   * scoping a screen nobody can explain. `signOut` already clears it too.
+   */
+  useEffect(() => {
+    if (!OUTLETS_UI_ENABLED) selectOutlet("");
+  }, [status]);
 
   /**
    * A refused module means this browser's entitlement list is out of date.

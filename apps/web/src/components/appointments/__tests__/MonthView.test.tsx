@@ -167,21 +167,23 @@ describe("MonthView", () => {
     expect(onEdit).not.toHaveBeenCalled();
   });
 
-  it("shows the empty state, and no grid to misread, when the month is clear", () => {
+  it("draws the month grid, with no chips, when the month is clear", () => {
     const { container } = render(<MonthView day={MONTH} appointments={[]} onEdit={vi.fn()} />);
 
-    expect(screen.getByText("Nothing booked that month")).toBeInTheDocument();
-    // No cells at all: an empty grid would read as an empty month's worth of free days.
-    expect(container.querySelectorAll("[data-day]")).toHaveLength(0);
+    // The dates are the month: a card in their place used to hide where the empty days are.
+    expect(container.querySelectorAll("[data-day]")).toHaveLength(35);
+    expect(container.querySelectorAll("[data-appointment]")).toHaveLength(0);
+    expect(screen.queryByText("Nothing booked that month")).not.toBeInTheDocument();
   });
 
-  it("draws skeletons, not an empty month, while the read is in flight", () => {
+  it("draws skeletons, not a clear month, while the read is in flight", () => {
     const { container } = render(
       <MonthView day={MONTH} appointments={[]} isPending onEdit={vi.fn()} />,
     );
 
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
-    expect(screen.queryByText("Nothing booked that month")).not.toBeInTheDocument();
+    // A grid before the read lands would publish a month of days nobody has confirmed.
+    expect(container.querySelectorAll("[data-day]")).toHaveLength(0);
   });
 
   it("shows the API's own message and a retry when the month cannot be read", async () => {

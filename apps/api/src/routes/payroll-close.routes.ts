@@ -130,11 +130,10 @@ payrollCloseRouter.get(
   "/progress",
   requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),
   validate(payrollProgressQuerySchema, "query"),
-  handle((req) =>
-    readStoredPayrollProgress(
-      validated<z.infer<typeof payrollProgressQuerySchema>>(req, "query").period,
-    ),
-  ),
+  handle((req) => {
+    const query = validated<z.infer<typeof payrollProgressQuerySchema>>(req, "query");
+    return readStoredPayrollProgress(query.period, query.scope);
+  }),
 );
 payrollCloseRouter.get(
   "/statements",

@@ -381,7 +381,11 @@ only the human Excel/Acrobat eyeball steps remain disclosed.)_
   (`salonPeriodKey` reads the tenant zone — a Singapore salon is already in the next month
   at 17:00 UTC on the last day), the query is strict, plan names come from the salon's own
   `PayrollPlan` rows in the same transaction, and a `STAFF` or outlet-scoped caller is
-  narrowed to their **own** row instead of the salon table. Nothing here writes.
+  narrowed to their **own** row instead of the salon table. `?scope=SELF` asks for that
+  narrowing explicitly, which is what the self-service screen does — an owner or manager
+  holds a statement too, so the salon table is the wrong answer under a "Your …" heading.
+  The flag is a literal (`z.literal("SELF")`), so `SALON` is refused with `422` rather than
+  honoured: it can only ever narrow a read. Nothing here writes.
 - `GET /api/payroll-close/statements` (FR-RPT-05) returns only the caller's approved
   months, newest first, bounded by `limit` (default 12, max 36) with `hasMore`. Drafts are
   never listed; approved months are paged four at a time (scan ceiling 120), a month that
@@ -397,7 +401,10 @@ only the human Excel/Acrobat eyeball steps remain disclosed.)_
   till (FR-POS-09) and renders nothing for a cashier; the new Settings → **My earnings**
   section (`MyEarnings.tsx`) shows the caller's own month-to-date panel, their frozen
   months and a drill-down into each month's components and incentives, and tells a cashier
-  why the panel is empty without calling the API.
+  why the panel is empty without calling the API. The self-service panel passes `selfOnly`,
+  which now travels as `?scope=SELF` rather than staying a label, and it renders rows only
+  from a `SELF` body — an owner or manager holding their own statement is read correctly
+  instead of being shown whichever colleague the salon table listed first.
 - Verification (executed): shared **305/305**; API payroll group (progress, report, export
   data/render, close state/view, both payroll HTTP suites) **75/75**, including 9 new pure
   projection tests and 10 new HTTP tests; a new gated database suite **1/1** against a

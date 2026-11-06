@@ -159,6 +159,27 @@ it("says so when the caller has no statement in the month", async () => {
   expect(await screen.findByText("No payroll statement for you in 2026-09.")).toBeInTheDocument();
 });
 
+it("asks the server to narrow a self-service read instead of trusting the prop", async () => {
+  mocks.get.mockResolvedValue({ ...estimated(), scope: "SELF" });
+  mount(<PayrollProgress selfOnly compact period="2026-09" />);
+  expect(await screen.findByText("Base month to date (Service tier)")).toBeInTheDocument();
+  // The scope is the server's decision, so the request has to say so: the query key alone
+  // never left the browser, which is how a colleague's figures could appear as "yours".
+  expect(mocks.get).toHaveBeenCalledWith("/payroll-close/progress", {
+    period: "2026-09",
+    scope: "SELF",
+  });
+});
+
+it("shows nothing when a self read comes back with the salon table", async () => {
+  // A salon-scoped body under a "Your …" heading is the bug this card exists to avoid.
+  mocks.get.mockResolvedValue(estimated());
+  mount(<PayrollProgress selfOnly compact />);
+  expect(await screen.findByText("No payroll statement for you in 2026-09.")).toBeInTheDocument();
+  expect(screen.queryByText("Alice Tan")).not.toBeInTheDocument();
+  expect(screen.queryByText("Base month to date (Service tier)")).not.toBeInTheDocument();
+});
+
 it("reads the current month when no period is given", async () => {
   mount(<PayrollProgress />);
   await screen.findByText("Estimated");

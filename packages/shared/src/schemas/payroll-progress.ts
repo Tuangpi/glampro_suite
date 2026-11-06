@@ -32,9 +32,19 @@ import {
 const key = z.string().trim().min(1).max(128);
 const instant = z.iso.datetime();
 
-/** `GET /api/payroll-close/progress` — omitted `period` means the current salon month. */
+/**
+ * `GET /api/payroll-close/progress` — omitted `period` means the current salon month.
+ *
+ * `scope=SELF` asks for the caller's own line, which is what Settings → My earnings
+ * reads: an owner or manager holds a commission statement too, so the salon table is
+ * not an acceptable answer under a "Your …" heading. The flag can only **narrow** — a
+ * `STAFF` or outlet-scoped caller is narrowed whatever they send, and `SALON` is
+ * refused rather than honoured — so no request can widen a self-service read. Omitting
+ * it keeps the role-based default every existing caller relies on.
+ */
 export const payrollProgressQuerySchema = z.strictObject({
   period: payrollPeriodKeySchema.optional(),
+  scope: z.literal("SELF").optional(),
 });
 export type PayrollProgressQuery = z.infer<typeof payrollProgressQuerySchema>;
 

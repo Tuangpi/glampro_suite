@@ -467,13 +467,10 @@ export default function AppointmentFormDrawer({
         noValidate
         className="flex flex-col gap-4"
       >
-        <p>
-          Outlet:{" "}
-          {appointment
-            ? (appointment.outletName ?? "Company-wide (legacy)")
-            : "Current top-bar outlet, or company-wide if none selected"}
-          . Times use {timeZone}. Existing bookings keep their outlet when edited.
-        </p>
+        {/* The outlet sentence is parked with `OUTLETS_UI_ENABLED`; the time zone
+            is not — an edit still reads the saved booking's branch zone, and this
+            line is where the desk sees which clock the times below use. */}
+        <p>Times use {timeZone}.</p>
         {formError ? (
           <p role="alert" className="rounded-md bg-danger/10 px-3 py-2 text-sm text-danger">
             {formError}

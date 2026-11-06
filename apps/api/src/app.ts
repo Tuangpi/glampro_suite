@@ -22,6 +22,7 @@ import { giftCardsRouter } from "./routes/gift-cards.routes.js";
 import aiAssistantRouter from "./routes/ai-assistant.routes.js";
 import { healthRouter, readiness } from "./routes/health.routes.js";
 import { packagesRouter } from "./routes/packages.routes.js";
+import { valuePackagesRouter } from "./routes/value-packages.routes.js";
 import { productsRouter } from "./routes/products.routes.js";
 import { reportsRouter } from "./routes/reports.routes.js";
 import { resourcesRouter } from "./routes/resources.routes.js";
@@ -121,6 +122,10 @@ export function createApp(): Express {
   // sit beside is core and passes as soon as the tenant exists.
   app.use(`${API_PREFIX}/packages`, packagesRouter);
   app.use(`${API_PREFIX}/gift-cards`, giftCardsRouter);
+  // The fifth tab of screen 08: prepaid credit. A mount of its own rather than a
+  // second resource under `/packages`, because the row is money rather than sessions
+  // and `/packages/prepaid/:id/validity` already owns that prefix. Same add-on.
+  app.use(`${API_PREFIX}/value-packages`, valuePackagesRouter);
   // Screens 01–02. The till's item search (5b.1) is the first route that has to decide
   // what to do about an add-on it *partly* needs: two of the five kinds it searches are
   // add-ons, so it omits them and says so rather than refusing the whole request the way

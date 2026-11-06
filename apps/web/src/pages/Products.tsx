@@ -1,14 +1,18 @@
 /**
  * Products & Inventory — handoff screen 08.
  *
- * **One catalogue, four tabs.** Products, Services, Packages and Gift cards are the
- * tabs handoff screen 08 draws, and all four are here. The last two were held back
- * until the phase that needed them, because an empty tab reads to a salon as "this
- * salon has none" — a different and wrong statement (`PROJECT.md#design-6`
- * checklist). They are **add-on modules**, so a salon that has not bought one gets a
- * 403 `MODULE_NOT_ENTITLED` from the API and the tab says so, rather than showing a
- * list that is empty for a reason the screen cannot see. There is no Services entry
- * on the rail for the same reason the tab exists (ADR 0005).
+ * **One catalogue, five tabs.** Products, Services, Packages, Gift cards and Value
+ * packages are the tabs this screen draws. The last three are **add-on modules** and
+ * were held back until the phase that needed them, because an empty tab reads to a
+ * salon as "this salon has none" — a different and wrong statement
+ * (`PROJECT.md#design-6` checklist). A salon that has not bought one gets a 403
+ * `MODULE_NOT_ENTITLED` from the API and the tab says so, rather than showing a list
+ * that is empty for a reason the screen cannot see. There is no Services entry on the
+ * rail for the same reason the tab exists (ADR 0005).
+ *
+ * **Packages and Value packages share one add-on** but are two tabs, because they are
+ * two products: a bundle sells sessions, prepaid credit sells money. The difference is
+ * visible in the columns — Sessions vs Credit — rather than in a filter.
  *
  * **The Cost column and the "Inventory value" tile are absent.** Neither the schema
  * nor the legacy database the schema was derived from ever held a cost, so both
@@ -39,13 +43,24 @@ import type {
   ProductSummary,
   ServiceDetail,
   ServiceSummary,
+  ValuePackageDetail,
+  ValuePackageSummary,
 } from "@glampro_suite/shared";
 
 import GiftCardFormDrawer from "@/components/catalogue/GiftCardFormDrawer";
 import PackageFormDrawer from "@/components/catalogue/PackageFormDrawer";
 import ProductFormDrawer from "@/components/catalogue/ProductFormDrawer";
 import ServiceFormDrawer from "@/components/catalogue/ServiceFormDrawer";
-import { AlertTriangle, Gift, Grid, Package, Scissors, Search } from "@/components/icons";
+import ValuePackageFormDrawer from "@/components/catalogue/ValuePackageFormDrawer";
+import {
+  AlertTriangle,
+  CreditCard,
+  Gift,
+  Grid,
+  Package,
+  Scissors,
+  Search,
+} from "@/components/icons";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
@@ -60,13 +75,14 @@ import { useModules } from "@/hooks/useSettings";
 import { usePackageList } from "@/hooks/usePackages";
 import { useProductCount, useProductList } from "@/hooks/useProducts";
 import { useServiceCount, useServiceList } from "@/hooks/useServices";
+import { useValuePackageList } from "@/hooks/useValuePackages";
 import { get, getErrorCode, getErrorMessage } from "@/lib/api";
 import { cn, formatDuration } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 
 const PAGE_SIZE = 20;
 
-type CatalogueTab = "products" | "services" | "packages" | "gift-cards";
+type CatalogueTab = "products" | "services" | "packages" | "gift-cards" | "value-packages";
 
 /**
  * What each tab's rows are called, and what to say when there are none.
@@ -112,6 +128,15 @@ const NOUNS: Record<
     empty: "Add a gift card so the salon can sell prepaid value.",
     addOn: "Gift cards",
   },
+  "value-packages": {
+    // "value package" rather than "package": the two tabs share one add-on and one
+    // word for both would make the count line and the empty state ambiguous.
+    noun: "value package",
+    icon: <CreditCard />,
+    addLabel: "Add value package",
+    empty: "Add prepaid credit a client can spend on later visits.",
+    addOn: "Packages",
+  },
 };
 
 /**
@@ -154,6 +179,14 @@ const SKELETON_WIDTHS: Record<CatalogueTab, Record<string, string>> = {
     expires: "w-24",
     actions: "w-12",
   },
+  "value-packages": {
+    item: "w-40",
+    price: "w-20",
+    credit: "w-20",
+    services: "w-32",
+    status: "w-20",
+    actions: "w-12",
+  },
 };
 
 export default function Products() {
@@ -169,6 +202,7 @@ export default function Products() {
   const [editingService, setEditingService] = useState<ServiceDetail | null>(null);
   const [editingPackage, setEditingPackage] = useState<PackageDetail | null>(null);
   const [editingGiftCard, setEditingGiftCard] = useState<GiftCardDetail | null>(null);
+  const [editingValuePackage, setEditingValuePackage] = useState<ValuePackageDetail | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Typing should not fire a query per keystroke, but the box must still feel
@@ -185,6 +219,11 @@ export default function Products() {
   const services = useServiceList({ page, pageSize: PAGE_SIZE, search: search || undefined });
   const packages = usePackageList({ page, pageSize: PAGE_SIZE, search: search || undefined });
   const giftCards = useGiftCardList({ page, pageSize: PAGE_SIZE, search: search || undefined });
+  const valuePackages = useValuePackageList({
+    page,
+    pageSize: PAGE_SIZE,
+    search: search || undefined,
+  });
 
   // Tiles. Each number is a server-side count over the whole catalogue (ADR 0010):
   // "Total items" adds the two catalogue counts together, and the low-stock count is
@@ -199,6 +238,7 @@ export default function Products() {
     setEditingService(null);
     setEditingPackage(null);
     setEditingGiftCard(null);
+    setEditingValuePackage(null);
     setDrawerOpen(true);
   }
 
@@ -221,6 +261,11 @@ export default function Products() {
 
   async function openEditGiftCard(card: GiftCardSummary) {
     setEditingGiftCard(await get<GiftCardDetail>(`/gift-cards/${card.id}`));
+    setDrawerOpen(true);
+  }
+
+  async function openEditValuePackage(valuePackage: ValuePackageSummary) {
+    setEditingValuePackage(await get<ValuePackageDetail>(`/value-packages/${valuePackage.id}`));
     setDrawerOpen(true);
   }
 
@@ -427,7 +472,66 @@ export default function Products() {
         ]),
   ];
 
-  // Each panel renders only while its tab is the active one, so the four lists are
+  /**
+   * A value-package row: what it costs, what it is worth, and what it was designed
+   * for.
+   *
+   * **Price and Credit are two columns, not one.** A bundle's single price buys
+   * sessions; here the customer pays one number and receives another, and the gap is
+   * the whole offer — collapsing them would hide the only thing that makes the row
+   * interesting. There is no Sessions column because nothing is counted, and no stock
+   * or branch for the same reason the bundle has neither.
+   */
+  const valuePackageColumns: TableColumn<ValuePackageSummary>[] = [
+    {
+      key: "item",
+      header: "Item",
+      cell: (row) => (
+        <div className="min-w-0">
+          <p className="truncate font-bold text-ink">{row.name}</p>
+          <p className="truncate text-xs text-ink-muted">{row.description ?? "No description"}</p>
+        </div>
+      ),
+    },
+    {
+      key: "price",
+      header: "Price",
+      align: "right",
+      cell: (row) => formatPrice(row.price),
+    },
+    {
+      key: "credit",
+      header: "Credit",
+      align: "right",
+      cell: (row) => formatPrice(row.credit),
+    },
+    {
+      key: "services",
+      header: "Designed for",
+      align: "right",
+      cell: (row) =>
+        row.serviceCount === 0
+          ? "Any service"
+          : `${row.serviceCount} ${row.serviceCount === 1 ? "service" : "services"}`,
+    },
+    { key: "status", header: "Status", cell: (row) => <StatusCell status={row.status} /> },
+    ...(isReadOnly
+      ? []
+      : [
+          {
+            key: "actions",
+            header: "Edit",
+            align: "right" as const,
+            cell: (row: ValuePackageSummary) => (
+              <Button variant="secondary" size="sm" onClick={() => void openEditValuePackage(row)}>
+                Edit
+              </Button>
+            ),
+          },
+        ]),
+  ];
+
+  // Each panel renders only while its tab is the active one, so the five lists are
   // never asked for at once and each panel is handed its own tab's state.
   const tabs: TabItem[] = [
     {
@@ -530,6 +634,31 @@ export default function Products() {
         />
       ),
     },
+    {
+      id: "value-packages",
+      label: "Value packages",
+      content: (
+        <CataloguePanel<ValuePackageSummary>
+          tab="value-packages"
+          caption="Value packages in this salon"
+          columns={valuePackageColumns}
+          rows={valuePackages.data?.data ?? []}
+          search={search}
+          isReadOnly={isReadOnly}
+          isPending={valuePackages.isPending}
+          isFetching={valuePackages.isFetching}
+          isError={valuePackages.isError}
+          error={valuePackages.error}
+          total={valuePackages.data?.total ?? 0}
+          page={valuePackages.data?.page ?? page}
+          pageCount={valuePackages.data?.pageCount ?? 1}
+          onAdd={openCreate}
+          onPageChange={setPage}
+          onClearSearch={() => setSearchInput("")}
+          onRetry={() => void valuePackages.refetch()}
+        />
+      ),
+    },
   ];
 
   /** Hide the Add action for an add-on tab this salon has not bought. While the
@@ -545,6 +674,7 @@ export default function Products() {
     services: "catalogue",
     packages: "packages",
     "gift-cards": "giftCards",
+    "value-packages": "packages",
   };
   const moduleEntitled = modules.isPending || entitled.has(TAB_MODULE[tab]);
 
@@ -651,11 +781,18 @@ export default function Products() {
           canConfigureCommission={user?.globalRole === "SUPER_ADMIN" && !isReadOnly}
           onClose={() => setDrawerOpen(false)}
         />
-      ) : (
+      ) : tab === "gift-cards" ? (
         <GiftCardFormDrawer
           key={`gift-card:${editingGiftCard?.id ?? "new"}:${drawerOpen}`}
           open={drawerOpen}
           card={editingGiftCard}
+          onClose={() => setDrawerOpen(false)}
+        />
+      ) : (
+        <ValuePackageFormDrawer
+          key={`value-package:${editingValuePackage?.id ?? "new"}:${drawerOpen}`}
+          open={drawerOpen}
+          valuePackage={editingValuePackage}
           onClose={() => setDrawerOpen(false)}
         />
       )}

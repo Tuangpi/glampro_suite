@@ -102,18 +102,8 @@ export default function WeekView({
     staffColumns.map((staff) => ({ date, index, staff })),
   );
 
-  if (appointments.length === 0) {
-    return (
-      <div className="p-5">
-        <EmptyState
-          title="Nothing booked that week"
-          description="Move the week, or book the first appointment and it will appear on the grid."
-          icon={<Calendar />}
-        />
-      </div>
-    );
-  }
-
+  // A quiet week still draws its frame: seven day columns of opening hours are
+  // what the desk reads free time from, so the grid never gives way to a card.
   return (
     <div className="min-w-0 max-w-full rounded-card overflow-auto border border-line bg-surface">
       <div style={{ minWidth: 68 + tracks.length * 140 }}>

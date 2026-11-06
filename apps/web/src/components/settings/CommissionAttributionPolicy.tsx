@@ -90,12 +90,19 @@ export default function CommissionAttributionPolicy({ canEdit }: { canEdit: bool
   }
 
   return (
-    <Card title="Required commission attribution">
+    <Card
+      title="Required commission attribution"
+      description="Checked when a sale completes, including held sales."
+      actions={
+        <Button variant="secondary" size="sm" disabled={busy} onClick={() => void reload()}>
+          {draft || reason ? "Reload and discard draft" : "Reload"}
+        </Button>
+      }
+    >
       <div className="flex flex-col gap-3">
         <p className="text-sm text-ink-muted">
-          Salon-wide requirements are checked when a sale completes, including held sales. Defaults
-          are optional. These settings do not enable new commission earnings or confirm package
-          collection eligibility. Previously completed sales are not rewritten.
+          These settings do not enable new commission earnings or confirm package collection
+          eligibility. Previously completed sales are not rewritten.
         </p>
         {policy.isPending && <p role="status">Loading attribution policy…</p>}
         {policy.isError && (
@@ -127,32 +134,33 @@ export default function CommissionAttributionPolicy({ canEdit }: { canEdit: bool
               />
             ))}
             {canEdit && (
-              <>
-                <Input
-                  label="Attribution policy change reason"
-                  placeholder="e.g. Split attribution now follows the staff who completed the service"
-                  value={reason}
-                  maxLength={500}
-                  onChange={(event) => {
-                    setDraft(displayed);
-                    setReason(event.target.value);
-                    setNotice("");
-                  }}
-                />
-                <Button
-                  disabled={reason.trim().length < 3}
-                  loading={publish.isPending}
-                  onClick={() => void save()}
-                >
-                  Publish attribution policy
-                </Button>
-              </>
+              <div className="mt-1 rounded-lg border border-line bg-surface-muted p-3">
+                <h4 className="text-sm font-bold text-ink">Publish policy change</h4>
+                <div className="mt-2 flex flex-col gap-3">
+                  <Input
+                    label="Attribution policy change reason"
+                    placeholder="e.g. Split attribution now follows the staff who completed the service"
+                    value={reason}
+                    maxLength={500}
+                    onChange={(event) => {
+                      setDraft(displayed);
+                      setReason(event.target.value);
+                      setNotice("");
+                    }}
+                  />
+                  <Button
+                    className="self-start"
+                    disabled={reason.trim().length < 3}
+                    loading={publish.isPending}
+                    onClick={() => void save()}
+                  >
+                    Publish attribution policy
+                  </Button>
+                </div>
+              </div>
             )}
           </fieldset>
         )}
-        <Button variant="secondary" disabled={busy} onClick={() => void reload()}>
-          Reload attribution policy{draft || reason ? " and discard draft" : ""}
-        </Button>
       </div>
     </Card>
   );

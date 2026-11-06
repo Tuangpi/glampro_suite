@@ -32,6 +32,7 @@ export const TENANT_PURGE_ORDER = [
   "treatment_records",
   "treatment_consent_forms",
   "tenant_operating_hours",
+  "tenant_logos",
   "tenant_modules",
   "staff_shifts",
   "staff_departments",

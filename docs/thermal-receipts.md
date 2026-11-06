@@ -17,6 +17,24 @@ The app uses a 2 mm inset and leaves paper size/roll length to the driver. It do
 not silently configure a printer, send raw ESC/POS commands, open a cash drawer
 or cut paper. Standard-page printing keeps the browser's normal page margins.
 
+## Salon branding
+
+The receipt header prints the salon's name with its logo beside it. The logo is one
+image per salon, uploaded under **Settings → Salon details** as PNG or JPEG up to
+512 KB (the API sniffs the bytes and enforces the limit; the client check is only
+prompt feedback). A new upload replaces the previous image, and removing it is
+explicit — nothing else clears it.
+
+Until a logo exists, the same header draws the salon's initials, so a receipt never
+prints an empty box. The mark is 32 px on the standard page and 26 px on both thermal
+rolls. The emailed receipt and the public receipt link are rendered by the API and
+follow the same rule: the image when the salon has one, its initials otherwise, and
+never a broken-image placeholder. The email embeds it as an absolute URL (40 px); the
+public link reads it from `/api/public/tenants/:slug/logo`, which is versioned by the
+logo's `updatedAt` so a re-upload is not served from a stale cache.
+
+Branding is presentation only: it changes no amount, GST figure or tender line.
+
 ## Verification and limits
 
 Component tests cover paper selection, unchanged amounts, GST, discounts, split

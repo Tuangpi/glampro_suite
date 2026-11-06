@@ -1,5 +1,253 @@
 # Glampro Suite — progress
 
+## November 6, 2026 — the receipt carries the salon's own mark
+
+A printed receipt left the counter with the salon's name and nothing else, and the
+on-screen receipt printed a GST line whether or not the sale had any tax. Two small
+things, both visible to a customer: the salon now has a logo, and the receipt only
+claims what the stored sale says.
+
+- **One image, owned by the tenant.** `TenantLogo` is keyed by `tenantId`, so a salon
+  holds exactly one picture and a re-upload replaces it instead of accumulating a
+  gallery. `POST /api/settings/logo` (multipart, manager or owner, refused for a
+  suspended salon) and `DELETE /api/settings/logo` live beside the profile but are
+  their own routes: the profile body is JSON and a rebrand must not depend on its
+  required fields. The profile carries `logoUrl` — presence and freshness, never the
+  bytes — as `/api/public/tenants/:slug/logo?v=<logo.updatedAt>`, the one
+  unauthenticated read, with a five-minute public cache and a version marker so a
+  re-upload does not look like a silent failure.
+- **The bytes decide, not the client.** The route caps the upload with multer, the
+  service re-checks the length (512 KB) and sniffs the magic bytes for PNG/JPEG; the
+  `Content-Type` header and the filename are the client's claims and reach neither
+  decision. The browser's own check is prompt feedback only. Prisma's `Bytes` wanted
+  `new Uint8Array(content)` rather than a `Buffer`, and `upsert` bypasses the
+  tenant-scope extension, so the replace is written as delete-then-create.
+- **One mark, three surfaces.** `SalonMark` draws the logo and falls back to the
+  salon's initials — through the existing `getInitials`, so a salon's monogram matches
+  its owner's avatar. It tracks the failed _URL_ rather than a boolean, so replacing a
+  broken image retries instead of leaving the monogram in place for good. The receipt
+  view, the emailed receipt and the server-rendered public receipt link all obey the
+  same rule; the email embeds the image as an absolute URL, the printed mark is 32 px
+  on the standard page and 26 px on both thermal rolls.
+- **Settings → Salon details** gains `SalonLogoCard`: the preview is the real
+  `SalonMark`, so the monogram is visible before anything is uploaded and after a
+  removal, and the card is read-only for roles that may not rebrand.
+- **The receipt stopped printing GST that was not charged.** "Includes GST (n%)" now
+  renders only when the stored `taxAmount` is above zero. The registration number is
+  still printed when the sale carries one, and neither line moves an amount.
+- **Sending a receipt offers only what the salon pays for.** `SecureLinkActions` reads
+  the salon's messaging settings and offers the channels that are switched on, naming
+  a disabled channel and where to enable it rather than hiding it, and sends nothing
+  when the settings cannot be loaded. The server refusal (`queueReceipt` → "This
+  channel is disabled.") stays the boundary; the button is no longer a promise.
+- Evidence: API suite `src/**/*.test.ts` + `prisma/*.test.ts` **1522 tests — 1247
+  passed, 0 failed**, 275 opt-in skips. `settings.routes.test.ts` **11/11**;
+  `sales.routes.test.ts` + `settings.routes.test.ts` + `messaging.routes.test.ts`
+  **65/65**. Web **1166/1166** across 123 files, including `SalonMark` 5,
+  `SalonLogoCard` 8 (oversize and non-image both refused before a request),
+  `SecureLinkActions` 8 and `Settings` 32. API and web typecheck, ESLint and Prettier
+  clean; `vite build` passes; migration `20261106120000_tenant_logo` applied and
+  `prisma migrate status` reports the database up to date.
+- Two failures met on the way were the environment, not this change, and both are
+  already written up above: `settings`-adjacent route tests answered `500` until the
+  logo migration was applied, and `staff.routes.test.ts` answers `503
+EMAIL_SEND_FAILED` without an SMTP sink on `127.0.0.1:1025` — 32/32 with one. The
+  full web suite also still times out six `PayrollPlans` cases under default
+  parallelism on this machine; that file is 25/25 alone and the suite is green at
+  `--maxWorkers=4`.
+- No deployment, seed or production data change.
+
+## November 6, 2026 — "My earnings" stops showing someone else's earnings
+
+Settings → **My earnings** is headed "Your month-to-date progress", but only the statements half was
+scoped to the caller. The progress half rendered `rows[0]` of whatever the API returned, and the API
+decided scope from the role alone — `STAFF`, or an outlet-scoped caller, otherwise the salon table.
+The component's `selfOnly` prop never left the browser: it only changed the query key and the
+empty-state wording. So an owner or manager, both of whom hold a commission statement themselves,
+was shown the first row of the salon table — the loader orders staff by name — under a heading
+claiming those figures were theirs.
+
+- **The scope is asked for now, and can only narrow.** `GET /api/payroll-close/progress` accepts
+  `?scope=SELF`, typed `z.literal("SELF")` so `SALON` and `self` are `422` instead of honoured.
+  `readStoredPayrollProgress` ORs the flag into the existing role/outlet rule, so no request widens
+  a read and the role-based default is unchanged for every existing caller — the till card, the
+  salon table in Settings → Team & commissions, and any client that omits the query.
+- **The card sends it and refuses the wrong answer.** `PayrollProgress` now sends `scope=SELF` when
+  `selfOnly` is set, and renders rows only when the body comes back `scope: "SELF"` — a salon-table
+  answer becomes "No payroll statement for you in 2026-09." instead of a colleague's figures. Two
+  independent failures had to line up for the bug to show, so both are closed.
+- **What did not change.** The statements half already read `readStoredPayrollStatements`, which
+  filters on `user.id` for every role; the cashier card still explains itself without calling the
+  API; no salary, take-home or profile field came any nearer this boundary.
+- Evidence: `payroll-progress.http.test.ts` **13/13** with three new cases (an owner's `scope=SELF`
+  read is empty rather than the two staff rows; a manager _can_ still read the salon table without
+  the flag, which is what makes the flag a narrowing; `?scope=SALON` and `?scope=self` answer `422`
+  without opening a transaction). `PayrollProgress.test.tsx` **9/9**, two new (the request carries
+  `{ period, scope: "SELF" }`; a salon body renders the empty state), with `MyEarnings.test.tsx`
+  **15/15** together. `pages/__tests__/Settings.test.tsx` + `PayrollWorkspace.test.tsx` **35/35**.
+  API and web typecheck clean. Full API suite 1522 tests — 1246 passed, 275 opt-in skips, and one
+  failure confined to `staff.routes.test.ts` answering `503 EMAIL_SEND_FAILED`, the known
+  requirement for a loopback SMTP sink recorded earlier today. Full web suite: 120 of 121 files
+  green, the 13 failures being the in-flight `settings/PayrollPlans.test.tsx` timing out under load
+  (25/25 on its own).
+- An assertion was added to the gated `payroll-progress.acceptance.test.ts` (a manager passing
+  `"SELF"` gets their own line, here none) but **not executed**: `CP006_PROGRESS_DB=1` needs a
+  disposable PostgreSQL.
+- Still open: `STAFF` and `CASHIER` have no navigation path to this section at all — the rail entry
+  for Settings is `SUPER_ADMIN`/`MANAGER`, so the people the tab is _for_ reach it by URL only. A
+  Dashboard shortcut is the smallest fix; it is deliberately not part of this change.
+- No deployment, seed or production data change.
+
+## November 6, 2026 — the outlet screens go behind one switch
+
+The salon this suite is set up for has no branches: `outlets` held **0 rows**, and every sale,
+appointment and product was tenant-wide (`outlet_id` null throughout, checked read-only). The
+feature was still on screen everywhere — a Settings category, a top-bar picker, an Outlets column,
+an "Outlet: Company-wide" sentence in the booking editor — so every screen asked a question with
+one possible answer. All of it now sits behind one constant, `OUTLETS_UI_ENABLED` in
+`apps/web/src/constants/outlets.ts`, set to `false`.
+
+- **One flag, not four deletions.** `Settings.tsx` keeps its category list and renders
+  `ALL_SETTINGS_SECTIONS` through a filter; `AppShell` keeps `<OutletPicker />` behind the flag. The
+  components, the `x-outlet-id` header, `outlet-storage` and the API are untouched, so restoring the
+  feature is a one-line change plus the two wording reversals noted at their call sites. The
+  `?section=outlets` case needed care: `activeSection` resolves against the _visible_ list, so a
+  bookmarked link falls back to Salon details like any unknown section instead of opening a category
+  that draws nothing, and `/outlets` now redirects there too.
+- **A stale branch scope is cleared, not just hidden.** The selection lived in `sessionStorage` and
+  `api.ts` only cleared it on a 401, so a branch chosen before the hide would have kept scoping
+  sales, reports and payroll — with no visible control to undo it. `AuthContext` now calls
+  `selectOutlet("")` on every status change while the flag is off; the API's own refusal
+  (`payroll-close-loader.ts`, `outlet-policy.ts`) remains the real boundary. Hidden is not secured.
+- **Wording that named what the desk cannot see.** The appointment list lost its `outlet` column
+  (every row read "Company-wide"), the editor's paragraph is now `Times use {timeZone}.` — the zone
+  is still real, because an edit reads the saved booking's branch zone — and the payroll report
+  renders its Outlets column only when a frozen snapshot actually names one. `PayrollWorkspace`
+  drops a prompt telling staff to use a picker that no longer exists (and which nothing would reach
+  now that the scope is cleared), and plan assignment history says "Salon-wide" rather than "All
+  outlets".
+- **Public booking was deliberately left alone.** `PublicBooking.tsx` still offers a branch where
+  the company has outlets, and `public-booking.service.ts` still refuses `BOOKING_OUTLET_REQUIRED`;
+  a customer-facing contract is not an admin convenience, and no outlet-free tenant can reach it.
+- **Tests moved with the intent.** `pages/__tests__/Settings.test.tsx` drops the `@/pages/Outlets`
+  mock and asserts the category appears in neither the select nor the menu, plus the
+  `?section=outlets` fallback; `routes.test.tsx` asserts the redirect now lands on `/settings` with
+  no search string; `PayrollWorkspace.test.tsx` loses its outlet-branch case; the drawer test asserts
+  `Times use America/Los_Angeles` instead of `Outlet: West`.
+- Evidence: focused run over the six touched suites **59/59**; `src/components/settings` **116/116**
+  across 16 files; full web suite **1127/1132** — all five failures are in `PayrollPlans.test.tsx`
+  (form typing and pagination assertions racing an in-flight refetch, the load-related flake already
+  recorded on this page), and that file is **25/25** alone and passes in its folder batch.
+  `tsc --noEmit`, `eslint src` and Prettier are clean; `npm run build:web` passes.
+- Trade-off recorded rather than hidden: the API keeps endpoints no screen calls. That is
+  intentional — the middleware, hours service and public booking still use them, and deleting them
+  would make the flag a migration instead of a switch.
+
+## November 6, 2026 — Team & commissions becomes five tabs instead of one long scroll
+
+The category stacked five panels — the staff rate matrix, company overrides, versioned pay plans,
+the month-to-date progress table and the attribution policy — with three dense tables, four
+separate "Reload" buttons and a paragraph of disclaimers at the top of each. Reaching the one
+panel a manager came for meant scrolling past the other four, and nothing said how they related.
+It now opens on **Staff rates** with four sibling tabs, and each panel answers one question.
+
+- **Five tabs, one job each.** `TeamSettings` renders the existing `Tabs` primitive: Staff rates
+  (`CommissionMatrix`), Company rules (`CommissionRules`), Pay plans (`PayrollPlans`), This month
+  (`PayrollProgress`), Attribution (`CommissionAttributionPolicy`). No component changed what it
+  asks the API; the same instances render inside panels, so every draft rule, revision pin and
+  read-only rule is unchanged.
+- **The URL owns the tab.** `?team=` mirrors `?section=`, so `?section=team&team=plans` opens the
+  plans tab for a colleague, and the category reopens on the tab the reader left. Switching
+  category keeps it.
+- **Lazy mount, no lost drafts.** A panel mounts on its first visit — opening the category now
+  loads the rates matrix only, not five endpoints — and stays mounted afterwards. That needed one
+  addition to `Tabs`: `keepMounted` renders every panel and marks the inactive ones `hidden`,
+  which keeps them out of the accessibility tree and the tab order while their state survives. The
+  aside's note now says drafts survive a category _or_ tab switch, which is what the screen does.
+- **Each card states its job in its header.** Long disclaimers were demoted to one muted line
+  under a short card description; the matrix and attribution "Publish" controls are grouped in a
+  bordered panel with a count/heading; Refresh moved into the card header on Company rules and
+  Attribution instead of being the first control in the body.
+- **The tables read as tables.** Commission rule history is a real table (Type · Applies to ·
+  Rate · Effective · Published, with the reason beneath) instead of an unstyled list of raw enum
+  values; the matrix header is uppercase over row rules with a per-cell default hint; the
+  month-to-date table uses the shared `Table` primitive with money right-aligned and the totals
+  row in `tfoot`.
+- **Tests follow the new shape.** `pages/__tests__/Settings.test.tsx` now opens the category on
+  Staff rates, reaches Attribution and Company rules by clicking their tabs, asserts the
+  `?team=plans` deep link, and proves a panel mounts on first visit and stays mounted (hidden) when
+  another tab is opened. `components/ui/__tests__/Tabs.test.tsx` covers `keepMounted`: the hidden
+  panel keeps its draft, leaves the role tree, and the default mode still unmounts.
+- Evidence: `pages/__tests__/Settings.test.tsx` **32/32**; `components/ui/__tests__/Tabs.test.tsx`
+  **11/11**; `src/components/settings` + `src/components/payroll` **124/124** across 17 files;
+  `src/pages` **268/268** across 16 files; `src/components/ui` + `PosPayrollProgress` **145/145**
+  across 23 files. `tsc --noEmit`, `eslint .`, Prettier and `npm run build:web` are clean. A fully
+  parallel run of 56 files showed two `PayrollPlans.test.tsx` failures on pagination buttons still
+  `disabled` while a refetch was in flight; that file is **25/25** alone and in its folder batch —
+  the same load-related flake recorded on this page before, not a regression.
+- Trade-off recorded rather than hidden: a tab costs one click. Staff rates leads because it is the
+  job an owner arrives with, the other four are named for the question they answer, and the deep
+  link covers a bookmark or a hand-off.
+
+## November 6, 2026 — Team & commissions stops repeating the staff roster
+
+The **Team & commissions** category opened with a "Staff and roles" card: a Name / Role /
+Position table of every active account, a "5 active accounts in this salon." line and a
+_Manage staff_ button — the `/staff` screen's list rendered a second time inside Settings. The
+roster belongs to the Staff screen (already a sidebar destination), so the card is gone and the
+category is now commission configuration only.
+
+- **One source for "who works here".** `TeamSettings` no longer calls `useStaffList`, so
+  Settings issues no `GET /api/staff` request and cannot disagree with the staff page.
+  `TeamCard`, the `StaffSummary` type import, `ROLE_BADGE`/`ROLE_LABELS`, the `Link` import and
+  the `Briefcase`/`Settings` icons were removed with it; `Skeleton`, `Badge`, `Table` and
+  `TableColumn` stay because the modules and hours panels still use them.
+- **Admin gating unchanged.** The permission gate now returns early for roles outside
+  owner/manager instead of wrapping the cards in a fragment, so a stylist sees nothing here —
+  the same outcome as before, and the same shape Payroll close already uses.
+  `CommissionAttributionPolicy`, `PayrollPlans`, `PayrollProgress`, `CommissionMatrix` and
+  `CommissionRules` render exactly as they did.
+- **Tests follow the intent.** `pages/__tests__/Settings.test.tsx` drops the staff fixture and
+  its `@/hooks/useStaff` mock, and now asserts that the team category renders neither the
+  `Active staff and their roles` table nor the `Manage staff` link — a regression guard
+  against the list returning.
+- Evidence: `pages/__tests__/Settings.test.tsx` **30/30**; `tsc -p tsconfig.app.json --noEmit`,
+  scoped ESLint and Prettier on the three touched files are clean.
+
+## November 6, 2026 — a quiet day still shows the calendar
+
+`/appointments` used to replace the calendar itself with a card whenever a range had no
+bookings: `CalendarView`, `WeekView` and `MonthView` each short-circuited to an `EmptyState`
+("Nothing booked that day" / "that week" / "that month") before drawing a single track. The
+desk opens the calendar to read _where the free time is_, so a quiet range is precisely when
+the grid earns its place — and handoff screen 06 draws the frame with no bookings at all. The
+request was blunt: show the calendar even when there is no appointment.
+
+- **Three early returns deleted, nothing else touched.** The views now fall through to the grid
+  they already knew how to draw with zero rows. Nothing had to be invented to make an empty
+  frame: `buildCalendarColumns` always appends the **Unassigned** column, `WeekView` falls back
+  to one `All staff` column, and `monthGridDays` still pads to 28/35/42 cells. No prop,
+  contract, geometry, query or API change.
+- **Loading and failure are unchanged.** `isPending` still paints skeletons and publishes no
+  grid, so a day nobody has confirmed is never drawn as free; `isError` still shows the error
+  card with its retry. Those two states are the only ones that may withhold the frame.
+- **The list keeps its empty states.** `pages/Appointments.tsx`'s table ("No appointments
+  today", "Nothing booked for that view") was left alone: it is a list, not a calendar, and the
+  request named the day/week/month views. The header's _Book appointment_ button is
+  unconditional, so an empty grid is not a dead end.
+- **The trade-off, recorded rather than hidden.** A clear month now reads as a month of free
+  days, which is what the old comment in `MonthView.test.tsx` was guarding against. What still
+  bounds that reading: the 08:00–20:00 gutter and its on-screen disclosure (Month is where
+  off-hours bookings show), and the `Showing first N of M appointments` line when a range holds
+  more than one page. ADR 0018 now records this decision as superseding the earlier one.
+- Evidence: the appointments component suite is **99/99** across 6 files (the three rewritten
+  empty-range tests now assert the grid: two day columns and the `08:00` gutter, seven week
+  tracks, 35 month cells with no chips); `pages/__tests__/Appointments.test.tsx` **11/11**; the
+  full web suite **1124/1129** with the five failures all `Test timed out in 5000ms` in
+  `settings/PayrollPlans.test.tsx`, which is 25/25 on its own — the same load-related flake
+  recorded on this page before the change, not a regression. Typecheck, scoped ESLint
+  (`src/components/appointments`, `pages/Appointments.tsx`), Prettier and `vite build` are clean.
+
 ## November 6, 2026 — the packages tab answers three questions instead of stacking four panels
 
 A customer profile's **Packages & credit** tab was four panels in a column: owned session

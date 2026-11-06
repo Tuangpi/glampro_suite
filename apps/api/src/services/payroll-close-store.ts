@@ -493,8 +493,14 @@ async function salonTimeZone(tx: PayrollCloseTransaction, tenantId: string) {
  * Visibility is decided here rather than in the browser: a manager or owner sees the
  * salon table, a staff member sees only their own line, and an outlet-scoped actor sees
  * only their own line as well — a branch picker must not widen a salon-wide statement.
+ *
+ * `requestedScope` is the caller asking for their own line (`?scope=SELF`), which is
+ * what the self-service screen reads. An owner or manager holds a commission statement
+ * too, so under a "Your month-to-date progress" heading the salon table is the wrong
+ * answer even though they are allowed to see it. The flag only ever narrows: it is
+ * OR-ed with the role and outlet rules, so nothing here can widen a read.
  */
-export async function readStoredPayrollProgress(period?: string) {
+export async function readStoredPayrollProgress(period?: string, requestedScope?: "SELF") {
   const scope = selfServiceContext();
   const requested = period === undefined ? undefined : payrollPeriodKeySchema.parse(period);
   return prisma.$transaction(async (tx) => {
@@ -505,7 +511,8 @@ export async function readStoredPayrollProgress(period?: string) {
     });
     if (!user || !selfServiceRoles.includes(user.globalRole))
       throw forbidden("Payroll progress is not available to this account.");
-    const selfOnly = user.globalRole === "STAFF" || currentOutletId() !== undefined;
+    const selfOnly =
+      requestedScope === "SELF" || user.globalRole === "STAFF" || currentOutletId() !== undefined;
     const periodKey =
       requested ?? salonPeriodKey(await salonTimeZone(tx, scope.tenantId), new Date());
     const verified = await verifiedPayrollCloseSnapshot(tx, periodKey);

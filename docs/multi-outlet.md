@@ -1,5 +1,14 @@
 # Multi-outlet support — TK2610-0028
 
+> **Status, November 6, 2026 — the browser surface is parked.** Outlet management
+> and the top-bar picker sit behind `OUTLETS_UI_ENABLED`
+> (`apps/web/src/constants/outlets.ts`, currently `false`). This document still
+> describes the whole feature because the schema, the `x-outlet-id` contract, the
+> role guards and the public booking branch selection are unchanged and still
+> enforced; what is hidden is the admin screen and the picker. A session clears any
+> stored branch selection on load, so the salon runs tenant-wide. Flip the flag to
+> bring the UI back — no API change is needed.
+
 ## Scope
 
 One company remains one tenant. Outlets are optional operational locations within

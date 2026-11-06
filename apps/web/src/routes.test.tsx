@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import routes from "./routes";
 
 describe("legacy outlet route", () => {
-  it("replaces the old URL with the Outlets settings section", async () => {
+  it("replaces the old URL with Settings, now that outlets are parked", async () => {
     const outletRoute = routes
       .find((route) => route.path === "/")
       ?.children?.find((route) => route.path === "outlets");
@@ -13,14 +13,16 @@ describe("legacy outlet route", () => {
     const router = createMemoryRouter(
       [
         { path: "/outlets", element: outletRoute!.element },
-        { path: "/settings", element: <div>Outlet settings destination</div> },
+        { path: "/settings", element: <div>Settings destination</div> },
       ],
       { initialEntries: ["/outlets"] },
     );
     render(<RouterProvider router={router} />);
-    expect(await screen.findByText("Outlet settings destination")).toBeVisible();
+    expect(await screen.findByText("Settings destination")).toBeVisible();
     expect(router.state.location.pathname).toBe("/settings");
-    expect(router.state.location.search).toBe("?section=outlets");
+    // The destination used to be `?section=outlets`; that category is parked, so
+    // the redirect must not name a section the screen no longer offers.
+    expect(router.state.location.search).toBe("");
     expect(router.state.historyAction).toBe("REPLACE");
   });
 });

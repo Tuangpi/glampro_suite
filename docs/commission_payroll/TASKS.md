@@ -1424,7 +1424,9 @@ and browser/manual acceptance are separate items below.
       current month (`salonPeriodKey` reads the tenant zone, so a Singapore salon is already
       in the next month at 17:00 UTC), a strict query refuses an impossible period or an
       unknown key, and an outlet-scoped or `STAFF` caller is narrowed to their **own** row
-      instead of the salon table.
+      instead of the salon table. `?scope=SELF` is how a self-service screen asks for that
+      narrowing — an owner or manager holds a statement themselves — and it is a literal, so
+      the flag can only narrow and `scope=SALON` is a `422` rather than a wider read.
 - [x] DONE — **Web surfaces.** `PayrollProgress.tsx` shows the salon table in Settings →
       Team & commissions (plan, stage, base, rate now, distance to the next band,
       commission, incentive, estimated total, totals footer) with an `Estimated` or `Frozen`

@@ -287,7 +287,6 @@ export default function Appointments() {
         ),
     },
     { key: "service", header: "Service", cell: (row) => row.serviceName ?? "—" },
-    { key: "outlet", header: "Outlet", cell: (row) => row.outletName ?? "Company-wide" },
     { key: "staff", header: "Performer", cell: (row) => row.staffName ?? "Unassigned" },
     {
       key: "status",
@@ -478,7 +477,6 @@ export default function Appointments() {
                 time: "w-24",
                 customer: "w-40",
                 service: "w-32",
-                outlet: "w-24",
                 staff: "w-24",
                 status: "w-20",
                 actions: "w-12",

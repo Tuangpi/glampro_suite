@@ -31,6 +31,7 @@ import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Select from "@/components/ui/Select";
 import Modal from "@/components/ui/Modal";
+import SalonMark from "@/components/ui/SalonMark";
 import { PAYMENT_METHOD_BADGE, PAYMENT_METHOD_LABELS } from "@/constants/sale";
 import { priceToCents } from "@/lib/money";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
@@ -75,7 +76,7 @@ export default function ReceiptView({
   canRefund,
   onRefund,
 }: ReceiptViewProps) {
-  const { formatDateTime, formatPrice } = useSalonFormatting();
+  const { formatDateTime, formatPrice, salonName, salonLogoUrl } = useSalonFormatting();
   const [emailOpen, setEmailOpen] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
   const [paper, setPaper] = useState("standard");
@@ -114,6 +115,15 @@ export default function ReceiptView({
         data-receipt-paper={paper}
       >
         <header className="col-span-full flex flex-col gap-2 rounded-card border border-line bg-surface p-5">
+          {/* The salon draws its own receipt: mark and name first, because a customer
+              reading a printed slip is looking for whose it is (Phase 5d). A salon with
+              no logo shows its initials rather than a gap. */}
+          {salonName ? (
+            <div className="flex items-center gap-3">
+              <SalonMark name={salonName} logoUrl={salonLogoUrl} className="receipt-salon-mark" />
+              <p className="min-w-0 truncate font-bold text-ink">{salonName}</p>
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-xl">{`Receipt ${sale.receiptNumber === null ? "(number pending)" : `#${sale.receiptNumber}`}`}</h2>
             <div className="flex flex-wrap gap-2">
@@ -383,7 +393,15 @@ export default function ReceiptView({
         </section>
       ) : null}
       <Modal open={sharingOpen} onClose={() => setSharingOpen(false)} title="Share receipt">
-        <SecureLinkActions key={sale.id} resource="sales" id={sale.id} receipt />
+        <SecureLinkActions
+          key={sale.id}
+          resource="sales"
+          id={sale.id}
+          receipt
+          /* A receipt can only be messaged to a customer on file — `queueReceipt`
+             refuses a sale without one, so the dialog says so before the click. */
+          canMessage={sale.customerId !== null}
+        />
       </Modal>
       {emailOpen ? (
         <EmailReceiptDialog

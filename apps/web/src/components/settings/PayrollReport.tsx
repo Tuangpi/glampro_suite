@@ -61,6 +61,7 @@ export default function PayrollReport({ period }: { period: string }) {
     staleTime: 0,
   });
   const data = query.data;
+  const showOutlets = Boolean(data?.staff.some((row) => row.outlets.length > 0));
   return (
     <section aria-label="Payroll period report" className="space-y-3">
       <h3 className="font-semibold">Period report</h3>
@@ -98,7 +99,10 @@ export default function PayrollReport({ period }: { period: string }) {
                   <th>Collected</th>
                   <th>Base lines</th>
                   <th>Base amount (4 dp)</th>
-                  <th>Outlets</th>
+                  {/* A frozen snapshot can still carry outlet names from before the
+                      outlet UI was parked, so the column is data-driven: a salon
+                      with no branches would otherwise read an em dash on every row. */}
+                  {showOutlets && <th>Outlets</th>}
                   <th>Source detail</th>
                 </tr>
               </thead>
@@ -114,7 +118,7 @@ export default function PayrollReport({ period }: { period: string }) {
                     <td>{row.payroll.collection}</td>
                     <td>{row.lines}</td>
                     <td>{row.baseAmount}</td>
-                    <td>{row.outlets.join(", ") || "—"}</td>
+                    {showOutlets && <td>{row.outlets.join(", ") || "—"}</td>}
                     <td>
                       <Button
                         variant="secondary"

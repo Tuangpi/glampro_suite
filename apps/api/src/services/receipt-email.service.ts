@@ -19,6 +19,7 @@ import {
 import { sendMail } from "../lib/email.js";
 import { HttpError, conflict } from "../lib/http-error.js";
 import { logger } from "../lib/logger.js";
+import { publicOrigin } from "../lib/messaging-provider.js";
 import { getSale } from "./sale.service.js";
 import { getSalonProfile } from "./settings.service.js";
 
@@ -71,6 +72,12 @@ interface ReceiptSalon {
   gstRegistrationNumber: string | null;
   locale: string;
   timeZone: string;
+  /**
+   * Absolute URL of the salon's logo, or `null` when the salon has none or the
+   * deployment has no public origin. Optional so `buildReceiptEmail` stays callable
+   * from a test (and from any future caller) without inventing one.
+   */
+  logoUrl?: string | null;
 }
 
 interface ReceiptContent {
@@ -93,6 +100,20 @@ function gstNumberFor(sale: SaleDetail, salon: ReceiptSalon): string | null {
 
 function receiptLabel(sale: SaleDetail): string {
   return sale.receiptNumber === null ? "Number pending" : `#${sale.receiptNumber}`;
+}
+
+/**
+ * The logo header, when there is one.
+ *
+ * A mail client only fetches absolute URLs, and it will happily load one from an
+ * `http:` deployment, so no scheme filter beyond what `publicOrigin()` already
+ * enforces is needed here. Size is fixed in attributes as well as inline styles:
+ * Outlook ignores `max-width` and reserves the attribute box instead, which keeps
+ * the header from swallowing a phone screen.
+ */
+function logoHtml(salon: ReceiptSalon): string {
+  if (!salon.logoUrl) return "";
+  return `<img src="${escapeHtml(salon.logoUrl)}" alt="${escapeHtml(salon.name)}" width="40" height="40" style="display:block;border:0;border-radius:8px;margin:0 0 8px;max-width:40px;max-height:40px">`;
 }
 
 function lineRowsHtml(sale: SaleDetail, salon: ReceiptSalon): string {
@@ -165,6 +186,7 @@ function receiptHtml(
 ): string {
   const isVoid = sale.status === "VOID";
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#111827;max-width:480px;margin:0 auto;font-size:14px">
+    ${logoHtml(salon)}
     <h1 style="font-size:18px;margin:0 0 4px">${escapeHtml(salon.name)}</h1>
     ${gst ? `<div style="color:#374151">GST Reg No: ${escapeHtml(gst)}</div>` : ""}
     ${
@@ -261,6 +283,24 @@ export function buildReceiptEmail(sale: SaleDetail, salon: ReceiptSalon): Receip
 }
 
 /**
+ * The salon logo as an absolute URL, or `null`.
+ *
+ * `getSalonProfile()` hands back a relative path, which a mail client cannot resolve
+ * against anything. Absent rather than fatal in two cases: the salon has no logo, or
+ * the deployment has no `MESSAGING_PUBLIC_ORIGIN` — `publicOrigin()` throws 503 for
+ * that, and a missing image must never be the reason a customer does not get their
+ * receipt.
+ */
+function absoluteLogoUrl(logoUrl: string | null): string | null {
+  if (!logoUrl) return null;
+  try {
+    return new URL(logoUrl, `${publicOrigin()}/`).toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
  * `POST /api/sales/:id/receipt/email` — sends the receipt and answers where it went.
  *
  * A held cart has no receipt, so it is a 409 rather than an empty email. A provider
@@ -281,7 +321,10 @@ export async function emailSaleReceipt(
   }
 
   const profile = await getSalonProfile();
-  const content = buildReceiptEmail(sale, profile);
+  const content = buildReceiptEmail(sale, {
+    ...profile,
+    logoUrl: absoluteLogoUrl(profile.logoUrl),
+  });
 
   try {
     const { messageId } = await sendMail({ to: email, ...content });

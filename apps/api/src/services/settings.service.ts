@@ -72,6 +72,12 @@ export async function getSalonProfile(): Promise<SalonProfile> {
       updatedAt: true,
       owner: { select: { id: true, name: true, email: true } },
       /**
+       * Presence and freshness only — never the bytes. The image itself is read by
+       * `GET /api/public/tenants/:slug/logo`, which is the one place that has to
+       * answer with a `Content-Type` and a cache header rather than JSON.
+       */
+      logo: { select: { updatedAt: true } },
+      /**
        * Latest plan only. `endDate` is the subscription's expiry — there is no
        * separate renewal column (`schema.prisma` → `Subscription`), and every
        * other reader (`prepaid.service.ts`, `public-booking.service.ts`) picks
@@ -89,8 +95,18 @@ export async function getSalonProfile(): Promise<SalonProfile> {
   // wrong one, so it says so instead.
   if (!tenant) throw notFound("This salon's record could not be found.", "TENANT_NOT_FOUND");
 
+  /**
+   * `?v=` is the logo's `updatedAt`, so replacing the image changes the URL. The
+   * bytes are served with a five-minute public cache, and a version marker is what
+   * keeps a re-upload from looking like it silently failed.
+   */
+  const logoUrl = tenant.logo
+    ? `/api/public/tenants/${tenant.slug}/logo?v=${tenant.logo.updatedAt.getTime()}`
+    : null;
+
   return salonProfileSchema.parse({
     ...tenant,
+    logoUrl,
     subscriptionEndsAt: tenant.subscriptions[0]?.endDate.toISOString() ?? null,
     createdAt: tenant.createdAt.toISOString(),
     updatedAt: tenant.updatedAt.toISOString(),
@@ -135,6 +151,107 @@ export async function updateSalonProfile(input: UpdateSalonProfileInput): Promis
 
   await prisma.tenant.update({ where: { id: tenantId }, data: { ...input } });
   return getSalonProfile();
+}
+
+/** A logo is drawn at ~32 px on a receipt; 512 KB is generous for that and small
+ * enough that the bytes can live in a `BYTEA` column without bloating a backup. */
+export const MAX_LOGO_BYTES = 512 * 1024;
+
+/**
+ * The logo's MIME type, read from the bytes — the upload's `Content-Type` header
+ * and filename are the client's claims and neither reaches this decision. Same
+ * shape as `customer-profile.service.ts` → `photoMimeType`, deliberately not
+ * shared: that one accepts 5 MB because it holds customer photos, and reusing it
+ * would mean the receipt logo silently inherits a limit it does not want.
+ */
+function logoMimeType(content: Buffer): "image/png" | "image/jpeg" {
+  const png =
+    content.length > 8 &&
+    content[0] === 0x89 &&
+    content[1] === 0x50 &&
+    content[2] === 0x4e &&
+    content[3] === 0x47 &&
+    content[4] === 0x0d &&
+    content[5] === 0x0a &&
+    content[6] === 0x1a &&
+    content[7] === 0x0a;
+  if (png) return "image/png";
+  if (content.length > 3 && content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff) {
+    return "image/jpeg";
+  }
+  throw badRequest("Choose a JPEG or PNG image up to 512 KB.", [
+    { path: "body.logo", message: "The file is not a PNG or JPEG image." },
+  ]);
+}
+
+/**
+ * `POST /api/settings/logo` — the salon's logo, shown on the receipt, the emailed
+ * receipt and the public receipt link.
+ *
+ * Replace rather than accumulate: the row's key is the tenant, so a re-upload
+ * overwrites the previous image in one transaction and there is never a moment
+ * where the salon has no logo but the old bytes are still being served.
+ */
+export async function saveSalonLogo(content: Buffer): Promise<SalonProfile> {
+  if (content.length === 0) throw badRequest("Choose a JPEG or PNG image up to 512 KB.");
+  if (content.length > MAX_LOGO_BYTES) {
+    throw badRequest("Choose a JPEG or PNG image up to 512 KB.", [
+      { path: "body.logo", message: "The image is larger than 512 KB." },
+    ]);
+  }
+  const tenantId = requireTenantId();
+  const mimeType = logoMimeType(content);
+
+  await prisma.$transaction(async (tx) => {
+    // `upsert` bypasses the tenant-scope extension (`lib/prisma.ts` hooks every
+    // other verb), so the replace is spelled out as delete-then-create.
+    await tx.tenantLogo.deleteMany({ where: { tenantId } });
+    // `new Uint8Array(...)`, not the Buffer itself: Prisma's `Bytes` wants an
+    // `ArrayBuffer`-backed view, and a Node `Buffer` may be backed by anything.
+    await tx.tenantLogo.create({ data: { tenantId, mimeType, content: new Uint8Array(content) } });
+  });
+
+  return getSalonProfile();
+}
+
+/**
+ * `DELETE /api/settings/logo` — back to the initials monogram.
+ *
+ * Deleting a logo that is not there succeeds: the caller asked for "no logo from
+ * now on", and that is the state the salon is in either way.
+ */
+export async function deleteSalonLogo(): Promise<SalonProfile> {
+  requireTenantId();
+  await prisma.tenantLogo.deleteMany({});
+  return getSalonProfile();
+}
+
+/**
+ * `GET /api/public/tenants/:slug/logo` — the bytes, for the receipt surfaces.
+ *
+ * Addressed by slug because the receipt page and the email are read by someone who
+ * has no session. A salon that is not `ACTIVE` answers 404 like a salon without a
+ * logo: a suspended shop's branding has no business on a live page, and the public
+ * receipt itself already refuses to render for one.
+ */
+export async function getPublicSalonLogo(
+  slug: string,
+): Promise<{ mimeType: string; content: Buffer; updatedAt: Date }> {
+  const tenant = await prisma.tenant.findUnique({
+    where: { slug },
+    select: {
+      status: true,
+      logo: { select: { mimeType: true, content: true, updatedAt: true } },
+    },
+  });
+  if (!tenant || tenant.status !== "ACTIVE" || !tenant.logo) {
+    throw notFound("This salon has no logo.", "LOGO_NOT_FOUND");
+  }
+  return {
+    mimeType: tenant.logo.mimeType,
+    content: Buffer.from(tenant.logo.content),
+    updatedAt: tenant.logo.updatedAt,
+  };
 }
 
 /**

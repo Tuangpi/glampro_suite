@@ -196,10 +196,13 @@ describe("WeekView", () => {
     expect(onEdit).not.toHaveBeenCalled();
   });
 
-  it("shows the empty state when the week has nothing booked", () => {
-    render(<WeekView day={WEEK} appointments={[]} onEdit={vi.fn()} />);
+  it("draws the week's grid, with empty tracks, rather than a card", () => {
+    const { container } = render(<WeekView day={WEEK} appointments={[]} onEdit={vi.fn()} />);
 
-    expect(screen.getByText("Nothing booked that week")).toBeInTheDocument();
+    // Seven day columns of opening hours are the week, so a clear week still shows them.
+    expect(container.querySelectorAll("[data-day]")).toHaveLength(7);
+    expect(container.querySelectorAll("[data-appointment]")).toHaveLength(0);
+    expect(screen.queryByText("Nothing booked that week")).not.toBeInTheDocument();
   });
 
   it("draws skeletons, not an empty week, while the read is in flight", () => {
@@ -208,7 +211,8 @@ describe("WeekView", () => {
     );
 
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
-    expect(screen.queryByText("Nothing booked that week")).not.toBeInTheDocument();
+    // A grid before the read lands would publish a week of days nobody has confirmed.
+    expect(container.querySelectorAll("[data-day]")).toHaveLength(0);
   });
 
   it("shows the API's own message and a retry when the week cannot be read", async () => {

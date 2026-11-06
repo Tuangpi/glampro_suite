@@ -86,12 +86,14 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
     }
   }
   return (
-    <Card title="Staff commission matrix">
+    <Card
+      title="Staff commission matrix"
+      description="The base rate each person earns per commission type."
+    >
       <div className="flex flex-col gap-3">
-        <p>
-          Staff defaults only; item, package and department overrides can take precedence. Enter a
-          percentage (0 is explicit zero) or inherit. Blank means unconfigured, not zero. New
-          commission kinds are configuration only until collection and reporting cutover.
+        <p className="text-sm text-ink-muted">
+          Blank means unconfigured, not zero. Enter a percentage (0 earns nothing explicitly) or
+          inherit. Item, package and department overrides from Company rules take precedence.
         </p>
         <Input
           label="Search commission staff"
@@ -117,14 +119,23 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
         {matrix.data && (
           <fieldset disabled={!canEdit || busy || matrix.isError || stale}>
             <legend className="sr-only">Staff commission defaults</legend>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-lg border border-line">
+              <table className="w-full border-collapse text-sm">
                 <caption className="sr-only">Staff rates by commission type</caption>
                 <thead>
-                  <tr>
-                    <th scope="col">Staff</th>
+                  <tr className="border-b border-line bg-surface-muted">
+                    <th
+                      scope="col"
+                      className="px-3 py-2.5 text-left text-xs font-medium tracking-wide text-ink-muted uppercase"
+                    >
+                      Staff
+                    </th>
                     {Object.entries(COMMISSION_KIND_LABELS).map(([kind, label]) => (
-                      <th scope="col" key={kind}>
+                      <th
+                        scope="col"
+                        key={kind}
+                        className="min-w-44 border-l border-line-soft px-3 py-2.5 text-left text-xs font-medium tracking-wide text-ink-muted uppercase"
+                      >
                         {label}
                       </th>
                     ))}
@@ -132,12 +143,17 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
                 </thead>
                 <tbody>
                   {matrix.data.rows.map((row) => (
-                    <tr key={row.staffId}>
-                      <th scope="row">{row.name}</th>
+                    <tr key={row.staffId} className="border-b border-line-soft last:border-0">
+                      <th scope="row" className="px-3 py-2 text-left font-medium text-ink">
+                        {row.name}
+                      </th>
                       {row.cells.map((cell) => {
                         const key = JSON.stringify([row.staffId, cell.itemKind]);
                         return (
-                          <td key={cell.itemKind} className="p-2 min-w-40">
+                          <td
+                            key={cell.itemKind}
+                            className="min-w-44 border-l border-line-soft px-3 py-2 align-top"
+                          >
                             <Input
                               label={`${row.name}: ${COMMISSION_KIND_LABELS[cell.itemKind]}`}
                               value={
@@ -159,7 +175,7 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
                                 }))
                               }
                             />
-                            <p>
+                            <p className="mt-1 text-xs text-ink-muted">
                               Default: {cell.rate}% · {cell.source}
                             </p>
                           </td>
@@ -172,53 +188,63 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
             </div>
             {!matrix.data.rows.length && <p>No active staff match this search.</p>}
             {canEdit && (
-              <div className="flex flex-col gap-3 mt-3">
-                <Input
-                  label="Bulk commission change reason"
-                  placeholder="e.g. Annual rate review"
-                  value={reason}
-                  maxLength={500}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-                <Input
-                  label="Bulk effective from (browser time zone; blank means now)"
-                  type="datetime-local"
-                  value={effectiveAt}
-                  onChange={(e) => setEffectiveAt(e.target.value)}
-                />
+              <div className="mt-3 rounded-lg border border-line bg-surface-muted p-3">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <h4 className="text-sm font-bold text-ink">Publish changes</h4>
+                  <span className="text-xs text-ink-muted">{edits.length} of 100 cells edited</span>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <Input
+                    label="Bulk commission change reason"
+                    placeholder="e.g. Annual rate review"
+                    value={reason}
+                    maxLength={500}
+                    onChange={(e) => setReason(e.target.value)}
+                  />
+                  <Input
+                    label="Bulk effective from (browser time zone; blank means now)"
+                    type="datetime-local"
+                    value={effectiveAt}
+                    onChange={(e) => setEffectiveAt(e.target.value)}
+                  />
+                </div>
                 <Button
+                  className="mt-3"
                   disabled={!edits.length || edits.length > 100 || reason.trim().length < 3}
                   loading={publish.isPending}
                   onClick={() => void save()}
                 >
                   Publish staff commission defaults
                 </Button>
-                <p>{edits.length} edited cells · maximum 100 per publication</p>
               </div>
             )}
           </fieldset>
         )}
-        <div className="flex gap-3">
-          <Button variant="secondary" disabled={busy} onClick={() => void reload()}>
-            {draft ? "Reload commission matrix and discard draft" : "Reload commission matrix"}
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={busy || !!draft || page === 1}
-            onClick={() => setPage(page - 1)}
-          >
-            Previous commission staff
-          </Button>
-          <span>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line-soft pt-3">
+          <span className="text-sm text-ink-muted">
             Page {page} · {matrix.data?.total ?? 0} active staff
           </span>
-          <Button
-            variant="secondary"
-            disabled={busy || !!draft || !matrix.data || page * 20 >= matrix.data.total}
-            onClick={() => setPage(page + 1)}
-          >
-            Next commission staff
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || !!draft || page === 1}
+              onClick={() => setPage(page - 1)}
+            >
+              Previous commission staff
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={busy || !!draft || !matrix.data || page * 20 >= matrix.data.total}
+              onClick={() => setPage(page + 1)}
+            >
+              Next commission staff
+            </Button>
+            <Button variant="secondary" size="sm" disabled={busy} onClick={() => void reload()}>
+              {draft ? "Reload commission matrix and discard draft" : "Reload commission matrix"}
+            </Button>
+          </div>
         </div>
       </div>
     </Card>
