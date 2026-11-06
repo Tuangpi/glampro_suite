@@ -1689,9 +1689,25 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       already chosen via `PaymentDialog`'s new `initialTender` prop; **Pay with credit**
       opens the same sheet on a `PREPAID_CREDIT` tender without adding a line. Web-only:
       no API route, shared schema, migration or `sale.service.ts` change, so the
-      October 28 STOP order is untouched. Still open: session-value preview while
-      adding a session (N5); seller/performer chips, till default and automatic
-      commission estimates (N6/N7); "customer signed" column (N10). **N4 is
+      October 28 STOP order is untouched. **N5 is DONE (November 6, 2026):** the package
+      drawer carries a read-only "What one session is worth" card
+      (`PackageSessionValuePreview.tsx`) under the price and session inputs. It states the
+      session value for **both** listed prices — the member and non-member price, because
+      the till charges one or the other — computed with the server's own arithmetic
+      (`lib/package-session-value.ts`: GST backed out as `total × 9 / 109` rounded half-up
+      like `gstForLine`, then the net spread over the granted sessions in ten-thousandths
+      with the leftover ticks on the earliest sessions, exactly what
+      `capturePayrollPackagePurchase` stores; cross-checked against that shared function
+      over GST-on and GST-off prices, residual counts and a one-cent price). It names the
+      earliest sessions that carry the extra S$0.0001, prints the GST it backed out, and
+      says what the form's own sale/redemption settings do (a fixed amount per sale or per
+      session used, the plan, or nothing) instead of inventing a commission figure — a rate
+      needs a plan and a performing therapist, and a package has neither. `gstEnabled`
+      reached the drawer by riding along on `SalonFormattingContext`, which already reads
+      `GET /settings/profile`, so the preview costs no extra request; nothing is written
+      and the sale's line still decides what payroll stores. **Web-only** as well, so the
+      October 28 STOP order is untouched. Still open: seller/performer chips, till default
+      and automatic commission estimates (N6/N7); "customer signed" column (N10). **N4 is
       reclassified, not started:** its remaining half — an Override % and an
       effective-from date on the package drawer — is not a screen-only change.
       `payrollPackageSettingsSchema` has three modes and every consumer branches on
@@ -1700,7 +1716,7 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       `effectiveAt`, edited in Settings › Commission rules. Making the drawer edit or read
       those rules is a product decision recorded in [DECISIONS.md](DECISIONS.md); the
       drawer keeps its truthful "applies to new purchases only" note until it is made.
-      Next slice: N5.
+      Next slice: N6/N7.
 - [ ] TODO — **(g) §12 reports.** Commission detail (filterable ledger plus Excel),
       My commission (staff self-service), and package utilisation
       (sold/redeemed/expired). Reuse the CP-006 export and own-data patterns rather than

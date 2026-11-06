@@ -16,16 +16,25 @@ import { SalonFormattingProvider, useSalonFormatting } from "@/contexts/SalonFor
 import { useUpdateSalonProfile } from "@/hooks/useSettings";
 
 function profile(id = "salon-a", timeZone = "Asia/Singapore", locale = "en-SG") {
-  return { id, timeZone, locale, name: "Salon", lowStockThreshold: 5 };
+  return {
+    id,
+    timeZone,
+    locale,
+    name: "Salon",
+    lowStockThreshold: 5,
+    gstEnabled: false,
+    gstRegistrationNumber: null,
+  };
 }
 
 function Consumer() {
-  const { formatDate, formatPrice } = useSalonFormatting();
+  const { formatDate, formatPrice, gstEnabled } = useSalonFormatting();
   const update = useUpdateSalonProfile();
   return (
     <>
       <p>{formatDate("2026-03-04T23:30:00Z")}</p>
       <p>{formatPrice("1234.50")}</p>
+      <p>GST {gstEnabled ? "on" : "off"}</p>
       <button
         onClick={() =>
           update.mutate({
@@ -68,6 +77,12 @@ describe("SalonFormattingProvider", () => {
     expect(await screen.findByText("05/03/2026")).toBeInTheDocument();
     expect(get).toHaveBeenCalledWith("/settings/profile");
     expect(client.getQueryData(queryKeys.settings.general("salon-a"))).toEqual(profile());
+  });
+
+  it("carries the salon's GST switch with the formatters", async () => {
+    get.mockResolvedValue({ ...profile(), gstEnabled: true });
+    setup();
+    expect(await screen.findByText("GST on")).toBeInTheDocument();
   });
 
   it("updates consumers immediately after a successful settings save", async () => {

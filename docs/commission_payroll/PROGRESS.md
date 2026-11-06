@@ -1,5 +1,56 @@
 # Commission & Payroll progress
 
+## November 6, 2026 — CP-008 (f2) N5: the package drawer says what a session is worth
+
+- **The number was invisible until it was too late.** A package's session value is what a
+  redemption pays commission on, and nobody could see it while pricing the bundle: the
+  server computes it at sale (`capturePayrollPackagePurchase`,
+  `packages/shared/src/commission-payroll/package-purchase.ts:36-56`) and the customer
+  screen shows it afterwards. `PackageFormDrawer` now carries a read-only
+  **What one session is worth** card under the price and session inputs
+  (`PackageSessionValuePreview.tsx`), so a manager setting S$100 for five sessions can see
+  that a redemption is worth S$18.3480 before publishing, not after the first customer
+  spends one.
+- **It reuses the server's arithmetic rather than inventing a second answer.**
+  `lib/package-session-value.ts` backs GST out of the line exactly as `gstForLine` does
+  (`total × 9 / 109`, rounded half-up to the cent), multiplies the net into
+  ten-thousandths and spreads it over the granted sessions, leaving the leftover ticks on
+  the earliest sessions — the same floor and residual the snapshot stores
+  (`sessionBaseFloor` / `extraBaseTickSessions`). It was cross-checked against the shared
+  function over GST-on and GST-off prices, residual counts, a S$9,999.99 price and a
+  one-cent price before being trusted: every case agreed to the fourth decimal.
+- **Both prices, because the till charges one of them.** A bundle has a member and a
+  non-member price and the sale's own line decides which one is valued, so the card shows
+  both rather than picking one and being wrong half the time. Each row prints the price it
+  came from, the GST backed out, and the sessions divided, so the figure can be checked by
+  hand; when the division — or the GST split — leaves a ten-thousandth over, the card names
+  the earliest sessions that hold it instead of rounding the discrepancy away.
+- **The commission half states policy, never a rate.** "A fixed S$5.25 for each session
+  used", "the plan's redemption rate, on the session value above", "no commission on the
+  sale", or "no explicit setting — the plan applies to new purchases until one is saved".
+  A money estimate needs a plan rate and a performing therapist, and a package has
+  neither; printing one here would be a number the monthly close could contradict. Readers
+  who cannot configure commission (everything except an owner on a writable screen) see the
+  session value and no settings block at all.
+- **No new request, and no new write.** `gstEnabled` rides along on
+  `SalonFormattingContext`, which already reads `GET /settings/profile` and now exposes the
+  salon's GST switch beside its formatters; the preview derives everything from what is
+  typed and persists nothing. Web-only: no API route, shared schema, migration or
+  `sale.service.ts` change, so the October 28 STOP order is untouched.
+- **Verification.** `package-session-value.test.ts` 7/7 (GST in and out, residual on the
+  earliest session, half-up GST rounding at S$0.4995, a free session, and the blanks and
+  fractional session counts that must have no answer), `PackageSessionValuePreview.test.tsx`
+  7/7 (both prices with GST backed out, no-GST salons, the residual sentence, the two
+  "no answer yet" states, fixed and plan settings, settings hidden from a reader who
+  cannot configure them), `PackageFormDrawer.test.tsx` 11/11 (the card follows the session
+  count as it is typed, and the redemption setting is stated beside the value),
+  `SalonFormattingContext.test.tsx` 7/7 (the GST switch reaches consumers). Full web suite
+  1215 tests: everything passes except `PayrollPlans.test.tsx`'s 5 s timeouts under parallel
+  load, which pass 27/27 when that file is run on its own. `tsc` typecheck, ESLint and
+  Prettier clean.
+- **Next.** N6/N7 (seller and performer chips, till default, estimated commission), then
+  N10, then (g) the §12 reports.
+
 ## November 6, 2026 — CP-008 (f2) N8: the till shows what a customer can still spend
 
 - **The panel is a shortcut, not a second decision-maker.** `GET /customers/:id/holdings`

@@ -36,6 +36,8 @@ import { useCreatePackage, useUpdatePackage } from "@/hooks/usePackages";
 import { useServiceList } from "@/hooks/useServices";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
 
+import PackageSessionValuePreview from "./PackageSessionValuePreview";
+
 /** `MAX_PAGE_SIZE` in `@glampro_suite/shared`, so the picker asks for the largest page. */
 const SERVICE_PICKER_PAGE_SIZE = 200;
 
@@ -376,6 +378,25 @@ export default function PackageFormDrawer({
             options={STATUS_OPTIONS}
           />
         </div>
+
+        {/* Read-only, and derived from what is typed above: a manager choosing a price
+            and a session count can see what each redemption will be worth before the
+            bundle is published, instead of finding out at the customer's first visit. */}
+        <PackageSessionValuePreview
+          sessions={form.sessionCount}
+          memberPrice={form.memberPrice}
+          nonmemberPrice={form.nonmemberPrice}
+          commission={
+            canConfigureCommission
+              ? {
+                  saleMode,
+                  saleFixed,
+                  redemptionMode: redemptionCommissionMode,
+                  redemptionFixed,
+                }
+              : null
+          }
+        />
 
         <Input
           label="Validity (days)"

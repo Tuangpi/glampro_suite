@@ -22,6 +22,8 @@ const DEFAULT_FORMATTING_VALUE = {
   /** Empty outside the provider, which draws no salon block rather than a wrong one. */
   salonName: "",
   salonLogoUrl: null as string | null,
+  /** Outside the provider nothing is known to be GST-registered, so nothing is. */
+  gstEnabled: false,
 };
 
 const SalonFormattingContext = createContext<
@@ -30,6 +32,7 @@ const SalonFormattingContext = createContext<
     locale: string;
     salonName: string;
     salonLogoUrl: string | null;
+    gstEnabled: boolean;
   }
 >(DEFAULT_FORMATTING_VALUE);
 
@@ -58,9 +61,12 @@ function AuthenticatedFormatting({
   const salonName = profile.data?.name ?? "";
   const salonLogoUrl = profile.data?.logoUrl ?? null;
   const formatters = useMemo(() => createSalonFormatters({ locale, timeZone }), [locale, timeZone]);
+  // GST is a salon-wide switch, not a formatting preference; it rides along because a
+  // session-value preview would otherwise need a second read of the same profile.
+  const gstEnabled = profile.data?.gstEnabled ?? false;
   const value = useMemo(
-    () => ({ ...formatters, timeZone, locale, salonName, salonLogoUrl }),
-    [formatters, timeZone, locale, salonName, salonLogoUrl],
+    () => ({ ...formatters, timeZone, locale, salonName, salonLogoUrl, gstEnabled }),
+    [formatters, timeZone, locale, salonName, salonLogoUrl, gstEnabled],
   );
 
   if (!profile.data && profile.isPending) return <PageLoading label="Loading salon preferences…" />;

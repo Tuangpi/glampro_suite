@@ -139,4 +139,33 @@ describe("package validity editor", () => {
       }),
     );
   });
+
+  it("previews what a session is worth as the price and session count change", async () => {
+    const user = userEvent.setup();
+    render(<PackageFormDrawer open bundle={bundle} onClose={vi.fn()} />);
+    const preview = screen.getByRole("group", { name: "What one session is worth" });
+
+    // The bundle: S$100.00 member, S$120.00 non-member, five sessions, no GST in the
+    // default test context — so S$20.0000 and S$24.0000 a session.
+    expect(preview).toHaveTextContent("S$20.0000 a session");
+    expect(preview).toHaveTextContent("S$24.0000 a session");
+
+    await user.clear(screen.getByLabelText("Sessions"));
+    await user.type(screen.getByLabelText("Sessions"), "4");
+    expect(preview).toHaveTextContent("S$25.0000 a session");
+
+    // A reader who cannot configure commission sees the value but not the settings.
+    expect(screen.queryByLabelText("Commission preview")).not.toBeInTheDocument();
+  });
+
+  it("states the package's own commission settings next to the session value", async () => {
+    const user = userEvent.setup();
+    render(<PackageFormDrawer open bundle={bundle} canConfigureCommission onClose={vi.fn()} />);
+    await user.selectOptions(screen.getByLabelText("Package redemption commission"), "FIXED");
+    await user.type(screen.getByLabelText("Fixed amount per session"), "5.25");
+
+    expect(screen.getByLabelText("Commission preview")).toHaveTextContent(
+      "A fixed S$5.25 for each session used, split between the performing staff.",
+    );
+  });
 });
