@@ -45,7 +45,7 @@ describe("createStaffSchema", () => {
     startDate: "2026-09-01",
     payrollClassification: { commissionRole: "NON_COMMISSION", reason: "Employment agreement" },
   };
-  it("rejects identity-only creation regardless of login role, title or legacy rate", () => {
+  it("requires the audited payroll classification whatever the role, title or legacy rate", () => {
     for (const globalRole of ["STAFF", "MANAGER", "SUPER_ADMIN"])
       assert.equal(
         createStaffSchema.safeParse({
@@ -61,7 +61,7 @@ describe("createStaffSchema", () => {
       );
   });
   it("requires a dated reasoned classification and initial plan for commission earners", () => {
-    const identity = { name: "Amy", posPin: "123456" };
+    const identity = { name: "Amy", email: "amy@example.test", password: "correct-horse-123" };
     const payrollClassification = {
       commissionRole: "COMMISSION_EARNING",
       reason: "Employment agreement",
@@ -104,7 +104,7 @@ describe("createStaffSchema", () => {
     );
   });
   it("requires a join date, plan, assignment revision and reason for atomic payroll creation", () => {
-    const identity = { name: "Amy", posPin: "123456" };
+    const identity = { name: "Amy", email: "amy@example.test", password: "correct-horse-123" };
     const payrollAssignment = {
       planId: "plan",
       expectedRevision: 0,
@@ -128,15 +128,37 @@ describe("createStaffSchema", () => {
         false,
       );
   });
-  it("accepts PIN-only staff without email and prevents management roles", () => {
+  it("requires an email and password for every colleague, and treats the PIN as optional", () => {
+    const login = { email: "ava@example.test", password: "correct-horse-123" };
     assert.equal(
-      createStaffSchema.safeParse({ ...payrollSetup, name: "Ava", posPin: "123456" }).success,
+      createStaffSchema.safeParse({ ...payrollSetup, name: "Ava", ...login }).success,
       true,
     );
-    assert.equal(createStaffSchema.safeParse({ name: "Ava", posPin: "12345" }).success, false);
+    // The retired PIN-only path: a PIN is not a login, so a row without an address is
+    // refused on `email` rather than accepted with a credential nobody can use.
     assert.equal(
-      createStaffSchema.safeParse({ name: "Ava", posPin: "123456", globalRole: "MANAGER" }).success,
+      createStaffSchema.safeParse({ ...payrollSetup, name: "Ava", posPin: "123456" }).success,
       false,
+    );
+    assert.equal(
+      createStaffSchema.safeParse({ ...payrollSetup, name: "Ava", email: login.email }).success,
+      false,
+    );
+    assert.equal(
+      createStaffSchema.safeParse({ ...login, name: "Ava", posPin: "12345" }).success,
+      false,
+    );
+    // The PIN accompanies the login rather than replacing it, and its role no longer
+    // decides whether a colleague may hold one.
+    assert.equal(
+      createStaffSchema.safeParse({
+        ...payrollSetup,
+        ...login,
+        name: "Ava",
+        posPin: "123456",
+        globalRole: "MANAGER",
+      }).success,
+      true,
     );
   });
   it("limits commission percentages to cent precision and the full revenue", () => {

@@ -69,9 +69,12 @@ test(
         const department = await prisma.department.create({
           data: { tenantId, name: "Race department" },
         });
+        // Every colleague needs a login and `users.email` is unique, so the address is
+        // derived from this run's tenant and the name each creation already passes.
         const staffInput = (name: string) => ({
           name,
-          posPin: "654321",
+          email: `${tenantId}-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}@example.test`,
+          password: "correct-horse-123",
           startDate: date,
           departmentIds: [department.id],
           payrollClassification: { commissionRole: "NON_COMMISSION" as const, reason },

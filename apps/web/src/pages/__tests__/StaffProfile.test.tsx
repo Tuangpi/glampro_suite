@@ -10,7 +10,7 @@
  * `updateStaffSchema` has no `email` and no `password`, so the profile form offers
  * neither and the reset posts to `POST /api/staff/:id/password` on its own — a manager
  * may recover a `STAFF`/`CASHIER` login and never a peer manager's or an owner's, and a
- * POS PIN-only row has no password at all.
+ * row written before the email rule has no password at all.
  */
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -44,8 +44,13 @@ vi.mock("@/hooks/useDepartments", () => ({ useDepartments }));
 
 // The three heavy employment sections are other people's tests; what matters here is
 // that the page mounts the right one for the right viewer.
+// The three heavy employment sections are other people's tests; what matters here is
+// that the page mounts the right one for the right viewer. The rota's name is not
+// "Working hours" here because the page's own section already carries that label.
 vi.mock("@/components/staff/StaffRoster", () => ({
-  default: () => <section aria-label="Working hours" />,
+  default: ({ staffId, canEdit }: { staffId: string; canEdit: boolean }) => (
+    <section aria-label="Roster editor" data-staff-id={staffId} data-can-edit={String(canEdit)} />
+  ),
 }));
 vi.mock("@/components/settings/PayrollPlans", () => ({
   default: ({ staffId, canEdit }: { staffId: string; canEdit: boolean }) => (
@@ -257,7 +262,7 @@ describe("the login and security section", () => {
 });
 
 describe("the login block's role rule", () => {
-  it("offers nothing to reset for a POS PIN identity, which has no password", () => {
+  it("offers nothing to reset for a row written without an email login", () => {
     useStaff.mockReturnValue({
       data: staffRow({ email: null, globalRole: "STAFF" }),
       isPending: false,
@@ -270,9 +275,7 @@ describe("the login block's role rule", () => {
 
     expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        "This person signs in with a POS PIN only, so there is no password to reset.",
-      ),
+      screen.getByText("This account has no email login, so there is no password to reset."),
     ).toBeInTheDocument();
   });
 
@@ -366,6 +369,21 @@ describe("who may write", () => {
 
     // Minting a plan is an owner's work; reading one is not.
     expect(screen.getByRole("region", { name: "Staff payroll" })).toHaveAttribute(
+      "data-can-edit",
+      "false",
+    );
+  });
+
+  it("keeps the rota readable for a stylist but not writable", async () => {
+    auth.value = { user: { id: "u9", globalRole: "STAFF" }, isReadOnly: false };
+    const user = userEvent.setup();
+    renderProfile();
+
+    await user.click(screen.getByRole("button", { name: "Working hours" }));
+
+    // A stylist may read their own week; adding an interval is the manager's, and the
+    // API's `requireRole` is what actually enforces it.
+    expect(screen.getByRole("region", { name: "Roster editor" })).toHaveAttribute(
       "data-can-edit",
       "false",
     );

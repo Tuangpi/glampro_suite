@@ -20,6 +20,7 @@ vi.mock("@/pages/CustomerTreatmentList", () => ({
 vi.mock("@/hooks/useCustomers", () => ({
   useCustomer: mocks.customer,
   useCustomerHoldings: mocks.holdings,
+  useHoldingHistory: () => ({ data: undefined, isPending: true, isError: false, refetch: vi.fn() }),
 }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => ({ isReadOnly: mocks.readOnly }) }));
 vi.mock("@/components/customers/CustomerFormDrawer", () => ({
@@ -168,6 +169,23 @@ describe("customer profile", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Request failed");
     expect(mocks.post).toHaveBeenCalledWith("/customers/c1/photos", expect.any(FormData));
   });
+  it("explains what a photo is for before it asks for one", async () => {
+    const user = userEvent.setup();
+    renderProfile();
+    await user.click(screen.getByRole("tab", { name: "Photos" }));
+    expect(
+      screen.getByText(/what the hair or nails looked like before and after a service/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Upload requires recorded data consent/)).toBeInTheDocument();
+    expect(screen.getByText(/tagged Before or After there/)).toBeInTheDocument();
+    expect(screen.getByText("JPEG or PNG, up to 5 MB.")).toBeInTheDocument();
+    // Tagging happens on the treatment record, so the guidance sends the reader there.
+    await user.click(screen.getByRole("button", { name: "Tag before/after on a treatment" }));
+    expect(screen.getByRole("tab", { name: "Treatments" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
   it("fetches a section's data only once that section is opened", async () => {
     const user = userEvent.setup();
     renderProfile();
@@ -248,10 +266,8 @@ describe("customer profile", () => {
     renderProfile();
     await user.click(screen.getByRole("tab", { name: "Packages & credit" }));
     expect(screen.getByText("The packages add-on is not enabled")).toBeInTheDocument();
-    // The three ownership panels must not mount behind an unentitled tab.
-    expect(mocks.getPaginated.mock.calls.some(([path]) => String(path).includes("/holdings"))).toBe(
-      false,
-    );
+    // Not one card mounts behind an unentitled tab: no balance, family or evidence read.
+    expect(mocks.getPaginated).not.toHaveBeenCalled();
   });
   it("says what an empty balance rail means", () => {
     mocks.holdings.mockReturnValue({ data: { holdings: [] }, isPending: false });

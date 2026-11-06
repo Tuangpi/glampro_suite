@@ -4,9 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CustomerPhoto, CustomerPurchase, CustomerVisit } from "@glampro_suite/shared";
 import CustomerAvatar from "@/components/customers/CustomerAvatar";
 import CustomerArchivePanel from "@/components/customers/CustomerArchivePanel";
-import CustomerHoldingHistoryPanel from "@/components/customers/CustomerHoldingHistoryPanel";
-import CustomerPrepaidPanel from "@/components/customers/CustomerPrepaidPanel";
-import CustomerSessionPackagesPanel from "@/components/customers/CustomerSessionPackagesPanel";
+import CustomerPackagesTab from "@/components/customers/CustomerPackagesTab";
 import CustomerFormDrawer from "@/components/customers/CustomerFormDrawer";
 import { ChevronLeft, Mail, Phone } from "@/components/icons";
 import Badge, { type BadgeVariant } from "@/components/ui/Badge";
@@ -206,7 +204,7 @@ function Profile({ id }: { id: string }) {
             {
               id: "packages",
               label: TAB_LABELS.packages,
-              content: <Packages id={id} />,
+              content: <CustomerPackagesTab customerId={id} />,
             },
             {
               id: "history",
@@ -222,7 +220,13 @@ function Profile({ id }: { id: string }) {
             {
               id: "photos",
               label: TAB_LABELS.photos,
-              content: <Photos id={id} readOnly={isReadOnly} />,
+              content: (
+                <Photos
+                  id={id}
+                  readOnly={isReadOnly}
+                  onOpenTreatments={() => selectTab("treatments")}
+                />
+              ),
             },
           ]}
         />
@@ -288,39 +292,6 @@ function Profile({ id }: { id: string }) {
         />
       ) : null}
     </div>
-  );
-}
-
-/** Ownership, transfers and the audit trail — all three read the `packages` add-on. */
-function Packages({ id }: { id: string }) {
-  const modules = useModules();
-  if (modules.isPending) return <p role="status">Loading package access…</p>;
-  if (modules.isError)
-    return (
-      <div role="alert" className="flex flex-wrap items-center gap-2 text-sm">
-        Package access could not be loaded.
-        <Button size="sm" variant="secondary" onClick={() => void modules.refetch()}>
-          Retry package access
-        </Button>
-      </div>
-    );
-  const intro =
-    "Who owns each balance, what moved between customers, and the audit trail behind every draw.";
-  return modules.data?.some((module) => module.code === "packages" && module.entitled) ? (
-    <div className="flex flex-col gap-5">
-      <p className="text-sm text-ink-muted">{intro}</p>
-      <CustomerPrepaidPanel customerId={id} />
-      <CustomerSessionPackagesPanel customerId={id} />
-      <CustomerHoldingHistoryPanel customerId={id} />
-    </div>
-  ) : (
-    <Card title="Packages & credit" label="Packages & credit" description={intro}>
-      <EmptyState
-        title="The packages add-on is not enabled"
-        description="An owner can turn it on in Settings. Ownership, transfers and history appear here once it is on."
-        className="px-2 py-8"
-      />
-    </Card>
   );
 }
 
@@ -446,7 +417,16 @@ function History({ id, kind }: { id: string; kind: "visits" | "purchases" }) {
   );
 }
 
-function Photos({ id, readOnly }: { id: string; readOnly: boolean }) {
+function Photos({
+  id,
+  readOnly,
+  onOpenTreatments,
+}: {
+  id: string;
+  readOnly: boolean;
+  /** Photos are tagged Before or After on a treatment, which is a different tab. */
+  onOpenTreatments: () => void;
+}) {
   const [page, setPage] = useState(1);
   const [file, setFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
@@ -502,7 +482,7 @@ function Photos({ id, readOnly }: { id: string; readOnly: boolean }) {
     <Card
       title="Photos"
       label="Photos"
-      description="Private to this salon. Upload requires recorded data consent; withdrawal prevents new uploads. JPEG/PNG, up to 5 MB."
+      description="Before-and-after photos kept with this customer."
       footer={
         photos.data && photos.data.pageCount > 1 ? (
           <Pagination
@@ -514,6 +494,22 @@ function Photos({ id, readOnly }: { id: string; readOnly: boolean }) {
         ) : undefined
       }
     >
+      <div className="mb-2 flex flex-col gap-1 rounded-md bg-surface-muted px-3 py-2">
+        <p className="text-sm text-ink-body">
+          What this is for: what the hair or nails looked like before and after a service, so the
+          next stylist works from evidence rather than memory.
+        </p>
+        <p className="text-sm text-ink-muted">
+          Private to this salon. Upload requires recorded data consent; withdrawal prevents new
+          uploads and keeps the photos already here.
+        </p>
+        <p className="text-sm text-ink-muted">
+          A photo becomes part of a treatment record when it is tagged Before or After there.
+        </p>
+        <Button size="sm" variant="ghost" className="w-fit" onClick={onOpenTreatments}>
+          Tag before/after on a treatment
+        </Button>
+      </div>
       {!readOnly ? (
         <form onSubmit={(e) => void upload(e)} className="flex flex-col gap-3 py-1 sm:max-w-sm">
           <Input
@@ -521,6 +517,7 @@ function Photos({ id, readOnly }: { id: string; readOnly: boolean }) {
             label="Photo"
             type="file"
             accept="image/jpeg,image/png"
+            hint="JPEG or PNG, up to 5 MB."
             disabled={busy}
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
           />

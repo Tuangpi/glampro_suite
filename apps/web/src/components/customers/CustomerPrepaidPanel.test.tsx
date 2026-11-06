@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
-import { PrepaidPanel } from "./CustomerPrepaidPanel";
+import { PrepaidHoldings, PrepaidTransfers } from "./CustomerPrepaidPanel";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
@@ -39,7 +39,7 @@ vi.mock("./ValuePackagePayrollDetail", () => ({
 function panel(client: QueryClient) {
   return (
     <QueryClientProvider client={client}>
-      <PrepaidPanel customerId="c1" />
+      <PrepaidHoldings customerId="c1" />
     </QueryClientProvider>
   );
 }
@@ -122,7 +122,7 @@ it.each(["STAFF", "CASHIER"])(
     mocks.role = role;
     setup();
     expect(await screen.findByRole("button", { name: "Transfer Wallet" })).toBeDisabled();
-    expect(screen.getByText(/not a complete balance-change ledger/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Share Wallet" })).toBeDisabled();
   },
 );
 it("closes confirmation on role loss and prevents read-only writes", async () => {
@@ -147,7 +147,66 @@ it("does not allow choosing a recipient after a search failure", async () => {
 });
 it("opens original economics from the current owned prepaid holding", async () => {
   setup();
-  await userEvent.click(await screen.findByRole("button", { name: "View economics for Wallet" }));
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Purchase & payments for Wallet" }),
+  );
   expect(screen.getByRole("dialog")).toHaveTextContent("Value economics c1/h1");
   expect(mocks.post).not.toHaveBeenCalled();
+});
+it("names shared and private credit on the row that owns the balance", async () => {
+  mocks.list.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/prepaid")
+      ? [
+          {
+            id: "h1",
+            customerId: "c1",
+            name: "Wallet",
+            amountRemaining: "75.00",
+            expiresAt: null,
+            sharedFamilyId: "family1",
+            updatedAt: "2026-10-23T01:00:00.000Z",
+          },
+        ]
+      : [],
+    total: path.endsWith("/prepaid") ? 1 : 0,
+    pageCount: 1,
+  }));
+  setup();
+  expect(await screen.findByText(/75\.00 left/)).toHaveTextContent("Shared");
+  expect(screen.getByRole("button", { name: "Make private Wallet" })).toBeEnabled();
+});
+it("keeps transfer evidence in its own list, apart from the rows it explains", async () => {
+  mocks.list.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/prepaid-transfers")
+      ? [
+          {
+            id: "event",
+            holdingId: "h1",
+            fromCustomerId: "c0",
+            toCustomerId: "c1",
+            actorId: "manager",
+            amount: "75.00",
+            expiresAt: null,
+            reason: "Customer request",
+            createdAt: "2026-10-24T01:00:00.000Z",
+          },
+        ]
+      : [],
+    total: path.endsWith("/prepaid-transfers") ? 1 : 0,
+    pageCount: 1,
+  }));
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <PrepaidTransfers customerId="c1" />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText(/75\.00 moved/)).toBeInTheDocument();
+  expect(screen.getByText("Reason: Customer request")).toBeInTheDocument();
+  expect(screen.getByText(/account c0 to c1/)).toHaveTextContent("by manager");
+  expect(mocks.list).toHaveBeenCalledWith("/customers/c1/prepaid-transfers", {
+    page: 1,
+    pageSize: 10,
+  });
 });

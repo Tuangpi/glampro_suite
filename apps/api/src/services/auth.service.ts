@@ -191,7 +191,7 @@ async function issueSession(
   realm: AuthRealm,
   meta: SessionMeta,
 ): Promise<AuthSession> {
-  if (!user.email) throw unauthorized("PIN-only staff cannot start a web session.");
+  if (!user.email) throw unauthorized("This account has no email login.");
   const email = user.email;
   const { token: accessToken, expiresIn } = signAccessToken({
     id: user.id,
@@ -530,7 +530,7 @@ export async function enableTwoFactor(userId: string): Promise<{ sent: true }> {
     );
   }
 
-  if (!user.email) throw unauthorized("PIN-only staff cannot enable email authentication.");
+  if (!user.email) throw unauthorized("This account has no email login.");
   await sendTwoFactorCode(user.email, code);
 
   return { sent: true };

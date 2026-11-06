@@ -4,9 +4,10 @@
  * **A staff member is a `User` row, not a table of its own.** Legacy settled this
  * (Q4 in `legacy/LEGACY-MAP.md` §6): `EmployeeController::create()` created a
  * `User`, and `employee_leaves.employee_id` was a foreign key onto `users.id`. So
- * this module reads and writes `User` plus its `StaffDepartment` links — and
- * creation supports an email login or a PIN-only POS identity. This is where
- * management sets credentials on another person's behalf.
+ * this module reads and writes `User` plus its `StaffDepartment` links, and every
+ * creation carries an email and a password: this is where management sets
+ * credentials on another person's behalf. The optional `posPin` is a till
+ * credential, not a login — see `createStaffSchema` for what it gates.
  *
  * Nothing here can leak credential material: every row is serialised through
  * `staffSummarySchema`, which has no `passwordHash` and no token column, and the
@@ -35,7 +36,6 @@ import {
 } from "@glampro_suite/shared";
 
 import { badRequest, conflict, forbidden, notFound, validationFailed } from "../lib/http-error.js";
-import { randomBytes } from "node:crypto";
 import { hashPassword } from "../lib/password.js";
 import { prisma } from "../lib/prisma.js";
 import { paginated, parsePagination } from "../utils/pagination.js";
@@ -261,19 +261,17 @@ export async function createStaff(input: CreateStaffInput): Promise<StaffDetail>
     throw badRequest("Commission-earning staff require an initial payroll plan.");
   if (payrollAssignment && !startDate)
     throw badRequest("A join date is required with a payroll plan.");
-  const existing = email
-    ? await prisma.user.findFirst({ where: { email }, select: { id: true } })
-    : null;
+  const existing = await prisma.user.findFirst({ where: { email }, select: { id: true } });
   if (existing) throw emailTaken();
   // Hash before acquiring the configuration lock.
-  const passwordHash = await hashPassword(password ?? randomBytes(32).toString("hex"));
+  const passwordHash = await hashPassword(password);
   const posPinHash = posPin ? await hashPassword(posPin) : null;
   const create = async (tx: Transaction) => {
     const row = await tx.user.create({
       data: {
         tenantId: "",
         ...profile,
-        email: email ?? null,
+        email,
         globalRole: globalRole ?? "STAFF",
         passwordHash,
         posPinHash,
@@ -329,7 +327,7 @@ export async function updateStaff(id: string, input: UpdateStaffInput): Promise<
     if (scope.kind === "tenant") await lockCommissionConfiguration(tx, scope.tenantId);
     const existing = await tx.user.findFirst({
       where: { id },
-      select: { id: true, email: true, commissionRate: true, startDate: true, disabled: true },
+      select: { id: true, commissionRate: true, startDate: true, disabled: true },
     });
     if (!existing) throw notFound("That staff member does not exist.", "STAFF_NOT_FOUND");
     if (startDate !== undefined) {
@@ -358,8 +356,6 @@ export async function updateStaff(id: string, input: UpdateStaffInput): Promise<
       throw badRequest(
         "Publish commission changes through the commission rules settings so effective dates and history are retained.",
       );
-    if (!existing.email && fields.globalRole && !["STAFF", "CASHIER"].includes(fields.globalRole))
-      throw badRequest("PIN-only staff cannot have a management role.");
 
     await assertStaffPayrollLifecycle(
       tx,
@@ -402,9 +398,10 @@ export async function updateStaff(id: string, input: UpdateStaffInput): Promise<
  *
  * Three rules beyond the role gate on the route:
  *
- * - **A POS PIN-only identity has no password to reset.** The row exists, but
- *   `email` is null and `auth.service` refuses a web session for it, so resetting
- *   one would be a silent no-op dressed up as a success. `conflict` says so.
+ * - **An account without an email has no password to reset.** Creation requires one
+ *   now, so this only reaches rows written before that rule. `auth.service` refuses
+ *   a web session without an address, so resetting one would be a silent no-op
+ *   dressed up as a success. `conflict` says so.
  * - **A manager cannot reset a manager or an owner.** A `MANAGER` holds `PATCH`
  *   rights, but a credential write is a takeover primitive: resetting a peer would
  *   let one manager sign in as another, and resetting an owner would be
@@ -432,7 +429,7 @@ export async function resetStaffPassword(
 
   if (!target.email)
     throw conflict(
-      "That staff member signs in with a POS PIN only, so there is no password to reset.",
+      "That staff member has no email login, so there is no password to reset.",
       "NO_WEB_LOGIN",
     );
 

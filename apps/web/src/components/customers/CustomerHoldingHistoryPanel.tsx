@@ -1,14 +1,9 @@
-import { queryKeys } from "@/constants/queryKeys";
-import { useQuery } from "@tanstack/react-query";
-import {
-  customerHoldingHistorySchema,
-  type CustomerHoldingHistory,
-  type CustomerHoldingHistoryRow,
-} from "@glampro_suite/shared";
+import { type CustomerHoldingHistory, type CustomerHoldingHistoryRow } from "@glampro_suite/shared";
 import Button from "@/components/ui/Button";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
+import { useHoldingHistory } from "@/hooks/useCustomers";
 import { useModules } from "@/hooks/useSettings";
-import { get, getErrorMessage } from "@/lib/api";
+import { getErrorMessage } from "@/lib/api";
 
 /**
  * A customer's purchases, payments, usage and what is left (FR-RPT-06).
@@ -18,6 +13,7 @@ import { get, getErrorMessage } from "@/lib/api";
  * adding them together would overstate what the salon owes. A legacy holding shows its
  * sessions with no money at all, because an unknown value is not a zero.
  */
+
 export default function CustomerHoldingHistoryPanel({ customerId }: { customerId: string }) {
   const modules = useModules();
   if (modules.isPending) return <p role="status">Loading holding-history access…</p>;
@@ -46,51 +42,16 @@ function centsToMoney(cents: string) {
   return `${padded.slice(0, -2)}.${padded.slice(-2)}`;
 }
 
-export function HoldingHistory({ customerId }: { customerId: string }) {
-  const { formatPrice, formatDate } = useSalonFormatting();
-  const history = useQuery({
-    queryKey: queryKeys.customers.holdingHistory(customerId),
-    queryFn: async () =>
-      customerHoldingHistorySchema.parse(await get(`/customers/${customerId}/holding-history`)),
-  });
-  return (
-    <section
-      aria-label="Package and credit history"
-      className="rounded-card border border-line bg-surface p-5"
-    >
-      <h3 className="font-bold">Package and credit history</h3>
-      <p className="text-sm text-ink-muted">
-        Every holding this customer owns, including expired, used and refunded ones. Unused session
-        value, unused credit and money still owed on the source sale are reported separately, so
-        they are never added together.
-      </p>
-      {history.isPending ? (
-        <p role="status">Loading holding history…</p>
-      ) : history.isError ? (
-        <div role="alert">
-          {getErrorMessage(history.error)}{" "}
-          <Button onClick={() => void history.refetch()}>Retry holding history</Button>
-        </div>
-      ) : (
-        <Report report={history.data} formatPrice={formatPrice} formatDate={formatDate} />
-      )}
-    </section>
-  );
-}
-
-function Report({
-  report,
-  formatPrice,
-  formatDate,
-}: {
-  report: CustomerHoldingHistory;
-  formatPrice: (value: string) => string;
-  formatDate: (value: string) => string;
-}) {
+/**
+ * Four figures, reported separately and never added up: unused session value, expired
+ * unused value, unused credit and money still owed on the source sales.
+ */
+export function HoldingTotals({ report }: { report: CustomerHoldingHistory }) {
+  const { formatPrice } = useSalonFormatting();
   const unvalued = report.unvalued.active.holdings + report.unvalued.expired.holdings;
   return (
     <>
-      <dl className="mt-4 grid gap-3 sm:grid-cols-2" aria-label="Holding totals">
+      <dl className="grid gap-3 px-2 sm:grid-cols-2 xl:grid-cols-4" aria-label="Holding totals">
         <Figure
           label="Unused session value"
           value={formatPrice(report.active.gross)}
@@ -104,9 +65,9 @@ function Report({
         <Figure
           label="Unused credit"
           value={formatPrice(report.credit.active.remaining)}
-          note={`${report.credit.active.holdings} holdings · ${formatPrice(
+          note={`${report.credit.active.holdings} holdings · expired ${formatPrice(
             report.credit.expired.remaining,
-          )} expired`}
+          )}`}
         />
         <Figure
           label="Owed on these sales"
@@ -115,26 +76,30 @@ function Report({
         />
       </dl>
       {unvalued ? (
-        <p className="mt-3 text-sm text-ink-muted">
+        <p className="mt-2 px-2 text-sm text-ink-muted">
           {unvalued} holding{unvalued === 1 ? "" : "s"} have no purchase valuation evidence, so
           their sessions are counted but no value is claimed.
         </p>
       ) : null}
-      {report.holdings.length ? (
-        <ul className="mt-4 flex flex-col gap-3">
-          {report.holdings.map((row) => (
-            <Holding
-              key={row.holdingId}
-              row={row}
-              formatPrice={formatPrice}
-              formatDate={formatDate}
-            />
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-4">This customer has no package or credit history.</p>
-      )}
     </>
+  );
+}
+
+/**
+ * Every holding this customer owns, including expired, used and refunded ones, with the
+ * payments and draws recorded against each. `report.holdings` is the whole list: the
+ * report is one document, so there is nothing to paginate.
+ */
+export function HoldingDetail({ report }: { report: CustomerHoldingHistory }) {
+  const { formatPrice, formatDate } = useSalonFormatting();
+  if (!report.holdings.length)
+    return <p className="px-2 py-1">This customer has no package or credit history.</p>;
+  return (
+    <ul className="flex flex-col gap-3 px-2">
+      {report.holdings.map((row) => (
+        <Holding key={row.holdingId} row={row} formatPrice={formatPrice} formatDate={formatDate} />
+      ))}
+    </ul>
   );
 }
 
@@ -185,7 +150,7 @@ function Holding({
       </p>
       {row.payments.length ? (
         <div className="text-sm">
-          <h4 className="mt-2 font-bold">Payments</h4>
+          <h5 className="mt-2 font-bold">Payments</h5>
           <ul aria-label={`Payments for ${row.name}`}>
             {row.payments.map((payment) => (
               <li key={payment.id}>
@@ -199,7 +164,7 @@ function Holding({
       ) : null}
       {row.usage.length ? (
         <div className="text-sm">
-          <h4 className="mt-2 font-bold">Usage</h4>
+          <h5 className="mt-2 font-bold">Usage</h5>
           <ul aria-label={`Usage for ${row.name}`}>
             {row.usage.map((draw) => (
               <li key={draw.id}>
@@ -218,5 +183,36 @@ function Holding({
         </p>
       ) : null}
     </li>
+  );
+}
+
+/** The standalone panel: figures and every holding, with its own access check above. */
+export function HoldingHistory({ customerId }: { customerId: string }) {
+  const history = useHoldingHistory(customerId);
+  return (
+    <section
+      aria-label="Package and credit history"
+      className="rounded-card border border-line bg-surface p-5"
+    >
+      <h3 className="font-bold">Package and credit history</h3>
+      <p className="text-sm text-ink-muted">
+        Every holding this customer owns, including expired, used and refunded ones. Unused session
+        value, unused credit and money still owed on the source sale are reported separately, so
+        they are never added together.
+      </p>
+      {history.isPending ? (
+        <p role="status">Loading holding history…</p>
+      ) : history.isError ? (
+        <div role="alert">
+          {getErrorMessage(history.error)}{" "}
+          <Button onClick={() => void history.refetch()}>Retry holding history</Button>
+        </div>
+      ) : (
+        <div className="mt-4 flex flex-col gap-3">
+          <HoldingTotals report={history.data} />
+          <HoldingDetail report={history.data} />
+        </div>
+      )}
+    </section>
   );
 }

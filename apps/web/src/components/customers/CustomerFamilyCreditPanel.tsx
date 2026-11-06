@@ -1,82 +1,50 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type {
-  PrepaidFamily,
-  PrepaidFamilyEvent,
-  PrepaidHolding,
-  PrepaidBalanceEvent,
-} from "@glampro_suite/shared";
+import type { PrepaidFamily, PrepaidFamilyEvent, PrepaidBalanceEvent } from "@glampro_suite/shared";
 import Button from "@/components/ui/Button";
+import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
 import Pagination from "@/components/ui/Pagination";
+import { queryKeys } from "@/constants/queryKeys";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { get, getPaginated, post, getErrorMessage } from "@/lib/api";
 
 type Draft = {
-  kind: "create" | "join" | "leave" | "share" | "private";
-  holding?: PrepaidHolding;
+  kind: "create" | "join" | "leave";
   expectedFamilyId: string | null;
 };
 
-export default function CustomerFamilyCreditPanel({ customerId }: { customerId: string }) {
+/**
+ * Who this customer shares credit with, and who is in the family at all.
+ *
+ * Sharing itself is per holding and lives on the credit rows: this card is the membership
+ * side alone, so a holding is never listed twice and "shared or private" is read where the
+ * balance is. Nothing on this card moves money — joining, changing and leaving family all
+ * only add or withdraw permission.
+ */
+export function FamilySharingCard({ customerId }: { customerId: string }) {
   const { user, isReadOnly } = useAuth();
   const canManage = !isReadOnly && ["SUPER_ADMIN", "MANAGER"].includes(user?.globalRole ?? "");
   const client = useQueryClient();
-  const { formatPrice, formatDateTime } = useSalonFormatting();
-  const [page, setPage] = useState(1);
-  const [historyPage, setHistoryPage] = useState(1);
-  const [membershipPage, setMembershipPage] = useState(1);
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [openedAt] = useState(() => Date.now());
   if (draft && !canManage) setDraft(null);
   const family = useQuery({
-    queryKey: ["customers", customerId, "prepaid-family"],
+    queryKey: queryKeys.customers.prepaidFamily(customerId),
     queryFn: () => get<PrepaidFamily | null>(`/customers/${customerId}/prepaid-family`),
   });
-  const holdings = useQuery({
-    queryKey: ["customers", customerId, "sharing-holdings", page],
-    queryFn: () =>
-      getPaginated<PrepaidHolding>(`/customers/${customerId}/prepaid`, { page, pageSize: 10 }),
-  });
-  const history = useQuery({
-    queryKey: ["customers", customerId, "balance-history", historyPage],
-    queryFn: () =>
-      getPaginated<PrepaidBalanceEvent>(`/customers/${customerId}/prepaid-balance-history`, {
-        page: historyPage,
-        pageSize: 10,
-      }),
-  });
-  const membership = useQuery({
-    queryKey: ["customers", customerId, "family-history", membershipPage],
-    queryFn: () =>
-      getPaginated<PrepaidFamilyEvent>(`/customers/${customerId}/prepaid-family-history`, {
-        page: membershipPage,
-        pageSize: 10,
-      }),
-  });
-  const refreshing = family.isFetching || holdings.isFetching;
+  const refreshing = family.isFetching;
   const currentFamilyId = family.data?.id ?? null;
   return (
-    <section
-      aria-label="Family sharing and prepaid balance audit"
-      className="rounded-card border border-line p-5"
+    <Card
+      title="Family sharing"
+      label="Family sharing"
+      description="Only holdings you explicitly share fund family spending. Sharing is switched on each credit row."
     >
-      <h3 className="font-bold">Family sharing and prepaid balance audit</h3>
-      <Button
-        disabled={refreshing}
-        onClick={() => {
-          setDraft(null);
-          void client.invalidateQueries({ queryKey: ["customers"] });
-        }}
-      >
-        Reload family and balances
-      </Button>
-      <p>
-        Only explicitly shared holdings fund family spending. Each holding keeps its balance and
-        expiry. POS draws earliest expiry first; no-expiry credit is last. Leaving a family
-        withdraws your sharing without moving money. Disable sharing before transferring a holding.
+      <p className="py-1 text-sm text-ink-body">
+        Each holding keeps its own balance and expiry, and the till draws the earliest expiry first.
+        Leaving a family withdraws sharing without moving money.
       </p>
       {family.isPending ? (
         <p role="status">Loading prepaid family…</p>
@@ -89,11 +57,11 @@ export default function CustomerFamilyCreditPanel({ customerId }: { customerId: 
         <>
           {family.data ? (
             <>
-              <p>
-                Family: <strong>{family.data.name}</strong> · Family ID:{" "}
-                <code>{family.data.id}</code>
+              <p className="py-1 text-sm">
+                Family: <strong>{family.data.name}</strong>
               </p>
-              <ul aria-label="Prepaid family members">
+              <p className="text-xs text-ink-muted">Family ID: {family.data.id}</p>
+              <ul aria-label="Prepaid family members" className="mt-2 flex flex-col gap-1 text-sm">
                 {family.data.members.map((row) => (
                   <li key={row.customerId}>
                     {row.name}
@@ -101,168 +69,172 @@ export default function CustomerFamilyCreditPanel({ customerId }: { customerId: 
                   </li>
                 ))}
               </ul>
+            </>
+          ) : (
+            <p className="py-1 text-sm text-ink-body">
+              No prepaid family. Legacy family references do not grant access.
+            </p>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {family.data ? (
               <Button
+                size="sm"
+                variant="secondary"
                 disabled={!canManage || refreshing}
                 onClick={() => setDraft({ kind: "leave", expectedFamilyId: currentFamilyId })}
               >
                 Leave prepaid family
               </Button>
-            </>
-          ) : (
-            <>
-              <p>No prepaid family. Legacy family references do not grant access.</p>
+            ) : (
               <Button
+                size="sm"
                 disabled={!canManage || refreshing}
                 onClick={() => setDraft({ kind: "create", expectedFamilyId: null })}
               >
                 Create prepaid family
               </Button>
-            </>
-          )}
-          <Button
-            disabled={!canManage || refreshing}
-            onClick={() => setDraft({ kind: "join", expectedFamilyId: currentFamilyId })}
-          >
-            Join or change prepaid family
-          </Button>
-        </>
-      )}
-      <h4 className="mt-4 font-bold">Choose which owned holdings are shared</h4>
-      {holdings.isPending ? (
-        <p role="status">Loading sharing controls…</p>
-      ) : holdings.isError ? (
-        <div role="alert">
-          {getErrorMessage(holdings.error)}{" "}
-          <Button onClick={() => void holdings.refetch()}>Retry sharing holdings</Button>
-        </div>
-      ) : (
-        <>
-          <ul>
-            {holdings.data.data.map((row) => (
-              <li key={row.id} className="my-3">
-                {row.name} · {formatPrice(row.amountRemaining)} ·{" "}
-                {row.expiresAt ? `Expires ${formatDateTime(row.expiresAt)}` : "No expiry"} ·{" "}
-                {row.sharedFamilyId ? "Shared" : "Private"}
-                <Button
-                  disabled={
-                    !canManage ||
-                    refreshing ||
-                    family.isError ||
-                    family.isPending ||
-                    (!row.sharedFamilyId &&
-                      (!family.data ||
-                        Number(row.amountRemaining) <= 0 ||
-                        (!!row.expiresAt && Date.parse(row.expiresAt) <= openedAt)))
-                  }
-                  onClick={() =>
-                    setDraft({
-                      kind: row.sharedFamilyId ? "private" : "share",
-                      holding: row,
-                      expectedFamilyId: currentFamilyId,
-                    })
-                  }
-                >
-                  {row.sharedFamilyId ? "Make private" : "Share"} {row.name}
-                </Button>
-              </li>
-            ))}
-          </ul>
-          {!holdings.data.total ? <p>No owned holdings to share.</p> : null}
-          <Pagination
-            page={page}
-            pageCount={holdings.data.pageCount}
-            onPageChange={setPage}
-            label="Sharing holding pages"
-          />
-        </>
-      )}
-      <h4 className="mt-4 font-bold">Balance audit</h4>
-      <p>
-        Append-only evidence from ledger activation. Opening snapshots are not historical purchases.
-        Earlier activity is not reconstructed. Expiry makes credit unavailable without writing off
-        its stored balance.
-      </p>
-      {history.isPending ? (
-        <p role="status">Loading balance audit…</p>
-      ) : history.isError ? (
-        <div role="alert">
-          {getErrorMessage(history.error)}{" "}
-          <Button onClick={() => void history.refetch()}>Retry balance audit</Button>
-        </div>
-      ) : (
-        <>
-          <ul>
-            {history.data.data.map((event) => (
-              <li key={event.id} className="my-3 break-words">
-                {formatDateTime(event.createdAt)} · {event.kind} · {formatPrice(event.amountBefore)}{" "}
-                → {formatPrice(event.amountAfter)} (change {formatPrice(event.delta)})
-                <p>
-                  Holding {event.holdingId} · Owner {event.customerId} · By{" "}
-                  {event.actorId ?? "Unknown / opening or direct database operation"}
-                  {event.saleId ? ` · Sale ${event.saleId}` : ""}
-                </p>
-                <p>
-                  {event.expiresAt ? `Expires ${formatDateTime(event.expiresAt)}` : "No expiry"} ·
-                  Sharing {event.previousSharedFamilyId ?? "private"} →{" "}
-                  {event.sharedFamilyId ?? "private"}
-                </p>
-                {event.reason ? <p>Reason: {event.reason}</p> : null}
-              </li>
-            ))}
-          </ul>
-          {!history.data.total ? <p>No balance events recorded.</p> : null}
-          <Pagination
-            page={historyPage}
-            pageCount={history.data.pageCount}
-            onPageChange={setHistoryPage}
-            label="Balance audit pages"
-          />
-        </>
-      )}
-      <h4 className="mt-4 font-bold">Family membership history</h4>
-      {membership.isPending ? (
-        <p role="status">Loading family history…</p>
-      ) : membership.isError ? (
-        <div role="alert">
-          {getErrorMessage(membership.error)}{" "}
-          <Button onClick={() => void membership.refetch()}>Retry family history</Button>
-        </div>
-      ) : (
-        <>
-          <ul>
-            {membership.data.data.map((event) => (
-              <li key={event.id}>
-                {formatDateTime(event.createdAt)} · {event.fromFamilyId ?? "none"} →{" "}
-                {event.toFamilyId ?? "none"} · By {event.actorId} · {event.reason}
-              </li>
-            ))}
-          </ul>
-          {!membership.data.total ? <p>No membership changes recorded.</p> : null}
-          <Pagination
-            page={membershipPage}
-            pageCount={membership.data.pageCount}
-            onPageChange={setMembershipPage}
-            label="Family membership history pages"
-          />
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={!canManage || refreshing}
+              onClick={() => setDraft({ kind: "join", expectedFamilyId: currentFamilyId })}
+            >
+              Join or change prepaid family
+            </Button>
+          </div>
         </>
       )}
       {draft && canManage ? (
-        <FamilyDialog
+        <FamilyChangeDialog
           customerId={customerId}
           draft={draft}
           refreshing={refreshing}
           onClose={() => setDraft(null)}
           onSaved={() => {
             setDraft(null);
-            void client.invalidateQueries({ queryKey: ["customers"] });
+            void client.invalidateQueries({ queryKey: queryKeys.customers.all() });
           }}
         />
       ) : null}
-    </section>
+    </Card>
   );
 }
 
-function FamilyDialog({
+/**
+ * The append-only balance ledger. It proves what happened after activation and does not
+ * claim to reconstruct anything before it: an opening snapshot is the balance a holding
+ * started with, not a purchase, and expiry makes credit unavailable without writing its
+ * stored balance off.
+ */
+export function HoldingBalanceAudit({ customerId }: { customerId: string }) {
+  const { formatPrice, formatDateTime } = useSalonFormatting();
+  const [page, setPage] = useState(1);
+  const history = useQuery({
+    queryKey: [...queryKeys.customers.prepaidBalanceHistory(customerId), page],
+    queryFn: () =>
+      getPaginated<PrepaidBalanceEvent>(`/customers/${customerId}/prepaid-balance-history`, {
+        page,
+        pageSize: 10,
+      }),
+  });
+  if (history.isPending) return <p role="status">Loading balance audit…</p>;
+  if (history.isError)
+    return (
+      <div role="alert">
+        {getErrorMessage(history.error)}{" "}
+        <Button onClick={() => void history.refetch()}>Retry balance audit</Button>
+      </div>
+    );
+  return (
+    <>
+      <p className="pb-2 text-sm text-ink-muted">
+        Append-only evidence from ledger activation. Opening snapshots are not historical purchases.
+        Earlier activity is not reconstructed. Expiry makes credit unavailable without writing off
+        its stored balance.
+      </p>
+      <ul className="divide-y divide-line-soft">
+        {history.data.data.map((event) => (
+          <li key={event.id} className="py-2.5">
+            <p className="text-sm text-ink">
+              {formatDateTime(event.createdAt)} · {event.kind} · {formatPrice(event.amountBefore)} →{" "}
+              {formatPrice(event.amountAfter)} (change {formatPrice(event.delta)})
+            </p>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Holding {event.holdingId} · owner {event.customerId} · by{" "}
+              {event.actorId ?? "Unknown / opening or direct database operation"}
+              {event.saleId ? ` · sale ${event.saleId}` : ""}
+              {" · "}
+              {event.expiresAt ? `expires ${formatDateTime(event.expiresAt)}` : "no expiry"} ·
+              sharing {event.previousSharedFamilyId ?? "private"} →{" "}
+              {event.sharedFamilyId ?? "private"}
+            </p>
+            {event.reason ? (
+              <p className="mt-0.5 text-sm text-ink-body">Reason: {event.reason}</p>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {history.data.total ? null : (
+        <p className="py-1 text-sm text-ink-muted">No balance events recorded.</p>
+      )}
+      <Pagination
+        page={page}
+        pageCount={history.data.pageCount}
+        onPageChange={setPage}
+        label="Balance audit pages"
+      />
+    </>
+  );
+}
+
+/** Moves in and out of families, in order. Nothing here moves value. */
+export function PrepaidMembershipHistory({ customerId }: { customerId: string }) {
+  const { formatDateTime } = useSalonFormatting();
+  const [page, setPage] = useState(1);
+  const membership = useQuery({
+    queryKey: [...queryKeys.customers.prepaidFamilyHistory(customerId), page],
+    queryFn: () =>
+      getPaginated<PrepaidFamilyEvent>(`/customers/${customerId}/prepaid-family-history`, {
+        page,
+        pageSize: 10,
+      }),
+  });
+  if (membership.isPending) return <p role="status">Loading family history…</p>;
+  if (membership.isError)
+    return (
+      <div role="alert">
+        {getErrorMessage(membership.error)}{" "}
+        <Button onClick={() => void membership.refetch()}>Retry family history</Button>
+      </div>
+    );
+  return (
+    <>
+      <ul className="divide-y divide-line-soft">
+        {membership.data.data.map((event) => (
+          <li key={event.id} className="py-2.5 text-sm">
+            {formatDateTime(event.createdAt)} · {event.fromFamilyId ?? "none"} →{" "}
+            {event.toFamilyId ?? "none"}
+            <p className="mt-0.5 text-xs text-ink-muted">
+              By {event.actorId} · {event.reason}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {membership.data.total ? null : (
+        <p className="py-1 text-sm text-ink-muted">No membership changes recorded.</p>
+      )}
+      <Pagination
+        page={page}
+        pageCount={membership.data.pageCount}
+        onPageChange={setPage}
+        label="Family membership history pages"
+      />
+    </>
+  );
+}
+
+function FamilyChangeDialog({
   customerId,
   draft,
   refreshing,
@@ -283,16 +255,10 @@ function FamilyDialog({
       const common = { reason: reason.trim(), confirmed: true };
       if (draft.kind === "create")
         return post(`/customers/${customerId}/prepaid-family`, { ...common, name: value.trim() });
-      if (draft.kind === "join" || draft.kind === "leave")
-        return post(`/customers/${customerId}/prepaid-family-membership`, {
-          ...common,
-          familyId: draft.kind === "leave" ? null : value.trim(),
-          expectedFamilyId: draft.expectedFamilyId,
-        });
-      return post(`/customers/${customerId}/prepaid/${draft.holding!.id}/sharing`, {
+      return post(`/customers/${customerId}/prepaid-family-membership`, {
         ...common,
-        familyId: draft.kind === "private" ? null : draft.expectedFamilyId,
-        expectedUpdatedAt: draft.holding!.updatedAt,
+        familyId: draft.kind === "leave" ? null : value.trim(),
+        expectedFamilyId: draft.expectedFamilyId,
       });
     },
     onSuccess: onSaved,
@@ -309,10 +275,9 @@ function FamilyDialog({
       }}
     >
       <p>
-        Action: {draft.kind}
-        {draft.holding ? ` ${draft.holding.name}` : ""}. Sharing gives current family members
-        permission to spend this holding. Changing or leaving a family makes your shared holdings
-        private; it never transfers value or restarts expiry.
+        Action: {draft.kind}. Sharing gives current family members permission to spend a shared
+        holding. Changing or leaving a family makes your shared holdings private; it never transfers
+        value or restarts expiry.
       </p>
       {needsValue ? (
         <Input
@@ -321,7 +286,7 @@ function FamilyDialog({
           hint={
             draft.kind === "create"
               ? undefined
-              : "Copy it from the other profile's prepaid family panel."
+              : "Copy it from the other profile's Family sharing card."
           }
           value={value}
           maxLength={draft.kind === "create" ? 100 : 64}
@@ -350,7 +315,7 @@ function FamilyDialog({
           disabled={blocked}
           onChange={(event) => setConfirmed(event.target.checked)}
         />{" "}
-        I confirm this family or sharing change.
+        I confirm this family change.
       </label>
       {mutation.isError ? (
         <p role="alert">

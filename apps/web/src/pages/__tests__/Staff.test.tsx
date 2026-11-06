@@ -535,26 +535,28 @@ describe("the add-staff form", () => {
     });
   });
 
-  it("creates a PIN-only colleague without email or password and sends their commission rate", async () => {
+  it("creates a colleague with a login and an optional till PIN, sending their commission rate", async () => {
     const user = userEvent.setup();
     useStaffList.mockReturnValue(listOf([staffRow()]));
     renderStaff();
     const submit = await openCreateForm(user);
-    await user.type(screen.getByLabelText("Name"), "PIN colleague");
-    await user.click(screen.getByLabelText("POS PIN only (no email login)"));
-    expect(screen.queryByLabelText("Email")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Password")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Name"), "Till colleague");
+    await user.type(screen.getByLabelText("Email"), "till@salon.test");
+    await user.type(screen.getByLabelText("Password"), "correct-horse");
     await user.type(screen.getByLabelText("POS PIN"), "123456");
     await user.clear(screen.getByLabelText("Service commission (%)"));
     await user.type(screen.getByLabelText("Service commission (%)"), "12.5");
     await user.click(submit);
     await waitFor(() =>
       expect(createMutate).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "PIN colleague", posPin: "123456", commissionRate: 12.5 }),
+        expect.objectContaining({
+          name: "Till colleague",
+          email: "till@salon.test",
+          posPin: "123456",
+          commissionRate: 12.5,
+        }),
       ),
     );
-    expect(createMutate.mock.calls[0]?.[0]).not.toHaveProperty("email");
-    expect(createMutate.mock.calls[0]?.[0]).not.toHaveProperty("password");
   });
 
   it("refuses to submit without a name, an email and a long-enough password", async () => {

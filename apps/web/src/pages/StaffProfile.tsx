@@ -241,7 +241,9 @@ function Profile({ id }: { id: string }) {
                   {section.id === "access" && (
                     <StaffAccessCard key={row.id} staff={row} canEdit={canEdit} />
                   )}
-                  {section.id === "availability" && <StaffRoster staffId={row.id} />}
+                  {section.id === "availability" && (
+                    <StaffRoster key={row.id} staffId={row.id} canEdit={canEdit} />
+                  )}
                   {section.id === "payroll" && (
                     <PayrollPlans staffId={row.id} canEdit={canEditPayroll} />
                   )}

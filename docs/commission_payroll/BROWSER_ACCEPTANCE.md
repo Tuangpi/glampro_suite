@@ -48,8 +48,10 @@ subcases, all driven through the mounted React app:
 8. The till shows the seller's own `Your commission progress` card for staff and no card for a
    cashier.
 9. A customer profile renders the holding history of one real value-package purchase under the
-   **Packages & credit** tab: the holding-totals list with unused session value, unused credit
-   and source-sale receivables, and the purchase row priced from the source sale.
+   **Packages & credit** tab: **Balances and actions** shows the totals — unused session value,
+   unused credit and source-sale receivables — above one row per holding, and
+   **History and audit → Every holding, bought and used** opens the purchase row priced from the
+   source sale without a second `/holding-history` read.
 10. No stray processes or profile directories remain; the Chrome profile is removed with retries.
 
 Boundaries: the session is the same synthetic signed access token the API issues, bootstrapped

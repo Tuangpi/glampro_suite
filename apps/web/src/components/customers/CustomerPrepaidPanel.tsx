@@ -14,136 +14,120 @@ import Pagination from "@/components/ui/Pagination";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useCustomerList } from "@/hooks/useCustomers";
-import { useModules } from "@/hooks/useSettings";
 import { getErrorMessage, getPaginated, post } from "@/lib/api";
-import CustomerFamilyCreditPanel from "./CustomerFamilyCreditPanel";
+import ShareHoldingDialog from "./ShareHoldingDialog";
 import ValuePackagePayrollDetail from "./ValuePackagePayrollDetail";
 
-export default function CustomerPrepaidPanel({ customerId }: { customerId: string }) {
-  const modules = useModules();
-  if (modules.isPending) return <p role="status">Loading prepaid access…</p>;
-  if (modules.isError)
-    return (
-      <div role="alert">
-        Prepaid access could not be loaded.{" "}
-        <Button onClick={() => void modules.refetch()}>Retry prepaid access</Button>
-      </div>
-    );
-  return modules.data?.some((row) => row.code === "packages" && row.entitled) ? (
-    <>
-      <PrepaidPanel key={customerId} customerId={customerId} />
-      <CustomerFamilyCreditPanel key={`family:${customerId}`} customerId={customerId} />
-    </>
-  ) : null;
-}
-
-export function PrepaidPanel({ customerId }: { customerId: string }) {
+/**
+ * The prepaid-credit half of a customer's holdings: one row per holding and the three
+ * things a manager can do with it — read its purchase, transfer it whole, or share it.
+ *
+ * Rows take `Private`/`Shared` from `sharedFamilyId` alone, so the family itself is only
+ * read when a share is actually attempted. Transfer evidence and the balance audit are
+ * not here: a holding is listed once, and the evidence sits behind History.
+ */
+export function PrepaidHoldings({ customerId }: { customerId: string }) {
   const { user, isReadOnly } = useAuth();
   const { formatPrice, formatDateTime } = useSalonFormatting();
   const client = useQueryClient();
   const [page, setPage] = useState(1);
-  const [historyPage, setHistoryPage] = useState(1);
   const [selected, setSelected] = useState<PrepaidHolding | null>(null);
+  const [sharing, setSharing] = useState<PrepaidHolding | null>(null);
   const [economicsId, setEconomicsId] = useState<string | null>(null);
   const [openedAt] = useState(() => Date.now());
   const canManage =
     !isReadOnly && (user?.globalRole === "SUPER_ADMIN" || user?.globalRole === "MANAGER");
   if (selected && !canManage) setSelected(null);
+  if (sharing && !canManage) setSharing(null);
   const holdings = useQuery({
     queryKey: [...queryKeys.customers.ownedPrepaid(customerId), page],
     queryFn: () =>
       getPaginated<PrepaidHolding>(`/customers/${customerId}/prepaid`, { page, pageSize: 10 }),
   });
-  const history = useQuery({
-    queryKey: [...queryKeys.customers.prepaidTransfers(customerId), historyPage],
-    queryFn: () =>
-      getPaginated<PrepaidTransferEvent>(`/customers/${customerId}/prepaid-transfers`, {
-        page: historyPage,
-        pageSize: 10,
-      }),
-  });
+  /** A row whose snapshot moved under an open dialog must not be written against. */
+  const stale = (row: PrepaidHolding) =>
+    holdings.isFetching ||
+    holdings.isError ||
+    !holdings.data?.data.some(
+      (current) => current.id === row.id && current.updatedAt === row.updatedAt,
+    );
+  const expired = (row: PrepaidHolding) => !!row.expiresAt && Date.parse(row.expiresAt) <= openedAt;
   return (
-    <section
-      aria-label="Prepaid ownership and transfers"
-      className="rounded-card border border-line p-5"
-    >
-      <h3 className="font-bold">Prepaid ownership and transfers</h3>
-      <p>
-        Transfer an entire remaining prepaid holding to another customer in this salon. Balance,
-        expiry and original purchase are preserved. Manage explicit family sharing below.
-      </p>
+    <div className="mt-4">
+      <h4 className="px-2 text-2xs font-heavy tracking-wide text-ink-muted uppercase">
+        Prepaid credit
+      </h4>
       {holdings.isPending ? (
-        <p role="status">Loading owned prepaid credit…</p>
+        <p role="status" className="px-2 py-2 text-sm">
+          Loading prepaid credit…
+        </p>
       ) : holdings.isError ? (
-        <div role="alert">
+        <div role="alert" className="flex flex-wrap items-center gap-2 px-2 py-2 text-sm">
           {getErrorMessage(holdings.error)}{" "}
-          <Button onClick={() => void holdings.refetch()}>Retry owned credit</Button>
+          <Button size="sm" variant="secondary" onClick={() => void holdings.refetch()}>
+            Retry owned credit
+          </Button>
         </div>
       ) : (
         <>
-          <ul>
-            {holdings.data.data.map((row) => (
-              <li key={row.id} className="my-3 rounded-md border border-line p-3">
-                <strong>{row.name}</strong> — {formatPrice(row.amountRemaining)} ·{" "}
-                {row.expiresAt ? `Expires ${formatDateTime(row.expiresAt)}` : "No expiry"}
-                <Button onClick={() => setEconomicsId(row.id)}>
-                  View economics for {row.name}
-                </Button>
-                <Button
-                  disabled={
-                    !canManage ||
-                    holdings.isFetching ||
-                    Number(row.amountRemaining) <= 0 ||
-                    (!!row.expiresAt && Date.parse(row.expiresAt) <= openedAt)
-                  }
-                  onClick={() => setSelected(row)}
+          {holdings.data.data.length ? (
+            <ul className="divide-y divide-line-soft px-2">
+              {holdings.data.data.map((row) => (
+                <li
+                  key={row.id}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5"
                 >
-                  Transfer {row.name}
-                </Button>
-              </li>
-            ))}
-          </ul>
-          {!holdings.data.total ? <p>No owned prepaid credit.</p> : null}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink">{row.name}</p>
+                    <p className="mt-0.5 text-xs text-ink-muted">
+                      {formatPrice(row.amountRemaining)} left ·{" "}
+                      {row.expiresAt ? `expires ${formatDateTime(row.expiresAt)}` : "no expiry"} ·{" "}
+                      {row.sharedFamilyId ? "Shared" : "Private"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setEconomicsId(row.id)}>
+                      Purchase &amp; payments for {row.name}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={
+                        !canManage ||
+                        holdings.isFetching ||
+                        Number(row.amountRemaining) <= 0 ||
+                        expired(row)
+                      }
+                      onClick={() => setSelected(row)}
+                    >
+                      Transfer {row.name}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={
+                        !canManage ||
+                        holdings.isFetching ||
+                        (!row.sharedFamilyId && (Number(row.amountRemaining) <= 0 || expired(row)))
+                      }
+                      onClick={() => setSharing(row)}
+                    >
+                      {row.sharedFamilyId ? "Make private" : "Share"} {row.name}
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-2 py-2 text-sm text-ink-muted">
+              No prepaid credit. It appears here after a credit purchase at the till.
+            </p>
+          )}
           <Pagination
             page={page}
             pageCount={holdings.data.pageCount}
             onPageChange={setPage}
             label="Owned prepaid pages"
-          />
-        </>
-      )}
-      <h4 className="mt-4 font-bold">Transfer history</h4>
-      <p>Transfer evidence only. This is not a complete balance-change ledger.</p>
-      {history.isPending ? (
-        <p role="status">Loading transfer history…</p>
-      ) : history.isError ? (
-        <div role="alert">
-          {getErrorMessage(history.error)}{" "}
-          <Button onClick={() => void history.refetch()}>Retry transfer history</Button>
-        </div>
-      ) : (
-        <>
-          <ul>
-            {history.data.data.map((event) => (
-              <li key={event.id} className="my-3 whitespace-pre-wrap break-words">
-                {formatDateTime(event.createdAt)} · {formatPrice(event.amount)} · From account{" "}
-                {event.fromCustomerId} to account {event.toCustomerId} · By {event.actorId}
-                <p>
-                  Holding: {event.holdingId} ·{" "}
-                  {event.expiresAt ? `Expires ${formatDateTime(event.expiresAt)}` : "No expiry"}
-                </p>
-                <p>Reason: {event.reason}</p>
-              </li>
-            ))}
-          </ul>
-          {!history.data.total ? (
-            <p>No recorded transfers. Earlier activity is not backfilled.</p>
-          ) : null}
-          <Pagination
-            page={historyPage}
-            pageCount={history.data.pageCount}
-            onPageChange={setHistoryPage}
-            label="Prepaid transfer history pages"
           />
         </>
       )}
@@ -155,17 +139,21 @@ export function PrepaidPanel({ customerId }: { customerId: string }) {
           onClose={() => setEconomicsId(null)}
         />
       ) : null}
+      {sharing && canManage ? (
+        <ShareHoldingDialog
+          key={`sharing:${sharing.id}`}
+          customerId={customerId}
+          holding={sharing}
+          refreshing={stale(sharing)}
+          onClose={() => setSharing(null)}
+          onSaved={() => setSharing(null)}
+        />
+      ) : null}
       {selected && canManage ? (
         <TransferDialog
           key={selected.id}
           holding={selected}
-          refreshing={
-            holdings.isFetching ||
-            holdings.isError ||
-            !holdings.data?.data.some(
-              (row) => row.id === selected.id && row.updatedAt === selected.updatedAt,
-            )
-          }
+          refreshing={stale(selected)}
           onClose={() => setSelected(null)}
           onTransferred={() => {
             setSelected(null);
@@ -173,7 +161,60 @@ export function PrepaidPanel({ customerId }: { customerId: string }) {
           }}
         />
       ) : null}
-    </section>
+    </div>
+  );
+}
+
+/**
+ * Where the customer's prepaid credit came from. Evidence of a move, not a ledger: a
+ * transfer changes ownership, so the entry proves the move and nothing more.
+ */
+export function PrepaidTransfers({ customerId }: { customerId: string }) {
+  const { formatPrice, formatDateTime } = useSalonFormatting();
+  const [page, setPage] = useState(1);
+  const history = useQuery({
+    queryKey: [...queryKeys.customers.prepaidTransfers(customerId), page],
+    queryFn: () =>
+      getPaginated<PrepaidTransferEvent>(`/customers/${customerId}/prepaid-transfers`, {
+        page,
+        pageSize: 10,
+      }),
+  });
+  if (history.isPending) return <p role="status">Loading credit transfers…</p>;
+  if (history.isError)
+    return (
+      <div role="alert">
+        {getErrorMessage(history.error)}{" "}
+        <Button onClick={() => void history.refetch()}>Retry transfer history</Button>
+      </div>
+    );
+  return (
+    <>
+      <ul className="divide-y divide-line-soft">
+        {history.data.data.map((event) => (
+          <li key={event.id} className="py-2.5">
+            <p className="text-sm text-ink">
+              {formatDateTime(event.createdAt)} · {formatPrice(event.amount)} moved
+            </p>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Holding {event.holdingId} · account {event.fromCustomerId} to {event.toCustomerId} ·
+              by {event.actorId} ·{" "}
+              {event.expiresAt ? `expires ${formatDateTime(event.expiresAt)}` : "no expiry"}
+            </p>
+            <p className="mt-0.5 text-sm text-ink-body">Reason: {event.reason}</p>
+          </li>
+        ))}
+      </ul>
+      {history.data.total ? null : (
+        <p className="py-1 text-sm text-ink-muted">No recorded transfers.</p>
+      )}
+      <Pagination
+        page={page}
+        pageCount={history.data.pageCount}
+        onPageChange={setPage}
+        label="Prepaid transfer history pages"
+      />
+    </>
   );
 }
 

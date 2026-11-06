@@ -7,7 +7,15 @@
  * employee_id` was a foreign key onto `users.id`. Staff is therefore a role plus
  * a profile on the same row, and this screen reads `User` directly.
  *
- * Staff can have an email/password login or a POS-only PIN without email.
+ * **Every staff member is created with an email and a password.** Early versions
+ * allowed a "POS PIN only" row with a null `email`, which turned out to be an
+ * account nobody could ever sign in to: `auth.service` refuses a web session
+ * without an address and there is no POS terminal app holding one. The `posPin` is
+ * not a login at all — it is the six-digit credential the till asks for, to
+ * attribute a sale to this person on a shared terminal and, for a manager, to
+ * approve an unpaid package-session override. So it stays optional and is never a
+ * substitute for `email`.
+ *
  * The API never accepts a tenant id; the Prisma extension scopes creation.
  */
 import { z } from "zod";
@@ -79,8 +87,9 @@ export type StaffDetail = z.infer<typeof staffDetailSchema>;
 export const createStaffSchema = z
   .object({
     name: z.string().trim().min(1, "Name is required").max(200),
-    email: emailSchema.optional(),
-    password: z.string().min(PASSWORD_MIN_LENGTH, "Password is too short").max(200).optional(),
+    email: emailSchema,
+    password: z.string().min(PASSWORD_MIN_LENGTH, "Password is too short").max(200),
+    /** The till credential. Attribution on a shared terminal, and approval for a manager. */
     posPin: z
       .string()
       .regex(/^\d{6}$/, "Use a six-digit PIN.")
@@ -135,7 +144,7 @@ export const createStaffSchema = z
         path: ["startDate"],
         message: "A join date is required with a payroll plan.",
       });
-    if (staff.globalRole === "SUPER_ADMIN" && staff.password) {
+    if (staff.globalRole === "SUPER_ADMIN") {
       const result = adminPasswordSchema.safeParse(staff.password);
       if (!result.success)
         context.addIssue({
@@ -144,30 +153,6 @@ export const createStaffSchema = z
           message: result.error.issues[0].message,
         });
     }
-    if (!staff.email && !staff.posPin)
-      context.addIssue({
-        code: "custom",
-        path: ["posPin"],
-        message: "An email login or POS PIN is required.",
-      });
-    if (staff.email && !staff.password)
-      context.addIssue({
-        code: "custom",
-        path: ["password"],
-        message: "An email login requires a password.",
-      });
-    if (!staff.email && staff.password)
-      context.addIssue({
-        code: "custom",
-        path: ["email"],
-        message: "A password requires an email login.",
-      });
-    if (!staff.email && staff.globalRole && !["STAFF", "CASHIER"].includes(staff.globalRole))
-      context.addIssue({
-        code: "custom",
-        path: ["globalRole"],
-        message: "PIN-only staff cannot have a management role.",
-      });
   });
 
 export type CreateStaffInput = z.infer<typeof createStaffSchema>;

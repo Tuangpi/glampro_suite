@@ -1,5 +1,67 @@
 # Glampro Suite — progress
 
+## November 6, 2026 — the packages tab answers three questions instead of stacking four panels
+
+A customer profile's **Packages & credit** tab was four panels in a column: owned session
+packages, owned prepaid credit, the prepaid family, and holding history — each with its own
+heading, its own loading line and its own copy about what it was not. The same holding could be
+described twice (a credit row here, its ledger there) and nothing said which of them answered the
+question a receptionist actually had. The request was a redesign into three cards: one list of what
+the customer holds, the family that may spend it, and the evidence one click away.
+
+- **Three cards, split by question.** `components/customers/CustomerPackagesTab.tsx` renders
+  **Balances and actions** ("what does this customer hold, and what can I do with it"), **Family
+  sharing** ("who else may spend it") and **History and audit** ("the evidence"). A holding is
+  listed once, in the first card, above the totals; the panels that used to repeat it now point
+  back at that row.
+- **Nothing was deleted, everything moved one click deeper.** The four legacy panels kept their
+  brains and lost their chrome: `CustomerPrepaidPanel` and `CustomerSessionPackagesPanel` now
+  export `PrepaidHoldings`/`SessionPackageHoldings` plus `PrepaidTransfers`/`SessionPackageTransfers`,
+  `CustomerFamilyCreditPanel` exports `FamilySharingCard`, `HoldingBalanceAudit` and
+  `PrepaidMembershipHistory`, and `CustomerHoldingHistoryPanel` exports `HoldingTotals` and
+  `HoldingDetail`. The single-row caveats stay attached to the row they describe; the ledger
+  caveats stay attached to the ledger.
+- **Opening the tab costs four reads, not nine.** `/holding-history`, `/session-packages`,
+  `/prepaid` and the family — the list and the two balance lists the first card paints, plus the
+  family the second card is about. Transfers, the balance audit, family history and the
+  per-holding report sit behind `<details>` elements that **mount their children only once opened**
+  (the `MessagingCard` precedent, `onToggle` → `open`), so a receptionist reading a balance pays
+  nothing for the audit trail and the audit trail is still one click away.
+- **The figures and the evidence are one read.** `HoldingsOverview` and `HoldingReport` share
+  `useHoldingHistory`, which moved to `hooks/useCustomers.ts` beside `useCustomerHoldings` (a
+  component file may not export a hook — `react-refresh/only-export-components`), and carries a
+  60-second `staleTime`: without it the second observer joins a stale key when the disclosure opens
+  and refetches, which is exactly the second request the split was meant to avoid. Invalidation
+  after a transfer or a share still forces the read, because `invalidateQueries` ignores
+  `staleTime`.
+- **Sharing moved out of the tab and beside the holding.** `ShareHoldingDialog` owns the family
+  read, so rows take `Private`/`Shared` from `sharedFamilyId` alone and a profile that never shares
+  anything never fetches a family. A customer with no family is told to create one in **Family
+  sharing** instead of being sent to a page.
+- **Photos, before the upload box.** The **Photos** tab now opens with what the block is for (what
+  the hair or nails looked like before and after a service), that it is private to the salon and
+  that upload requires recorded data consent, that a photo joins a treatment record only when it is
+  tagged there, and a _Tag before/after on a treatment_ button that switches tabs. The file input
+  says `JPEG or PNG, up to 5 MB.` rather than leaving the limits to a failed upload.
+- **The trade-off, stated plainly.** Evidence now sits behind a disclosure, so a screenshot of the
+  tab no longer proves that a ledger entry exists — it proves the balances. The card says "Each list
+  loads when you open it" rather than implying the page is a complete record, and the append-only
+  ledger, its paging and its caveats are unchanged for whoever opens it.
+- Evidence: `CustomerPackagesTab.test.tsx` (6) pins the four reads on open, the absence of every
+  audit read, the fetch-on-expand of the transfers / balance audit, the zero-cost per-holding
+  report and the unentitled empty state; `CustomerFamilyCreditPanel.test.tsx` was rewritten (15) for
+  the split — the dialog's snapshot and reason, the no-family refusal, the refusal resetting the
+  tick, and the family card never reading a holding; `CustomerPrepaidPanel.test.tsx` and
+  `CustomerSessionPackagesPanel.test.tsx` follow the new exports and assert the explicit
+  `list(path, { page: 1, pageSize: 10 })` shape; `CustomerProfile.test.tsx` gained the photos
+  guidance and the tab jump. The focused run (customers plus `CustomerProfile.test.tsx`) is
+  133/133; the full web suite is 1123/1129, where the six flagged tests are all
+  `Test timed out in 5000ms` in `settings/PayrollPlans.test.tsx` — 25/25 on its own, and failing
+  the same way under load before this change. Typecheck, scoped ESLint, Prettier and `vite build`
+  clean.
+- No API, schema, migration or seed change: only `apps/web` presentation, three query keys
+  (`prepaidFamily`, `prepaidBalanceHistory`, `prepaidFamilyHistory`) and their tests.
+
 ## November 5, 2026 — the dashboard asks, and answers; four panels come off
 
 The dashboard had five things happening at once: four tiles, an owner briefing, a tabbed

@@ -49,7 +49,7 @@ export default function StaffCard({ name, email, href }: StaffCardProps) {
         ) : (
           <p className="truncate font-bold text-ink">{name}</p>
         )}
-        <p className="truncate text-xs text-ink-muted">{email ?? "POS PIN only"}</p>
+        <p className="truncate text-xs text-ink-muted">{email ?? "No email login"}</p>
       </div>
     </div>
   );

@@ -7,11 +7,12 @@ one active customer to another in the same company. Customers and holdings remai
 company-wide across outlets. This does not transfer money, charge a fee, create a
 sale or change GST/revenue. Partial-session and cross-company transfers are excluded.
 
-In a customer profile, open the **Packages & credit** tab and use **Session-package
-ownership and transfers**: choose a holding, find the receiving customer, enter a reason and
-confirm the entire remaining session balance. The Packages entitlement is required.
-Staff/cashiers can read the holding and transfer history but cannot transfer it. Read-only
-companies cannot write.
+In a customer profile, open the **Packages & credit** tab. **Balances and actions** lists each
+session package as one row with _Purchase & payments_ and _Transfer_, so the holding is chosen
+there, then the receiving customer, a reason, and the whole remaining balance is confirmed. What
+moved already sits in **History and audit → Transfers between customers**, which is read only when
+it is opened. The Packages entitlement is required. Staff/cashiers can read the rows and the
+transfer history but cannot transfer. Read-only companies cannot write.
 
 The holding ID, original purchase line, granted quantity, remaining quantity,
 expiry and redemption-rule snapshot are preserved. Only ownership and its version

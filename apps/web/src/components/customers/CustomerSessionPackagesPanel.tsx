@@ -14,33 +14,22 @@ import Pagination from "@/components/ui/Pagination";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { useCustomerList } from "@/hooks/useCustomers";
-import { useModules } from "@/hooks/useSettings";
 import { getErrorMessage, getPaginated, post } from "@/lib/api";
 import PackagePayrollDetail from "./PackagePayrollDetail";
 
-export default function CustomerSessionPackagesPanel({ customerId }: { customerId: string }) {
-  const modules = useModules();
-  if (modules.isPending) return <p role="status">Loading session-package access…</p>;
-  if (modules.isError)
-    return (
-      <div role="alert">
-        Session-package access could not be loaded.{" "}
-        <Button onClick={() => void modules.refetch()}>Retry session-package access</Button>
-      </div>
-    );
-  return modules.data?.some((row) => row.code === "packages" && row.entitled) ? (
-    <>
-      <SessionPackagesPanel key={customerId} customerId={customerId} />
-    </>
-  ) : null;
-}
-
-export function SessionPackagesPanel({ customerId }: { customerId: string }) {
+/**
+ * The session-package half of a customer's holdings: what is left on each package and
+ * the two actions a manager has on one — read its purchase, or transfer it whole.
+ *
+ * Sessions are whole-service units, so a transfer moves the entire remaining balance and
+ * there is no partial option to offer. Redemptions and voids are evidence, and they sit
+ * behind History with the rest of the audit trail.
+ */
+export function SessionPackageHoldings({ customerId }: { customerId: string }) {
   const { user, isReadOnly } = useAuth();
   const { formatDateTime } = useSalonFormatting();
   const client = useQueryClient();
   const [page, setPage] = useState(1);
-  const [historyPage, setHistoryPage] = useState(1);
   const [selected, setSelected] = useState<SessionPackageHolding | null>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
   const [openedAt] = useState(() => Date.now());
@@ -55,57 +44,74 @@ export function SessionPackagesPanel({ customerId }: { customerId: string }) {
         pageSize: 10,
       }),
   });
-  const history = useQuery({
-    queryKey: [...queryKeys.customers.sessionPackageTransfers(customerId), historyPage],
-    queryFn: () =>
-      getPaginated<SessionPackageTransferEvent>(
-        `/customers/${customerId}/session-package-transfers`,
-        {
-          page: historyPage,
-          pageSize: 10,
-        },
-      ),
-  });
+  /** A row whose snapshot moved under an open dialog must not be written against. */
+  const refreshing =
+    holdings.isFetching ||
+    holdings.isError ||
+    !selected ||
+    !holdings.data?.data.some(
+      (current) => current.id === selected.id && current.updatedAt === selected.updatedAt,
+    );
+  const expired = (row: SessionPackageHolding) =>
+    !!row.expiresAt && Date.parse(row.expiresAt) <= openedAt;
   return (
-    <section
-      aria-label="Session-package ownership and transfers"
-      className="rounded-card border border-line p-5"
-    >
-      <h3 className="font-bold">Session-package ownership and transfers</h3>
-      <p>
-        Transfer an entire remaining session-package holding to another customer in this salon.
-        Sessions, expiry and original purchase are preserved. Partial transfers are not supported.
-      </p>
+    <div className="mt-4">
+      <h4 className="px-2 text-2xs font-heavy tracking-wide text-ink-muted uppercase">
+        Session packages
+      </h4>
       {holdings.isPending ? (
-        <p role="status">Loading session packages…</p>
+        <p role="status" className="px-2 py-2 text-sm">
+          Loading session packages…
+        </p>
       ) : holdings.isError ? (
-        <div role="alert">
+        <div role="alert" className="flex flex-wrap items-center gap-2 px-2 py-2 text-sm">
           {getErrorMessage(holdings.error)}{" "}
-          <Button onClick={() => void holdings.refetch()}>Retry owned sessions</Button>
+          <Button size="sm" variant="secondary" onClick={() => void holdings.refetch()}>
+            Retry owned sessions
+          </Button>
         </div>
       ) : (
         <>
-          <ul>
-            {holdings.data.data.map((row) => (
-              <li key={row.id} className="my-3 rounded-md border border-line p-3">
-                <Button onClick={() => setDetailId(row.id)}>Purchase, payments and sessions</Button>
-                <strong>{row.name}</strong> — {`${row.quantityRemaining} sessions`} ·{" "}
-                {row.expiresAt ? `Expires ${formatDateTime(row.expiresAt)}` : "No expiry"}
-                <Button
-                  disabled={
-                    !canManage ||
-                    holdings.isFetching ||
-                    row.quantityRemaining <= 0 ||
-                    (!!row.expiresAt && Date.parse(row.expiresAt) <= openedAt)
-                  }
-                  onClick={() => setSelected(row)}
+          {holdings.data.data.length ? (
+            <ul className="divide-y divide-line-soft px-2">
+              {holdings.data.data.map((row) => (
+                <li
+                  key={row.id}
+                  className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5"
                 >
-                  Transfer {row.name}
-                </Button>
-              </li>
-            ))}
-          </ul>
-          {!holdings.data.total ? <p>No owned session packages.</p> : null}
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-bold text-ink">{row.name}</p>
+                    <p className="mt-0.5 text-xs text-ink-muted">
+                      {row.quantityRemaining} sessions left ·{" "}
+                      {row.expiresAt ? `expires ${formatDateTime(row.expiresAt)}` : "no expiry"}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => setDetailId(row.id)}>
+                      Purchase &amp; payments for {row.name}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      disabled={
+                        !canManage ||
+                        holdings.isFetching ||
+                        row.quantityRemaining <= 0 ||
+                        expired(row)
+                      }
+                      onClick={() => setSelected(row)}
+                    >
+                      Transfer {row.name}
+                    </Button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="px-2 py-2 text-sm text-ink-muted">
+              No session packages. They appear here after a package purchase at the till.
+            </p>
+          )}
           <Pagination
             page={page}
             pageCount={holdings.data.pageCount}
@@ -114,7 +120,6 @@ export function SessionPackagesPanel({ customerId }: { customerId: string }) {
           />
         </>
       )}
-      <h4 className="mt-4 font-bold">Transfer history</h4>
       {detailId ? (
         <PackagePayrollDetail
           customerId={customerId}
@@ -122,51 +127,11 @@ export function SessionPackagesPanel({ customerId }: { customerId: string }) {
           onClose={() => setDetailId(null)}
         />
       ) : null}
-      <p>Transfer evidence only. This is not a complete session-change ledger.</p>
-      {history.isPending ? (
-        <p role="status">Loading transfer history…</p>
-      ) : history.isError ? (
-        <div role="alert">
-          {getErrorMessage(history.error)}{" "}
-          <Button onClick={() => void history.refetch()}>Retry transfer history</Button>
-        </div>
-      ) : (
-        <>
-          <ul>
-            {history.data.data.map((event) => (
-              <li key={event.id} className="my-3 whitespace-pre-wrap break-words">
-                {formatDateTime(event.createdAt)} · {`${event.quantity} sessions`} · From account{" "}
-                {event.fromCustomerId} to account {event.toCustomerId} · By {event.actorId}
-                <p>
-                  Holding: {event.holdingId} ·{" "}
-                  {event.expiresAt ? `Expires ${formatDateTime(event.expiresAt)}` : "No expiry"}
-                </p>
-                <p>Reason: {event.reason}</p>
-              </li>
-            ))}
-          </ul>
-          {!history.data.total ? (
-            <p>No recorded transfers. Earlier activity is not backfilled.</p>
-          ) : null}
-          <Pagination
-            page={historyPage}
-            pageCount={history.data.pageCount}
-            onPageChange={setHistoryPage}
-            label="Session-package transfer history pages"
-          />
-        </>
-      )}
       {selected && canManage ? (
         <TransferDialog
           key={selected.id}
           holding={selected}
-          refreshing={
-            holdings.isFetching ||
-            holdings.isError ||
-            !holdings.data?.data.some(
-              (row) => row.id === selected.id && row.updatedAt === selected.updatedAt,
-            )
-          }
+          refreshing={refreshing}
           onClose={() => setSelected(null)}
           onTransferred={() => {
             setSelected(null);
@@ -174,7 +139,59 @@ export function SessionPackagesPanel({ customerId }: { customerId: string }) {
           }}
         />
       ) : null}
-    </section>
+    </div>
+  );
+}
+
+/**
+ * Where the customer's sessions went: one row per recorded transfer, whole-balance only.
+ */
+export function SessionPackageTransfers({ customerId }: { customerId: string }) {
+  const { formatDateTime } = useSalonFormatting();
+  const [page, setPage] = useState(1);
+  const history = useQuery({
+    queryKey: [...queryKeys.customers.sessionPackageTransfers(customerId), page],
+    queryFn: () =>
+      getPaginated<SessionPackageTransferEvent>(
+        `/customers/${customerId}/session-package-transfers`,
+        { page, pageSize: 10 },
+      ),
+  });
+  if (history.isPending) return <p role="status">Loading session transfers…</p>;
+  if (history.isError)
+    return (
+      <div role="alert">
+        {getErrorMessage(history.error)}{" "}
+        <Button onClick={() => void history.refetch()}>Retry transfer history</Button>
+      </div>
+    );
+  return (
+    <>
+      <ul className="divide-y divide-line-soft">
+        {history.data.data.map((event) => (
+          <li key={event.id} className="py-2.5">
+            <p className="text-sm text-ink">
+              {formatDateTime(event.createdAt)} · {event.quantity} sessions moved
+            </p>
+            <p className="mt-0.5 text-xs text-ink-muted">
+              Holding {event.holdingId} · account {event.fromCustomerId} to {event.toCustomerId} ·
+              by {event.actorId} ·{" "}
+              {event.expiresAt ? `expires ${formatDateTime(event.expiresAt)}` : "no expiry"}
+            </p>
+            <p className="mt-0.5 text-sm text-ink-body">Reason: {event.reason}</p>
+          </li>
+        ))}
+      </ul>
+      {history.data.total ? null : (
+        <p className="py-1 text-sm text-ink-muted">No recorded transfers.</p>
+      )}
+      <Pagination
+        page={page}
+        pageCount={history.data.pageCount}
+        onPageChange={setPage}
+        label="Session-package transfer history pages"
+      />
+    </>
   );
 }
 
@@ -229,9 +246,8 @@ function TransferDialog({
       </p>
       <p>
         The original purchase cannot be voided after a recorded transfer. Expiry does not restart.
-        Voiding an earlier redemption restores sessions to this holding under its current owner.
-        Past sales and treatment records stay with their original customer. Package purchases and
-        package-funded sales cannot be refunded.
+        Past sales and treatment records stay with their original customer, and package purchases
+        cannot be refunded.
       </p>
       <Input
         label="Find receiving customer"

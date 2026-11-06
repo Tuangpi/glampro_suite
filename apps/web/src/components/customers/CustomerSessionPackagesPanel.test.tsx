@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
-import { SessionPackagesPanel } from "./CustomerSessionPackagesPanel";
+import { SessionPackageHoldings, SessionPackageTransfers } from "./CustomerSessionPackagesPanel";
 
 const mocks = vi.hoisted(() => ({
   post: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock("@/lib/api", () => ({
 function panel(client: QueryClient) {
   return (
     <QueryClientProvider client={client}>
-      <SessionPackagesPanel customerId="c1" />
+      <SessionPackageHoldings customerId="c1" />
     </QueryClientProvider>
   );
 }
@@ -110,12 +110,13 @@ it("resets confirmation on changed details and cancels without writing", async (
   expect(mocks.post).not.toHaveBeenCalled();
 });
 it.each(["STAFF", "CASHIER"])(
-  "shows balances and transfer evidence without writes for %s",
+  "shows remaining sessions and the purchase evidence without writes for %s",
   async (role) => {
     mocks.role = role;
     setup();
     expect(await screen.findByRole("button", { name: "Transfer Wallet" })).toBeDisabled();
-    expect(screen.getByText(/not a complete session-change ledger/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Purchase & payments for Wallet" })).toBeEnabled();
+    expect(mocks.post).not.toHaveBeenCalled();
   },
 );
 it("closes confirmation on role loss and prevents read-only writes", async () => {
@@ -216,8 +217,19 @@ it("shows incoming transfer evidence with sessions, actor, expiry and reason", a
     total: 1,
     pageCount: 1,
   }));
-  setup();
-  expect(await screen.findByText(/3 sessions.*From account/)).toHaveTextContent("By manager");
+  render(
+    <QueryClientProvider
+      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+    >
+      <SessionPackageTransfers customerId="c1" />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText(/3 sessions moved/)).toBeInTheDocument();
+  expect(screen.getByText(/account c0 to c1/)).toHaveTextContent("by manager");
+  expect(screen.getByText(/account c0 to c1/)).toHaveTextContent("no expiry");
   expect(screen.getByText("Reason: Customer request")).toBeInTheDocument();
-  expect(screen.getByText(/Holding: h1/)).toHaveTextContent("No expiry");
+  expect(mocks.list).toHaveBeenCalledWith("/customers/c1/session-package-transfers", {
+    page: 1,
+    pageSize: 10,
+  });
 });

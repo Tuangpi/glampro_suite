@@ -990,6 +990,19 @@ credential write is a takeover primitive, not an edit), and an owner target is h
 `apps/api/src/routes/staff.routes.ts`, `apps/api/src/services/staff.service.ts`,
 `apps/web/src/components/staff/StaffFormDrawer.tsx`.
 
+November 5 follow-up — **every colleague is created with a login, and the PIN is a till
+credential.** The "POS PIN only" creation path is gone: `createStaffSchema` requires an
+`email` and a `password` at the shared floor, and `posPin` stays optional and never
+substitutes for either. The old path wrote a `User` row with a null `email` that no
+session could ever be issued for — `auth.service` refuses one — so it described an
+account nobody could use; the till wants the six digits to attribute a sale on a shared
+terminal, not to sign in. The schema also drops the rule that refused a management role
+to a PIN holder, because the login, not the PIN, decides the role. Rows written before
+the rule keep working: `email` stays nullable in the database and the reset route still
+answers 409 `NO_WEB_LOGIN` for one. Source: `packages/shared/src/schemas/staff.ts`,
+`apps/api/src/services/staff.service.ts`,
+`apps/web/src/components/staff/StaffFormDrawer.tsx`.
+
 ### ADR 0008
 
 **Accepted October 3, 2026; redraw October 8 — compose login from delivered primitives.**

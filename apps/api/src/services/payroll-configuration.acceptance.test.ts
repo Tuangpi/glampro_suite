@@ -633,7 +633,8 @@ test(
         );
         const outletStaff = await createStaff({
           name: "Scoped initial assignment",
-          posPin: "123456",
+          email: `${tenantId}-scoped-assignment@example.test`,
+          password: "correct-horse-123",
           startDate: date,
           payrollClassification: { commissionRole: "COMMISSION_EARNING", reason },
           payrollAssignment: {
@@ -882,9 +883,20 @@ test(
         const initialDepartment = await prisma.department.create({
           data: { tenantId, name: "Atomic creation branch" },
         });
+        let hires = 0;
+        /**
+         * A fresh login per creation: `users.email` is unique and now required. The
+         * tenant id keeps the addresses unique for a rerun against a reused database.
+         */
+        const newLogin = () => {
+          hires += 1;
+          return {
+            email: `${tenantId}-atomic-${hires}@example.test`,
+            password: "correct-horse-123",
+          };
+        };
         const initial = {
           name: "Atomic payroll identity",
-          posPin: "123456",
           startDate: "2026-09-01",
           departmentIds: [initialDepartment.id],
           payrollClassification: { commissionRole: "NON_COMMISSION" as const, reason },
@@ -900,12 +912,13 @@ test(
         const beforeEvents = await prisma.payrollConfigurationEvent.count();
         const beforeLinks = await prisma.staffDepartment.count();
         await assert.rejects(
-          createStaff({ ...initial, payrollClassification: undefined }),
+          createStaff({ ...initial, ...newLogin(), payrollClassification: undefined }),
           /explicit reasoned payroll classification/,
         );
         await assert.rejects(
           createStaff({
             ...initial,
+            ...newLogin(),
             payrollAssignment: { ...initialAssignment, planId: "missing-plan" },
           }),
           /not found/i,
@@ -913,7 +926,7 @@ test(
         await assert.rejects(
           runAsTenant(
             tenantId,
-            () => createStaff({ ...initial, payrollAssignment: initialAssignment }),
+            () => createStaff({ ...initial, ...newLogin(), payrollAssignment: initialAssignment }),
             managerId,
           ),
           /not permitted/i,
@@ -921,7 +934,11 @@ test(
         assert.equal(await prisma.user.count(), beforeUsers);
         assert.equal(await prisma.payrollConfigurationEvent.count(), beforeEvents);
         assert.equal(await prisma.staffDepartment.count(), beforeLinks);
-        const atomicStaff = await createStaff({ ...initial, payrollAssignment: initialAssignment });
+        const atomicStaff = await createStaff({
+          ...initial,
+          ...newLogin(),
+          payrollAssignment: initialAssignment,
+        });
         assert.equal(atomicStaff.startDate, initial.startDate);
         assert.equal(atomicStaff.departments[0]?.id, initialDepartment.id);
         assert.ok(
@@ -930,7 +947,7 @@ test(
           ),
         );
         await assert.rejects(
-          createStaff({ ...initial, payrollAssignment: initialAssignment }),
+          createStaff({ ...initial, ...newLogin(), payrollAssignment: initialAssignment }),
           /changed/i,
         );
         assert.equal(await prisma.user.count(), beforeUsers + 1);
@@ -942,7 +959,10 @@ test(
             reason,
           },
         };
-        await assert.rejects(createStaff(classifiedInput), /require an initial payroll plan/);
+        await assert.rejects(
+          createStaff({ ...classifiedInput, ...newLogin() }),
+          /require an initial payroll plan/,
+        );
         const classifiedRevision = (await readPayrollConfiguration()).assignments.revision;
         const classifiedAssignment = { ...initialAssignment, expectedRevision: classifiedRevision };
         const classifiedCount = await prisma.user.count();
@@ -951,6 +971,7 @@ test(
         await assert.rejects(
           createStaff({
             ...classifiedInput,
+            ...newLogin(),
             payrollAssignment: {
               ...classifiedAssignment,
               fromDate: `${Number(date.slice(0, 4)) + 3}-01-01`,
@@ -963,6 +984,7 @@ test(
         assert.equal(await prisma.staffDepartment.count(), beforeLinks + 1);
         const classifiedCreated = await createStaff({
           ...classifiedInput,
+          ...newLogin(),
           payrollAssignment: classifiedAssignment,
         });
         assert.equal(
@@ -975,6 +997,7 @@ test(
             () =>
               createStaff({
                 ...initial,
+                ...newLogin(),
                 payrollClassification: { commissionRole: "NON_COMMISSION", reason },
               }),
             managerId,
@@ -983,6 +1006,7 @@ test(
         );
         const nonCommission = await createStaff({
           ...initial,
+          ...newLogin(),
           payrollClassification: { commissionRole: "NON_COMMISSION", reason },
         });
         const classificationConfig = await readPayrollConfiguration();

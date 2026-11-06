@@ -272,17 +272,21 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
   });
 
   describe("POS PIN identities", () => {
-    it("creates email-free staff with hashed PIN, scoped verification and immediate reset revocation", async () => {
+    it("hashes the PIN of a colleague who also has a login, scoping it and revoking it on change", async () => {
+      const email = `till@${DOMAIN}`;
       const response = await request("POST", "/api/staff", ownerToken, {
         ...payrollSetup,
-        name: "PIN-only colleague",
+        name: "Till colleague",
+        email,
+        password: PASSWORD,
         posPin: "246810",
         commissionRate: 12.5,
       });
       assert.equal(response.status, 201);
       const staff = await dataOf<StaffSummary>(response);
       try {
-        assert.equal(staff.email, null);
+        assert.equal(staff.email, email);
+        assert.equal(staff.globalRole, "STAFF");
         assert.equal(staff.commissionRate, "12.50");
         const stored = await runAsPlatform(() =>
           prisma.user.findUniqueOrThrow({ where: { id: staff.id } }),
@@ -329,14 +333,8 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
             posStaffFromToken(identity.token, "staffrt-manager", "session-a"),
           ),
         );
-        assert.equal(
-          (
-            await request("PATCH", `/api/staff/${staff.id}`, managerToken, {
-              globalRole: "MANAGER",
-            })
-          ).status,
-          400,
-        );
+        // The PIN is a till credential, so a colleague holding one is ordinary staff:
+        // nothing about their role is constrained by it any more.
         const updated = await runAsTenant(TENANTS.a, () =>
           verifyPosPin(staff.id, "135790", "staffrt-manager", "session-a"),
         );
@@ -350,27 +348,32 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
         await runAsPlatform(() => prisma.user.delete({ where: { id: staff.id } }));
       }
     });
-    it("refuses PIN setup and privileged email-free accounts from staff callers", async () => {
+    it("refuses staff creation from a staff caller and a weak owner password", async () => {
       assert.equal(
         (
           await request("POST", "/api/staff", stylistToken, {
             name: "Not authorized",
+            email: `not-authorized@${DOMAIN}`,
+            password: PASSWORD,
             posPin: "123456",
           })
         ).status,
         403,
       );
-      assert.equal(
-        (
-          await request("POST", "/api/staff", ownerToken, {
-            ...payrollSetup,
-            name: "Not permitted",
-            posPin: "123456",
-            globalRole: "SUPER_ADMIN",
-          })
-        ).status,
-        422,
-      );
+      // A PIN rides along with the login now, so what the contract still refuses here is
+      // the owner policy on the password rather than the PIN itself.
+      const weakOwner = await request("POST", "/api/staff", ownerToken, {
+        ...payrollSetup,
+        name: "Not permitted",
+        email: `weak-owner@${DOMAIN}`,
+        password: "short",
+        posPin: "123456",
+        globalRole: "SUPER_ADMIN",
+      });
+      assert.equal(weakOwner.status, 422);
+      // Two rules catch this — the shared floor and the owner policy — so the path is
+      // asserted as a set rather than as an exact list.
+      assert.deepEqual([...new Set(fieldPaths(await envelope(weakOwner)))], ["body.password"]);
     });
     it("rate limits failed PIN attempts without issuing login credentials", async () => {
       for (let attempt = 0; attempt < 10; attempt++) {
@@ -487,19 +490,22 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
       const response = await request("POST", "/api/staff", managerToken, {
         ...payrollSetup,
         name: "Manager create attempt",
+        email: `manager-attempt@${DOMAIN}`,
+        password: PASSWORD,
         posPin: "123456",
       });
       assert.equal(response.status, 403);
     });
-    it("rejects owner identity-only creation without writing a user", async () => {
+    it("rejects creation without a payroll classification, without writing a user", async () => {
       const before = await runAsTenant(TENANTS.a, () => prisma.user.count());
       const response = await request("POST", "/api/staff", ownerToken, {
         name: "Unclassified attempt",
-        posPin: "123456",
+        email: `unclassified@${DOMAIN}`,
+        password: PASSWORD,
         startDate: "2026-01-01",
       });
       assert.equal(response.status, 422);
-      assert.ok(fieldPaths(await envelope(response)).includes("body.payrollClassification"));
+      assert.deepEqual(fieldPaths(await envelope(response)), ["body.payrollClassification"]);
       assert.equal(await runAsTenant(TENANTS.a, () => prisma.user.count()), before);
     });
     const newHire = {
@@ -595,16 +601,17 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
       assert.deepEqual(fieldPaths(body), ["body.departmentIds"]);
     });
 
-    it("422s when neither an email login nor a POS PIN is provided", async () => {
+    it("422s when the email is missing, naming the field", async () => {
       const response = await request("POST", "/api/staff", ownerToken, {
         ...payrollSetup,
         name: "No Login",
+        password: PASSWORD,
         position: "Colourist",
       });
 
       const body = await envelope(response);
       assert.equal(response.status, 422);
-      assert.deepEqual(fieldPaths(body), ["body.posPin"]);
+      assert.deepEqual(fieldPaths(body), ["body.email"]);
     });
   });
 
@@ -832,7 +839,7 @@ describe("staff endpoints", { skip: databaseUrl ? false : "DATABASE_URL is not s
       assert.equal((await envelope(response)).code, "STAFF_NOT_FOUND");
     });
 
-    it("409s for a POS PIN identity, which has no password to set", async () => {
+    it("409s for a row written before the email rule, which has no password to set", async () => {
       const PIN_ID = "staffrt-reset-pin-only";
       const [posPinHash, passwordHash] = await Promise.all([
         hashPassword("246810"),

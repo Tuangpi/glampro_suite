@@ -82,6 +82,18 @@ export const queryKeys = {
     /** Purchases, payments, usage and what is left, as one reconciled report (FR-RPT-06). */
     holdingHistory: (id: string) => ["customers", "detail", id, "holding-history"] as const,
     prepaidTransfers: (id: string) => ["customers", "detail", id, "prepaid-transfers"] as const,
+    /**
+     * The family one holding can be shared with. Read lazily — a customer profile
+     * paints its credit rows from `sharedFamilyId` alone, so this is only fetched when
+     * the family card or a share action needs the family itself.
+     */
+    prepaidFamily: (id: string) => ["customers", "detail", id, "prepaid-family"] as const,
+    /** Append-only balance ledger, behind its own disclosure. */
+    prepaidBalanceHistory: (id: string) =>
+      ["customers", "detail", id, "prepaid-balance-history"] as const,
+    /** Membership changes, behind their own disclosure. */
+    prepaidFamilyHistory: (id: string) =>
+      ["customers", "detail", id, "prepaid-family-history"] as const,
   },
 
   /**

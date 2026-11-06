@@ -8,11 +8,15 @@
  * exactly the create form, and the `staff` prop that used to switch this component into
  * edit mode is gone with it.
  *
- * Staff remain User rows. Creation supports either an email/password login or a
- * POS-only PIN identity without an email. A duplicate supplied address is a 409 —
- * `users.email` is globally unique — and it lands on the Email control rather than in a
- * banner because the API answers it as `details: [{ path: "body.email", message }]` like
- * any other field error.
+ * Staff remain User rows, and **every colleague gets an email and a password** — an
+ * account without one could never sign in, so there is no second creation path. A
+ * duplicate supplied address is a 409 — `users.email` is globally unique — and it lands
+ * on the Email control rather than in a banner because the API answers it as
+ * `details: [{ path: "body.email", message }]` like any other field error.
+ *
+ * The **POS PIN is optional and is not a login.** It is the six digits the till takes to
+ * attribute a sale to this person on a shared terminal and, for a manager or owner, to
+ * approve an unpaid package-session override.
  *
  * **A password is set here and only here.** Afterwards it moves through the dedicated
  * `POST /api/staff/:id/password` control on the profile page, which bumps `tokenVersion`
@@ -56,7 +60,6 @@ interface FormState {
   email: string;
   password: string;
   posPin: string;
-  pinOnly: boolean;
   globalRole: GlobalRole;
   phone: string;
   position: string;
@@ -76,7 +79,6 @@ const EMPTY_FORM: FormState = {
   email: "",
   password: "",
   posPin: "",
-  pinOnly: false,
   globalRole: "STAFF",
   phone: "",
   position: "",
@@ -166,17 +168,12 @@ export default function StaffFormDrawer({ open, onClose }: StaffFormDrawerProps)
         "Enter a percentage from 0 to 100 with at most two decimal places.";
     }
 
-    if (!form.pinOnly) {
-      if (email === "") localErrors["email"] = "Email is required";
-      if (form.password.length < PASSWORD_MIN_LENGTH) {
-        localErrors["password"] = `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
-      }
+    if (email === "") localErrors["email"] = "Email is required";
+    if (form.password.length < PASSWORD_MIN_LENGTH) {
+      localErrors["password"] = `Password must be at least ${PASSWORD_MIN_LENGTH} characters`;
     }
-
-    if ((form.pinOnly || form.posPin !== "") && !/^\d{6}$/.test(form.posPin))
+    if (form.posPin !== "" && !/^\d{6}$/.test(form.posPin))
       localErrors["posPin"] = "Use a six-digit PIN.";
-    if (form.pinOnly && ["SUPER_ADMIN", "MANAGER"].includes(form.globalRole))
-      localErrors["globalRole"] = "PIN-only staff cannot have a management role.";
     if (initialPayroll || commissionRole === "COMMISSION_EARNING") {
       if (!form.startDate)
         localErrors["startDate"] = "A join date is required with a payroll plan.";
@@ -193,9 +190,9 @@ export default function StaffFormDrawer({ open, onClose }: StaffFormDrawerProps)
     try {
       const input = {
         name,
-        ...(form.pinOnly
-          ? { posPin: form.posPin }
-          : { email, password: form.password, ...(form.posPin ? { posPin: form.posPin } : {}) }),
+        email,
+        password: form.password,
+        ...(form.posPin !== "" ? { posPin: form.posPin } : {}),
         globalRole: form.globalRole,
         phone: optional(form.phone),
         position: optional(form.position),
@@ -282,37 +279,30 @@ export default function StaffFormDrawer({ open, onClose }: StaffFormDrawerProps)
           autoFocus
         />
 
-        <Checkbox
-          label="POS PIN only (no email login)"
-          checked={form.pinOnly}
-          onChange={(event) => setField("pinOnly", event.target.checked)}
-        />
-        {!form.pinOnly ? (
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Input
-              label="Email"
-              type="email"
-              required
-              placeholder="name@example.com"
-              value={form.email}
-              onChange={(event) => setField("email", event.target.value)}
-              error={fieldError("email")}
-              hint="The address they sign in with."
-              maxLength={200}
-            />
-            <Input
-              label="Password"
-              placeholder="Please set this staff member's password"
-              type="password"
-              required
-              value={form.password}
-              onChange={(event) => setField("password", event.target.value)}
-              error={fieldError("password")}
-              hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
-              maxLength={200}
-            />
-          </div>
-        ) : null}
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Input
+            label="Email"
+            type="email"
+            required
+            placeholder="name@example.com"
+            value={form.email}
+            onChange={(event) => setField("email", event.target.value)}
+            error={fieldError("email")}
+            hint="The address they sign in with."
+            maxLength={200}
+          />
+          <Input
+            label="Password"
+            placeholder="Please set this staff member's password"
+            type="password"
+            required
+            value={form.password}
+            onChange={(event) => setField("password", event.target.value)}
+            error={fieldError("password")}
+            hint={`At least ${PASSWORD_MIN_LENGTH} characters.`}
+            maxLength={200}
+          />
+        </div>
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Select
@@ -353,7 +343,7 @@ export default function StaffFormDrawer({ open, onClose }: StaffFormDrawerProps)
           value={form.posPin}
           onChange={(event) => setField("posPin", event.target.value)}
           error={fieldError("posPin")}
-          hint="Six digits. POS identity only; no web access or management permissions."
+          hint="Optional, six digits. Attributes this person's sales at a shared till, and lets a manager approve unpaid package-session overrides."
         />
 
         <Input

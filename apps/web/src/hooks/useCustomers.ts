@@ -8,6 +8,7 @@ import type {
   ArchiveCustomerInput,
 } from "@glampro_suite/shared";
 
+import { customerHoldingHistorySchema } from "@glampro_suite/shared";
 import { queryKeys } from "@/constants/queryKeys";
 import { get, getPaginated, patch, post } from "@/lib/api";
 
@@ -60,6 +61,24 @@ export function useCustomerHoldings(customerId: string | null) {
     queryKey: queryKeys.customers.holdings(customerId ?? ""),
     queryFn: () => get<CustomerHoldings>(`/customers/${customerId}/holdings`),
     enabled: customerId !== null,
+  });
+}
+
+/**
+ * The reconciled package-and-credit report (FR-RPT-06): purchases, payments, usage and what
+ * is left, as one answer.
+ *
+ * Two things on the packages tab read it — the figures above the rows and the per-holding
+ * evidence behind History — and they share this key, so opening the evidence costs no second
+ * request. The short `staleTime` is what makes that literally true: without it the observer
+ * that mounts when a disclosure opens finds a stale key and refetches it.
+ */
+export function useHoldingHistory(customerId: string) {
+  return useQuery({
+    queryKey: queryKeys.customers.holdingHistory(customerId),
+    queryFn: async () =>
+      customerHoldingHistorySchema.parse(await get(`/customers/${customerId}/holding-history`)),
+    staleTime: 60_000,
   });
 }
 

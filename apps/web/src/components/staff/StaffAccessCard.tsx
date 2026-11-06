@@ -22,8 +22,9 @@
  *   state. The API refuses a manager against a manager or an owner, and this card hides
  *   the reset block in exactly those cases rather than offering a button that 403s — a
  *   credential write is a takeover primitive, not an edit.
- * - A POS PIN-only row has no password to reset, so the block is replaced by a sentence
- *   saying so.
+ * - An account without an email login has no password to reset, so the block is
+ *   replaced by a sentence saying so. Creation requires an email now, so that only
+ *   describes rows written before the rule.
  */
 import { useState } from "react";
 
@@ -171,7 +172,7 @@ export default function StaffAccessCard({ staff, canEdit }: StaffAccessCardProps
   /** One sentence explaining the reset block, so the JSX carries no nested ternary. */
   function passwordNotice(): string {
     if (staff.email === null)
-      return "This person signs in with a POS PIN only, so there is no password to reset.";
+      return "This account has no email login, so there is no password to reset.";
     if (!resetTargetAllowed) return "Only an owner can reset a manager's or an owner's password.";
     if (resettingSelf)
       return "This is your own account: setting it here signs you out on every device.";
@@ -190,7 +191,7 @@ export default function StaffAccessCard({ staff, canEdit }: StaffAccessCardProps
               nothing about it would ever be sent. */}
           <div className="flex flex-col gap-1.5">
             <p className="text-sm font-medium text-ink">Email</p>
-            <p className="text-sm text-ink-body">{staff.email ?? "POS PIN only"}</p>
+            <p className="text-sm text-ink-body">{staff.email ?? "No email login"}</p>
             <p className="text-xs text-ink-muted">
               The address they sign in with, so it is not changed from this page.
             </p>
@@ -205,8 +206,9 @@ export default function StaffAccessCard({ staff, canEdit }: StaffAccessCardProps
             <div className="flex flex-col gap-1">
               <p className="text-sm font-medium text-ink">POS PIN</p>
               <p className="text-xs text-ink-muted">
-                Six digits at the till. Setting or revoking it is saved on its own; the profile form
-                above never touches it.
+                Six digits at the till: it attributes this person's sales on a shared terminal, and
+                for a manager it approves unpaid package-session overrides. Setting or revoking it
+                is saved on its own; the profile form above never touches it.
               </p>
             </div>
             <Input
@@ -219,7 +221,7 @@ export default function StaffAccessCard({ staff, canEdit }: StaffAccessCardProps
               value={posPin}
               onChange={(event) => setPosPin(event.target.value)}
               error={pinError ?? undefined}
-              hint="Six digits. POS identity only; no web access or management permissions."
+              hint="Six digits. A till credential, not a login: it grants no web access or permissions."
               disabled={!canEdit || savePin.isPending}
             />
             <Checkbox
