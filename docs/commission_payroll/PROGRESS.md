@@ -1,5 +1,45 @@
 # Commission & Payroll progress
 
+## November 6, 2026 — CP-008 (f2) starts with N14: value packages get one name
+
+- **The mismatch was a naming one, not a data one.** The rules grid labelled
+  `STORED_CREDIT_SALE` / `STORED_CREDIT_SPEND` as "stored-credit sales" and
+  "stored-credit spending" while payroll called the same money `VP_SALE` / `VP_SPEND`,
+  "value package sale". Stored credit is the funding mechanism; a value package is what
+  the salon sells and what the till, statement and plan picker all say.
+  `COMMISSION_KIND_LABELS` now says "Value package sales" and "Value package spending" —
+  the label map is consumed only by `CommissionRules` and `CommissionMatrix`, so no
+  contract, loader, export or stored value changed, and a month already closed cannot
+  read differently because of a label.
+- **The drill-down names a code without hiding it.** The statement's base-line table
+  prints `Value package spend (VP_SPEND)`: the friendly name for reading, the stored code
+  beside it for quoting. A name-only column would give the audit surface a vocabulary of
+  its own — exports, the ledger and a support call all quote the code — and an
+  unrecognised type still renders as itself rather than as a blank or a guess.
+- **N4 did not ship, because it is not the screen item the review assumed.** The drawer
+  offers `Follow plan | Exclude | Fixed amount` per side because
+  `payrollPackageSettingsSchema` has exactly those three modes, and every consumer
+  branches on `mode === "FIXED"` (`payroll-close-package-purchase.ts:118`,
+  `payroll-close-package-redemption.ts:257`, `payroll-package-refund.ts:194`,
+  `redemption-commission-evidence.ts:279`, `payroll-source-event.ts:245`). A percentage
+  option added to the form alone would fall through all of those branches and pay the
+  plan rate while the form claimed an override — the `GC_SALE` defect, except with money
+  instead of nothing.
+- **What N4 really needs is a decision.** A percentage override for one package already
+  exists as a `CommissionRule` (`scope: PACKAGE`, `rate`, `effectiveAt`), which
+  `CommissionRules.tsx:295-330` already edits. So the drawer half is a product choice:
+  write those rules from the drawer, read them back read-only and link to the grid, or
+  add a fourth `commissionSettings` mode — which first needs "the override replaces
+  _which_ plan component's rate?" answered, since commission is pooled per component.
+  Recorded in [DECISIONS.md](DECISIONS.md); `TASKS.md` reclassifies the item rather than
+  leaving a TODO that reads like a form field.
+- **Verification.** `commission.test.ts` 4/4 (new: both value-package labels and every
+  kind labelled), `PayrollReport.test.tsx` 7/7 (new: `VP_SPEND` renders name plus code,
+  and an unknown `BONUS_V1` renders as itself). `tsc` typecheck across workspaces, ESLint
+  and Prettier clean.
+- **Next.** N5 (session-value preview) or N8 (active-packages panel), then N6/N7 and N10,
+  then (g).
+
 ## November 6, 2026 — Client §7 answers recorded; four CP-008 items closed by decision
 
 - **The questions were answered, so the "provisional" caveat is gone.** All thirteen

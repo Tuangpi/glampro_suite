@@ -5,6 +5,7 @@ import {
   publishCommissionRuleSchema,
   bulkPublishCommissionRulesSchema,
   commissionKindSchema,
+  COMMISSION_KIND_LABELS,
 } from "./commission.js";
 const base = {
   scope: "COMPANY",
@@ -98,4 +99,15 @@ test("commission scope validation and explicit zero/inheritance", () => {
     publishCommissionRuleSchema.safeParse({ ...base, scope: "DEPARTMENT", staffId: "amy" }).success,
     false,
   );
+
+  test("value packages are named one way on both sides of the payroll", () => {
+    // DECISIONS.md, November 6, 2026: stored credit is how the money is funded, a value
+    // package is what the salon sells and payroll pays as VP_SALE / VP_SPEND. The grid used
+    // to call the same money "stored-credit", which reads as a different product.
+    assert.equal(COMMISSION_KIND_LABELS.STORED_CREDIT_SALE, "Value package sales");
+    assert.equal(COMMISSION_KIND_LABELS.STORED_CREDIT_SPEND, "Value package spending");
+    // Every kind must have a label: an unnamed kind falls back to its raw code on screen.
+    for (const kind of commissionKindSchema.options)
+      assert.equal(typeof COMMISSION_KIND_LABELS[kind], "string");
+  });
 });

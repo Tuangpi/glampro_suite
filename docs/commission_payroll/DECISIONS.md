@@ -1,5 +1,41 @@
 # Commission & Payroll decisions
 
+## November 6, 2026 — Value packages get one name; N4's override % is not a screen item
+
+- **"Value package" is now the only name an owner reads.** `COMMISSION_KIND_LABELS`
+  called `STORED_CREDIT_SALE` / `STORED_CREDIT_SPEND` "stored-credit sales" and
+  "stored-credit spending" while payroll called the same money `VP_SALE` / `VP_SPEND`
+  ("value package sale"). Stored credit is how the money is _funded_; a value package is
+  what the salon _sells_, and it is what the till, the statement and the plan picker all
+  say. The earlier "the UI will settle on one name" bullet is settled that way: labels
+  only, no kind, rate, loader or ledger change, so nothing that passed before can fail
+  now.
+- **A label never replaces a code in an audited drill-down.** The statement base-line
+  drill-down now prints the name and the stored code together — `Value package spend
+(VP_SPEND)` — and prints an unrecognised type as itself. The alternative, a friendly
+  name only, would make the drill-down speak a different vocabulary from the exports, the
+  ledger and support tickets, in exactly the table whose job is to be quotable.
+- **N4's "Override %" is not a missing input on the package drawer.** The drawer offers
+  `Follow plan | Exclude | Fixed amount` per side because that is the whole of
+  `payrollPackageSettingsSchema` (`package-settings.ts:5-9`), and every consumer branches
+  on `mode === "FIXED"` — `payroll-close-package-purchase.ts:118`, the redemption and
+  refund paths, `redemption-commission-evidence.ts:266,411`, `payroll-source-event.ts:245`.
+  Adding a percentage option to the form alone would fall through those branches to the
+  plan rate while the form claimed otherwise: the same defect as offering `GC_SALE`,
+  except that it would mispay instead of paying nothing.
+- **The capability exists, in the grid.** A percentage override for one package is a
+  `CommissionRule` row with `scope: PACKAGE` and a `rate`, allowed for
+  `PACKAGE_SALE`, `PACKAGE_REDEMPTION`, `STORED_CREDIT_SALE` and `STORED_CREDIT_SPEND`
+  (`schemas/commission.ts:44-54`), with its own effective date (`effectiveAt`, `:35`), and
+  `CommissionRules.tsx:295-330` already edits it. So what N4 asks for on the drawer is a
+  **product decision, not a ticket**: either the drawer writes those package-scope rules
+  (a second write path into an audited, revision-checked grid), or it reads them back
+  read-only and links to Settings › Commission rules, or a percentage mode is added to
+  `commissionSettings` — which first needs an answer to "the override replaces _which_
+  plan component's rate?", because commission is pooled per component and a package sale
+  can be covered by several. Until one option is chosen the drawer keeps saying what is
+  true today: explicit settings apply to new purchases only.
+
 ## November 6, 2026 — Client confirms scope: thirteen answers, four items closed
 
 The thirteen questions in [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) §7 were put
@@ -77,7 +113,8 @@ tracked as CP-008 in [TASKS.md](TASKS.md).
 - **The UI will settle on one name for value packages.** "Value package" is
   `STORED_CREDIT_SALE` / `STORED_CREDIT_SPEND` in rules and `VP_SALE` / `VP_SPEND`
   in payroll. Same meaning, different labels; the mismatch costs review time until
-  the screens adopt one.
+  the screens adopt one. _(Settled on November 6, 2026 — see the entry above; the screens
+  now say "value package" on both sides.)_
 - **`GC_SALE` is vocabulary, not a promise.** The payroll commission types keep the
   gift-card value, but the plan editor stopped offering it: no loader writes a
   `GC_SALE` base line, so a component counting it would pay nothing while telling

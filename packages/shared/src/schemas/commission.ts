@@ -17,8 +17,13 @@ export const COMMISSION_KIND_LABELS = {
   PACKAGE_SALE: "Package sales",
   PACKAGE_REDEMPTION: "Package redemptions",
   FOC: "Complimentary services (FOC)",
-  STORED_CREDIT_SALE: "Stored-credit sales",
-  STORED_CREDIT_SPEND: "Stored-credit spending",
+  // One name for one thing (DECISIONS.md, November 6, 2026): the rules grid calls this
+  // kind STORED_CREDIT_* because stored credit is how the money is funded, but an owner
+  // sells a **value package** and payroll pays VP_SALE / VP_SPEND for it. Before this
+  // the same money was labelled two ways on two screens; only the labels change here,
+  // never the kind, the rate or the money.
+  STORED_CREDIT_SALE: "Value package sales",
+  STORED_CREDIT_SPEND: "Value package spending",
 } as const;
 const id = z.string().trim().min(1).max(128);
 export const commissionQuerySchema = z.object({

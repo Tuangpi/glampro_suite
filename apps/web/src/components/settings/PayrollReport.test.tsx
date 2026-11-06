@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -206,6 +206,46 @@ it("drills into frozen base lines with the captured source record", async () => 
 
   await user.click(screen.getByRole("button", { name: "Close base lines" }));
   expect(screen.queryByText("Frozen base lines for Alice Tan")).not.toBeInTheDocument();
+});
+
+it("names a stored type on the drill-down and keeps the audited code beside it", async () => {
+  const line = (id: string, commissionType: string) => ({
+    line: {
+      id,
+      staffId: "staff-a",
+      outletId: null,
+      commissionType,
+      baseAmount: "120.0000",
+      units: "1",
+      businessDate: "2026-09-12",
+      status: "EARNED",
+      mode: "FOLLOW_PLAN",
+    },
+    source: null,
+  });
+  mocks.get.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.endsWith("/lines")
+        ? linesPage({
+            // One kind the filter names, one it has never heard of.
+            lines: [line("line-a-3", "VP_SPEND"), line("line-a-4", "BONUS_V1")],
+            total: 2,
+            pages: 1,
+            matching: { lines: 2, baseAmount: "240.0000", units: "2.0000" },
+          })
+        : report(),
+    ),
+  );
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Base lines for Alice Tan" }));
+  const table = await screen.findByRole("table", { name: "Frozen base lines for Alice Tan" });
+
+  // The friendly name never replaces the code: exports, the ledger and a support call all
+  // quote VP_SPEND, and a type added after this release still has to render as itself.
+  expect(within(table).getByText(/Value package spend/)).toBeInTheDocument();
+  expect(within(table).getByText("(VP_SPEND)")).toBeInTheDocument();
+  expect(within(table).getByText("BONUS_V1")).toBeInTheDocument();
 });
 
 it("sends narrowing filters and paging to the server", async () => {

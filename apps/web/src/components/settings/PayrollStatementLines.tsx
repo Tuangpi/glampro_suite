@@ -10,6 +10,10 @@ import Select from "@/components/ui/Select";
  * Every row is a stored base line; the source column is the record captured when the line
  * was posted. Nothing here recalculates money, so a later void cannot rewrite an approved
  * statement. Filters and paging are applied by the server.
+ *
+ * The Type column names the code as well as printing it. A friendly label alone would be a
+ * second vocabulary in an audited drill-down — exports, the ledger and a support call all
+ * quote `VP_SPEND`, not "Value package spend" — so the code stays beside the name.
  */
 
 const COMMISSION_TYPES = [
@@ -22,6 +26,19 @@ const COMMISSION_TYPES = [
   ["VP_SPEND", "Value package spend"],
   ["GC_SALE", "Gift card sale"],
 ] as const;
+
+const TYPE_LABELS = new Map<string, string>(COMMISSION_TYPES.map(([code, label]) => [code, label]));
+
+/** A stored code with the name the filter uses. An unknown code speaks for itself. */
+function TypeCell({ code }: { code: string }) {
+  const label = TYPE_LABELS.get(code);
+  if (!label) return <>{code}</>;
+  return (
+    <>
+      {label} <span className="text-xs text-ink-muted">({code})</span>
+    </>
+  );
+}
 
 const STATUSES = ["EARNED", "REVERSED", "PAID"] as const;
 
@@ -166,7 +183,9 @@ export default function PayrollStatementLines({
                 {data.lines.map((row) => (
                   <tr key={row.line.id}>
                     <td>{row.line.businessDate}</td>
-                    <td>{row.line.commissionType}</td>
+                    <td>
+                      <TypeCell code={row.line.commissionType} />
+                    </td>
                     <td>{row.line.outletId ?? "—"}</td>
                     <td>{row.line.status}</td>
                     <td>{row.line.baseAmount}</td>

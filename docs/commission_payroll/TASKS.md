@@ -1647,7 +1647,8 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       revision of this note claimed narrowing the filter would hide audited rows; that
       was wrong and is corrected here. Labels stay raw codes — friendly value-package
       names are (f2)/N14, and N14's gift-card label half is moot now that Q9 rules the
-      type out.
+      type out. Labels: the drill-down prints the friendly name beside the stored code
+      (N14, November 6, 2026), so the code stays quotable while the name stays readable.
       Verified: `PayrollPlans.test.tsx` — the `GC_SALE` checkbox is absent, the seven
       producing types are present, and a stored `["SVC", "GC_SALE"]` survives an edit to an
       unrelated component field into the draft save; `tsc -p tsconfig.app.json --noEmit`
@@ -1670,13 +1671,22 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       `payroll-close.http.test.ts` (owner JSON carries `payrollSalesPct`, manager JSON does
       not), `PayrollClose.test.tsx`, `PayrollReport.test.tsx`, `tsc --noEmit` for shared,
       api and web, eslint and prettier.
-- [ ] TODO — **(f2) Remaining N4–N8, N10, N14 screen items.** Override % and
-      effective-from on the package drawer (N4); session-value preview while adding a
-      session (N5); seller/performer chips, till default and automatic commission
-      estimates (N6/N7); active-packages panel with "Redeem 1" and expiry ordering (N8);
-      "customer signed" column (N10); value-package labels (N14). N14's gift-card half
-      is moot: Q9 ruled gift-card commission out, so no gift-card line will ever be
-      labelled. This is the next work item.
+- [ ] IN PROGRESS — **(f2) Remaining N4–N8, N10, N14 screen items.** N14's value-package
+      labels are DONE (November 6, 2026): the rules grid says "Value package
+      sales/spending" instead of "stored-credit", and the statement drill-down prints
+      `Value package spend (VP_SPEND)` — name plus stored code, never the name alone;
+      N14's gift-card half is moot under Q9. Still open: session-value preview while
+      adding a session (N5); seller/performer chips, till default and automatic
+      commission estimates (N6/N7); active-packages panel with "Redeem 1" and expiry
+      ordering (N8); "customer signed" column (N10). **N4 is reclassified, not
+      started:** its remaining half — an Override % and an effective-from date on the
+      package drawer — is not a screen-only change. `payrollPackageSettingsSchema` has
+      three modes and every consumer branches on `mode === "FIXED"`, so a percentage
+      option would silently pay the plan rate; the capability already exists as a
+      package-scope `CommissionRule` with a rate and `effectiveAt`, edited in Settings ›
+      Commission rules. Making the drawer edit or read those rules is a product decision
+      recorded in [DECISIONS.md](DECISIONS.md); the drawer keeps its truthful "applies to
+      new purchases only" note until it is made. Next slice: N5 or N8.
 - [ ] TODO — **(g) §12 reports.** Commission detail (filterable ledger plus Excel),
       My commission (staff self-service), and package utilisation
       (sold/redeemed/expired). Reuse the CP-006 export and own-data patterns rather than
