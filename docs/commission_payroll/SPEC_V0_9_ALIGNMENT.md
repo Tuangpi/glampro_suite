@@ -371,43 +371,71 @@ mandatory reason, and the fail-closed evidence verifiers. None of these is asked
 for in v0.9; all of them are the reason the figures can be defended, so they
 should not be simplified away while closing the gaps above.
 
-## 7. Open questions for the client
+## 7. Questions for the client — answered November 6, 2026
 
 These are the tick-boxes in the specification's §13, answered with what the build
-currently does. Each one changes money or scope, so none should be assumed.
+currently does. Each one changes money or scope, so none was assumed.
+
+**All thirteen were answered on November 6, 2026** and are recorded as agreed policy in
+[REQUIREMENTS.md](REQUIREMENTS.md) §13. The short form is below; two answers carry a
+caveat rather than a clean decision (Q4 needs the auditor, Q2 was not put).
+
+What the answers change for planning: **four CP-008 items close by decision instead of
+by code** — (a) ledger-as-source-of-truth (Q12), (b) `salon_commission_policy` fields
+(Q3, Q4, Q8, and the fields that already matched), (d)'s gift-card build-half (Q9) and
+(e) fixed-dollar grid rates (Q10). Only (f2) and (g) remain as work, and **nothing in
+this section blocks either**.
 
 1. **Package sale basis** (§13 a). Current: amount collected, including deposits
-   and instalments — the spec's recommended option. Confirm, or the alternative
-   (full value at sale, current Excel practice) becomes a base change.
+   and instalments — the spec's recommended option. **Answered: collected.** The
+   alternative (full value at sale, current Excel practice) is not adopted, so the
+   collected-base invariants in [DECISIONS.md](DECISIONS.md) stand unchanged.
 2. **Redemption base** (§13 b). Current: session value (net ÷ sessions), with a
    per-package fixed dollar override. The service-list-price option is not
-   available.
+   available. **Open** — this one was not put to the client; take the current
+   behaviour as standing until it is asked.
 3. **Clawback on refund** (§13 c). Current: prorated on the refunded amount plus
-   the `refundAdminFee` setting. "Full reversal within N days" and "none" are not
-   available.
+   the `refundAdminFee` setting. **Answered: prorated, no window.** "Full reversal
+   within N days" and "none" are not required, so `clawback_days` and a
+   `clawback_mode` switch are not built.
 4. **Redemption before the package is fully paid** (§13 d). Current: option (a),
    the recommended one — redemption is blocked once the sessions used exceed the
-   sessions paid for, with an audited manager-PIN override. Confirm that the
-   override is acceptable, and whether options (b) "always" and (c) "never" must
-   be configurable per salon.
+   sessions paid for, with an audited manager-PIN override. **Answered: keep (a)
+   and keep the override**, accepted by the business. The override is not a
+   specification feature, so it stays documented as a named exception, and the
+   **auditor's confirmation is still pending**. Options (b) and (c) are not
+   required per salon.
 5. **FOC commission** (§13 e). Current: percentage of service list price.
-   Confirm, and confirm the current rate.
+   **Answered: confirmed.** The rate itself is a per-salon setting and is not
+   recorded as a fixed number here.
 6. **Seller and therapist the same person** (§13 f). Current: both accrue, because
-   the sale and the redemption are separate events. Confirm.
-7. **Payroll/Sales formula and alert threshold** (§13 g). Formula matches; confirm
-   the threshold the salon expects, since it drives the red flag in N11.
-8. **Commission period** (§8 `period_start_day`). Does any salon close on a day
-   other than the last calendar day?
+   the sale and the redemption are separate events. **Answered: confirmed.**
+7. **Payroll/Sales formula and alert threshold** (§13 g). Formula matches.
+   **Answered: formula confirmed**; the threshold is a per-staff
+   `salesAlertPct` value the salon sets, so no number is recorded here.
+8. **Commission period** (§8 `period_start_day`). **Answered: no salon closes on a
+   day other than the calendar month end** (client statement, November 6, 2026).
+   This is the answer that removes the most expensive item in the field matrix:
+   `period_start_day` is not required, so the period key, month locking and carry
+   logic stay as they are.
 9. **Gift cards** — should they earn commission, and at sale or redemption?
+   **Answered: no gift-card commission.** The build-half described in §d is
+   therefore cancelled rather than deferred: no gift-card source loader, no rule
+   kind. `GC_SALE` remains declared vocabulary that the close never emits, which
+   is why the plan editor stopped offering it.
 10. **Fixed-dollar rates in the staff × type grid** (§9.1 N1 "cell = % or $").
-    Needed now, or percentages only?
-11. **Tiered commission** (§13 h). Already supported in payroll plans
-    (`TIER_WHOLE`, `TIER_SLICE`, `TIER_MIXED`, `contracts.ts:28-34`), but not on
-    the rules grid — needed now or later?
-12. **Real-time posting versus month-end close.** Must commission be posted at the
-    till, or is a verified close acceptable? (decides (a))
+    **Answered: percentages only is sufficient.** Fixed dollar stays where it
+    already exists (the package drawer), and `publishCommissionRuleSchema` does not
+    gain a calc-method.
+11. **Tiered commission** (§13 h). Plans already support tiers (`TIER_WHOLE`,
+    `TIER_SLICE`, `TIER_MIXED`, `contracts.ts:28-34`), the rules grid does not.
+    **Answered: not required now** — the grid stays percentage-based.
+12. **Real-time posting versus month-end close.** **Answered: the verified close is
+    the authority**; till-time posting is declined. This closes §a: the ledger stays
+    an immutable primitive and a reconciliation input, not the reporting path, which
+    is what the code already does.
 13. **Payroll/Sales % visibility** — managers, or owner-only like salary and
-    take-home?
+    take-home? **Answered: owner-only**, already shipped that way in CP-008 (f1).
 
 ## Appendix — verification log
 

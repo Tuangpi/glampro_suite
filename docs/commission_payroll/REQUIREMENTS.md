@@ -119,28 +119,31 @@ SRS screens C1–C7 and C17–C20 map to CP-003; C8–C13 and C16 to CP-004
 and CP-006; C14–C15 to CP-005 and CP-006. Seed definitions and migration
 requirements in SRS section 11 map to CP-003 and CP-007 respectively.
 
-## Spec v0.9 open confirmations (§13)
+## Spec v0.9 confirmations (§13) — agreed November 6, 2026
 
-Source: [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) §7. Each answer below
-changes money or scope, so the behaviour listed is **provisional** and recorded here
-only so the next review checks against agreed policy instead of a spreadsheet
-snapshot. None of it is accepted policy. Items that need code are tracked as CP-008.
+Source: [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) §7. Every item below changes
+money or scope, so the answers were taken explicitly rather than assumed. All thirteen
+were put to the client on **November 6, 2026**; the answers are agreed policy from that
+date, which closes several CP-008 items **by decision instead of by code** — see
+[TASKS.md](TASKS.md) and the recorded reasoning in [DECISIONS.md](DECISIONS.md).
+Rows marked **Open** are not agreed, stay provisional, and gate nothing currently in
+flight.
 
-| #   | Question                        | Current behaviour (provisional)                                                                             |
-| --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| 1   | Package sale basis              | Collected (deposits plus instalments); the specification's recommended option                               |
-| 2   | Redemption base                 | Session value (net ÷ sessions) with a per-package fixed-dollar override; no list price                      |
-| 3   | Clawback on refund              | Prorated on the refunded amount plus `refundAdminFee`; no N-day window, no "none" mode                      |
-| 4   | Redeem before fully paid        | Blocked once used exceeds paid (option a), with audited manager-PIN override                                |
-| 5   | FOC commission                  | Percentage of the full service list price                                                                   |
-| 6   | Seller and therapist same staff | Both accrue; sale and redemption stay separate events                                                       |
-| 7   | Payroll/Sales threshold         | Formula matches; the value comes from per-staff `salesAlertPct` and is unconfirmed                          |
-| 8   | Commission period start day     | Calendar month only; no `period_start_day`                                                                  |
-| 9   | Gift cards                      | `GC_SALE` is declared but has no producer or rule kind; must not be promised as delivered                   |
-| 10  | Fixed-dollar rates in the grid  | Percentages only on the rules grid; fixed dollar exists on the package drawer                               |
-| 11  | Tiered commission in the grid   | Plans support tiers; the rules grid does not                                                                |
-| 12  | Posting versus month-end close  | Close-derived authority, see [DECISIONS.md](DECISIONS.md); not till-time posting                            |
-| 13  | Payroll/Sales % visibility      | Owner-only: both payroll tables show it (red above alert); managers see component columns but not the ratio |
+| #   | Question                        | Current behaviour                                                                                           | Agreed, November 6, 2026                                                                                            |
+| --- | ------------------------------- | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1   | Package sale basis              | Collected (deposits plus instalments); the specification's recommended option                               | **Collected** — confirmed. Full package value at sale is not adopted, so the collected-base invariants stand        |
+| 2   | Redemption base                 | Session value (net ÷ sessions) with a per-package fixed-dollar override; no list price                      | **Open** — not put to the client; session value stands until it is                                                  |
+| 3   | Clawback on refund              | Prorated on the refunded amount plus `refundAdminFee`; no N-day window, no "none" mode                      | **Prorated, no window** — confirmed. `clawback_days` and a "none" mode are not required                             |
+| 4   | Redeem before fully paid        | Blocked once used exceeds paid (option a), with audited manager-PIN override                                | **Blocked, override kept** — accepted by the business; **auditor confirmation pending**                             |
+| 5   | FOC commission                  | Percentage of the full service list price                                                                   | **Percentage of list price** — confirmed. The rate is set per salon in Settings; no value is recorded here          |
+| 6   | Seller and therapist same staff | Both accrue; sale and redemption stay separate events                                                       | **Both accrue** — confirmed                                                                                         |
+| 7   | Payroll/Sales threshold         | Formula matches; the value comes from per-staff `salesAlertPct` and is unconfirmed                          | **Formula confirmed.** The threshold is set per staff member by the salon; no value is recorded here                |
+| 8   | Commission period start day     | Calendar month only; no `period_start_day`                                                                  | **No salon closes other than the calendar month end** — client statement, so `period_start_day` is not required     |
+| 9   | Gift cards                      | `GC_SALE` is declared but has no producer or rule kind; must not be promised as delivered                   | **No gift-card commission.** The build-half will not be built; `GC_SALE` stays vocabulary the close never emits     |
+| 10  | Fixed-dollar rates in the grid  | Percentages only on the rules grid; fixed dollar exists on the package drawer                               | **Percentages only is sufficient.** Fixed dollar stays where it already exists, on the package drawer               |
+| 11  | Tiered commission in the grid   | Plans support tiers; the rules grid does not                                                                | **Not required now.** Plans keep tiers; the rules grid stays percentage-based                                       |
+| 12  | Posting versus month-end close  | Close-derived authority, see [DECISIONS.md](DECISIONS.md); not till-time posting                            | **Close is the authority** — confirmed. Till-time posting is declined, so the ledger-source-of-truth work is closed |
+| 13  | Payroll/Sales % visibility      | Owner-only: both payroll tables show it (red above alert); managers see component columns but not the ratio | **Owner-only** — confirmed, and already shipped as such                                                             |
 
 ## Reference audit caveats
 

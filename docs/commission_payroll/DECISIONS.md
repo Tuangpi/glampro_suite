@@ -1,5 +1,52 @@
 # Commission & Payroll decisions
 
+## November 6, 2026 — Client confirms scope: thirteen answers, four items closed
+
+The thirteen questions in [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) §7 were put
+to the client and answered. They are agreed policy from this date and are recorded in
+[REQUIREMENTS.md](REQUIREMENTS.md) §13; the reasoning for each is in the alignment
+document. The spread of answers settles the "provisional" caveat those rows carried:
+**nine confirmed what the build already does** (Q1, Q3, Q4, Q5, Q6, Q7, Q11, Q12, Q13),
+one answered the question the code had assumed rather than verified (Q8 — no salon closes
+mid-month), **two declined work the build never had** (Q9 gift-card commission, Q10
+fixed-dollar grid rates), and **one was never asked** (Q2).
+
+- **Confirmed as built:** collected sale basis (Q1), prorated clawback with no N-day
+  window or "none" mode (Q3), redemption blocked before the package is paid with the
+  audited manager-PIN override (Q4), both seller and performer accruing when they are the
+  same person (Q6), owner-only Payroll/Sales % (Q13), no mid-month close (Q8), no gift-card
+  commission (Q9), percentages only in the staff × type grid (Q10), tiers kept in plans
+  but not the grid (Q11), and the verified month-end close as the authority instead of
+  till-time posting (Q12).
+- **Four CP-008 items close by decision rather than by code.** (a) ledger-as-source-of-
+  truth, (b) `salon_commission_policy` fields, (e) fixed-dollar rule amounts and the
+  build-half of (d) gift-card commission are **not outstanding defects** — the client
+  declined or did not need them. Same standing as the invariants above: a future request
+  for one of them is a new item with a recorded cost, not the completion of a known gap.
+- **No numbers are invented.** The FOC rate (Q5) and the payroll/sales alert threshold
+  (Q7) are per-salon settings the salon enters in Settings, so this record holds none; the
+  formula is confirmed, the value is theirs. `redemption_basis` (Q2) was not put to the
+  client and remains open — session value stands.
+- **Q4 carries the only external dependency left.** The client accepts the manager-PIN
+  redemption override; the auditor has not yet confirmed it, and it stays documented as a
+  named exception to the specification rather than as a feature.
+
+### Correction: the statement line filter does not hide rows
+
+The entry below says the payroll statement's line filter keeps `GC_SALE`. The conclusion
+is right and the reason for it was mis-stated in [TASKS.md](TASKS.md) when the change
+landed, so it is corrected here rather than by rewriting pushed history.
+
+`COMMISSION_TYPES` in `PayrollStatementLines.tsx:15-24` is the **option list for the
+base-line filter dropdown** (`:128`). It is not a table of row labels: the table renders
+the stored code as-is (`:169`). Narrowing the list therefore hides nothing — it only
+removes the ability to filter _for_ that type.
+
+The option stays because no producer has ever written a `GC_SALE` line: it can match
+nothing except legacy or manually seeded data, and keeping it costs nothing while leaving
+any such row reachable. Had it been a label map, dropping the entry would have been the
+wrong call for a different reason — it would have made audited rows unlabelled.
+
 ## November 6, 2026 — Spec v0.9 alignment: one switch retired, three divergences recorded
 
 [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) reviewed the v0.9 specification

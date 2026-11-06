@@ -1,5 +1,42 @@
 # Commission & Payroll progress
 
+## November 6, 2026 — Client §7 answers recorded; four CP-008 items closed by decision
+
+- **The questions were answered, so the "provisional" caveat is gone.** All thirteen
+  items in `SPEC_V0_9_ALIGNMENT.md` §7 were put to the client and answered on this date.
+  They are now recorded as agreed policy in `REQUIREMENTS.md` §13 (a new "Agreed" column
+  per row), with the reasoning in the alignment document and the standing in
+  `DECISIONS.md`. Nine answers confirmed what the build already does, one confirmed the
+  assumption the code was making (Q8), and two declined work that had been scoped but never
+  built. That is the useful half of the exercise: rows marked "provisional — none of it is
+  accepted policy" are now policy, so the next review checks against a decision instead of
+  a spreadsheet snapshot.
+- **Four items close without a line of code.** (a) ledger as source of truth (Q12 — the
+  close is the authority, till-time posting declined), (b) `salon_commission_policy`
+  fields (Q8 kills `period_start_day`, the expensive one; Q3 kills `clawback_days` and a
+  "none" mode; Q4 keeps option (a) with the override; the rest already match), (e)
+  fixed-dollar grid amounts (Q10 — percentages only) and (d)'s gift-card build-half (Q9 —
+  no gift-card commission). Estimated work avoided is the bulk of the §5 table. They are
+  **closed, not deferred**: re-opening one is a new request with a recorded cost, not the
+  completion of a known gap.
+- **Two caveats, recorded rather than smoothed over.** Q4's manager-PIN override is
+  accepted by the business but **not yet confirmed by the auditor**, so it stays in the
+  docs as a named exception to the specification. And `redemption_basis` (Q2) was never
+  put to the client — session value stands and the row reads **Open**, not "agreed".
+- **No numbers were invented.** The FOC rate (Q5) and the payroll/sales threshold (Q7)
+  are per-salon Settings values: the formula is agreed, the value belongs to the salon, so
+  nothing is recorded here for either.
+- **Correction to the (d) entry below.** Its last bullet claims narrowing the statement
+  type list "would hide audited rows". That is wrong: `COMMISSION_TYPES` is the filter
+  dropdown's option list (`PayrollStatementLines.tsx:128`) and the table prints the stored
+  code as-is (`:169`), so removing an entry hides nothing. The decision to keep it is
+  unchanged, for the real reason — no producer writes a `GC_SALE` line, so the option can
+  only match legacy or manually seeded data, and leaving it keeps such rows reachable at
+  zero cost. The bullet below is corrected in place; pushed history is not rewritten.
+- **Next.** (f2) — N4 override % and effective-from on the package drawer, then N5–N8,
+  N10 and the value-package labels (N14, now without the gift-card half) — followed by
+  (g) the §12 reports. Nothing waits on the client any more.
+
 ## November 6, 2026 — CP-008 (d), hide-half: a plan can no longer promise gift-card commission
 
 - **The defect was money, not tidiness.** The plan component picker offered `GC_SALE`
@@ -17,11 +54,14 @@
   only the field being edited, so a component that already counts `GC_SALE` keeps
   counting it, and a test pins that round trip through an unrelated name edit into the
   draft save. No engine, loader, snapshot or export maths changed, so no money moved.
-- **One deliberate deviation from the review's wording.** (d) also proposed hiding
-  `GC_SALE` from "statement labels". The type list in `PayrollStatementLines.tsx` is
-  untouched: that filter reads stored base lines and promises nothing about future
-  revenue, and narrowing it would hide audited rows from the drill-down whose whole
-  purpose is to show them. Friendly gift-card names remain (f2)/N14 work.
+- **One deliberate deviation from the review's wording, reason corrected above.** (d)
+  also proposed hiding `GC_SALE` from "statement labels". The type list in
+  `PayrollStatementLines.tsx` is untouched. The reason given here originally — that
+  narrowing it "would hide audited rows" — was wrong: that list is the filter dropdown's
+  option set, not row labels, so the table would render exactly the same. It is kept
+  because no loader has ever written a `GC_SALE` line, so the option can only match legacy
+  or manually seeded data, and keeping it leaves any such row reachable. Friendly
+  value-package names remain (f2)/N14 work.
 - **Verification.** `PayrollPlans.test.tsx` 27 tests pass in isolation (2 new: the
   checkbox is absent while the seven producing types remain, and a stored
   `["SVC", "GC_SALE"]` survives an edit to another component field).

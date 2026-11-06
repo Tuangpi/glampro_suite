@@ -4,7 +4,7 @@
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
 - **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **DONE for local acceptance** as of November 4, 2026: M1 frozen exports, M2 period report/drill-down, M3 customer holding history, M4 MTD/POS progress, M5 own-data staff self-service and mounted-Chrome browser acceptance (**10/10**, twice). Not release or earnings activation; the only disclosed remainder is a human opening the workbook in a spreadsheet application and printing the payslip PDF.
-- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN** as of November 6, 2026: (c) dead `requireAttribution` switch retired, (f1) N11 on-screen component and Payroll/Sales % columns, and (d)'s hide-half (plan components no longer offer gift-card commission) are DONE; (a), (b), (e), (f2), (g) and (d)'s build-half remain. Source review: `SPEC_V0_9_ALIGNMENT.md`.
+- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN** as of November 6, 2026: (c), (f1) and (d) are DONE, and the client's §7 answers **closed (a), (b) and (e) by decision** rather than by code; (f2) and (g) are the remaining work. Source review: `SPEC_V0_9_ALIGNMENT.md`, answers recorded in `REQUIREMENTS.md` §13.
 
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
@@ -1622,23 +1622,32 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       Verified: `settings.test.ts` (legacy payload parses, write rejects),
       `payroll-preview-inputs.test.ts`, `payroll-close-configuration.test.ts`,
       `PayrollSettingsForms.test.tsx`, and `tsc --noEmit` for shared, api and web.
-- [x] DONE (hide-half) — **(d) Gift-card commission.** `GC_SALE` existed in the payroll
-      contract (`packages/shared/src/commission-payroll/contracts.ts:26`) with no producer
-      and no rule kind (`packages/shared/src/schemas/commission.ts:3-11`). The plan editor
-      no longer offers it: `PayrollPlans.tsx` holds the seven types that do have producers
-      in a module-level `COMPONENT_COMMISSION_TYPES`, so a plan can no longer promise a
-      component that can never produce a line. The build-half — source loader plus rule
-      kind — stays blocked on the client's gift-card answer (Q9).
+- [x] DONE — **(d) Gift-card commission, closed by client decision.** `GC_SALE` existed
+      in the payroll contract (`packages/shared/src/commission-payroll/contracts.ts:29`)
+      with no producer and no rule kind
+      (`packages/shared/src/schemas/commission.ts:3-11`). The plan editor no longer
+      offers it: `PayrollPlans.tsx` holds the seven types that do have producers in a
+      module-level `COMPONENT_COMMISSION_TYPES`, so a plan cannot promise a component
+      that can never produce a line. **The build-half — source loader plus rule kind —
+      will not be built:** the client answered Q9 on November 6, 2026 with no gift-card
+      commission ([REQUIREMENTS.md](REQUIREMENTS.md) §13), so the hide-half is the final
+      state of this item, not half a feature.
       **The enum member stays on purpose.** `payrollCommissionTypeSchema` is strict, and a
       definition saved while the picker still offered `GC_SALE` has to keep parsing at
       close; deleting the value would turn a form tidy-up into a failed month end. Nothing
       rewrites stored definitions either: `editComponent` patches only the field being
       edited, so a component that already counts `GC_SALE` keeps counting it.
-      **Deliberate deviation from the review's wording:** the `GC_SALE` entry in
-      `PayrollStatementLines.tsx:23` is left alone. That filter reads stored base lines and
-      promises nothing about future revenue; narrowing it would hide audited rows from the
-      drill-down whose whole job is to show them. Labels stay raw codes — friendly
-      gift-card names are (f2)/N14.
+      **Kept, with the reason corrected (November 6, 2026):** the `GC_SALE` entry in
+      `PayrollStatementLines.tsx:23` is the option list for the base-line filter dropdown
+      (`:128` maps it to `<Select>` options), not a row-rendering label map — the table
+      prints the stored code as-is (`:169`). Removing the option would hide no rows; it
+      would only stop an operator filtering _for_ them. No producer has ever written a
+      `GC_SALE` line, so the option can match nothing except legacy or manually seeded
+      data, and leaving it costs nothing while keeping any such row reachable. An earlier
+      revision of this note claimed narrowing the filter would hide audited rows; that
+      was wrong and is corrected here. Labels stay raw codes — friendly value-package
+      names are (f2)/N14, and N14's gift-card label half is moot now that Q9 rules the
+      type out.
       Verified: `PayrollPlans.test.tsx` — the `GC_SALE` checkbox is absent, the seven
       producing types are present, and a stored `["SVC", "GC_SALE"]` survives an edit to an
       unrelated component field into the draft save; `tsc -p tsconfig.app.json --noEmit`
@@ -1665,29 +1674,49 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       effective-from on the package drawer (N4); session-value preview while adding a
       session (N5); seller/performer chips, till default and automatic commission
       estimates (N6/N7); active-packages panel with "Redeem 1" and expiry ordering (N8);
-      "customer signed" column (N10); gift-card and value-package labels (N14).
+      "customer signed" column (N10); value-package labels (N14). N14's gift-card half
+      is moot: Q9 ruled gift-card commission out, so no gift-card line will ever be
+      labelled. This is the next work item.
 - [ ] TODO — **(g) §12 reports.** Commission detail (filterable ledger plus Excel),
       My commission (staff self-service), and package utilisation
       (sold/redeemed/expired). Reuse the CP-006 export and own-data patterns rather than
       new endpoints where possible.
-- [ ] TODO — **(b) Policy fields.** `period_start_day` and `clawback_days` do not
-      exist anywhere; `redemption_basis`, `foc_basis`, `clawback_mode`, `rounding` and
-      `allow_redeem_before_paid` need switches over behaviour that is currently fixed.
-      `period_start_day` is the expensive one (period key, month locking, carry, close
-      snapshots, exports). Deposit basis, GST and discount netting stay fixed per the
-      decisions record — flipping them off removes reconciliation guarantees.
-- [ ] TODO — **(e) Fixed-dollar rule amounts.** `CommissionRule` has no calc-method
-      or fixed-amount column (`apps/api/prisma/schema.prisma:1781-1799`). Adding
-      `FIXED_AMOUNT` touches every close loader, the provenance verifier and the
-      grid/API contracts; it is not a UI-only change.
-- [ ] TODO — **(a) Ledger as the source of truth.** Post a ledger line at POS for
-      every commission event and drive reports from the ledger, permanently reconciled
-      against the close. Highest cost of the set; do it only if the client insists on
-      the §5 architecture instead of the close-derived authority recorded in
-      DECISIONS.md.
-- [ ] TODO — **Client §7 answers recorded.** Q1, Q3, Q4 and Q9 gate (b), (d) and
-      (e). Record answers in [REQUIREMENTS.md](REQUIREMENTS.md) so the next review
-      checks against agreed policy rather than a spreadsheet snapshot.
+- [x] CLOSED — **(b) Policy fields: not required by client decision.** Every field is
+      either declined or already matches the agreed behaviour, so no switch is built.
+      Declined: `period_start_day` (Q8 — no salon closes on anything but the calendar
+      month end, so the period key, month locking, carry and close snapshots stay as
+      they are); `clawback_days` and `clawback_mode` (Q3 — prorated with no window);
+      `allow_redeem_before_paid` (Q4 — option (a) with the audited manager-PIN override
+      stands). Already matching: `foc_basis` (Q5 — percentage of list price),
+      `redemption_basis` (session value, no list-price option), `rounding` (half-up to
+      2 dp, fixed by the decisions record). Deposit basis, GST and discount netting stay
+      fixed per that same record — flipping them off removes reconciliation guarantees.
+      Two caveats travel with this closure: `redemption_basis` (Q2) was never put to the
+      client, and the Q4 override still needs the auditor. If a salon ever needs a
+      mid-month close, `period_start_day` reopens as its own item rather than as a
+      policy switch.
+- [x] CLOSED — **(e) Fixed-dollar rule amounts: not required (Q10).** The client needs
+      percentages only on the staff × type grid; fixed dollar already exists where it is
+      used, on the package drawer (N4). `CommissionRule` therefore keeps its
+      percentage-only shape (`apps/api/prisma/schema.prisma:1781-1799`), and no close
+      loader, provenance verifier, grid or API contract changes. Reopening this means a
+      calc-method column plus amount and every reader listed in
+      `SPEC_V0_9_ALIGNMENT.md` §5.
+- [x] CLOSED — **(a) Ledger as the source of truth: declined (Q12).** The client
+      confirmed the verified month-end close as the authority and declined till-time
+      posting, which is the architecture already recorded in
+      [DECISIONS.md](DECISIONS.md) and implemented. The ledger stays an immutable,
+      hash-pinned primitive and a reconciliation input; it is not the reporting path, and
+      the POS-posting work this item described will not be done. This is the largest
+      single item the §7 answers removed.
+- [x] DONE — **Client §7 answers recorded.** All thirteen answers are in
+      [REQUIREMENTS.md](REQUIREMENTS.md) §13 as agreed policy dated November 6, 2026, with
+      the short form and the scope verdict in `SPEC_V0_9_ALIGNMENT.md` §7 and the
+      reasoning in [DECISIONS.md](DECISIONS.md). They closed (a), (b) and (e) by decision.
+      Two caveats travel with them and must not be read as settled: the manager-PIN
+      override still needs the auditor's confirmation (Q4), and `redemption_basis` (Q2)
+      was never put to the client. The FOC rate (Q5) and the payroll/sales threshold (Q7)
+      are per-salon settings by agreement, so no numbers are recorded.
 
 - Completion check: every item above either implemented with tests or explicitly
   deferred with the client's decision recorded; `npm run verify` green; no change to
