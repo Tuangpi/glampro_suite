@@ -1,5 +1,22 @@
 # Commission & Payroll requirements and acceptance
 
+## November 7, 2026 — reporting delivery after audit
+
+**CP-008 DONE locally.** The report gaps identified in the audit below are now
+implemented: per-holding original remaining net consideration with captured fixed/
+excluded exposure and explicit unavailable follow-plan forecasts; original sold-session
+utilisation with missing-evidence disclosure alongside packs. Full verify, updated
+PostgreSQL/HTTP 11/11 and mounted Chrome 17/17 pass. See `CP008_REPORT_AUDIT.md`.
+No release, activation or waiver of Q2/Q4 caveats. Earlier OPEN notes are historical.
+
+## November 7, 2026 — reporting audit correction
+
+**CP-008 remains OPEN for §12 reporting scope reconciliation.**
+`CP008_REPORT_AUDIT.md` supersedes the blanket completion statement below, not
+the supported POS acceptance. Aggregate purchase valuation is not a per-holding
+liability/exposure report, and operational pack counts are not sold-session counts.
+Neither difference is waived by passing operational reporting tests.
+
 ## November 7, 2026 — CP-008 local acceptance
 
 CP-008 spec-alignment implementation and supported screen/report matrix are complete

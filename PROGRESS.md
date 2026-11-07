@@ -1,5 +1,37 @@
 # Glampro Suite — progress
 
+## November 7, 2026 — CP-008 report gaps implemented and accepted locally
+
+- **CP-008 DONE locally**, superseding the audit-only OPEN entry below. Added
+  management-only per-holding liability (original residual net value, expiry,
+  captured fixed/excluded exposure; unavailable future follow-plan context) and
+  original sold-session utilisation alongside existing pack counts. Unknown legacy
+  evidence is unavailable, not reconstructed from the current catalogue.
+- Full `npm run verify` exit 0: API **1,298 passed / 276 gated skips**, web
+  **1,268/1,268 across 136 files**, shared **337/337**. Updated real PostgreSQL/HTTP
+  **11/11** and mounted Chrome **17/17** pass. Shared/API/web builds pass.
+- Audit/delivery mapping: `docs/commission_payroll/CP008_REPORT_AUDIT.md`.
+  `(g)` is now checked with implementation and executed evidence, not a scope waiver.
+  No production access, migration, activation, approved-payroll change, commit or push.
+  Stopped only the disposable `/tmp/cp005-cp008-hbi8eB` cluster after acceptance.
+
+## November 7, 2026 — CP-008 report audit corrects completion status
+
+- **CP-008 OPEN for reporting scope reconciliation.** This supersedes the blanket
+  completion claim below, not the previous supported POS/operational acceptance.
+- Audited the five reports directly against spec v0.9 §12. Cross-month detail,
+  full filtered Excel and recursive lineage already exist. Aggregate purchase
+  valuation is not a per-holding liability/future commission exposure report;
+  recorded operational utilisation uses sold packs, not sold sessions.
+- Requirement/code/test mapping and ordered remaining work:
+  `docs/commission_payroll/CP008_REPORT_AUDIT.md`. Financial scope is not silently
+  changed; no client acceptance of the differences is invented.
+- Added visible valuation-scope disclosure and regression assertions, plus stored-role,
+  empty-activity and expiry-query utilisation checks. Focused API **54/54**, web
+  **42/42**, API/web typecheck and lint passed. No live database or production access.
+- Detailed commands and verification boundaries are recorded in commission/payroll
+  `PROGRESS.md`. CP-007, Q2 and Q4 remain separate.
+
 ## November 7, 2026 — CP-008 complete locally
 
 - Closed the remaining supported N6/N7 matrix: explicit appointment-to-till handoff,

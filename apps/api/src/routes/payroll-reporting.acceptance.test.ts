@@ -165,12 +165,12 @@ test(
       );
       const inventory = () =>
         f.scope(async () => ({
-          closes: await prisma.payrollClose.findMany(),
-          audits: await prisma.payrollCloseEvent.findMany(),
-          sources: await prisma.payrollSourceEvent.findMany(),
+          closes: await prisma.payrollClose.findMany({ orderBy: { id: "asc" } }),
+          audits: await prisma.payrollCloseEvent.findMany({ orderBy: { id: "asc" } }),
+          sources: await prisma.payrollSourceEvent.findMany({ orderBy: { id: "asc" } }),
           earnings: await prisma.employeeCommission.count(),
-          redemptions: await prisma.customerRedemption.findMany(),
-          snapshots: await prisma.commissionRedemptionSnapshot.findMany(),
+          redemptions: await prisma.customerRedemption.findMany({ orderBy: { id: "asc" } }),
+          snapshots: await prisma.commissionRedemptionSnapshot.findMany({ orderBy: { id: "asc" } }),
           cutovers: await prisma.payrollCutover.count(),
           activations: await prisma.packageValuationActivation.count(),
         }));
@@ -337,8 +337,32 @@ test(
             (row: { id: string }) => row.id === r.pkg.id,
           );
           assert.equal(row.packsSold, 1);
+          assert.equal(row.sessionsSold, 4);
+          assert.equal(row.unavailableSoldLines, 0);
           assert.equal(row.sessionsRedeemed, 2);
           assert.equal(row.sessionsExpiredUnused, 1);
+        },
+      );
+      await t.test(
+        "per-holding liability uses original ordinals without activation or fabricated plan exposure",
+        async () => {
+          const response = await request("/reports/package-liability");
+          assert.equal(response.status, 200, await response.clone().text());
+          const row = (await response.json()).data.rows.find(
+            (row: { holdingId: string }) => row.holdingId === r.holding.id,
+          );
+          assert.equal(row.sessionsRemaining, 1);
+          assert.equal(row.remainingNet, "25.0000");
+          assert.equal(row.expired, true);
+          assert.equal(row.commissionExposure, null);
+          assert.match(row.exposureReason, /Future performer/);
+          for (const bearer of [staff, cashier]) {
+            assert.equal((await request("/reports/package-liability", bearer)).status, 403);
+          }
+          assert.equal(
+            (await request("/reports/package-liability", manager, undefined, r.outlet.id)).status,
+            403,
+          );
         },
       );
       await t.test(

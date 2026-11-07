@@ -56,6 +56,9 @@ it("keeps pack counts distinct from session counts", async () => {
         id: "pkg",
         name: "Facial pack",
         packsSold: 2,
+        sessionsSold: 10,
+        knownSessionsSold: 10,
+        unavailableSoldLines: 0,
         sessionsRedeemed: 7,
         sessionsExpiredUnused: 3,
       },
@@ -64,6 +67,8 @@ it("keeps pack counts distinct from session counts", async () => {
   mount(<PackageUtilisationPanel />);
   expect(await screen.findByRole("cell", { name: "Facial pack" })).toBeInTheDocument();
   expect(screen.getByRole("columnheader", { name: "Packs sold" })).toBeInTheDocument();
+  expect(screen.getByRole("columnheader", { name: "Sessions sold" })).toBeInTheDocument();
+  expect(screen.getByRole("cell", { name: "10" })).toBeInTheDocument();
   expect(screen.getByRole("columnheader", { name: "Sessions redeemed" })).toBeInTheDocument();
   expect(screen.getByText(/not a balancing equation/)).toBeInTheDocument();
 });

@@ -1,5 +1,21 @@
 # November 6, 2026 — attribution and reporting continuation
 
+## November 7 report delivery — current status
+
+**CP-008 DONE locally.** Audit gaps below were implemented: management per-holding
+original net value and conditional fixed/excluded exposure, explicit unavailable
+follow-plan forecasts, plus original sold-session counts and missing-evidence totals.
+Updated HTTP 11/11, Chrome 17/17 and full verify pass. `CP008_REPORT_AUDIT.md` is the
+current five-report mapping/delivery record. No release or earnings activation.
+
+## November 7 report-audit correction — current status
+
+**CP-008 OPEN for reporting scope reconciliation.** `CP008_REPORT_AUDIT.md`
+supersedes the completion claim below. Supported POS acceptance is complete;
+per-holding liability/future exposure and literal sold-session utilisation need
+explicit scope resolution. Cross-month detail, filtered export and lineage are
+implemented, not outstanding development work.
+
 ## November 7 delivery status (supersedes the historical limitations below)
 
 - N4 follows the approved read-only approach: current/scheduled company package

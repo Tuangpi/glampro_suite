@@ -13,6 +13,9 @@ export default function PackageUtilisationPanel() {
           id: string;
           name: string;
           packsSold: number;
+          sessionsSold: number | null;
+          knownSessionsSold: number;
+          unavailableSoldLines: number;
           sessionsRedeemed: number;
           sessionsExpiredUnused: number;
         }[];
@@ -36,10 +39,12 @@ export default function PackageUtilisationPanel() {
       ) : (
         <>
           <p className="text-sm text-ink-muted">
-            Snapshot {query.data.asOf}. Sold counts completed-sale packs (including subsequently
-            refunded sales); redeemed counts non-reverted sessions; expired counts unused sessions
-            on current expired holdings. Transfers, deletions and legacy gaps mean these are not a
-            balancing equation.
+            Snapshot {query.data.asOf}. Sold counts completed-sale packs and original granted
+            sessions (including subsequently refunded sales); redeemed counts non-reverted sessions;
+            expired counts unused sessions on current expired holdings. Transfers, deletions and
+            legacy gaps mean these are not a balancing equation. Sold sessions are unavailable where
+            original purchase evidence is missing; current catalogue session counts are never
+            substituted.
           </p>
           {query.data.rows.length === 0 ? (
             <p>No package activity.</p>
@@ -51,6 +56,7 @@ export default function PackageUtilisationPanel() {
                   <tr>
                     <th>Package</th>
                     <th>Packs sold</th>
+                    <th>Sessions sold</th>
                     <th>Sessions redeemed</th>
                     <th>Expired unused sessions</th>
                   </tr>
@@ -60,6 +66,10 @@ export default function PackageUtilisationPanel() {
                     <tr key={row.id}>
                       <td>{row.name}</td>
                       <td>{row.packsSold}</td>
+                      <td>
+                        {row.sessionsSold ??
+                          `Unavailable (${row.knownSessionsSold ?? 0} known; ${row.unavailableSoldLines ?? 0} sale lines missing evidence)`}
+                      </td>
                       <td>{row.sessionsRedeemed}</td>
                       <td>{row.sessionsExpiredUnused}</td>
                     </tr>

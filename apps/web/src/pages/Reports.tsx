@@ -32,6 +32,7 @@ import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import PackageValuationPanel from "@/components/reports/PackageValuationPanel";
 import CommissionDetailPanel from "@/components/reports/CommissionDetailPanel";
 import PackageUtilisationPanel from "@/components/reports/PackageUtilisationPanel";
+import PackageLiabilityPanel from "@/components/reports/PackageLiabilityPanel";
 import { useAuth } from "@/contexts/AuthContext";
 
 type DatePreset = "today" | "week" | "month" | "custom";
@@ -472,6 +473,7 @@ export default function Reports() {
       <PackageValuationPanel />
       {canReadCommission && <CommissionDetailPanel />}
       {canReadCommission && <PackageUtilisationPanel />}
+      {canReadCommission && <PackageLiabilityPanel />}
     </div>
   );
 

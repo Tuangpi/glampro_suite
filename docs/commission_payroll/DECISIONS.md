@@ -1,5 +1,26 @@
 # Commission & Payroll decisions
 
+## November 7, 2026 — additive report delivery after audit
+
+The user requested completion, not merely documenting the open reports. Added original
+sold-session evidence alongside (not replacing) existing operational pack counts.
+Refund/expiry semantics of those existing counts remain unchanged and labelled.
+Per-holding remaining net uses original payroll purchase ordinals, independent of
+valuation activation. Captured FIXED/EXCLUDE policies provide conditional exposure;
+FOLLOW_PLAN explicitly stays unavailable until future performer/rules/plan context
+exists. No invented staff, current catalogue reconstruction, forecast percentage,
+financial policy change or client waiver. This delivery resolves the implementation
+gaps recorded below; CP-008 is DONE locally with verified report boundaries.
+
+## November 7, 2026 — §12 audit qualification, not a new policy decision
+
+The operational utilisation decision below remains unchanged, but it does not
+establish acceptance of literal §12 sold-session comparison. Existing valuation is
+aggregate purchase value, not per-holding liability or future commission exposure.
+`CP008_REPORT_AUDIT.md` records the remaining scope decisions and implementation
+conditions. No client acceptance or financial forecasting assumptions are invented;
+CP-008 remains OPEN. Supported POS and operational reporting tests remain valid.
+
 ## November 7, 2026 — CP-008 appointment attribution boundary
 
 The explicit appointment-to-till action reads authorized current booking/customer/

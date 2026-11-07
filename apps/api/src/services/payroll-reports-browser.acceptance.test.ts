@@ -635,7 +635,19 @@ test(
             await browser.evaluate(
               `[...${utilisation}.querySelector('tbody tr').cells].map(cell => cell.textContent)`,
             ),
-            [reporting.pkg.name, "1", "2", "1"],
+            [reporting.pkg.name, "1", "4", "2", "1"],
+          );
+          const liability = `[...document.querySelectorAll('table')].find(table => table.querySelector('caption')?.textContent === 'Per-holding package liability and exposure')`;
+          await browser.wait(
+            `${liability}?.innerText.includes(${JSON.stringify(reporting.holding.id)})`,
+          );
+          assert.equal(
+            await browser.evaluate(`${liability}.innerText.includes('SGD 25.0000')`),
+            true,
+          );
+          assert.equal(
+            await browser.evaluate(`${liability}.innerText.includes('Future performer')`),
+            true,
           );
           await fill("Package ID", "missing-evidence");
           await browser.wait(text("0 matching base lines"));

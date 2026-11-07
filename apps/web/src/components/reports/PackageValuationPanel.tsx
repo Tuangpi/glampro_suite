@@ -66,6 +66,11 @@ export default function PackageValuationPanel() {
               Package snapshot as of {formatDateTime(data.asOf)} ({timeZone}). Other report panels
               have their own snapshot times.
             </p>
+            <p className="text-sm text-ink-muted">
+              Aggregate purchase values only. Management can review the separate Package liability
+              by holding report for per-holding net consideration and conditional commission
+              exposure.
+            </p>
             {data.activation ? (
               <>
                 <details className="rounded-md border border-line p-3 text-sm text-ink-muted">

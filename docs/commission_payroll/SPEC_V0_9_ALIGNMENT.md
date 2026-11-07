@@ -1,5 +1,23 @@
 # Spec v0.9 alignment review
 
+## November 7, 2026 — audited report gaps delivered
+
+**CP-008 DONE locally after implementation, not a status-only correction.** New
+per-holding liability shows original residual net values and captured fixed/excluded
+conditional exposure; future plan-dependent awards remain unavailable without future
+performer context. Utilisation adds original sold sessions with explicit legacy gaps.
+`CP008_REPORT_AUDIT.md` records delivery/evidence and supersedes the OPEN finding below.
+Full verify and updated real HTTP/Chrome acceptance pass; no activation or release.
+
+## November 7, 2026 — five-report audit correction
+
+**CP-008 OPEN:** see `CP008_REPORT_AUDIT.md`. The local-completion claim in the
+earlier delivery addendum is superseded. The historical package-liability “Match”
+verdict was too broad: the aggregate purchase-value report does not expose
+per-holding liability or future redemption commission exposure. Utilisation retains
+its recorded operational scope but does not supply literal §12 sold-session counts.
+Existing cross-month/export/lineage and supported POS acceptance are not invalidated.
+
 ## November 7, 2026 — delivery addendum
 
 The November 6 review below is historical, not the current implementation inventory.

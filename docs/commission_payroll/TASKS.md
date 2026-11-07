@@ -4,7 +4,7 @@
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
 - **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **DONE for local acceptance** as of November 4, 2026: M1 frozen exports, M2 period report/drill-down, M3 customer holding history, M4 MTD/POS progress, M5 own-data staff self-service and mounted-Chrome browser acceptance (**10/10**, twice). Not release or earnings activation; the only disclosed remainder is a human opening the workbook in a spreadsheet application and printing the payslip PDF.
-- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN**, November 7 continuation: N4 read-only rules and effective dates are implemented; server-owned cash/session estimates and bounded SELF history are implemented. Cross-month/export/lineage reporting exists and has executed acceptance. (f2) still needs the broader POS/appointment attribution acceptance matrix; see `UI_REPORTING_CONTINUATION.md`. The November 6 review is historical, not a current missing-code inventory.
+- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-done-locally) — **DONE locally**, November 7 report delivery: per-holding remaining net and conditional commission exposure, original sold-session counts alongside packs, cross-month/export/lineage and supported POS acceptance. Full verify passes; updated PostgreSQL/HTTP 11/11 and mounted Chrome 17/17. Follow-plan future exposure remains explicitly unavailable without future performer/plan context. See `CP008_REPORT_AUDIT.md`; no release or activation.
 
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
@@ -1600,9 +1600,14 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
 - Coverage: NFR-01–NFR-07, SRS seed/migration provisions, all cross-feature
   acceptance and release gating. Historical user acceptance is not CP acceptance.
 
-## CP-008 — Spec v0.9 alignment (complete locally)
+## CP-008 — Spec v0.9 alignment (DONE locally)
 
-- Status: **DONE — local implementation and scoped acceptance, November 7, 2026.**
+- Status: **DONE locally — reporting gaps implemented and verified, November 7, 2026.**
+  The [five-report audit and delivery](CP008_REPORT_AUDIT.md) maps requirements to
+  implementation. Per-holding original residual net values and fixed/excluded exposure
+  are implemented; follow-plan future awards are explicitly unavailable until performer
+  and effective plan/rules are known. Original sold-session counts supplement packs;
+  legacy evidence gaps are unavailable, never reconstructed from current catalogue.
   Remaining N6/N7 appointment/default/preservation matrix is evidenced in
   [CP008_ACCEPTANCE.md](CP008_ACCEPTANCE.md). `npm run verify` passes; opt-in
   PostgreSQL/HTTP **10/10**, Chrome **17/17**. This is not release or earnings
@@ -1733,7 +1738,17 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       November 6 follow-up: mounted Chrome now verifies the Customer signed column
       with recorded/unsigned evidence and voids. Full source-aware estimates and their
       broader POS browser acceptance remain open.
-- [ ] IN PROGRESS — **(g) §12 reports.** November 6 continuation: Reports now mounts
+- [x] DONE locally — **(g) §12 reports.** Cross-month detail, full filtered XLSX and
+      recursive source lineage are implemented and tested. The new management-only
+      `/reports/package-liability` reports each holding's original remaining ordinal
+      net value, currency, expiry and fixed/excluded conditional commission exposure;
+      follow-plan forecasts are explicitly unavailable without future performer/plan
+      context. Utilisation includes original sold sessions, known subtotal and missing
+      evidence count alongside existing operational packs/redeemed/expired units.
+      Full verify passes; real PostgreSQL/HTTP 11/11 and mounted Chrome 17/17 verify
+      the updated report paths with unchanged payroll/session evidence and no activation.
+      See [five-report mapping and delivered boundaries](CP008_REPORT_AUDIT.md).
+      Historical November 6 continuation: Reports now mounts
       approved monthly commission-base detail with staff/type/date/customer/package
       filters and matching Excel export. Customer/package references require captured
       source evidence; no per-line award is invented from pooled plan commission.
@@ -1746,7 +1761,7 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       implemented reporting slice; My earnings now explicitly mounts recorded sessions
       despite its compact progress card. Synthetic historical session evidence is used
       for these read tests, not an end-to-end correction/void writer acceptance claim.
-      Remaining: cross-month detail, complete reversal
+      Historical remaining (superseded by the November 7 audit): cross-month detail, complete reversal
       source lineage, and agreed net sold/expiry-history semantics if required beyond
       the explicitly labelled operational counts.
 - [x] CLOSED — **(b) Policy fields: not required by client decision.** Every field is
@@ -1815,6 +1830,8 @@ This addendum supersedes the missing-code statements in the dated November 6 bul
       operational utilisation counts. Section 12 contains five reports, not twelve.
       Net-sales/expiry-event-ledger semantics are not claimed or silently added.
 
-CP-008 is complete locally after the final (f2) acceptance, not by waiver of that
-acceptance. See the latest executed evidence in `PROGRESS.md`; no deployment,
-earnings activation or approved-payroll change. CP-007 retains its release gates.
+Supported (f2) and (g) acceptance are complete locally after the report delivery
+described in `CP008_REPORT_AUDIT.md`, not by merely checking the old box. Unknown
+future plan awards and missing legacy purchase evidence are unavailable, not zero.
+No deployment, earnings activation or approved-payroll change. CP-007 retains its
+release gates.

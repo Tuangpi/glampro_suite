@@ -1,5 +1,74 @@
 # Commission & Payroll progress
 
+## November 7, 2026 — report implementation closes audit gaps
+
+- **CP-008 DONE locally.** This supersedes the audit-only OPEN entry below after
+  actual implementation, not by changing a checkbox alone. Added
+  `package-liability.ts` and management-only `/api/reports/package-liability` with
+  stored-role/company/tenant guards. Original payroll purchase economics and remaining
+  ordinals provide per-holding residual net values without valuation activation.
+  FIXED/EXCLUDE exposure follows captured policy; FOLLOW_PLAN remains explicitly
+  unavailable without future performer/effective-plan context, never a fabricated zero.
+- Added mounted management liability panel and sold-session utilisation columns.
+  Original grants come from immutable valuation snapshots or validated holding payroll
+  snapshots. Missing evidence retains a known subtotal and missing-line count; no
+  current catalogue reconstruction. Existing refund/expiry operational semantics stay
+  labelled, not replaced by an unrequested net-sales/expiry-event ledger.
+- Tests cover residual ordinals, transferred owner, missing/corrupt/overlapping evidence,
+  fixed/exclude/follow-plan states, original grants, role checks, empty/loading/error UI.
+  Updated real HTTP and Chrome cases verify actual report rows/columns with unchanged
+  payroll/source/session inventories and no earnings or valuation activation.
+- Initial unit fixture passed canonical output back into a strict capture-input schema;
+  corrected the fixture. Removed two unused test imports found by typecheck. Initial
+  HTTP no-write inventory comparison failed solely on unordered snapshot row order;
+  added deterministic `id` ordering without relaxing content assertions. Final run passes.
+- Executed full `VITEST_MAX_WORKERS=4 npm run verify` with explicit disposable URL,
+  test JWT, `NODE_ENV=test`, and `DOTENV_CONFIG_PATH=/dev/null`: **exit 0**;
+  API **1,298 passed / 276 gated skips / 0 failed**, web **1,268/1,268 across
+  136 files**, shared **337/337**. `/tmp/cp008-report-delivery-verify.log`.
+- Explicit `RUN_CP008_REPORTING_ACCEPTANCE=true` real HTTP/PostgreSQL **11/11**;
+  `RUN_CP006_BROWSER_ACCEPTANCE=true` mounted Chrome **17/17**, using
+  `CORS_ORIGINS=http://127.0.0.1:55175`; logs
+  `/tmp/cp008-report-delivery-{http,browser}.log`. Focused API **17/17**, web **26/26**.
+- API/web typecheck/lint and shared/API/web builds pass; web `built in 521ms`.
+  `/tmp/cp008-report-delivery-{quality,api-build,web-build}.log`. No new dependencies,
+  migration, production access, activation, approved-payroll change, commit or push.
+- Restarted only the previously documented disposable `/tmp/cp005-cp008-hbi8eB`
+  cluster on loopback 55485/UTC, verified its identity, then stopped it successfully.
+  Subsequent `pg_ctl status` exit 3 means no server running (expected). Data retained.
+  CP-007 release gates, Q2 and Q4 caveats remain separate.
+
+## November 7, 2026 — §12 five-report audit and corrected OPEN status
+
+- Compared the source DOCX §12, recorded decisions and report implementations/tests.
+  `CP008_REPORT_AUDIT.md` maps all five reports and orders the remaining work.
+  Previous local-completion statements below are superseded, not their test evidence.
+- Confirmed existing 24-month approved-only detail, full-filter XLSX, recursive
+  collection/refund/correction lineage and bounded SELF history. These are not new TODOs.
+- Found literal reporting differences: aggregate package purchase valuation lacks a
+  per-holding liability/exposure read model; operational utilisation counts sold packs,
+  not sold sessions. The existing operational decision remains unchanged. No invented
+  future performer/rate forecast, catalogue-based historical reconstruction, activation,
+  migration or client scope waiver. CP-008 `(g)` stays OPEN pending scope resolution.
+- Reconciled active task status, requirements, alignment, acceptance, decision and
+  continuation entry points. Historical notes remain dated evidence. Added visible
+  aggregate-only/no-future-exposure UI disclosure and regressions; strengthened
+  utilisation stored-role, missing actor, expiry predicate and empty-activity checks.
+- Executed from `apps/api`, with dotenv disabled, test-only JWT and unreachable
+  loopback database URL (mock-backed suites; no database access):
+  `node --import tsx --test src/services/package-utilisation.test.ts src/services/payroll-commission-detail.test.ts src/services/payroll-detail-lineage.test.ts src/services/payroll-own-sessions.test.ts src/services/payroll-progress.test.ts src/services/payroll-report.test.ts src/services/payroll-export-data.test.ts src/services/payroll-export-render.test.ts`.
+  **54 passed, 0 failed/skipped**; `/tmp/cp008-report-audit-api.log`.
+- Executed from repository root:
+  `npm run test --workspace @glampro_suite/web -- src/components/reports/CommissionReports.test.tsx src/pages/__tests__/Reports.test.tsx src/components/settings/PayrollReport.test.tsx src/components/payroll/PayrollProgress.test.tsx --maxWorkers=2`.
+  **42/42 across four files**, exit 0; `/tmp/cp008-report-audit-web.log`.
+- API/web workspace typechecks and lint each exit 0; changed files formatted.
+  Shared/API builds completed and web production build passed (`built in 549ms`);
+  `/tmp/cp008-report-audit-{api,web}-build.log`. Changed-file Prettier check and
+  `git diff --check` passed; final diff and untracked audit document reviewed.
+  No new real HTTP/PostgreSQL or mounted Chrome acceptance claimed: existing API
+  contracts and financial calculations are unchanged. Those must rerun for a future
+  implementation changing report contracts. Prior opt-in results remain historical.
+
 ## November 7, 2026 — CP-008 local completion and final POS matrix
 
 - Implemented explicit appointment → till action, authorized booking/customer/current

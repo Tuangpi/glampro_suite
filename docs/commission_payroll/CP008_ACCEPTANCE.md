@@ -1,5 +1,22 @@
 # CP-008 local acceptance — November 7, 2026
 
+## Final report delivery acceptance
+
+**CP-008 DONE locally after filling the audit gaps below.** Per-holding liability
+and original sold-session utilisation are implemented and now covered by updated
+real PostgreSQL/HTTP 11/11 and mounted Chrome 17/17 acceptance. Full verify passes.
+Captured fixed/excluded commission exposure is calculated; future follow-plan awards
+remain explicitly unavailable without future performer/plan context, not zero.
+See `CP008_REPORT_AUDIT.md` and the latest progress entry. No activation or release.
+
+## Report-audit qualification
+
+This matrix accepts the supported POS/operational reporting scope, not literal
+completion of all §12 reports. **CP-008 remains OPEN** for the liability/utilisation
+scope differences in `CP008_REPORT_AUDIT.md`. The supported tests below remain
+evidence; they do not establish a per-holding liability/exposure report or sold-session
+utilisation. See the latest progress entry for this audit's executed checks.
+
 ## Scope
 
 Spec v0.9 alignment only: read-only rules, conditional previews, attribution capture

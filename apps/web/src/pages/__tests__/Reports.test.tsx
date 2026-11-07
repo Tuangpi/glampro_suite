@@ -25,6 +25,9 @@ vi.mock("@/components/reports/CommissionDetailPanel", () => ({
 vi.mock("@/components/reports/PackageUtilisationPanel", () => ({
   default: () => <p>Package utilisation panel</p>,
 }));
+vi.mock("@/components/reports/PackageLiabilityPanel", () => ({
+  default: () => <p>Package liability panel</p>,
+}));
 vi.mock("@/components/reports/PackageValuationActivation", () => ({
   default: () => <p>Activation controls</p>,
 }));
@@ -254,6 +257,9 @@ describe("Reports", () => {
       within(panel.getByRole("region", { name: "Expired unused packages" })).getByText("SGD 20.00"),
     ).toBeInTheDocument();
     expect(panel.getByText(/Unknown purchase value is not zero/)).toBeInTheDocument();
+    expect(panel.getByText(/Aggregate purchase values only/)).toHaveTextContent(
+      "separate Package liability by holding report",
+    );
     expect(panel.getByText("7 across 3 holdings")).toBeInTheDocument();
     expect(panel.getByText("4 across 1 holdings")).toBeInTheDocument();
     expect(panel.getByText("SGD 150.00")).toBeInTheDocument();
@@ -269,6 +275,7 @@ describe("Reports", () => {
     render(<Reports />);
     fireEvent.click(screen.getByRole("tab", { name: "Customer balances" }));
     expect(screen.getByText(/Package valuation is not activated/)).toBeInTheDocument();
+    expect(screen.getByText(/Aggregate purchase values only/)).toBeVisible();
     expect(screen.queryByText("SGD 100.01")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("region", { name: "Unpaid package purchase disclosure" }),
