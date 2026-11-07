@@ -3,6 +3,7 @@
  * Every write uses the shared editor or server-authorized appointment PATCH.
  */
 import { useState } from "react";
+import { Link } from "react-router";
 
 import type { AppointmentDetail, AppointmentSummary } from "@glampro_suite/shared";
 
@@ -303,6 +304,14 @@ export default function Appointments() {
       align: "right",
       cell: (row) => (
         <div className="flex justify-end gap-1.5">
+          {!isReadOnly && !["CANCELLED", "NO_SHOW"].includes(row.status) ? (
+            <Link
+              className="content-center text-sm font-bold text-purple"
+              to={`/sale?appointment=${encodeURIComponent(row.id)}`}
+            >
+              Send to till
+            </Link>
+          ) : null}
           {OPEN_APPOINTMENT_STATUSES.includes(row.status) ? (
             <>
               <Button

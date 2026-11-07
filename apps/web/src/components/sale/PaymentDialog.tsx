@@ -62,7 +62,7 @@ import { useVoucherPreview } from "@/hooks/useSale";
 import { getErrorMessage } from "@/lib/api";
 import { newIdempotencyKey } from "@/lib/idempotency";
 import { centsToPrice, priceToCents } from "@/lib/money";
-import { packageCoverage, type PaymentLine } from "@/lib/package-coverage";
+import { packageCoverage, coveredPerformers, type PaymentLine } from "@/lib/package-coverage";
 import { cn } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import RedemptionCommissionPreview from "./RedemptionCommissionPreview";
@@ -76,6 +76,7 @@ interface TenderDraft {
   /** The package or credit a redemption tender spends; unused by the money tenders. */
   holdingId?: string;
   performers?: CommissionShares;
+  performersEdited?: boolean;
 }
 
 export interface PaymentDialogProps {
@@ -178,6 +179,7 @@ export default function PaymentDialog({
    */
   const allocated = lines.map(() => 0);
   const sessionQuantities = new Map<number, number>();
+  const sessionPerformers = new Map<number, CommissionShares | undefined>();
   function amountFor(tender: TenderDraft, alreadyPaid: number): number {
     if (!isRedemptionPaymentMethod(tender.method)) return priceToCents(tender.amount);
 
@@ -200,6 +202,12 @@ export default function PaymentDialog({
             : (line.totalCents ?? line.unitPriceCents * line.quantity),
       })),
       allocated,
+    );
+    sessionPerformers.set(
+      tender.id,
+      tender.performersEdited
+        ? tender.performers
+        : coveredPerformers(lines, coverage.units, allocated),
     );
     allocated.splice(0, allocated.length, ...coverage.units);
     sessionQuantities.set(tender.id, coverage.sessions);
@@ -309,6 +317,7 @@ export default function PaymentDialog({
       amount: "",
       holdingId: first?.id,
       performers: undefined,
+      performersEdited: false,
       unpaidSessionOverride: undefined,
     });
   }
@@ -396,8 +405,8 @@ export default function PaymentDialog({
       // the amount this sheet derived, which is exactly what the server recomputes.
       amount: Number(centsToPrice(tenderCents[index] ?? 0)),
       ...(isRedemptionPaymentMethod(tender.method) ? { holdingId: tender.holdingId } : {}),
-      ...(tender.method === "PACKAGE" && tender.performers
-        ? { performers: tender.performers }
+      ...(tender.method === "PACKAGE" && sessionPerformers.get(tender.id)
+        ? { performers: sessionPerformers.get(tender.id) }
         : {}),
       ...(tender.method === "PACKAGE" && tender.unpaidSessionOverride
         ? { unpaidSessionOverride: tender.unpaidSessionOverride }
@@ -634,10 +643,19 @@ export default function PaymentDialog({
                       enabled.
                     </p>
                     <CommissionAttributionEditor
-                      value={tender.performers ? { performers: tender.performers } : undefined}
+                      value={
+                        sessionPerformers.get(tender.id)
+                          ? { performers: sessionPerformers.get(tender.id) }
+                          : undefined
+                      }
                       performers={staff}
                       disabled={isPending}
-                      onChange={(value) => setTender(tender.id, { performers: value?.performers })}
+                      onChange={(value) =>
+                        setTender(tender.id, {
+                          performers: value?.performers,
+                          performersEdited: true,
+                        })
+                      }
                     />
                     <RedemptionCommissionPreview
                       holdingId={tender.holdingId}
@@ -647,7 +665,7 @@ export default function PaymentDialog({
                           ? 0
                           : (sessionQuantities.get(tender.id) ?? 0)
                       }
-                      shares={tender.performers}
+                      shares={sessionPerformers.get(tender.id)}
                       staff={staff}
                     />
                     <label className="flex gap-2 text-sm">

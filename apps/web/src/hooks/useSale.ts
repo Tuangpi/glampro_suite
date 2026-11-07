@@ -218,8 +218,18 @@ export function setCartLineStaff(
 ): CartLine[] {
   return lines.flatMap((line) => {
     if (cartLineKey(line) !== key) return [line];
-    if (!staffId) return [{ ...line, staffId: undefined }];
-    const next: CartLine = { ...line, staffId };
+    const next: CartLine = {
+      ...line,
+      staffId,
+      attribution:
+        staffId || line.attribution?.sellers
+          ? {
+              ...line.attribution,
+              performers: staffId ? [{ staffId, share: 10000 }] : undefined,
+            }
+          : undefined,
+    };
+    if (!staffId) return [next];
     // Re-keying can collide with an existing line: crediting one of two
     // identical shampoo lines to the other's stylist leaves one line of two.
     const twin = lines.find((other) => other !== line && cartLineKey(other) === cartLineKey(next));
@@ -415,7 +425,22 @@ export function useSaleCart(): SaleCart {
     },
     setAttribution: (key, attribution) => {
       update((lines) =>
-        lines.map((line) => (cartLineKey(line) === key ? { ...line, attribution } : line)),
+        lines.map((line) =>
+          cartLineKey(line) === key
+            ? {
+                ...line,
+                attribution,
+                ...(line.itemType === "SERVICE"
+                  ? {
+                      staffId:
+                        attribution?.performers?.length === 1
+                          ? attribution.performers[0]!.staffId
+                          : undefined,
+                    }
+                  : {}),
+              }
+            : line,
+        ),
       );
     },
     setDiscount: (key, percent) => {

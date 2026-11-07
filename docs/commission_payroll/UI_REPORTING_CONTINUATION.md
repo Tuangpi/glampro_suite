@@ -31,10 +31,14 @@
 - The five §12 reports are present within their documented scope. Utilisation still
   means operational packs/redeemed sessions/current expired-unused sessions, not
   net sales or an expiry-movement ledger.
-- **CP-008 remains OPEN** until the remaining N6/N7 POS acceptance matrix and
-  appointment-therapist default/preservation path are evidenced. The cart preview is
-  hypothetical money-paid; credit-funded awards and incentives are not fabricated.
-  These limitations are not silently waived by the basic mounted checks.
+- **CP-008 is complete locally (November 7)** after the supported N6/N7 matrix and
+  appointment-therapist default/preservation path passed. See `CP008_ACCEPTANCE.md`.
+  Explicit booking load preserves each service's assigned therapist, refuses an
+  occupied draft and never substitutes the cashier. Covered package tenders inherit
+  only an unambiguous split. Chrome verifies hold/reload/cash completion and real
+  package-redemption evidence with no approved-payroll or versioned earnings change.
+  The cart preview remains hypothetical money-paid; credit-funded awards and
+  incentives are not fabricated. CP-007 release gates remain separate.
 
 Executed totals and local cleanup are recorded in the November 7 progress entry.
 Earlier November 6 implementation/verification notes below remain historical evidence.

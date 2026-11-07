@@ -1,5 +1,21 @@
 # Glampro Suite — progress
 
+## November 7, 2026 — CP-008 complete locally
+
+- Closed the remaining supported N6/N7 matrix: explicit appointment-to-till handoff,
+  per-service therapist defaults, safe empty-cart import, consistent picker/split
+  edits and covered-line package tender defaults. Never infer performers from cashier.
+- Browser acceptance verifies real hold/pickup/reload/cancel/cash completion and real
+  package redemption with immutable performer evidence. Approved payroll and versioned
+  earnings remain unchanged. No activation, deployment, migration, seed, commit or push.
+- Executed `VITEST_MAX_WORKERS=4 npm run verify`: web **1,265/1,265 across 135 files**,
+  shared **337/337**, API **1,291 passed / 276 gated skips / 0 failed**, exit 0.
+  Real PostgreSQL/HTTP **10/10**, final sequential Chrome **17/17**. Workspace
+  formatting/lint/typecheck and shared/API/web builds passed.
+- Final scope/matrix: `docs/commission_payroll/CP008_ACCEPTANCE.md`; detailed logs,
+  initial failures and disposable PostgreSQL cleanup: commission/payroll progress.
+  CP-007 release gates and documented Q2/Q4 caveats remain separate.
+
 ## November 7, 2026 — CP-008 read-only package rules, estimates and report acceptance
 
 - Package drawer now shows current/scheduled company percentage rules with effective

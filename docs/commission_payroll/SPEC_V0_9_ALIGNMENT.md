@@ -6,8 +6,9 @@ The November 6 review below is historical, not the current implementation invent
 §12 contains **five reports**, not twelve. Cross-month approved commission detail
 (up to 24 months), full-filter Excel exports, recursive reversal/refund/correction
 reference resolution, SELF session history and distinct operational utilisation counts
-are implemented. Current verification and remaining screen acceptance are tracked in
-`TASKS.md`, `PROGRESS.md` and `UI_REPORTING_CONTINUATION.md`.
+are implemented. Supported screen acceptance is complete locally; the final N6/N7
+matrix is in `CP008_ACCEPTANCE.md`, with executed verification in `PROGRESS.md`.
+This closes CP-008, not the separate CP-007 release/activation gates.
 
 N4 now reads current/scheduled company package percentage rules and effective dates
 from the existing Commission rules API and links to its sole audited writer. Cash-line

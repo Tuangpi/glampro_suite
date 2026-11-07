@@ -1,5 +1,49 @@
 # Commission & Payroll progress
 
+## November 7, 2026 — CP-008 local completion and final POS matrix
+
+- Implemented explicit appointment → till action, authorized booking/customer/current
+  catalogue reads, empty-cart guard, cancelled/no-show/inactive-service refusal,
+  selected-outlet mismatch and stale-response protection. Per-service resolved
+  therapists are distinct; null remains unknown. Display prices retain both member
+  and nonmember values. No automatic booking completion or billing deduplication.
+- Performer picker and attribution editor now keep legacy staff identity consistent
+  with explicit performer shares. Quantity, reload and held-cart paths preserve
+  edited evidence. Package tender defaults derive only from actual covered units
+  with identical splits; mixed service sets remain unknown. Explicit tender edits/
+  clear survive rerender/refused payment; repeated holdings do not double-preview
+  original ordinals. No performer derives from the till operator.
+- Acceptance matrix: [CP008_ACCEPTANCE.md](CP008_ACCEPTANCE.md). New unit/component
+  cases plus real Chrome hold/pickup/reload/cancel/cash completion and package
+  redemption prove immutable therapist evidence. Browser cases assert unchanged
+  approved closes and versioned earnings. Synthetic booking/read fixtures are not
+  appointment-writer acceptance; cash/package transactions use real sale writers.
+- `VITEST_MAX_WORKERS=4 npm run verify`, explicit disposable URL and
+  `DOTENV_CONFIG_PATH=/dev/null`: **exit 0**, API **1,291 passed / 276 skipped /
+  0 failed**, web **1,265/1,265 across 135 files**, shared **337/337**.
+  Log: `/tmp/cp008-completion-verify.log`. Default skips remain explicitly gated.
+- Workspace formatting/lint/typecheck/build: all exit 0 in
+  `/tmp/cp008-pos-quality.log`. Real PostgreSQL/HTTP **10/10**, exit 0 in
+  `/tmp/cp008-pos-browser.log`. Final sequential Chrome **17/17**, exit 0 in
+  `/tmp/cp008-pos-browser-final.log`, including both new actual POS paths.
+- Earlier failures were investigated, not hidden: new test selector/timing fixes,
+  preserved first equivalent split ordering, and company-wide mode while the outlet
+  picker is intentionally parked. A browser run overlapping build/client generation
+  failed baseline checks and was stopped (`cp008-pos-browser-session.log`); the full
+  sequential final run passed. No assertion or timeout was weakened. First database
+  restart omitted runtime port options and failed to bind; correct explicit loopback
+  55485/UTC options restarted only the documented disposable cluster.
+- Prior-context logs independently inspected: `cp008-final-{web,hygiene,quality,focused}.log`
+  contain passing totals/exit markers; `cp008-cleanup.log` confirms the earlier stop.
+- **CP-008 DONE locally**, not release/deployment/earnings activation. No production
+  access, approved-payroll mutation, new migration, seed, commit or push. Q2/Q4 caveats
+  and CP-007 release gates remain.
+- Stopped only `/tmp/cp005-cp008-hbi8eB`; `pg_ctl stop` exit 0 and subsequent
+  `pg_ctl status` exit 3 (`no server running`, expected). Data/logs retained;
+  `/tmp/cp008-completion-cleanup.log`. Final formatting and diff checks exit 0;
+  status/diff reviewed, no generated/schema/dependency changes.
+  Final check log: `/tmp/cp008-completion-final-checks.log`.
+
 ## November 7, 2026 — CP-008 screen/report delivery continuation
 
 - N4 uses the approved read-only rules surface: current/scheduled company package

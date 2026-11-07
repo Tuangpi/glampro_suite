@@ -1600,9 +1600,13 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
 - Coverage: NFR-01–NFR-07, SRS seed/migration provisions, all cross-feature
   acceptance and release gating. Historical user acceptance is not CP acceptance.
 
-## CP-008 — Spec v0.9 alignment (open)
+## CP-008 — Spec v0.9 alignment (complete locally)
 
-- Status: **OPEN.** Source: [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md)
+- Status: **DONE — local implementation and scoped acceptance, November 7, 2026.**
+  Remaining N6/N7 appointment/default/preservation matrix is evidenced in
+  [CP008_ACCEPTANCE.md](CP008_ACCEPTANCE.md). `npm run verify` passes; opt-in
+  PostgreSQL/HTTP **10/10**, Chrome **17/17**. This is not release or earnings
+  activation. Source: [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md)
   (November 6, 2026). That review found the money aligned and the configuration/UI
   surface incomplete. Items are ordered as the review recommends: cheap unblocked
   fixes first, money-changing policy work last, because it waits on the client's §7
@@ -1671,7 +1675,9 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
       `payroll-close.http.test.ts` (owner JSON carries `payrollSalesPct`, manager JSON does
       not), `PayrollClose.test.tsx`, `PayrollReport.test.tsx`, `tsc --noEmit` for shared,
       api and web, eslint and prettier.
-- [ ] IN PROGRESS — **(f2) Remaining N4–N8, N10, N14 screen items.** N14's value-package
+- [x] DONE locally November 7 — **(f2) N4–N8, N10, N14 screen items.**
+      The dated inventory below is historical; the final matrix and executable
+      evidence are in [CP008_ACCEPTANCE.md](CP008_ACCEPTANCE.md). N14's value-package
       labels are DONE (November 6, 2026): the rules grid says "Value package
       sales/spending" instead of "stored-credit", and the statement drill-down prints
       `Value package spend (VP_SPEND)` — name plus stored code, never the name alone;
@@ -1795,16 +1801,20 @@ This addendum supersedes the missing-code statements in the dated November 6 bul
       stored plan/category/outlet context, SELF rows and explicit unavailable states.
 - [x] N7 explicit package-tender preview: original purchase snapshot, funded next
       ordinals/residuals, session quantity and fixed awards; no reserve/post/write.
-- [ ] (f2) acceptance still open: full supported POS combinations, especially
-      appointment-therapist defaults and attribution preservation through that path.
-      Never substitute the till operator for a missing performer. Conditional cash
-      estimates are not exact credit-funded or incentive awards.
+- [x] (f2) supported POS matrix accepted locally: explicit appointment handoff,
+      per-service therapist defaults, unknown/mixed performers, split edits/clear,
+      local reload, hold/pickup, cancel/reopen, failed-payment retry, original-session
+      tender defaults, service-set quantity, repeated-holding and prepaid boundaries.
+      Chrome verifies real cash completion and package-redemption evidence; approved
+      payroll and versioned earnings remain unchanged. Never substitute the till
+      operator for a missing performer. Conditional cash estimates are not exact
+      credit-funded or incentive awards. See [matrix](CP008_ACCEPTANCE.md).
 - [x] (g) implemented reporting acceptance: up-to-24-month approved-only ranges,
       deterministic pagination/full filtered XLSX, recursive source roots and isolation,
       SELF latest evidence/voids, bounded large-month session reads and distinct
       operational utilisation counts. Section 12 contains five reports, not twelve.
       Net-sales/expiry-event-ledger semantics are not claimed or silently added.
 
-CP-008 is not closed by this addendum: the remaining (f2) acceptance is not a product
-decision waived by the read-only N4 approval. See the latest executed evidence in
-`PROGRESS.md`; no deployment, earnings activation or approved-payroll change.
+CP-008 is complete locally after the final (f2) acceptance, not by waiver of that
+acceptance. See the latest executed evidence in `PROGRESS.md`; no deployment,
+earnings activation or approved-payroll change. CP-007 retains its release gates.

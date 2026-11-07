@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SaleItem } from "@glampro_suite/shared";
-import { addCartLine } from "./useSale";
+import { addCartLine, cartLineKey, setCartLineStaff } from "./useSale";
 
 const item = {
   id: "service",
@@ -37,5 +37,31 @@ describe("new cart seller defaults", () => {
 
   it("does not invent a seller when no till identity is supplied", () => {
     expect(addCartLine([], item, undefined, false).lines[0]?.attribution).toBeUndefined();
+  });
+
+  it("replaces or clears appointment performer evidence when the legacy picker is changed", () => {
+    const original = {
+      ...addCartLine([], item, "booked", false, "cashier").lines[0]!,
+      attribution: {
+        sellers: [{ staffId: "cashier", share: 10000 }],
+        performers: [{ staffId: "booked", share: 10000 }],
+      },
+    };
+    const edited = setCartLineStaff([original], cartLineKey(original), "replacement")[0]!;
+    expect(edited.attribution).toEqual({
+      sellers: original.attribution.sellers,
+      performers: [{ staffId: "replacement", share: 10000 }],
+    });
+    const cleared = setCartLineStaff([edited], cartLineKey(edited), undefined)[0]!;
+    expect(cleared.staffId).toBeUndefined();
+    expect(cleared.attribution?.performers).toBeUndefined();
+    expect(cleared.attribution?.sellers).toEqual(original.attribution.sellers);
+    expect(
+      setCartLineStaff(
+        [{ ...original, attribution: undefined }],
+        cartLineKey({ ...original, attribution: undefined }),
+        undefined,
+      )[0]?.attribution,
+    ).toBeUndefined();
   });
 });

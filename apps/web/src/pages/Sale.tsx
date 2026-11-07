@@ -28,6 +28,7 @@
  *    it would only invite a second sale onto the same receipt.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router";
 
 import {
   MAX_SALE_LINES,
@@ -87,6 +88,9 @@ import {
   useVoidSale,
 } from "@/hooks/useSale";
 import { get, getErrorMessage } from "@/lib/api";
+import { loadAppointmentCart } from "@/lib/appointment-sale";
+import { getPosIdentity } from "@/lib/pos-identity";
+import { getOutletId } from "@/lib/outlet-storage";
 import { cartTotalCents, priceToCents } from "@/lib/money";
 import {
   readSaleDraft,
@@ -113,6 +117,9 @@ const GRANTING_KINDS: ReadonlySet<SaleItemKind> = new Set<SaleItemKind>([
 ]);
 
 export default function Sale() {
+  const [params, setParams] = useSearchParams();
+  const appointmentId = params.get("appointment");
+  const [appointmentError, setAppointmentError] = useState<string | null>(null);
   const { isReadOnly, tenant, user } = useAuth();
   const draftIdentity = tenant && user ? saleDraftIdentity(tenant.id, user.id) : null;
 
@@ -163,7 +170,7 @@ export default function Sale() {
     () => () => {
       pickupVersion.current += 1;
     },
-    [draftIdentity],
+    [draftIdentity, appointmentId],
   );
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidError, setVoidError] = useState<string | null>(null);
@@ -199,6 +206,38 @@ export default function Sale() {
   const voidSale = useVoidSale();
   const refundSale = useRefundSale();
   const cartLocked = isReadOnly || holdSale.isPending || busyHoldId !== null;
+
+  async function importAppointment() {
+    if (!appointmentId || cartLocked || holdAction.current || checkoutOpen || receipt) return;
+    if (cart.lines.length || customer || heldSaleId) return;
+    holdAction.current = true;
+    setBusyHoldId(appointmentId);
+    setAppointmentError(null);
+    const version = ++pickupVersion.current;
+    const outletId = getOutletId();
+    const till = getPosIdentity();
+    const sellerId = till && till.expiresAt > Date.now() ? till.staffId : user?.id;
+    try {
+      const draft = await loadAppointmentCart(appointmentId, sellerId);
+      if (version !== pickupVersion.current || outletId !== getOutletId()) return;
+      // With the outlet picker parked, the established till is company-wide.
+      // Do not silently select a branch; only reject an explicit conflicting scope.
+      if (outletId && draft.outletId && draft.outletId !== outletId)
+        throw new Error("Select the appointment's outlet before loading it at the till.");
+      cart.setLines(draft.lines);
+      setCustomer(draft.customer);
+      setSaleDraftCustomer(draftIdentity, draft.customer);
+      setRedeem(null);
+      const next = new URLSearchParams(params);
+      next.delete("appointment");
+      setParams(next, { replace: true });
+    } catch (error) {
+      if (version === pickupVersion.current) setAppointmentError(getErrorMessage(error));
+    } finally {
+      holdAction.current = false;
+      setBusyHoldId(null);
+    }
+  }
 
   // A lookup belongs to the draft it started from, not a replacement or checkout.
   useEffect(
@@ -704,6 +743,32 @@ export default function Sale() {
         </div>
       )}
       {/* After a sale the till is gone until "New sale" — see the module comment. */}
+      {appointmentId && !receipt ? (
+        <section
+          aria-label="Appointment handoff"
+          className="space-y-2 rounded-md border border-line p-3"
+        >
+          <p>
+            Load the booking's customer, services and assigned therapists at current catalogue
+            prices. Review before payment; this does not complete the appointment or post earnings.
+          </p>
+          {cart.lines.length || customer || heldSaleId ? (
+            <p>
+              Finish or clear the open cart and customer before loading this appointment. Existing
+              attribution will not be overwritten.
+            </p>
+          ) : null}
+          {appointmentError ? <p role="alert">{appointmentError}</p> : null}
+          <Button
+            disabled={
+              cartLocked || checkoutOpen || !!cart.lines.length || !!customer || !!heldSaleId
+            }
+            onClick={() => void importAppointment()}
+          >
+            Load appointment into empty cart
+          </Button>
+        </section>
+      ) : null}
       {receipt ? (
         <>
           <ReceiptView
@@ -1041,6 +1106,8 @@ export default function Sale() {
             itemType: line.itemType,
             itemId: line.itemId,
             quantity: line.quantity,
+            staffId: line.staffId,
+            attribution: line.attribution,
             unitPriceCents: priceToCents(lineUnitPrice(line, isMember)),
           }))}
           customerId={customer?.id ?? null}

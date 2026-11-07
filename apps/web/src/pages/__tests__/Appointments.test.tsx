@@ -1,8 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render as renderView, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { instantFromSalonDate, toSalonDate } from "@/lib/salon-time";
+function render(view: React.ReactNode) {
+  return renderView(<MemoryRouter>{view}</MemoryRouter>);
+}
 const bookingZone = vi.hoisted(() => ({ value: "Asia/Singapore" }));
 vi.mock("@/hooks/useBookingFormatting", async () => {
   const { createSalonFormatters } = await import("@/lib/utils");
@@ -157,6 +161,22 @@ beforeEach(() => {
 });
 
 describe("Appointments", () => {
+  it("offers an explicit till handoff only for usable bookings and writable salons", () => {
+    const view = render(<Appointments />);
+    expect(screen.getByRole("link", { name: "Send to till" })).toHaveAttribute(
+      "href",
+      "/sale?appointment=appointment-1",
+    );
+    view.unmount();
+    useAppointmentList.mockReturnValue(listPage([{ ...ROW, status: "CANCELLED" }]));
+    const cancelled = render(<Appointments />);
+    expect(screen.queryByRole("link", { name: "Send to till" })).not.toBeInTheDocument();
+    cancelled.unmount();
+    readOnly.value = true;
+    useAppointmentList.mockReturnValue(listPage([ROW]));
+    render(<Appointments />);
+    expect(screen.queryByRole("link", { name: "Send to till" })).not.toBeInTheDocument();
+  });
   afterEach(() => {
     bookingZone.value = "Asia/Singapore";
     vi.useRealTimers();

@@ -1,5 +1,15 @@
 # Commission & Payroll requirements and acceptance
 
+## November 7, 2026 — CP-008 local acceptance
+
+CP-008 spec-alignment implementation and supported screen/report matrix are complete
+locally; see [CP008_ACCEPTANCE.md](CP008_ACCEPTANCE.md) and the latest progress entry.
+Appointment-to-till defaults preserve booked therapists, not till operators; actual
+cash completion and package redemption are browser-verified without earnings
+activation or approved-payroll changes. Conditional estimates retain unavailable
+states and do not promise exact credit-funded/incentive awards. CP-007 release gates,
+the separately recorded Q4 auditor caveat and Q2 policy caveat are not waived.
+
 ## Review basis
 
 October 27, 2026: inspected text extracted from the top-level SRS v1.2 and developer

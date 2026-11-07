@@ -16,6 +16,7 @@ import { Browser } from "../test-support/chrome-browser.js";
 import { payrollCloseFixture } from "../test-support/payroll-close-fixture.js";
 import { payrollReportingFixture } from "../test-support/payroll-reporting-fixture.js";
 import { createSale } from "./sale.service.js";
+import { redemptionCommissionEvidenceSchema } from "./redemption-commission-evidence.js";
 
 /**
  * CP-006 browser acceptance: the reporting surfaces as a person actually reaches them.
@@ -712,6 +713,312 @@ test(
         // The purchase itself is listed, priced from the source sale rather than recomputed.
         await browser.wait(text("Browser 545 for 600"));
       });
+
+      await t.test(
+        "CP-008 appointment handoff preserves the therapist through hold, reload, cancel and real cash payment",
+        async () => {
+          const seeded = await f.scope(async () => {
+            const module = await prisma.module.upsert({
+              where: { code: "appointments" },
+              update: {},
+              create: {
+                code: "appointments",
+                name: "Appointments",
+                category: "Core",
+                isCore: true,
+              },
+            });
+            await prisma.tenantModule.createMany({
+              data: [{ tenantId: f.tenantId, moduleId: module.id }],
+              skipDuplicates: true,
+            });
+            const service = await prisma.service.create({
+              data: {
+                tenantId: f.tenantId,
+                name: "CP008 booked treatment",
+                nonmemberPrice: "25",
+                memberPrice: "20",
+                durationMinutes: 30,
+              },
+            });
+            const startsAt = new Date(`${currentPeriod}-07T08:00:00Z`);
+            const endsAt = new Date(startsAt.getTime() + 30 * 60000);
+            // Synthetic booking read fixture; the browser uses the real hold/payment writers.
+            const booking = await prisma.appointment.create({
+              data: {
+                tenantId: f.tenantId,
+                outletId: reporting.outlet.id,
+                customerId: reporting.customer.id,
+                serviceId: service.id,
+                staffId: f.staffId,
+                startsAt,
+                endsAt,
+                status: "COMPLETED",
+                durationMinutes: 30,
+                lines: {
+                  create: {
+                    tenantId: f.tenantId,
+                    serviceId: service.id,
+                    staffId: f.staffId,
+                    position: 0,
+                    startsAt,
+                    endsAt,
+                    durationMinutes: 30,
+                  },
+                },
+              },
+            });
+            return {
+              booking,
+              frozen: JSON.stringify(
+                await prisma.payrollClose.findMany({
+                  where: { status: "APPROVED" },
+                  orderBy: { id: "asc" },
+                }),
+              ),
+              posted: await prisma.employeeCommission.count({ where: { ledgerVersion: 1 } }),
+            };
+          });
+          await navigate(
+            f.ownerId,
+            "SUPER_ADMIN",
+            `/sale?appointment=${seeded.booking.id}`,
+            text("Load appointment into empty cart"),
+            reporting.outlet.id,
+          );
+          await click("Load appointment into empty cart");
+          try {
+            await browser.wait(
+              `document.querySelector('[aria-label="Performed by"]')?.innerText.includes('Close Staff')`,
+            );
+          } catch (error) {
+            console.error("CP008 handoff page:", await browser.evaluate("document.body.innerText"));
+            throw error;
+          }
+          assert.equal(
+            await browser.evaluate(
+              `document.querySelector('[aria-label="Sold by"]').innerText.includes('Close Owner')`,
+            ),
+            true,
+          );
+          await click("Hold cart");
+          await browser.wait(text("Cart held"));
+          const held = await f.scope(() =>
+            prisma.sale.findFirstOrThrow({
+              where: { status: "HELD", customerId: reporting.customer.id },
+              orderBy: { soldAt: "desc" },
+            }),
+          );
+          await browser.evaluate(
+            `[...document.querySelectorAll('button')].find(b=>b.textContent.trim().startsWith('Held carts')).click()`,
+          );
+          await click("Pick up");
+          await browser.wait(
+            `document.querySelector('[aria-label="Performed by"]')?.innerText.includes('Close Staff')`,
+          );
+          // Remove bootstrap injection so a real reload tests durable draft persistence.
+          if (scriptId)
+            await browser.send("Page.removeScriptToEvaluateOnNewDocument", {
+              identifier: scriptId,
+            });
+          scriptId = undefined;
+          await browser.send("Page.reload", {});
+          await browser.wait(
+            `document.querySelector('[aria-label="Performed by"]')?.innerText.includes('Close Staff')`,
+          );
+          await click("Take payment");
+          await browser.wait(`document.querySelector('[role="dialog"]')`);
+          await click("Cancel");
+          await browser.wait(`!document.querySelector('[role="dialog"]')`);
+          await click("Take payment");
+          await browser.wait(`document.querySelector('[role="dialog"]')`);
+          await browser.evaluate(
+            `[...document.querySelectorAll('[role="dialog"] button')].find(b=>b.textContent.trim()==='Take payment').click()`,
+          );
+          await browser.wait(text("CP008 booked treatment"));
+          await browser.wait(
+            `Boolean(${button("New sale")}) && !document.querySelector('[role="dialog"]')`,
+          );
+          await f.scope(async () => {
+            const completed = await prisma.sale.findUniqueOrThrow({
+              where: { id: held.id },
+              include: { lines: true },
+            });
+            assert.equal(completed.status, "COMPLETED");
+            assert.equal(completed.lines[0]!.staffId, f.staffId);
+            assert.deepEqual(completed.lines[0]!.attribution, {
+              sellers: [{ staffId: f.ownerId, share: 10000 }],
+              performers: [{ staffId: f.staffId, share: 10000 }],
+            });
+            assert.equal(
+              JSON.stringify(
+                await prisma.payrollClose.findMany({
+                  where: { status: "APPROVED" },
+                  orderBy: { id: "asc" },
+                }),
+              ),
+              seeded.frozen,
+            );
+            assert.equal(
+              await prisma.employeeCommission.count({ where: { ledgerVersion: 1 } }),
+              seeded.posted,
+            );
+          });
+        },
+      );
+      await t.test(
+        "CP-008 booked therapist reaches the real package tender and immutable session evidence without earnings activation",
+        async () => {
+          const seeded = await f.scope(async () => {
+            const service = await prisma.service.create({
+              data: {
+                tenantId: f.tenantId,
+                name: "CP008 session treatment",
+                nonmemberPrice: "30",
+                memberPrice: "30",
+                durationMinutes: 30,
+              },
+            });
+            const pkg = await prisma.package.create({
+              data: {
+                tenantId: f.tenantId,
+                name: "CP008 funded sessions",
+                sessionCount: 2,
+                memberPrice: "40",
+                nonmemberPrice: "40",
+                commissionSettings: {
+                  sale: { mode: "FOLLOW_PLAN" },
+                  redemption: { mode: "FOLLOW_PLAN" },
+                  minimumDepositPct: "0",
+                },
+                services: { create: { tenantId: f.tenantId, serviceId: service.id } },
+              },
+            });
+            const purchase = await createSale({
+              customerId: reporting.customer.id,
+              lines: [
+                {
+                  itemType: "PACKAGE",
+                  itemId: pkg.id,
+                  quantity: 1,
+                  attribution: { sellers: [{ staffId: f.ownerId, share: 10000 }] },
+                },
+              ],
+              payments: [{ method: "CASH", amount: 40 }],
+              collection: {
+                currency: "SGD",
+                allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "4000" }],
+              },
+            });
+            const holding = await prisma.customerPackageHolding.findFirstOrThrow({
+              where: { saleLineId: purchase.lines[0]!.id },
+            });
+            const startsAt = new Date(`${currentPeriod}-07T10:00:00Z`);
+            const endsAt = new Date(startsAt.getTime() + 1800000);
+            const booking = await prisma.appointment.create({
+              data: {
+                tenantId: f.tenantId,
+                customerId: reporting.customer.id,
+                serviceId: service.id,
+                staffId: f.staffId,
+                startsAt,
+                endsAt,
+                status: "COMPLETED",
+                durationMinutes: 30,
+                lines: {
+                  create: {
+                    tenantId: f.tenantId,
+                    serviceId: service.id,
+                    staffId: f.staffId,
+                    position: 0,
+                    startsAt,
+                    endsAt,
+                    durationMinutes: 30,
+                  },
+                },
+              },
+            });
+            return {
+              booking,
+              holding,
+              frozen: JSON.stringify(
+                await prisma.payrollClose.findMany({
+                  where: { status: "APPROVED" },
+                  orderBy: { id: "asc" },
+                }),
+              ),
+              posted: await prisma.employeeCommission.count({ where: { ledgerVersion: 1 } }),
+            };
+          });
+          await navigate(
+            f.ownerId,
+            "SUPER_ADMIN",
+            `/sale?appointment=${seeded.booking.id}`,
+            text("Load appointment into empty cart"),
+          );
+          await click("Load appointment into empty cart");
+          await browser.wait(
+            `document.querySelector('[aria-label="Performed by"]')?.innerText.includes('Close Staff')`,
+          );
+          await click("Take payment");
+          await browser.wait(`document.querySelector('[role="dialog"]')`);
+          const tender = `document.querySelector('[role="dialog"] select')`;
+          await browser.evaluate(
+            `${tender}.value='PACKAGE'; ${tender}.dispatchEvent(new Event('change',{bubbles:true}))`,
+          );
+          await browser.wait(`document.querySelectorAll('[role="dialog"] select').length >= 2`);
+          await browser.evaluate(
+            `const holding=document.querySelectorAll('[role="dialog"] select')[1]; holding.value=${JSON.stringify(seeded.holding.id)}; holding.dispatchEvent(new Event('change',{bubbles:true}));`,
+          );
+          await browser.wait(
+            `document.querySelector('[role="dialog"] [aria-label="Performed by"]')?.innerText.includes('Close Staff')`,
+          );
+          await browser.wait(
+            `document.querySelector('[aria-label="Estimated session commission"]')`,
+          );
+          // The estimate is conditional/unavailable when no matching plan source exists;
+          // checkout still validates its real funding/coverage and captures attribution.
+          await browser.evaluate(
+            `[...document.querySelectorAll('[role="dialog"] button')].find(b=>b.textContent.trim()==='Take payment').click()`,
+          );
+          await browser.wait(
+            `Boolean(${button("New sale")}) && !document.querySelector('[role="dialog"]')`,
+          );
+          await f.scope(async () => {
+            const redemption = await prisma.customerRedemption.findFirstOrThrow({
+              where: { holdingId: seeded.holding.id },
+            });
+            const snapshot = await prisma.commissionRedemptionSnapshot.findFirstOrThrow({
+              where: { redemptionId: redemption.id },
+            });
+            const evidence = redemptionCommissionEvidenceSchema.parse(snapshot.evidence);
+            assert.deepEqual(evidence.performers, [{ staffId: f.staffId, share: 10000 }]);
+            assert.equal(evidence.attributionStatus, "EXPLICIT_TENDER");
+            assert.equal(redemption.quantity, 1);
+            assert.equal(
+              (
+                await prisma.customerPackageHolding.findUniqueOrThrow({
+                  where: { id: seeded.holding.id },
+                })
+              ).quantityRemaining,
+              1,
+            );
+            assert.equal(
+              JSON.stringify(
+                await prisma.payrollClose.findMany({
+                  where: { status: "APPROVED" },
+                  orderBy: { id: "asc" },
+                }),
+              ),
+              seeded.frozen,
+            );
+            assert.equal(
+              await prisma.employeeCommission.count({ where: { ledgerVersion: 1 } }),
+              seeded.posted,
+            );
+          });
+        },
+      );
     } finally {
       vite?.kill();
       server.close();

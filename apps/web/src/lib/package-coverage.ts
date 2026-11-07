@@ -7,7 +7,13 @@
  * side; this module is the arithmetic the browser shows, and it lives outside the dialog so
  * it can be tested without rendering one.
  */
-import { allocatePackage, type CustomerHolding, type SaleItemKind } from "@glampro_suite/shared";
+import {
+  allocatePackage,
+  type CustomerHolding,
+  type SaleItemKind,
+  type CommissionAttribution,
+  type CommissionShares,
+} from "@glampro_suite/shared";
 
 /** One cart line as the payment sheet prices a redemption against it. */
 export interface PaymentLine {
@@ -18,6 +24,29 @@ export interface PaymentLine {
   /** The unit price the cart is charging, in whole cents. */
   unitPriceCents: number;
   totalCents?: number;
+  staffId?: string;
+  attribution?: CommissionAttribution;
+}
+
+/** Only an identical explicit split across every covered line is a safe default.
+ * A set with different therapists needs a deliberate whole-session split. */
+export function coveredPerformers(
+  lines: readonly PaymentLine[],
+  units: readonly number[],
+  before: readonly number[],
+): CommissionShares | undefined {
+  let result: CommissionShares | undefined;
+  const canonical = (shares: CommissionShares) =>
+    JSON.stringify([...shares].sort((a, b) => a.staffId.localeCompare(b.staffId)));
+  for (const [index, line] of lines.entries()) {
+    if ((units[index] ?? 0) <= (before[index] ?? 0)) continue;
+    const shares =
+      line.attribution?.performers ??
+      (line.staffId ? [{ staffId: line.staffId, share: 10000 }] : undefined);
+    if (!shares?.length || (result && canonical(result) !== canonical(shares))) return undefined;
+    result ??= shares;
+  }
+  return result;
 }
 
 /**

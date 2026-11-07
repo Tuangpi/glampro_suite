@@ -1,5 +1,20 @@
 # Commission & Payroll decisions
 
+## November 7, 2026 — CP-008 appointment attribution boundary
+
+The explicit appointment-to-till action reads authorized current booking/customer/
+catalogue data and loads only an empty cart. Each booked service retains its resolved
+therapist; null means unknown, never the booking's primary performer or till operator.
+Current prices remain display data; checkout re-prices authoritatively. The handoff
+does not complete a booking or promise appointment billing deduplication.
+
+The parked outlet picker/company-wide till mode remains unchanged. No branch is
+selected implicitly; an explicitly conflicting outlet is refused. Package tenders
+inherit only identical covered-line performer splits; different therapists in a set
+require an explicit whole-session split, never current-price weighting. Explicit
+tender edits/clear survive retries. Existing backend attribution/funding policy remains
+authoritative. Local CP-008 completion does not activate earnings or close CP-007.
+
 ## November 7, 2026 — N4 uses the existing audited percentage writer
 
 The approved continuation uses the recommended **read-only drawer** approach.

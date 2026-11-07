@@ -20,6 +20,7 @@
  * as it does in the browser, and the idempotency key is the one that will ship.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -201,10 +202,13 @@ function receipt(overrides: Partial<SaleDetail> = {}): SaleDetail {
 
 function renderSale(
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  entry = "/sale",
 ) {
   return render(
     <QueryClientProvider client={queryClient}>
-      <Sale />
+      <MemoryRouter initialEntries={[entry]}>
+        <Sale />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -590,6 +594,134 @@ describe("vouchers and recorded refunds", () => {
 });
 
 describe("performer identities", () => {
+  it("loads an appointment's actual therapist and retains attribution across cancel/reopen/payment", async () => {
+    const user = userEvent.setup();
+    const therapist = { id: "therapist", name: "Booked therapist", departments: [] };
+    useStaffList.mockReturnValue(listResult([therapist]));
+    get.mockImplementation(async (url: string) => {
+      if (url === "/appointments/booking")
+        return {
+          status: "COMPLETED",
+          services: [{ serviceId: "s1", staffId: "therapist" }],
+          customerId: CUSTOMER.id,
+        };
+      if (url === `/customers/${CUSTOMER.id}`) return CUSTOMER;
+      if (url === "/services/s1")
+        return {
+          id: "s1",
+          name: SERVICE.name,
+          nonmemberPrice: "80.00",
+          memberPrice: "70.00",
+          status: "ACTIVE",
+        };
+      return { items: [], holdings: [] };
+    });
+    renderSale(undefined, "/sale?appointment=booking");
+    await user.click(screen.getByRole("button", { name: "Load appointment into empty cart" }));
+    await waitFor(() =>
+      expect(screen.getByRole("combobox", { name: "Who performed Root colour" })).toHaveValue(
+        "therapist",
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("region", { name: "Appointment handoff" })).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Cancel" }),
+    );
+    expect(screen.getByRole("combobox", { name: "Who performed Root colour" })).toHaveValue(
+      "therapist",
+    );
+    await user.click(screen.getByRole("button", { name: "Take payment" }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", { name: "Take payment" }),
+    );
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith(
+        "/sales",
+        expect.objectContaining({
+          customerId: CUSTOMER.id,
+          lines: [
+            expect.objectContaining({
+              staffId: "therapist",
+              attribution: {
+                sellers: [{ staffId: "user-1", share: 10000 }],
+                performers: [{ staffId: "therapist", share: 10000 }],
+              },
+            }),
+          ],
+        }),
+      ),
+    );
+  });
+
+  it("will not replace an existing draft with appointment defaults", async () => {
+    const user = userEvent.setup();
+    renderSale(undefined, "/sale?appointment=booking");
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    expect(screen.getByRole("button", { name: "Load appointment into empty cart" })).toBeDisabled();
+    expect(get).not.toHaveBeenCalledWith("/appointments/booking");
+  });
+
+  it("refuses an explicitly different outlet without changing the draft", async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem("glampro.outlet.v1", "selected-outlet");
+    get.mockImplementation(async (url: string) => {
+      if (url === "/appointments/booking")
+        return {
+          status: "SCHEDULED",
+          services: [{ serviceId: "s1", staffId: "therapist" }],
+          customerId: null,
+          outletId: "different-outlet",
+        };
+      if (url === "/services/s1")
+        return {
+          id: "s1",
+          name: SERVICE.name,
+          nonmemberPrice: "80.00",
+          memberPrice: "70.00",
+          status: "ACTIVE",
+        };
+      return { items: [] };
+    });
+    renderSale(undefined, "/sale?appointment=booking");
+    await user.click(screen.getByRole("button", { name: "Load appointment into empty cart" }));
+    await screen.findByRole("alert");
+    expect(screen.getByText("The cart is empty")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Load appointment into empty cart" })).toBeEnabled();
+  });
+
+  it("ignores a delayed booking read after the till has unmounted", async () => {
+    const user = userEvent.setup();
+    let resolve!: (value: unknown) => void;
+    const pending = new Promise((done) => {
+      resolve = done;
+    });
+    get.mockImplementation(async (url: string) => {
+      if (url === "/appointments/booking") return pending;
+      if (url === "/services/s1")
+        return {
+          id: "s1",
+          name: SERVICE.name,
+          nonmemberPrice: "80.00",
+          memberPrice: "70.00",
+          status: "ACTIVE",
+        };
+      return { items: [] };
+    });
+    const view = renderSale(undefined, "/sale?appointment=booking");
+    await user.click(screen.getByRole("button", { name: "Load appointment into empty cart" }));
+    view.unmount();
+    resolve({
+      status: "SCHEDULED",
+      services: [{ serviceId: "s1", staffId: "therapist" }],
+      customerId: null,
+    });
+    await pending;
+    renderSale();
+    expect(await screen.findByText("The cart is empty")).toBeInTheDocument();
+  });
   it("deduplicates account options, distinguishes equal names and posts the selected ID", async () => {
     const user = userEvent.setup();
     const sam = {
@@ -632,7 +764,10 @@ describe("performer identities", () => {
               itemId: "s1",
               quantity: 1,
               staffId: "sam-b",
-              attribution: { sellers: [{ staffId: "user-1", share: 10000 }] },
+              attribution: {
+                sellers: [{ staffId: "user-1", share: 10000 }],
+                performers: [{ staffId: "sam-b", share: 10000 }],
+              },
             },
           ],
         }),
