@@ -76,6 +76,8 @@ export async function previewPayrollCart(raw: unknown) {
             ? item.memberPrice
             : item.nonmemberPrice
           : item.price;
+      // Checkout rounds the discount, not the discounted price. At half-cent
+      // boundaries these differ, so preserve the authoritative writer's order.
       const unit = price.minus(
         price
           .mul(input.discountPercent ?? 0)

@@ -149,7 +149,7 @@ export default function CommissionDetailPanel() {
             {!query.data.approved ? (
               <p>
                 No approved payroll snapshot for this month.
-                {query.data.unavailablePeriods && query.data.unavailablePeriods.length > 1
+                {query.data.unavailablePeriods && query.data.unavailablePeriods.length > 0
                   ? ` Unavailable months: ${query.data.unavailablePeriods.join(", ")}. The range is not partially exported.`
                   : ""}
               </p>

@@ -25,6 +25,7 @@ export default function CartCommissionPreview({
     line.itemType === "SERVICE" ? line.attribution?.performers : line.attribution?.sellers;
   const supported =
     ["SERVICE", "PRODUCT", "PACKAGE", "VALUE_PACKAGE"].includes(line.itemType) &&
+    (!["PACKAGE", "VALUE_PACKAGE"].includes(line.itemType) || !!customerId) &&
     !!shares?.length &&
     ["SUPER_ADMIN", "MANAGER", "STAFF"].includes(user?.globalRole ?? "");
   const input = {
@@ -36,7 +37,7 @@ export default function CartCommissionPreview({
     shares,
   };
   const query = useQuery({
-    queryKey: ["cart-commission-preview", input],
+    queryKey: ["cart-commission-preview", user?.id, user?.globalRole, input],
     queryFn: async () => previewSchema.parse(await post("/payroll-close/cart-preview", input)),
     enabled: supported,
     retry: false,

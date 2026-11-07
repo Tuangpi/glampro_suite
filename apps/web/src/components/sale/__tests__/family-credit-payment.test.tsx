@@ -1,7 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { render as renderView, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import PaymentDialog from "../PaymentDialog";
+function render(view: React.ReactNode) {
+  return renderView(<QueryClientProvider client={new QueryClient()}>{view}</QueryClientProvider>);
+}
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({ user: { id: "payment-test-staff", globalRole: "CASHIER" } }),
+}));
 
 const mocks = vi.hoisted(() => ({ holdings: vi.fn() }));
 vi.mock("@/hooks/useCustomers", () => ({ useCustomerHoldings: mocks.holdings }));

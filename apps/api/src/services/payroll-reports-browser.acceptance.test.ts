@@ -496,6 +496,106 @@ test(
         },
       );
 
+      await t.test(
+        "owner reads package percentage rules without a second configuration writer",
+        async () => {
+          await f.scope(() =>
+            prisma.commissionRule.create({
+              data: {
+                tenantId: f.tenantId,
+                staffId: null,
+                itemKind: "PACKAGE_SALE",
+                scope: "PACKAGE",
+                targetId: reporting.pkg.id,
+                scopeKey: `package-browser-${reporting.pkg.id}`,
+                rate: "7",
+                effectiveAt: new Date(),
+                actorId: f.ownerId,
+                reason: "Browser read-only package rule",
+              },
+            }),
+          );
+          await navigate(f.ownerId, "SUPER_ADMIN", "/products", text("Products"));
+          await browser.wait(
+            `[...document.querySelectorAll('[role="tab"]')].some(tab => tab.textContent === 'Packages')`,
+          );
+          await browser.evaluate(
+            `[...document.querySelectorAll('[role="tab"]')].find(tab => tab.textContent === 'Packages').click()`,
+          );
+          await browser.wait(text(reporting.pkg.name));
+          await browser.evaluate(
+            `[...document.querySelectorAll('tr')].find(row => row.textContent.includes(${JSON.stringify(reporting.pkg.name)})).querySelector('button').click()`,
+          );
+          await browser.wait(text("Package percentage rules (read-only)"));
+          await browser.wait(text("Browser read-only package rule"));
+          const panel = `document.querySelector('[aria-label="Package percentage rules"]')`;
+          assert.equal(
+            await browser.evaluate(`${panel}.querySelectorAll('input,select,button').length`),
+            0,
+          );
+          assert.equal(
+            await browser.evaluate(`${panel}.querySelector('a').getAttribute('href')`),
+            "/settings?section=team&team=rules",
+          );
+        },
+      );
+
+      await t.test(
+        "staff cart preview renders a conditional own estimate without posting",
+        async () => {
+          const tillReady = `document.querySelector('input[placeholder^="Search services"]')`;
+          const before = await f.scope(() => prisma.payrollSourceEvent.count());
+          await navigate(f.staffId, "STAFF", "/sale", tillReady);
+          await browser.wait(
+            `document.querySelector('button[aria-label^="Add "][aria-label*="to the cart"]')`,
+          );
+          await browser.evaluate(
+            `document.querySelector('button[aria-label^="Add "][aria-label*="to the cart"]').click()`,
+          );
+          // Services require an explicit performer; the seller default must not invent one.
+          await browser.wait(text("Commission attribution"));
+          await click("Commission attribution");
+          await click("Add therapist");
+          await browser.wait(
+            `document.querySelector('select[aria-label="Staff member"]') || ${text("Performing therapists")}`,
+          );
+          const performerSelect = `document.querySelector('select[aria-label="performers staff 1"]')`;
+          await browser.wait(
+            `${performerSelect} && [...${performerSelect}.options].some(option => option.value === ${JSON.stringify(f.staffId)})`,
+          );
+          await browser.evaluate(
+            `(() => { const select = ${performerSelect}; Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(select,${JSON.stringify(f.staffId)}); select.dispatchEvent(new Event('change',{bubbles:true})); })()`,
+          );
+          await click("Save attribution");
+          await browser.wait(text("Hypothetical fully money-paid line"));
+          assert.equal(await browser.evaluate(text("Nothing is posted")), true);
+          assert.equal(await f.scope(() => prisma.payrollSourceEvent.count()), before);
+          // Continue through the actual payment sheet with a customer-owned
+          // package. The package need not be usable for the synthetic line: zero
+          // coverage must explicitly remain unavailable, never borrow cash value.
+          const customerSearch = `document.querySelector('input[aria-label="Attach a customer by name or phone"]')`;
+          await browser.evaluate(`${customerSearch}.focus()`);
+          await browser.send("Input.insertText", { text: "Reporting package buyer" });
+          await browser.wait(
+            `document.querySelector('button[aria-label="Attach Reporting package buyer"]')`,
+          );
+          await browser.evaluate(
+            `document.querySelector('button[aria-label="Attach Reporting package buyer"]').click()`,
+          );
+          await click("Take payment");
+          const tender = field("Tender 1");
+          await browser.wait(
+            `${tender} && [...${tender}.options].some(option => option.value === 'PACKAGE')`,
+          );
+          await browser.evaluate(
+            `Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set.call(${tender},'PACKAGE'); ${tender}.dispatchEvent(new Event('change',{bubbles:true}));`,
+          );
+          await browser.wait(text("Estimated session commission"));
+          assert.equal(await browser.evaluate(text("explicit performers")), true);
+          assert.equal(await f.scope(() => prisma.payrollSourceEvent.count()), before);
+        },
+      );
+
       await reporting.seedSessions(currentPeriod);
       await t.test(
         "management report panels filter approved bases and show distinct utilisation units",

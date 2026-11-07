@@ -43,7 +43,7 @@ test("split allocations bind to staff identity, not caller order", () => {
   );
 });
 test("preview refuses malformed splits and unsupported source types", () => {
-  assert.equal(tillPreviewSchema.safeParse({ ...input, commissionType: "PKG_RED" }).success, false);
+  assert.equal(tillPreviewSchema.safeParse({ ...input, commissionType: "UNKNOWN" }).success, false);
   assert.equal(tillPreviewSchema.safeParse({ ...input, baseAmount: "-1" }).success, false);
   assert.equal(
     tillPreviewSchema.safeParse({ ...input, shares: [{ staffId: "staff-a", share: 5000 }] })

@@ -37,7 +37,10 @@ const item = {
 Reflect.set(prisma, "$transaction", async (fn: (tx: unknown) => Promise<unknown>) =>
   fn({
     user: {
-      findFirst: async () => ({ id: "staff-a", globalRole: role }),
+      findFirst: async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+        globalRole: role,
+      }),
       findMany: async () => [{ id: "staff-a", commissionRate: D("5") }],
     },
     tenant: { findUniqueOrThrow: async () => ({ timeZone: "UTC", gstEnabled }) },
@@ -114,5 +117,32 @@ test("staff sees SELF only, missing snapshot is unavailable and payload cannot o
     role = "MANAGER";
     gstEnabled = true;
     available = true;
+  }
+});
+test("half-cent discounts round the discount like checkout, not the remaining price", async () => {
+  const previous = item.nonmemberPrice;
+  item.nonmemberPrice = D("0.05");
+  gstEnabled = false;
+  try {
+    const data = await runAsTenant(
+      "salon",
+      () => previewPayrollCart({ ...input, discountPercent: 50 }),
+      "staff-a",
+    );
+    assert.equal(data.baseAmount, "0.0200");
+  } finally {
+    item.nonmemberPrice = previous;
+    gstEnabled = true;
+  }
+});
+test("ordinary staff cannot obtain another person's preview award", async () => {
+  role = "STAFF";
+  try {
+    const data = await runAsTenant("salon", () => previewPayrollCart(input), "unattributed-staff");
+    assert.equal(data.scope, "SELF");
+    assert.deepEqual(data.rows, []);
+    assert.ok(!JSON.stringify(data).includes("commissionTotal"));
+  } finally {
+    role = "MANAGER";
   }
 });

@@ -96,7 +96,10 @@ test(
             customerId: customer.id,
             lines: [{ itemType: "PACKAGE", itemId: pkg.id, quantity: 1 }],
             payments: [{ method: "CASH", amount: 100 }],
-            collection: { currency: "SGD", allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "10000" }] },
+            collection: {
+              currency: "SGD",
+              allocations: [{ paymentIndex: 0, linePosition: 0, grossCents: "10000" }],
+            },
           });
           const holding = await prisma.customerPackageHolding.findFirstOrThrow({
             where: { saleLineId: { in: purchase.lines.map((line) => line.id) } },
@@ -120,9 +123,20 @@ test(
             where: { redemptionId: redemption.id },
           });
           const evidence = redemptionCommissionEvidenceSchema.parse(snapshot.evidence);
-          const ownSessions = (actorId: string) => runAsTenant(tenantId, () => ownPayrollSessions({ period: redemption.usedAt.toISOString().slice(0, 7) }), actorId);
-          assert.equal((await ownSessions(manager.id)).rows.find(row => row.id === redemption.id)?.share, 2500);
-          assert.equal((await ownSessions(staff.id)).rows.find(row => row.id === redemption.id)?.share, 7500);
+          const ownSessions = (actorId: string) =>
+            runAsTenant(
+              tenantId,
+              () => ownPayrollSessions({ period: redemption.usedAt.toISOString().slice(0, 7) }),
+              actorId,
+            );
+          assert.equal(
+            (await ownSessions(manager.id)).rows.find((row) => row.id === redemption.id)?.share,
+            2500,
+          );
+          assert.equal(
+            (await ownSessions(staff.id)).rows.find((row) => row.id === redemption.id)?.share,
+            7500,
+          );
           assert.equal(evidence.valuation?.netCents, "3334");
           assert.deepEqual(evidence.valuation?.ordinals, [{ first: 1, last: 1 }]);
           assert.deepEqual(
@@ -168,8 +182,14 @@ test(
             correctRedemptionAttribution(sale.id, redemption.id, correction, manager.id),
           ]);
           assert.equal(corrected[0]!.id, corrected[1]!.id);
-          assert.equal((await ownSessions(manager.id)).rows.some(row => row.id === redemption.id), false);
-          assert.equal((await ownSessions(staff.id)).rows.find(row => row.id === redemption.id)?.share, 10000);
+          assert.equal(
+            (await ownSessions(manager.id)).rows.some((row) => row.id === redemption.id),
+            false,
+          );
+          assert.equal(
+            (await ownSessions(staff.id)).rows.find((row) => row.id === redemption.id)?.share,
+            10000,
+          );
           assert.equal(
             redemptionCommissionEvidenceSchema.parse(corrected[0]!.evidence).previousSnapshotId,
             snapshot.id,
@@ -271,7 +291,10 @@ test(
             orderBy: { revision: "desc" },
           });
           assert.equal(voided.eventType, "VOID");
-          assert.equal((await ownSessions(staff.id)).rows.find(row => row.id === redemption.id)?.status, "VOIDED");
+          assert.equal(
+            (await ownSessions(staff.id)).rows.find((row) => row.id === redemption.id)?.status,
+            "VOIDED",
+          );
           assert.equal(voided.revision, 2);
           assert.equal(
             redemptionCommissionEvidenceSchema.parse(voided.evidence).previousSnapshotId,

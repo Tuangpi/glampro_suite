@@ -1,5 +1,58 @@
 # Commission & Payroll progress
 
+## November 7, 2026 — CP-008 screen/report delivery continuation
+
+- N4 uses the approved read-only rules surface: current/scheduled company package
+  rates, effective dates and reasons, with a working deep link to the existing
+  revision-checked Company rules writer. No duplicate financial write path.
+- Cash preview retains server-owned catalogue/member/GST/discount/FOC/package rule
+  handling; added half-cent and SELF isolation regressions, per-user/role query keys,
+  and unavailable state for a package with no attached customer.
+- Added original-session redemption preview to the package payment tender: original
+  purchase/residual-bearing ordinals, paid-session checks, fixed-per-session awards,
+  exclusion versus unavailable distinction and SELF-scoped output. No reservation,
+  posting, earnings activation or mutation of approved inputs. Unit tests cover
+  original value, fixed quantity, unpaid/legacy/expired/refunded evidence and ownership.
+- Cross-month detail already existed (24-month bound); fixed the single-unavailable-
+  month message, tested full filtered cross-month Excel, and retained recursive
+  reversal/refund/correction source lineage with missing/cycle/wrong-sale safeguards.
+- Own sessions now scan 250-row evidence batches and retain just the requested SELF
+  page in repeatable read. Unit acceptance crosses 601 rows; real PostgreSQL acceptance
+  crosses 501 same-date synthetic sessions and checks the final page. Synthetic
+  historical evidence remains clearly separate from end-to-end writer acceptance.
+- Real HTTP acceptance: **10/10**, including server previews, customer ownership,
+  refusal of caller-owned bases, role/tenant/outlet scope, large-month paging, exports
+  and unchanged close/source/earnings inventories. Mounted Chrome: **15/15**, including
+  N4 read-only rules, explicit-performer cash estimate, package tender unavailable
+  state, reports, own sessions, signature states and existing holding workflows.
+- Focused API regression: **27/27**. Broad API: **1,567 total, 1,291 passed,
+  276 skipped, 0 failed**. Shared: **337/337**. The previously recorded password-reset/
+  2FA login failure did not reproduce; no auth implementation or assertion was weakened.
+- Final full web rerun: **1,245/1,245 across 133 files** (`--maxWorkers=4`).
+  The isolated payment/preview regressions pass **10/10** after adding their real
+  auth/query-provider prerequisites. Final root formatting, web lint/typecheck and
+  `git diff --check` also passed; workspace lint/typechecks and builds passed earlier
+  against the same runtime implementation.
+- Formatting, workspace lint/typechecks and shared/API/web builds passed. Initial
+  overlapping generation/test jobs caused transient missing generated-client imports;
+  sequential generation/build/test execution resolved them. The new preview required
+  auth context in two isolated payment tests; those tests now explicitly model a
+  cashier, leaving their payment/performer assertions intact.
+- Formatted four pre-existing acceptance/detail test files reported by root Prettier;
+  no runtime changes were made to the redemption writers. No new migrations or seeds.
+- **CP-008 remains OPEN**: (f2) needs the full supported POS/appointment-therapist
+  default and preservation matrix. Reporting implementation/acceptance is no longer
+  missing cross-month, lineage or bounded-session reads. Utilisation remains labelled
+  operational counts, not net sold packs or a historical expiry ledger. No release or
+  production acceptance is implied.
+
+Logs: `/tmp/cp008-delivery.log`, `/tmp/cp008-final-web.log`,
+`/tmp/cp008-final-focused.log`, `/tmp/cp008-verification.log`. PostgreSQL was newly
+initialized under `/tmp/cp005-cp008-*`, loopback port 55485, `payroll_close_test`, UTC;
+only existing migrations were applied. The disposable cluster
+`/tmp/cp005-cp008-hbi8eB` was stopped after acceptance; data/logs are retained.
+Cleanup evidence: `/tmp/cp008-cleanup.log`. No development/production cluster was used.
+
 ## November 6, 2026 — CP-008 (f2) N5: the package drawer says what a session is worth
 
 - **The number was invisible until it was too late.** A package's session value is what a

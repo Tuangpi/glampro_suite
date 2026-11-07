@@ -145,6 +145,22 @@ flight.
 | 12  | Posting versus month-end close  | Close-derived authority, see [DECISIONS.md](DECISIONS.md); not till-time posting                            | **Close is the authority** — confirmed. Till-time posting is declined, so the ledger-source-of-truth work is closed |
 | 13  | Payroll/Sales % visibility      | Owner-only: both payroll tables show it (red above alert); managers see component columns but not the ratio | **Owner-only** — confirmed, and already shipped as such                                                             |
 
+## November 7, 2026 — screen/report continuation boundaries
+
+- N4's approved scope is read-only current/scheduled company package percentage
+  rules, effective dates and reasons with a link to the existing Commission rules
+  publisher. The drawer is not a second percentage write path.
+- N6/N7 estimates are conditional, non-posting and permission-scoped. Cash preview
+  uses server catalogue economics; package redemption preview uses original purchase
+  economics and funded next ordinals. Missing/legacy/unfunded evidence is unavailable.
+  No performer may be inferred from the till operator. Appointment-to-till therapist
+  defaults and the full supported POS acceptance matrix must be evidenced before (f2)
+  is closed; a basic mounted estimate check alone does not establish that matrix.
+- “§12 reports” means the five reports in specification section 12. Commission detail
+  reads approved snapshots only; every month in a requested range must be approved.
+  Exports contain the whole filtered range, not only the visible page. Operational
+  utilisation counts are not net sales or an expiry-event ledger.
+
 ## Reference audit caveats
 
 - Supplied SRS AS-IS descriptions predate some current code. Inspect real code;

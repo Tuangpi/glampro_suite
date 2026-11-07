@@ -1,5 +1,28 @@
 # Commission & Payroll decisions
 
+## November 7, 2026 — N4 uses the existing audited percentage writer
+
+The approved continuation uses the recommended **read-only drawer** approach.
+The package drawer displays current and scheduled company package-scope sale/redemption
+percentage rules, their effective dates and reasons, and links to
+Settings → Team & commissions → Company rules (`?section=team&team=rules`).
+The existing revision-checked Commission rules publisher remains the only percentage
+write path. Follow plan / Exclude / Fixed amount remain package purchase settings;
+no percentage mode or second rule publisher is introduced. Staff-specific precedence
+and pooled plans mean the displayed company rate is not a guaranteed award.
+
+Estimates are conditional read models, not source writers or payable earnings.
+Cash-line estimates resolve catalogue/member prices, discount rounding, GST, FOC,
+package policy and current effective rules server-side. Session estimates use original
+purchase economics and next available ordinals with paid-session evidence, not current
+service prices. Missing evidence is unavailable, not zero. Neither preview authorizes
+checkout, reserves sessions, changes approvals or activates commission posting.
+
+Package utilisation retains its expressly labelled operational meaning: completed-sale
+packs, non-reverted redeemed sessions, and current expired-unused sessions. This does
+not claim net sold packs or a historical expiry-movement ledger; those would require
+separate requirements and evidence, not a relabelling of the existing counts.
+
 ## November 6, 2026 — Value packages get one name; N4's override % is not a screen item
 
 - **"Value package" is now the only name an owner reads.** `COMMISSION_KIND_LABELS`

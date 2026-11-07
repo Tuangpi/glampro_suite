@@ -97,3 +97,18 @@ it("sends the cross-month bound to both detail and export", async () => {
     ),
   );
 });
+it("names even a single unavailable month and refuses a partial range export", async () => {
+  mocks.get.mockResolvedValue({
+    approved: false,
+    unavailablePeriods: ["2026-10"],
+    rows: [],
+    total: 0,
+    pages: 0,
+    page: 1,
+  });
+  mount(<CommissionDetailPanel />);
+  expect(await screen.findByText(/Unavailable months: 2026-10/)).toHaveTextContent(
+    "The range is not partially exported",
+  );
+  expect(screen.getByRole("button", { name: /Export commission detail/ })).toBeDisabled();
+});

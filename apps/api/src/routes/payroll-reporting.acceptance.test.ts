@@ -72,26 +72,97 @@ test(
           assert.equal(response.status, 200, await response.clone().text());
         },
       );
-      await r.seedSessions();
-      await t.test("approved cross-month detail is all-or-nothing and Excel retains month identity", async () => {
-        const partial = await request(detail + "&throughPeriod=2026-10");
-        const missing = (await partial.json()).data;
-        assert.equal(missing.approved, false);
-        assert.deepEqual(missing.unavailablePeriods, ["2026-10"]);
-        assert.deepEqual(missing.rows, []);
-        const calculated = await request("/payroll-close/2026-10/calculate", manager, { expectedRevision: 0 });
-        assert.equal(calculated.status, 200, await calculated.clone().text());
-        const approved = await request("/payroll-close/2026-10/approve", owner, { expectedRevision: 1, reason: "Reviewed empty carry month" });
-        assert.equal(approved.status, 200, await approved.clone().text());
-        const range = await request(detail + "&throughPeriod=2026-10&limit=1");
-        const data = (await range.json()).data;
-        assert.equal(data.approved, true); assert.ok(data.total > data.rows.length);
-        const file = await request("/payroll-close/commission-detail.xlsx?period=2026-09&throughPeriod=2026-10&limit=1&page=2");
-        assert.equal(file.status, 200);
-        const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(await file.arrayBuffer());
-        assert.equal(workbook.worksheets[0].rowCount, data.total + 2);
-        assert.equal(workbook.worksheets[0].getRow(3).getCell(12).value, "2026-09");
-      });
+      const recordedSessions = await r.seedSessions();
+      await t.test(
+        "large SELF session months cross database cursor batches without losing attribution",
+        async () => {
+          const source = await f.scope(() =>
+            prisma.customerRedemption.findFirstOrThrow({ where: { id: recordedSessions[0]!.id } }),
+          );
+          const snapshot = await f.scope(() =>
+            prisma.commissionRedemptionSnapshot.findFirstOrThrow({
+              where: { redemptionId: source.id },
+            }),
+          );
+          const ids = Array.from(
+            { length: 501 },
+            (_, index) => `cp008-large-${source.id}-${index.toString().padStart(4, "0")}`,
+          );
+          await f.scope(async () => {
+            await prisma.customerRedemption.createMany({
+              data: ids.map((id) => ({
+                id,
+                tenantId: f.tenantId,
+                customerId: source.customerId,
+                saleId: source.saleId,
+                itemType: source.itemType,
+                itemId: source.itemId,
+                holdingId: source.holdingId,
+                quantity: 1,
+                usedAt: new Date("2026-08-25T00:00:00Z"),
+                revertedAt: new Date("2026-08-26T00:00:00Z"),
+              })),
+            });
+            await prisma.commissionRedemptionSnapshot.createMany({
+              data: ids.map((id) => ({
+                tenantId: f.tenantId,
+                redemptionId: id,
+                revision: 1,
+                eventKey: id,
+                eventHash: id,
+                eventType: "CAPTURE",
+                actorId: f.ownerId,
+                reason: "Synthetic large-month read evidence",
+                evidence: snapshot.evidence!,
+              })),
+            });
+          });
+          const response = await request(
+            "/payroll-close/my-sessions?period=2026-08&page=21",
+            staff,
+          );
+          assert.equal(response.status, 200, await response.clone().text());
+          const data = (await response.json()).data;
+          assert.equal(data.total, 501);
+          assert.equal(data.pages, 21);
+          assert.equal(data.rows.length, 1);
+          assert.equal(data.rows[0].id, ids[500]);
+          assert.equal(data.rows[0].status, "VOIDED");
+          // Evidence is append-only. Keep these explicitly synthetic voided
+          // prior-month rows until the disposable tenant fixture is cleaned up.
+        },
+      );
+      await t.test(
+        "approved cross-month detail is all-or-nothing and Excel retains month identity",
+        async () => {
+          const partial = await request(detail + "&throughPeriod=2026-10");
+          const missing = (await partial.json()).data;
+          assert.equal(missing.approved, false);
+          assert.deepEqual(missing.unavailablePeriods, ["2026-10"]);
+          assert.deepEqual(missing.rows, []);
+          const calculated = await request("/payroll-close/2026-10/calculate", manager, {
+            expectedRevision: 0,
+          });
+          assert.equal(calculated.status, 200, await calculated.clone().text());
+          const approved = await request("/payroll-close/2026-10/approve", owner, {
+            expectedRevision: 1,
+            reason: "Reviewed empty carry month",
+          });
+          assert.equal(approved.status, 200, await approved.clone().text());
+          const range = await request(detail + "&throughPeriod=2026-10&limit=1");
+          const data = (await range.json()).data;
+          assert.equal(data.approved, true);
+          assert.ok(data.total > data.rows.length);
+          const file = await request(
+            "/payroll-close/commission-detail.xlsx?period=2026-09&throughPeriod=2026-10&limit=1&page=2",
+          );
+          assert.equal(file.status, 200);
+          const workbook = new ExcelJS.Workbook();
+          await workbook.xlsx.load(await file.arrayBuffer());
+          assert.equal(workbook.worksheets[0].rowCount, data.total + 2);
+          assert.equal(workbook.worksheets[0].getRow(3).getCell(12).value, "2026-09");
+        },
+      );
       const inventory = () =>
         f.scope(async () => ({
           closes: await prisma.payrollClose.findMany(),
@@ -104,21 +175,102 @@ test(
           activations: await prisma.packageValuationActivation.count(),
         }));
       const before = await inventory();
-      await t.test("HTTP cart estimates use server prices, narrow staff responses and never post", async () => {
-        mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-22T00:00:00Z") });
-        try {
-          const service = await f.scope(() => prisma.service.findFirstOrThrow());
-          const input = { itemType: "SERVICE", itemId: service.id, quantity: 1, shares: [{ staffId: f.staffId, share: 5000 }, { staffId: f.managerId, share: 5000 }] };
-          const response = await request("/payroll-close/cart-preview", staff, input, r.outlet.id);
-          assert.equal(response.status, 200, await response.clone().text());
-          const data = (await response.json()).data;
-          assert.equal(data.scope, "SELF"); assert.equal(data.rows.length, 1); assert.equal(data.rows[0].staffId, f.staffId);
-          assert.equal(data.basis, "HYPOTHETICAL_FULL_CASH"); assert.equal(Number(data.baseAmount), 100);
-          assert.equal((await request("/payroll-close/cart-preview", manager, { ...input, baseAmount: "999" })).status, 422);
-          assert.equal((await request("/payroll-close/cart-preview", cashier, input)).status, 403);
-          assert.equal((await request("/payroll-close/cart-preview", manager, { ...input, itemId: "foreign-item" })).status, 404);
-        } finally { mock.timers.reset(); }
-      });
+      await t.test(
+        "HTTP cart estimates use server prices, narrow staff responses and never post",
+        async () => {
+          mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-22T00:00:00Z") });
+          try {
+            const service = await f.scope(() => prisma.service.findFirstOrThrow());
+            const input = {
+              itemType: "SERVICE",
+              itemId: service.id,
+              quantity: 1,
+              shares: [
+                { staffId: f.staffId, share: 5000 },
+                { staffId: f.managerId, share: 5000 },
+              ],
+            };
+            const response = await request(
+              "/payroll-close/cart-preview",
+              staff,
+              input,
+              r.outlet.id,
+            );
+            assert.equal(response.status, 200, await response.clone().text());
+            const data = (await response.json()).data;
+            assert.equal(data.scope, "SELF");
+            assert.equal(data.rows.length, 1);
+            assert.equal(data.rows[0].staffId, f.staffId);
+            assert.equal(data.basis, "HYPOTHETICAL_FULL_CASH");
+            assert.equal(Number(data.baseAmount), 100);
+            const redemptionInput = {
+              holdingId: r.holding.id,
+              customerId: r.customer.id,
+              quantity: 1,
+              shares: input.shares,
+            };
+            const session = await request(
+              "/payroll-close/redemption-preview",
+              staff,
+              redemptionInput,
+              r.outlet.id,
+            );
+            assert.equal(session.status, 200, await session.clone().text());
+            const estimate = (await session.json()).data;
+            assert.equal(estimate.scope, "SELF");
+            assert.equal(estimate.rows.length, 1);
+            assert.equal(estimate.rows[0].staffId, f.staffId);
+            assert.equal(estimate.baseAmount, "25.0000");
+            assert.equal(estimate.basis, "ORIGINAL_SESSION_SNAPSHOT");
+            assert.equal(
+              (await request("/payroll-close/redemption-preview", cashier, redemptionInput)).status,
+              403,
+            );
+            assert.equal(
+              (
+                await request("/payroll-close/redemption-preview", manager, {
+                  ...redemptionInput,
+                  customerId: "foreign-customer",
+                })
+              ).status,
+              404,
+            );
+            assert.equal(
+              (
+                await request("/payroll-close/redemption-preview", manager, {
+                  ...redemptionInput,
+                  baseAmount: "999",
+                })
+              ).status,
+              422,
+            );
+            assert.equal(
+              (
+                await request("/payroll-close/cart-preview", manager, {
+                  ...input,
+                  baseAmount: "999",
+                })
+              ).status,
+              422,
+            );
+            assert.equal(
+              (await request("/payroll-close/cart-preview", cashier, input)).status,
+              403,
+            );
+            assert.equal(
+              (
+                await request("/payroll-close/cart-preview", manager, {
+                  ...input,
+                  itemId: "foreign-item",
+                })
+              ).status,
+              404,
+            );
+          } finally {
+            mock.timers.reset();
+          }
+        },
+      );
       await t.test(
         "approved frozen package bases filter and export consistently beyond page size",
         async () => {

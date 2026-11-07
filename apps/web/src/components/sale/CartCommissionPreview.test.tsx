@@ -75,3 +75,12 @@ it("keeps attribution usable when the estimate fails", async () => {
     await screen.findByText("Estimate unavailable. Attribution is still saved."),
   ).toBeInTheDocument();
 });
+it("does not estimate a package purchase before a customer is attached", () => {
+  mount({
+    ...line,
+    itemType: "PACKAGE",
+    attribution: { sellers: [{ staffId: "amy", share: 10000 }] },
+  });
+  expect(screen.getByText(/Unavailable for this line/)).toBeInTheDocument();
+  expect(mocks.post).not.toHaveBeenCalled();
+});

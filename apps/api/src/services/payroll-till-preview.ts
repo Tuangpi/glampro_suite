@@ -14,7 +14,7 @@ import type { PayrollCloseState } from "./payroll-close-state.js";
 
 /** Hypothetical activity only. No prices, configuration or earnings are persisted. */
 export const tillPreviewSchema = z.strictObject({
-  commissionType: z.enum(["SVC", "PRD", "FOC", "PKG_SALE", "VP_SALE"]),
+  commissionType: z.enum(["SVC", "PRD", "FOC", "PKG_SALE", "PKG_RED", "VP_SALE"]),
   baseAmount: payrollDecimalSchema.refine((value) => exact(value).n >= 0n),
   quantity: z.number().int().min(1).max(10000),
   shares: commissionSharesSchema,

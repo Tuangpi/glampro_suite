@@ -1,5 +1,21 @@
 # Spec v0.9 alignment review
 
+## November 7, 2026 — delivery addendum
+
+The November 6 review below is historical, not the current implementation inventory.
+§12 contains **five reports**, not twelve. Cross-month approved commission detail
+(up to 24 months), full-filter Excel exports, recursive reversal/refund/correction
+reference resolution, SELF session history and distinct operational utilisation counts
+are implemented. Current verification and remaining screen acceptance are tracked in
+`TASKS.md`, `PROGRESS.md` and `UI_REPORTING_CONTINUATION.md`.
+
+N4 now reads current/scheduled company package percentage rules and effective dates
+from the existing Commission rules API and links to its sole audited writer. Cash-line
+and original-session estimates have separate server-owned economics; neither is a
+payable award or new posting path. An unavailable estimate is explicitly not zero.
+Session-history reads scan bounded batches and retain only the requested SELF page.
+No later note accepts production activation or rewrites approved payroll.
+
 ## Review basis
 
 November 6, 2026. This review compares the delivered commission/payroll

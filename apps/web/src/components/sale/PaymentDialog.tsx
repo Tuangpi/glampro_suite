@@ -65,6 +65,7 @@ import { centsToPrice, priceToCents } from "@/lib/money";
 import { packageCoverage, type PaymentLine } from "@/lib/package-coverage";
 import { cn } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
+import RedemptionCommissionPreview from "./RedemptionCommissionPreview";
 
 /** One row of the sheet, as typed. Amounts stay strings until they are posted. */
 interface TenderDraft {
@@ -176,6 +177,7 @@ export default function PaymentDialog({
    * server would have to correct.
    */
   const allocated = lines.map(() => 0);
+  const sessionQuantities = new Map<number, number>();
   function amountFor(tender: TenderDraft, alreadyPaid: number): number {
     if (!isRedemptionPaymentMethod(tender.method)) return priceToCents(tender.amount);
 
@@ -200,6 +202,7 @@ export default function PaymentDialog({
       allocated,
     );
     allocated.splice(0, allocated.length, ...coverage.units);
+    sessionQuantities.set(tender.id, coverage.sessions);
     return coverage.cents;
   }
 
@@ -635,6 +638,17 @@ export default function PaymentDialog({
                       performers={staff}
                       disabled={isPending}
                       onChange={(value) => setTender(tender.id, { performers: value?.performers })}
+                    />
+                    <RedemptionCommissionPreview
+                      holdingId={tender.holdingId}
+                      customerId={customerId}
+                      quantity={
+                        tenders.slice(0, index).some((row) => row.holdingId === tender.holdingId)
+                          ? 0
+                          : (sessionQuantities.get(tender.id) ?? 0)
+                      }
+                      shares={tender.performers}
+                      staff={staff}
                     />
                     <label className="flex gap-2 text-sm">
                       <input

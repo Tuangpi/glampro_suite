@@ -37,6 +37,7 @@ import { useServiceList } from "@/hooks/useServices";
 import { getErrorMessage, getValidationDetails } from "@/lib/api";
 
 import PackageSessionValuePreview from "./PackageSessionValuePreview";
+import PackageCommissionRules from "./PackageCommissionRules";
 
 /** `MAX_PAGE_SIZE` in `@glampro_suite/shared`, so the picker asks for the largest page. */
 const SERVICE_PICKER_PAGE_SIZE = 200;
@@ -490,6 +491,7 @@ export default function PackageFormDrawer({
             ) : null}
           </fieldset>
         ) : null}
+        {canConfigureCommission ? <PackageCommissionRules packageId={bundle?.id ?? null} /> : null}
         <Select
           label="Session redemption"
           value={redemptionMode}

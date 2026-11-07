@@ -1,5 +1,28 @@
 # Glampro Suite — progress
 
+## November 7, 2026 — CP-008 read-only package rules, estimates and report acceptance
+
+- Package drawer now shows current/scheduled company percentage rules with effective
+  dates and reasons, linking to the existing audited Company rules publisher.
+- Added a non-posting original-session estimate to package tenders; server checks
+  purchase economics, next ordinals and funding. Cash estimates remain server-priced;
+  both expose SELF-only staff awards and explicit unavailable evidence.
+- Own-session reads use bounded batches and page only latest verified SELF attribution.
+  Cross-month/full-filter Excel and recursive lineage existed already and were tested;
+  the UI now names a single unavailable month rather than hiding it.
+- Executed: focused API **27/27**, real PostgreSQL/HTTP **10/10**, Chrome **15/15**,
+  web **1,245/1,245 across 133 files** (`--maxWorkers=4`), shared **337/337**,
+  broad API **1,291 passed / 276 skipped / 0 failed** (1,567 total).
+  Formatting, lint, typechecks and shared/API/web builds passed. The older password-reset/
+  2FA login failure did not reproduce; auth assertions were not changed.
+- Documentation reconciled in `docs/commission_payroll/`: §12 is five reports, not
+  twelve. **CP-008 stays OPEN** for the remaining full N6/N7 POS and appointment
+  attribution acceptance matrix; conditional estimates do not fabricate credit-funded
+  or incentive awards. Operational utilisation is not an expiry-history ledger.
+- No production data, deployment, earnings activation, new migrations, seed, approved
+  payroll change, commit or push. Detailed evidence and cleanup: commission/payroll
+  progress entry and `/tmp/cp008-*.log`.
+
 ## November 6, 2026 — reporting read acceptance and My earnings visibility
 
 - Fixed an actual mounted-screen gap: My earnings uses compact progress, which

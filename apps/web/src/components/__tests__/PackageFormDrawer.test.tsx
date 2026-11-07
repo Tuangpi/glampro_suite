@@ -16,6 +16,11 @@ vi.mock("@/hooks/useServices", () => ({
   }),
 }));
 vi.mock("@/components/ui/toast-store", () => ({ showToast: vi.fn() }));
+vi.mock("../catalogue/PackageCommissionRules", () => ({
+  default: ({ packageId }: { packageId: string | null }) => (
+    <section aria-label="Package percentage rules">{packageId ?? "Save package first"}</section>
+  ),
+}));
 
 import PackageFormDrawer from "../catalogue/PackageFormDrawer";
 
@@ -44,11 +49,13 @@ describe("package validity editor", () => {
   it("does not infer commission defaults or expose configuration to other roles", () => {
     render(<PackageFormDrawer open bundle={bundle} onClose={vi.fn()} />);
     expect(screen.queryByLabelText("Package sale commission")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Package percentage rules")).not.toBeInTheDocument();
   });
   it("saves explicit commission settings with a reason and stale-write token", async () => {
     const user = userEvent.setup();
     render(<PackageFormDrawer open bundle={bundle} canConfigureCommission onClose={vi.fn()} />);
     expect(screen.getByLabelText("Package sale commission")).toHaveValue("");
+    expect(screen.getByLabelText("Package percentage rules")).toHaveTextContent(bundle.id);
     await user.selectOptions(screen.getByLabelText("Package sale commission"), "EXCLUDE");
     await user.selectOptions(screen.getByLabelText("Package redemption commission"), "FIXED");
     await user.type(screen.getByLabelText("Fixed amount per session"), "5.25");

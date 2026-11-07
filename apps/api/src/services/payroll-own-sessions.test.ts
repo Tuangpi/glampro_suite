@@ -10,6 +10,8 @@ after(() => {
 });
 let role = "STAFF";
 let snapshotsOverride: { redemptionId: string; evidence: unknown }[] | null = null;
+let largeMonth = false;
+const batchSizes: number[] = [];
 const evidence = (staffId: string) => ({
   version: 1,
   coverage: [
@@ -33,21 +35,32 @@ Reflect.set(prisma, "$transaction", async (callback: (tx: unknown) => Promise<un
     user: { findFirst: async () => ({ globalRole: role }) },
     tenant: { findUniqueOrThrow: async () => ({ timeZone: "Asia/Singapore" }) },
     customerRedemption: {
-      findMany: async () =>
-        ["own", "other", "legacy"].map((id) => ({
+      findMany: async ({ take, cursor }: { take: number; cursor?: { id: string } }) => {
+        batchSizes.push(take);
+        const ids = largeMonth
+          ? Array.from({ length: 601 }, (_, index) => `session-${index}`)
+          : ["own", "other", "legacy"];
+        const start = cursor ? ids.indexOf(cursor.id) + 1 : 0;
+        return ids.slice(start, start + take).map((id) => ({
           id,
           usedAt: new Date("2026-11-06T00:00:00Z"),
           quantity: 1,
           revertedAt: null,
           itemId: "package",
-        })),
+        }));
+      },
     },
     commissionRedemptionSnapshot: {
-      findMany: async () =>
-        snapshotsOverride ?? [
-          { redemptionId: "own", evidence: evidence("actor") },
-          { redemptionId: "other", evidence: evidence("colleague") },
-        ],
+      findMany: async ({ where }: { where: { redemptionId: { in: string[] } } }) =>
+        largeMonth
+          ? where.redemptionId.in.map((id) => ({
+              redemptionId: id,
+              evidence: evidence(Number(id.split("-")[1]) % 2 ? "colleague" : "actor"),
+            }))
+          : (snapshotsOverride ?? [
+              { redemptionId: "own", evidence: evidence("actor") },
+              { redemptionId: "other", evidence: evidence("colleague") },
+            ]),
     },
   }),
 );
@@ -90,5 +103,30 @@ test("latest corrections and malformed evidence never fall back to an older own 
     assert.deepEqual(data.rows, []);
   } finally {
     snapshotsOverride = null;
+  }
+});
+test("large months scan bounded evidence batches and page only the caller's latest attribution", async () => {
+  largeMonth = true;
+  batchSizes.length = 0;
+  try {
+    const data = await runAsTenant(
+      "salon",
+      () => ownPayrollSessions({ period: "2026-11", page: 12 }),
+      "actor",
+    );
+    assert.equal(data.total, 301);
+    assert.equal(data.pages, 13);
+    assert.equal(data.rows.length, 25);
+    assert.equal(data.rows[0].id, "session-550");
+    assert.deepEqual(batchSizes, [250, 250, 250]);
+    const last = await runAsTenant(
+      "salon",
+      () => ownPayrollSessions({ period: "2026-11", page: 13 }),
+      "actor",
+    );
+    assert.equal(last.rows.length, 1);
+    assert.equal(last.rows[0].id, "session-600");
+  } finally {
+    largeMonth = false;
   }
 });

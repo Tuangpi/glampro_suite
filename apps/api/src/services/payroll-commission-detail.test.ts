@@ -23,10 +23,18 @@ Reflect.set(prisma, "$transaction", async (callback: (tx: unknown) => Promise<un
     payrollClose: {
       findFirst: async ({ where }: { where: { periodKey: string } }) =>
         (states?.get(where.periodKey) ?? (where.periodKey === state.periodKey ? state : null))
-          ? { state: states?.get(where.periodKey) ?? state, revision: (states?.get(where.periodKey) ?? state).revision, status: (states?.get(where.periodKey) ?? state).status }
+          ? {
+              state: states?.get(where.periodKey) ?? state,
+              revision: (states?.get(where.periodKey) ?? state).revision,
+              status: (states?.get(where.periodKey) ?? state).status,
+            }
           : null,
     },
-    payrollCloseEvent: { findFirst: async ({ where }: { where: { periodKey: string } }) => ({ stateHash: payrollInputHash(states?.get(where.periodKey) ?? state) }) },
+    payrollCloseEvent: {
+      findFirst: async ({ where }: { where: { periodKey: string } }) => ({
+        stateHash: payrollInputHash(states?.get(where.periodKey) ?? state),
+      }),
+    },
     payrollSourceEvent: {
       findMany: async () => [
         {
@@ -158,17 +166,44 @@ test("large approved cross-month reads paginate deterministically and export the
   const october = structuredClone(september);
   october.periodKey = "2026-10";
   const statement = october.calculation!.statements[0];
-  statement.inputs.calculation.lines = Array.from({ length: 1001 }, (_, index) => ({ ...statement.inputs.calculation.lines[0], id: `large-${index}`, businessDate: "2026-10-05" }));
-  states = new Map([["2026-09", september], ["2026-10", october]]);
+  statement.inputs.calculation.lines = Array.from({ length: 1001 }, (_, index) => ({
+    ...statement.inputs.calculation.lines[0],
+    id: `large-${index}`,
+    businessDate: "2026-10-05",
+  }));
+  states = new Map([
+    ["2026-09", september],
+    ["2026-10", october],
+  ]);
   try {
-    const filters = { period: "2026-09", throughPeriod: "2026-10", staffId: "staff-a", commissionType: "SVC", limit: 500 };
+    const filters = {
+      period: "2026-09",
+      throughPeriod: "2026-10",
+      staffId: "staff-a",
+      commissionType: "SVC",
+      limit: 500,
+    };
     const first = await runAsTenant("salon", () => commissionDetail(filters), "manager");
-    const last = await runAsTenant("salon", () => commissionDetail({ ...filters, page: 3 }), "manager");
-    assert.equal(first.approved, true); assert.equal(first.total, 1002); assert.equal(first.rows.length, 500);
-    assert.equal(last.rows.length, 2); assert.equal(first.rows[0].period, "2026-09");
-    const file = await runAsTenant("salon", () => commissionDetailWorkbook({ ...filters, page: 3 }), "manager");
-    const workbook = new ExcelJS.Workbook(); await workbook.xlsx.load(Uint8Array.from(file.body).buffer);
+    const last = await runAsTenant(
+      "salon",
+      () => commissionDetail({ ...filters, page: 3 }),
+      "manager",
+    );
+    assert.equal(first.approved, true);
+    assert.equal(first.total, 1002);
+    assert.equal(first.rows.length, 500);
+    assert.equal(last.rows.length, 2);
+    assert.equal(first.rows[0].period, "2026-09");
+    const file = await runAsTenant(
+      "salon",
+      () => commissionDetailWorkbook({ ...filters, page: 3 }),
+      "manager",
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(Uint8Array.from(file.body).buffer);
     assert.equal(workbook.worksheets[0].rowCount, 1004);
     assert.match(file.filename, /2026-09-2026-10/);
-  } finally { states = null; }
+  } finally {
+    states = null;
+  }
 });

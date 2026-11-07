@@ -4,7 +4,7 @@
 
 - **CP-005-M1:** [line-by-line status checklist](#cp-005-m1--authoritative-lifecycle-loading-done) — **19 DONE, 0 IN PROGRESS, 0 TODO; M1 DONE** as of November 2, 2026. **M1–M5 and CP-005 are DONE for local acceptance.** This is not release or earnings activation.
 - **CP-006:** [status and milestone checklist](#cp-006--reports-exports-and-progress-workflows) — **DONE for local acceptance** as of November 4, 2026: M1 frozen exports, M2 period report/drill-down, M3 customer holding history, M4 MTD/POS progress, M5 own-data staff self-service and mounted-Chrome browser acceptance (**10/10**, twice). Not release or earnings activation; the only disclosed remainder is a human opening the workbook in a spreadsheet application and printing the payslip PDF.
-- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN** as of November 6, 2026: (c), (f1) and (d) are DONE, and the client's §7 answers **closed (a), (b) and (e) by decision** rather than by code; (f2) and (g) are the remaining work. Source review: `SPEC_V0_9_ALIGNMENT.md`, answers recorded in `REQUIREMENTS.md` §13.
+- **CP-008 (spec v0.9 alignment):** [checklist](#cp-008--spec-v09-alignment-open) — **OPEN**, November 7 continuation: N4 read-only rules and effective dates are implemented; server-owned cash/session estimates and bounded SELF history are implemented. Cross-month/export/lineage reporting exists and has executed acceptance. (f2) still needs the broader POS/appointment attribution acceptance matrix; see `UI_REPORTING_CONTINUATION.md`. The November 6 review is historical, not a current missing-code inventory.
 
 - The M1 checklist is the current source of truth. Dated continuation notes below are historical evidence, not additional tasks or newer status overrides.
 - Status legend: `[x] DONE` = recorded verification for the stated scope; `[ ] IN PROGRESS` = partially implemented/verified; `[ ] TODO` = the stated completion condition has not been accepted. An unchecked item does not necessarily mean no prerequisite code exists.
@@ -1783,3 +1783,28 @@ PROGRESS.** Scope is FR-RPT-05 plus the salary boundary CP-005 established.
 - Completion check: every item above either implemented with tests or explicitly
   deferred with the client's decision recorded; `npm run verify` green; no change to
   approved payroll, POS posting, or the cutover guard without separate authorization.
+
+### November 7, 2026 — authoritative continuation of (f2)/(g)
+
+This addendum supersedes the missing-code statements in the dated November 6 bullets.
+
+- [x] N4: approved read-only company package percentage/effective-date/reason display,
+      linking to the existing audited Company rules writer; drawer role visibility,
+      loading/error/unsaved/empty/current/scheduled states covered.
+- [x] N6 cash preview: server catalogue/member/GST/discount/FOC/package policy,
+      stored plan/category/outlet context, SELF rows and explicit unavailable states.
+- [x] N7 explicit package-tender preview: original purchase snapshot, funded next
+      ordinals/residuals, session quantity and fixed awards; no reserve/post/write.
+- [ ] (f2) acceptance still open: full supported POS combinations, especially
+      appointment-therapist defaults and attribution preservation through that path.
+      Never substitute the till operator for a missing performer. Conditional cash
+      estimates are not exact credit-funded or incentive awards.
+- [x] (g) implemented reporting acceptance: up-to-24-month approved-only ranges,
+      deterministic pagination/full filtered XLSX, recursive source roots and isolation,
+      SELF latest evidence/voids, bounded large-month session reads and distinct
+      operational utilisation counts. Section 12 contains five reports, not twelve.
+      Net-sales/expiry-event-ledger semantics are not claimed or silently added.
+
+CP-008 is not closed by this addendum: the remaining (f2) acceptance is not a product
+decision waived by the read-only N4 approval. See the latest executed evidence in
+`PROGRESS.md`; no deployment, earnings activation or approved-payroll change.

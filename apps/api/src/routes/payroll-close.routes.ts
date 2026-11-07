@@ -53,6 +53,10 @@ import {
   commissionDetailQuerySchema,
 } from "../services/payroll-commission-detail.js";
 import { cartPreviewSchema, previewPayrollCart } from "../services/payroll-cart-preview.js";
+import {
+  redemptionPreviewSchema,
+  previewPayrollRedemption,
+} from "../services/payroll-redemption-preview.js";
 
 /** This boundary never accepts source records, a loader, or a calculation snapshot.
  * Response projections omit raw inputs and protect salary information. */
@@ -80,6 +84,12 @@ const handle =
 const management = requireRole("SUPER_ADMIN", "MANAGER");
 const owner = requireRole("SUPER_ADMIN");
 const writable = requireWritableTenant();
+payrollCloseRouter.post(
+  "/redemption-preview",
+  requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),
+  validate(redemptionPreviewSchema),
+  handle((req) => previewPayrollRedemption(validated(req, "body"))),
+);
 payrollCloseRouter.post(
   "/cart-preview",
   requireRole("SUPER_ADMIN", "MANAGER", "STAFF"),

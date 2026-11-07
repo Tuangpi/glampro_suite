@@ -1,5 +1,44 @@
 # November 6, 2026 — attribution and reporting continuation
 
+## November 7 delivery status (supersedes the historical limitations below)
+
+- N4 follows the approved read-only approach: current/scheduled company package
+  percentage rules, dates and reasons; link to the existing audited Company rules
+  publisher. No second write path or new package percentage mode.
+- `POST /api/payroll-close/cart-preview` uses server catalogue/member prices,
+  checkout discount rounding, GST, FOC, package policy, current effective rules and
+  stored plan/category/outlet context. Ordinary staff receive only their own rows.
+  Package purchases without an attached customer do not request an estimate.
+  Query cache identity includes authenticated user and role.
+- `POST /api/payroll-close/redemption-preview` accepts customer-owned `holdingId`,
+  `customerId`, session `quantity` and explicit performer `shares`. It reads original
+  purchase economics, residual-bearing next ordinals, paid-session funding and the
+  monthly plan; fixed awards count sessions. No current service price or caller-owned
+  base/rate enters the calculation. Legacy/unpaid/expired/refunded evidence is
+  unavailable. Staff rows are SELF-only. Nothing is reserved, posted or activated.
+  The package tender shows this estimate for explicit performers and positive
+  coverage; a repeated tender on the same holding is unavailable rather than
+  double-previewing the same next ordinals.
+- Commission detail supports inclusive ranges up to 24 months. Every month must
+  be approved; even one missing month is named and disables export. XLSX contains
+  the entire filtered range. Frozen bases remain distinct from pooled awards.
+- Existing recursive source resolution follows reversals to collection/refund/
+  redemption-correction roots with cycle/missing-reference/tenant guards. No receipt
+  neighbour is used to invent package/customer attribution.
+- Own-session reads scan 250 redemptions at a time in a repeatable-read transaction,
+  validate the latest evidence and retain only the requested 25-row SELF page.
+  Unit coverage crosses 601 records; real DB acceptance crosses 501 same-date rows.
+- The five §12 reports are present within their documented scope. Utilisation still
+  means operational packs/redeemed sessions/current expired-unused sessions, not
+  net sales or an expiry-movement ledger.
+- **CP-008 remains OPEN** until the remaining N6/N7 POS acceptance matrix and
+  appointment-therapist default/preservation path are evidenced. The cart preview is
+  hypothetical money-paid; credit-funded awards and incentives are not fabricated.
+  These limitations are not silently waived by the basic mounted checks.
+
+Executed totals and local cleanup are recorded in the November 7 progress entry.
+Earlier November 6 implementation/verification notes below remain historical evidence.
+
 ## Implemented boundaries
 
 - New cart lines default **sellers only** from the current unexpired POS identity,
