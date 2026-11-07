@@ -100,10 +100,9 @@ are hand-composed `Field` + `CONTROL_CLASS` for exactly that reason. Find secret
 
 Without SMTP configured, a login for an operator who still has verification on is
 refused with `503 EMAIL_NOT_CONFIGURED` — there is no fallback that would quietly
-accept a password alone. The recovery for a locked-out operator is an operator-side
-action, not a console one: `npm run platform:bootstrap` (or a direct
-`platform_admins."twoFactorEnabled" = false` update), then re-enrol from
-_Account & security_.
+accept a password alone. Restore the SMTP configuration before retrying sign-in.
+Production setup uses `SEED_MODE=production npm run db:seed` to initialize the first operator;
+it does not reset existing credentials or change email-verification settings.
 
 ## Sessions across a reload
 

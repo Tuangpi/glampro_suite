@@ -1,6 +1,11 @@
 import { z } from "zod";
 
 export const messageChannelSchema = z.enum(["WHATSAPP", "SMS"]);
+/** Safe system/provider readiness only; never includes provider credentials. */
+export interface MessagingCapabilities {
+  whatsappAvailable: boolean;
+  smsAvailable: boolean;
+}
 export const messagingSettingsSchema = z
   .object({
     whatsappEnabled: z.boolean().default(false),

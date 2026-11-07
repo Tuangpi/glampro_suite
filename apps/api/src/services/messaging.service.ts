@@ -11,6 +11,8 @@ import {
   publicOrigin,
   senderConfig,
   assertSender,
+  assertChannelAvailable,
+  messagingCapabilities,
   type Channel,
 } from "../lib/messaging-provider.js";
 import { resolveTenantStatus } from "../lib/tenant-status.js";
@@ -45,11 +47,12 @@ export async function assertMessagingAccess(module?: string) {
 }
 export async function getMessagingSettings() {
   const settings = await prisma.messagingSettings.findFirst();
+  const capabilities = messagingCapabilities(tenantId());
   return messagingSettingsSchema.parse(
     settings
       ? {
-          whatsappEnabled: settings.whatsappEnabled,
-          smsEnabled: settings.smsEnabled,
+          whatsappEnabled: settings.whatsappEnabled && capabilities.whatsappAvailable,
+          smsEnabled: settings.smsEnabled && capabilities.smsAvailable,
           reminderHours: settings.reminderHours,
           rebookingDays: settings.rebookingDays,
           quietStart: settings.quietStart,
@@ -63,6 +66,8 @@ export async function getMessagingSettings() {
   );
 }
 export async function saveMessagingSettings(input: MessagingSettingsInput) {
+  if (input.whatsappEnabled) assertChannelAvailable(tenantId(), "WHATSAPP");
+  if (input.smsEnabled) assertChannelAvailable(tenantId(), "SMS");
   if (input.whatsappEnabled || input.smsEnabled) {
     publicOrigin();
     if (!input.consentVersion || !input.serviceConsentText || !input.marketingConsentText)
@@ -108,6 +113,8 @@ export async function recordChannelConsent(
   actorId: string,
 ) {
   const settings = await getMessagingSettings();
+  if (input.service || input.marketing || input.preferred)
+    assertChannelAvailable(tenantId(), input.channel);
   await prisma.$transaction(async (tx) => {
     // Shared customer lock serializes channel choices, worker dispatch and opt-out.
     await tx.$queryRaw`SELECT id FROM customers WHERE id = ${customerId} AND "tenantId" = ${tenantId()} FOR UPDATE`;
@@ -179,7 +186,12 @@ export async function queueAppointmentMessages(tx: Tx, id: string) {
   });
   if (!appointment.customerId) return;
   const settings = await tx.messagingSettings.findFirst();
-  if (!settings?.whatsappEnabled && !settings?.smsEnabled) return;
+  const capabilities = messagingCapabilities(tenantId());
+  if (
+    !(settings?.whatsappEnabled && capabilities.whatsappAvailable) &&
+    !(settings?.smsEnabled && capabilities.smsAvailable)
+  )
+    return;
   const now = new Date();
   const base = {
     tenantId: appointment.tenantId,
@@ -312,6 +324,7 @@ export async function publicBookingAction(
   );
 }
 export async function queueReceipt(saleId: string, channel: Channel) {
+  assertChannelAvailable(tenantId(), channel);
   const sale = await getSale(saleId);
   if (sale.status === "HELD" || !sale.customerId)
     throw conflict("A completed sale with a saved customer is required.");
@@ -346,6 +359,18 @@ export async function queueReceipt(saleId: string, channel: Channel) {
   });
 }
 export async function retryMessage(id: string) {
+  const job = await prisma.messageJob.findFirst({ where: { id } });
+  if (!job) throw notFound();
+  const settings = await getMessagingSettings();
+  if (job.channel) assertChannelAvailable(tenantId(), job.channel as Channel);
+  if (
+    !(job.channel === "SMS"
+      ? settings.smsEnabled
+      : job.channel === "WHATSAPP"
+        ? settings.whatsappEnabled
+        : settings.smsEnabled || settings.whatsappEnabled)
+  )
+    throw conflict("This channel is disabled.");
   // Uncertain, accepted and delivered messages are never blindly resubmitted.
   const result = await prisma.messageJob.updateMany({
     where: { id, status: "FAILED", providerSid: null, errorCode: { not: "21610" } },

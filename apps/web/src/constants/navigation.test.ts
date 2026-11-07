@@ -62,11 +62,8 @@ describe("navItems", () => {
     expect(visibleNavItems().map((item) => item.label)).toContain("Staff");
   });
 
-  it("carries the eight handoff rail entries and no Services destination", () => {
-    // ADR 0005: the handoff rail draws seven destinations plus Settings in its
-    // foot, and services are a tab on the Products screen rather than a
-    // destination of their own. Eight entries in total, six for every role.
-    expect(navItems).toHaveLength(8);
+  it("adds department management without a separate Services destination", () => {
+    expect(navItems).toHaveLength(9);
     expect(navItems.map((item) => item.label)).not.toContain("Outlets");
     expect(visibleNavItems()).toHaveLength(6);
     expect(navItems.map((item) => item.label)).not.toContain("Services");
@@ -102,12 +99,23 @@ describe("entitlements", () => {
 
   it("treats an empty list as a real answer, not as unknown", () => {
     const labels = visibleNavItems("SUPER_ADMIN", []).map((item) => item.label);
-    expect(labels).toEqual(["Settings"]);
+    expect(labels).toEqual(["Departments", "Settings"]);
   });
 
   it("keeps Settings, which is not a switchable module", () => {
     expect(navItems.find((item) => item.label === "Settings")?.module).toBeUndefined();
     expect(visibleNavItems("MANAGER", []).map((item) => item.label)).toContain("Settings");
+  });
+
+  it("makes Departments core configuration available only to managers and admins", () => {
+    expect(navItems.find((item) => item.label === "Departments")?.module).toBeUndefined();
+    for (const role of ["SUPER_ADMIN", "MANAGER"] as const) {
+      expect(visibleNavItems(role, []).map((item) => item.label)).toContain("Departments");
+      expect(activeNavItem("/departments", role)?.label).toBe("Departments");
+    }
+    for (const role of ["STAFF", "CASHIER"] as const) {
+      expect(visibleNavItems(role).map((item) => item.label)).not.toContain("Departments");
+    }
   });
 
   it("names only real module codes, so requireModule cannot be given a typo", () => {

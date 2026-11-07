@@ -102,6 +102,7 @@ export const queryKeys = {
    */
   departments: {
     list: () => ["departments", "list"] as const,
+    deletionImpact: (id: string) => ["departments", "deletion-impact", id] as const,
   },
 
   products: {

@@ -2,6 +2,20 @@
 
 ## Scope and activation boundary
 
+The Messages settings page shows **WhatsApp & SMS — Coming soon** when neither
+channel is system-ready. Self-service provider credentials/sender onboarding is
+not implemented yet. Existing controlled integrations remain operator-managed.
+`GET /api/messaging/capabilities` returns only `whatsappAvailable` and
+`smsAvailable`, derived from `MESSAGING_ENABLED=true`, a valid public origin and
+the current tenant's sender configuration (all four templates for WhatsApp).
+It never returns credentials. A salon delivery toggle cannot override this gate.
+Unavailable channels are hidden from settings, receipt sending and customer
+consent editors; consent editors also require the salon channel to be enabled.
+Stored preferences, consent evidence and history are retained. Settings responses
+mask unavailable delivery toggles; activation, queueing, retry and worker dispatch
+enforce system readiness. Secure-link creation/copying is independent of channel
+availability. No schema migration is required.
+
 The application supports Twilio WhatsApp and SMS, appointment confirmations with
 customer confirm/cancel pages, scheduled reminders, rebooking prompts and secure
 receipt links. Both channels and the worker are disabled by default. Installing

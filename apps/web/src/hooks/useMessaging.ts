@@ -6,7 +6,7 @@
  * `queryKeys.messaging.settings` and a save is visible to an open dialog.
  */
 import { useQuery } from "@tanstack/react-query";
-import type { MessagingSettingsInput } from "@glampro_suite/shared";
+import type { MessagingSettingsInput, MessagingCapabilities } from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
 import { useAuth } from "@/contexts/AuthContext";
@@ -24,6 +24,16 @@ export function useMessagingSettings() {
   return useQuery({
     queryKey: queryKeys.messaging.settings(tenant?.id),
     queryFn: () => get<MessagingSettingsInput>("/messaging/settings"),
+    staleTime: 60_000,
+  });
+}
+
+/** System readiness is separate from the salon's delivery preferences. */
+export function useMessagingCapabilities() {
+  const { tenant } = useAuth();
+  return useQuery({
+    queryKey: ["messaging-capabilities", tenant?.id],
+    queryFn: () => get<MessagingCapabilities>("/messaging/capabilities"),
     staleTime: 60_000,
   });
 }

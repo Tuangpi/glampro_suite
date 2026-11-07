@@ -26,7 +26,6 @@
     "db:migrate:dev": "npm run db:migrate:dev --workspace @glampro_suite/api",
     "db:migrate:status": "npm run db:migrate:status --workspace @glampro_suite/api",
     "db:seed": "npm run db:seed --workspace @glampro_suite/api",
-    "db:seed:prod": "npm run db:seed:prod --workspace @glampro_suite/api",
     "db:reset": "npm run db:reset --workspace @glampro_suite/api",
     "db:studio": "npm run db:studio --workspace @glampro_suite/api",
     "lint": "npm run lint --workspaces --if-present",

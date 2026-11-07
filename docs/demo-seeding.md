@@ -14,12 +14,11 @@ The development seed creates:
   `SUPER_ADMIN` access. Sign in at `/login`. This role grants no platform access.
 - Existing sample staff, customers, catalogue, bookings and sales in that company.
 
-These credentials are development-only. `npm run db:seed:prod` requires explicit
+These credentials are development-only. `SEED_MODE=production npm run db:seed` requires explicit
 non-demo `ADMIN_EMAIL` and `ADMIN_PASSWORD`; `ADMIN_NAME` is optional. These initialize
 the first **platform administrator**, not a salon owner. Production seeds the shared
 module catalogue but creates no demo salon, salon users or sample business records.
-Sign in at `/platform/login` with working SMTP for email verification. No
-`PLATFORM_ADMIN_*` settings or separate bootstrap command are needed for this flow.
+Sign in at `/platform/login` with working SMTP for email verification.
 Repeated production seeds preserve the existing operator's credentials and disabled
 status. A different email is refused once a platform administrator exists. Existing
 salon accounts from older seeds are not deleted, converted or modified.

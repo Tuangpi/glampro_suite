@@ -213,16 +213,13 @@ server revocation. This milestone has no tenant-business-data endpoints, no gene
 Additive migration `20261023070000_platform_auth` was exercised only on disposable
 PostgreSQL. Application rollout still requires review/backup and an authorized
 `npm run db:migrate`. No existing salon session rows are changed by this migration.
-After authorized migration, bootstrap the first operator with
-`npm run platform:bootstrap --workspace @glampro_suite/api`, supplying
-`PLATFORM_ADMIN_EMAIL`, `PLATFORM_ADMIN_NAME`, `PLATFORM_ADMIN_PASSWORD` privately
-through the environment. Never put passwords in command arguments, git or logs.
-Bootstrap is explicit, transactional and advisory-locked, requires a strong password
-of at most 72 UTF-8 bytes, refuses existing initialization and records an audit.
-It is never invoked by server startup. Production seeding also supports first-operator
-initialization directly using `ADMIN_EMAIL`, `ADMIN_NAME` and `ADMIN_PASSWORD`, without
-requiring `PLATFORM_ADMIN_*` or the separate bootstrap command. That seed initializes
-shared modules but creates no salon or tenant users. Repeat runs preserve operator
+After authorized migration, initialize the first operator with
+`SEED_MODE=production npm run db:seed`, supplying `ADMIN_EMAIL`, `ADMIN_PASSWORD` and optional
+`ADMIN_NAME` privately through the environment. Never put passwords in command
+arguments, git or logs. Initialization is explicit, transactional and advisory-locked,
+requires a strong password of at most 72 UTF-8 bytes and records an audit.
+It is never invoked by server startup. The production seed initializes shared modules
+but creates no salon or tenant users. Repeat runs preserve operator
 credentials/status; a different email is refused once initialized. Additional operator provisioning,
 credential recovery/change and operator management UI are not implemented here.
 
@@ -959,6 +956,12 @@ assumptions do not authorize Docker/Actions work. Source: workspace manifests an
 ### ADR 0005
 
 **Accepted October 1, 2026 — Services is a catalogue tab, not a rail destination.**
+November 7, 2026 amendment: user approved a ninth destination, Departments, after
+Staff. It is admin/manager-only core configuration without a new entitlement
+module; create/rename preserve existing picker access and department ids. Physical
+locations remain Outlets. See `docs/departments.md`. The original eight-destination
+decision below remains historical context; Services is still not a rail destination.
+
 Eight destinations: Dashboard, Sale, Appointments, Customers, Products, Staff,
 Reports and Settings. Last two are manager/super-admin restricted; entitlement
 filtering can hide more. Keep existing labels (not proposal Home/Calendar) unless

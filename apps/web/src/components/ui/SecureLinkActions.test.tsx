@@ -9,12 +9,14 @@ const mocks = vi.hoisted(() => ({
   del: vi.fn(),
   get: vi.fn(),
   readOnly: false,
+  capabilities: { whatsappAvailable: true, smsAvailable: true },
 }));
 
 vi.mock("@/lib/api", () => ({
   post: mocks.post,
   del: mocks.del,
-  get: mocks.get,
+  get: (url: string) =>
+    url === "/messaging/capabilities" ? Promise.resolve(mocks.capabilities) : mocks.get(url),
   getErrorMessage: () => "Channel is disabled.",
 }));
 
@@ -44,10 +46,24 @@ function renderActions(props: React.ComponentProps<typeof SecureLinkActions>) {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.readOnly = false;
+  mocks.capabilities = { whatsappAvailable: true, smsAvailable: true };
   mocks.get.mockResolvedValue(BOTH_CHANNELS);
 });
 
 describe("secure link actions", () => {
+  it("hides system-disabled channels even with stored salon toggles on", async () => {
+    mocks.capabilities = { whatsappAvailable: false, smsAvailable: true };
+    renderActions({ resource: "sales", id: "sale", receipt: true });
+    expect(await screen.findByRole("button", { name: "Send receipt by SMS" })).toBeEnabled();
+    expect(screen.queryByText(/WhatsApp/)).toBeNull();
+  });
+
+  it("keeps secure links available when all messaging channels are unavailable", () => {
+    mocks.capabilities = { whatsappAvailable: false, smsAvailable: false };
+    renderActions({ resource: "sales", id: "sale", receipt: true });
+    expect(screen.getByRole("button", { name: "Create secure receipt link" })).toBeEnabled();
+    expect(screen.queryByText("Send this receipt")).toBeNull();
+  });
   it("creates a link only on request and discloses bearer access", async () => {
     mocks.post.mockResolvedValue({ url: "https://example.test/secret" });
     renderActions({ resource: "appointments", id: "booking" });
@@ -103,17 +119,17 @@ describe("secure link actions", () => {
     expect(mocks.post).not.toHaveBeenCalled();
   });
 
-  it("waits for the settings rather than guessing at the channels", () => {
+  it("waits for the settings rather than guessing at the channels", async () => {
     // Never settles: the dialog must not draw a send button it has no answer for.
     mocks.get.mockReturnValue(new Promise(() => {}));
     renderActions({ resource: "sales", id: "sale", receipt: true });
-    expect(screen.getByText("Checking which channels are on…")).toBeInTheDocument();
+    expect(await screen.findByText("Checking which channels are on…")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send receipt by SMS" })).toBeNull();
   });
 
-  it("does not offer a send when the record has no customer to message", () => {
+  it("does not offer a send when the record has no customer to message", async () => {
     renderActions({ resource: "sales", id: "sale", receipt: true, canMessage: false });
-    expect(screen.getByText(/Save the customer on this record first/)).toBeInTheDocument();
+    expect(await screen.findByText(/Save the customer on this record first/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send receipt by SMS" })).toBeNull();
     // The bearer link is still available — that is not a message.
     expect(screen.getByRole("button", { name: "Create secure receipt link" })).toBeEnabled();

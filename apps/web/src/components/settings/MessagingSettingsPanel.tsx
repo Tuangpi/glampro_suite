@@ -27,7 +27,7 @@ import { showToast } from "@/components/ui/toast-store";
 import { channelStatus, QUIET_HOUR_OPTIONS, quietHoursSummary } from "@/constants/messaging";
 import { queryKeys } from "@/constants/queryKeys";
 import { useAuth } from "@/contexts/AuthContext";
-import { useMessagingSettings } from "@/hooks/useMessaging";
+import { useMessagingSettings, useMessagingCapabilities } from "@/hooks/useMessaging";
 import { getErrorMessage, getValidationDetails, put } from "@/lib/api";
 
 type Errors = Partial<Record<keyof MessagingSettingsInput, string>>;
@@ -135,6 +135,7 @@ export default function MessagingSettingsPanel({ canEdit }: { canEdit: boolean }
 }
 
 function SettingsForm({ data, canEdit }: { data: MessagingSettingsInput; canEdit: boolean }) {
+  const capabilities = useMessagingCapabilities();
   const { tenant } = useAuth();
   const client = useQueryClient();
   const formId = useId();
@@ -271,18 +272,26 @@ function SettingsForm({ data, canEdit }: { data: MessagingSettingsInput; canEdit
           <section className={SECTION_CLASS}>
             <h4 className="text-sm font-bold text-ink">Delivery channels</h4>
 
-            <Checkbox
-              label="Send WhatsApp messages"
-              hint="Confirmations, reminders, rebooking prompts and receipts in one thread."
-              checked={draft.whatsappEnabled}
-              onChange={(event) => change({ whatsappEnabled: event.target.checked })}
-            />
-            <Checkbox
-              label="Send SMS messages"
-              hint="The same messages as a text — works on any phone, reads slower."
-              checked={draft.smsEnabled}
-              onChange={(event) => change({ smsEnabled: event.target.checked })}
-            />
+            {capabilities.data?.whatsappAvailable ? (
+              <Checkbox
+                label="Send WhatsApp messages"
+                hint="Confirmations, reminders, rebooking prompts and receipts in one thread."
+                checked={draft.whatsappEnabled}
+                onChange={(event) => change({ whatsappEnabled: event.target.checked })}
+              />
+            ) : (
+              <p className={HINT_CLASS}>WhatsApp — Coming soon</p>
+            )}
+            {capabilities.data?.smsAvailable ? (
+              <Checkbox
+                label="Send SMS messages"
+                hint="The same messages as a text — works on any phone, reads slower."
+                checked={draft.smsEnabled}
+                onChange={(event) => change({ smsEnabled: event.target.checked })}
+              />
+            ) : (
+              <p className={HINT_CLASS}>SMS — Coming soon</p>
+            )}
 
             <p className={HINT_CLASS}>
               A channel also needs a sender and template set up for this salon by the platform.

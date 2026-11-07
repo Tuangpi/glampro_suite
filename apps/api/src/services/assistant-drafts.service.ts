@@ -5,7 +5,12 @@ import { prisma } from "../lib/prisma.js";
 import { currentScope } from "../lib/tenant-context.js";
 import { conflict, forbidden, notFound } from "../lib/http-error.js";
 import { moduleEntitlements } from "../lib/entitlements.js";
-import { assertSender, publicOrigin, senderConfig } from "../lib/messaging-provider.js";
+import {
+  assertSender,
+  assertChannelAvailable,
+  publicOrigin,
+  senderConfig,
+} from "../lib/messaging-provider.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
 import { aiAssistantService } from "./ai-assistant.service.js";
 import { assertMessagingAccess, hashToken, tenantId, type Tx } from "./messaging.service.js";
@@ -54,6 +59,7 @@ export async function assistantDraftAccess() {
   return { actor, tenant };
 }
 async function eligible(input: AssistantDraftInput) {
+  assertChannelAvailable(tenantId(), input.channel);
   const { nudges } = await aiAssistantService.rebookingNudges({});
   if (
     !nudges.some(

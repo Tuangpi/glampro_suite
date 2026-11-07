@@ -18,6 +18,9 @@ import { useState } from "react";
 import { useSearchParams } from "react-router";
 
 import Tabs from "@/components/ui/Tabs";
+import Card from "@/components/ui/Card";
+import Button from "@/components/ui/Button";
+import { useMessagingCapabilities } from "@/hooks/useMessaging";
 import { useAuth } from "@/contexts/AuthContext";
 
 import MessageHistoryPanel from "./MessageHistoryPanel";
@@ -27,6 +30,40 @@ const SETTINGS = "settings";
 const HISTORY = "history";
 
 export default function MessagingCard({ canEdit }: { canEdit: boolean }) {
+  const capabilities = useMessagingCapabilities();
+  if (capabilities.isPending)
+    return (
+      <Card title="WhatsApp & SMS">
+        <p>Checking messaging availability…</p>
+      </Card>
+    );
+  if (capabilities.isError)
+    return (
+      <Card title="WhatsApp & SMS">
+        <p role="alert">Messaging availability could not be loaded.</p>
+        <Button onClick={() => void capabilities.refetch()}>Try again</Button>
+      </Card>
+    );
+  if (!capabilities.data?.whatsappAvailable && !capabilities.data?.smsAvailable)
+    return (
+      <Card title="WhatsApp & SMS — Coming soon">
+        <div className="space-y-3 py-4 text-sm text-ink-muted">
+          <p>Customer messaging is not available for this salon yet.</p>
+          <p>
+            We’re preparing self-service setup so you can connect your business number and messaging
+            provider securely.
+          </p>
+          <p>
+            Once a channel is enabled by the system and configured for your salon, its settings and
+            messaging actions will appear here and throughout the app.
+          </p>
+        </div>
+      </Card>
+    );
+  return <AvailableMessagingCard canEdit={canEdit} />;
+}
+
+function AvailableMessagingCard({ canEdit }: { canEdit: boolean }) {
   const { user } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 

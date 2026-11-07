@@ -223,15 +223,16 @@ export default function StaffIdentityForm({ staff, canEdit }: StaffIdentityFormP
             value={form.startDate}
             onChange={(event) => setField("startDate", event.target.value)}
             error={fieldError("startDate")}
-            hint="For staff with payroll settings or plan history, change the join date in the Payroll section with a reason."
+            hint="Employment start date, not the payroll period start date. For staff with payroll settings or plan history, change the join date in the Payroll section with a reason."
             disabled={!canEdit}
           />
           <Input
-            label="End date"
+            label="Employment end date (optional)"
             type="date"
             value={form.endDate}
             onChange={(event) => setField("endDate", event.target.value)}
             error={fieldError("endDate")}
+            hint="Leave blank if the staff member is still employed. Enter their last employment day only when known; this is not the payroll period end date."
             disabled={!canEdit}
           />
         </div>

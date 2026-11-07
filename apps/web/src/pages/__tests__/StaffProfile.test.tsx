@@ -160,6 +160,22 @@ describe("the loading state", () => {
 });
 
 describe("the identity section", () => {
+  it("allows clearing a known employment end date without changing the start date", async () => {
+    const user = userEvent.setup();
+    useStaff.mockReturnValue({ data: staffRow({ endDate: "2027-02-15" }), isPending: false });
+    renderProfile();
+
+    const endDate = screen.getByLabelText("Employment end date (optional)");
+    expect(endDate).not.toBeRequired();
+    expect(endDate).toHaveValue("2027-02-15");
+    await user.clear(endDate);
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(updateMutate).toHaveBeenCalledTimes(1));
+    expect(updateMutate.mock.calls[0]?.[0].input.endDate).toBeNull();
+    expect(updateMutate.mock.calls[0]?.[0].input).not.toHaveProperty("startDate");
+  });
+
   it("compares an edited start date against the date originally loaded", async () => {
     const user = userEvent.setup();
     renderProfile();

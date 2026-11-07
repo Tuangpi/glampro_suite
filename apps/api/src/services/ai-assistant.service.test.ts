@@ -24,6 +24,19 @@ const scoped = <T>(fn: () => T) => runAsTenant("assistant-unit", fn);
 const now = new Date("2026-10-23T17:00:00Z"); // October 24 at the salon.
 
 beforeEach(() => {
+  const keys = ["MESSAGING_ENABLED", "MESSAGING_PUBLIC_ORIGIN", "MESSAGING_TENANTS_JSON"];
+  const previous = keys.map((key) => process.env[key]);
+  restores.push(() => {
+    keys.forEach((key, index) => {
+      if (previous[index] === undefined) delete process.env[key];
+      else process.env[key] = previous[index];
+    });
+  });
+  process.env.MESSAGING_ENABLED = "true";
+  process.env.MESSAGING_PUBLIC_ORIGIN = "https://salon.example.test";
+  process.env.MESSAGING_TENANTS_JSON = JSON.stringify({
+    "assistant-unit": { accountSid: "test-account", authToken: "test-token", smsFrom: "Salon" },
+  });
   mock.timers.enable({ apis: ["Date"], now });
   replace(prisma.tenant, "findUnique", async () => ({
     timeZone: "Asia/Singapore",
@@ -249,6 +262,11 @@ describe("rebooking drafts", () => {
       (await scoped(() => assistant.rebookingNudges({ from: "2026-08-01" }))).nudges,
       [],
     );
+  });
+  it("suppresses messaging recommendations when the system is disabled despite stored toggles", async () => {
+    fixtures();
+    process.env.MESSAGING_ENABLED = "false";
+    assert.deepEqual((await scoped(() => assistant.rebookingNudges({}))).nudges, []);
   });
   it("uses explicit service intervals before query/company fallback", async () => {
     fixtures(120);

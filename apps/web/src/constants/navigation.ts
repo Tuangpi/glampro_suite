@@ -42,13 +42,8 @@ export interface NavItem {
  * Products and Reports. The screen behind it lands in the phase that builds the
  * staff surface; until then the entry matches the other not-yet-built routes.
  *
- * The rail has **eight** entries, and there is deliberately none for Services:
- * the handoff rail draws seven destinations plus Settings in its foot, and
- * services are reached from the Products tab row and from the sale and
- * appointment flows. The count and the absence are both asserted in
- * navigation.test.ts, so do not add a ninth entry without a decision. See ADR
- * 0005 (PROJECT.md#adr-0005) and
- * PROJECT.md#design-5.
+ * Departments adds a manager-only configuration destination to the original
+ * eight-entry rail. Services remain a Products tab (ADR 0005).
  */
 export const navItems: NavItem[] = [
   { label: "Dashboard", path: "/", icon: Grid, module: "dashboard" },
@@ -57,6 +52,12 @@ export const navItems: NavItem[] = [
   { label: "Customers", path: "/customers", icon: Users, module: "customers" },
   { label: "Products", path: "/products", icon: Package, badge: "lowStock", module: "catalogue" },
   { label: "Staff", path: "/staff", icon: Briefcase, module: "staff" },
+  {
+    label: "Departments",
+    path: "/departments",
+    icon: Grid,
+    roles: ["SUPER_ADMIN", "MANAGER"],
+  },
   {
     label: "Reports",
     path: "/reports",

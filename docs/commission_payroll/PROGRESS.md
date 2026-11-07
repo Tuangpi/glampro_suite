@@ -1,5 +1,17 @@
 # Commission & Payroll progress
 
+## November 7, 2026 — clarify staff employment dates
+
+- Staff creation now visibly requires the employment start date. Creation and
+  profile forms explicitly label the employment end date optional and explain
+  that it stays blank while employment continues; neither field is a payroll
+  period boundary.
+- Existing API/database behavior already supports an omitted end date on creation
+  and clearing it with `null` on update. No migration or payroll calculation
+  changes were needed. Existing audited join-date editing is preserved.
+- Verification: staff list/profile UI tests **39/39**, staff contract tests
+  **19/19**, web typecheck and changed-code Prettier check passed.
+
 ## November 7, 2026 — report implementation closes audit gaps
 
 - **CP-008 DONE locally.** This supersedes the audit-only OPEN entry below after

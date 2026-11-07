@@ -92,6 +92,9 @@ interface DepartmentRow {
 /** Removes everything this file created, so runs are repeatable. */
 async function purge(): Promise<void> {
   await runAsPlatform(async () => {
+    await prisma.auditLog.deleteMany({
+      where: { tenantId: { in: TENANT_IDS }, action: "department.delete" },
+    });
     await prisma.product.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
     await prisma.service.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
     await prisma.department.deleteMany({ where: { tenantId: { in: TENANT_IDS } } });
@@ -287,6 +290,330 @@ describe(
       for (const path of ["/api/products", "/api/services", "/api/departments"]) {
         const response = await request(path);
         assert.equal(response.status, 401, `${path} must require a token`);
+      }
+    });
+
+    it("creates and renames departments with tenant isolation and useful validation", async () => {
+      const write = (path: string, method: string, body: unknown, accessToken = token) =>
+        fetch(`${baseUrl}${path}`, {
+          method,
+          headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      const created = await write("/api/departments", "POST", { name: "  Beauty  " });
+      assert.equal(created.status, 201);
+      const { data } = (await created.json()) as { data: DepartmentRow };
+      assert.equal(data.name, "Beauty");
+      const foreign = await write(
+        `/api/departments/${data.id}`,
+        "PATCH",
+        { name: "Stolen" },
+        otherToken,
+      );
+      assert.equal(foreign.status, 404);
+      const renamed = await write(`/api/departments/${data.id}`, "PATCH", { name: "Skin" });
+      assert.equal(renamed.status, 200);
+      assert.equal(((await renamed.json()) as { data: DepartmentRow }).data.name, "Skin");
+      for (const method of ["POST", "PATCH"]) {
+        const path = method === "POST" ? "/api/departments" : `/api/departments/${data.id}`;
+        assert.equal((await write(path, method, { name: "Hair" })).status, 409);
+        for (const body of [
+          { name: " " },
+          { name: "a".repeat(101) },
+          { name: "Hair", tenantId: TENANT_B },
+        ]) {
+          assert.equal((await write(path, method, body)).status, 422);
+        }
+      }
+      assert.equal(
+        (await write("/api/departments/missing", "PATCH", { name: "Missing" })).status,
+        404,
+      );
+      await runAsPlatform(() => prisma.department.delete({ where: { id: data.id } }));
+    });
+
+    it("permits manager writes, refuses staff/cashier writes and preserves picker reads", async () => {
+      const passwordHash = await hashPassword(PASSWORD);
+      for (const globalRole of ["MANAGER", "STAFF", "CASHIER"] as const) {
+        const email = `${globalRole.toLowerCase()}@${DOMAIN}`;
+        await runAsPlatform(() =>
+          prisma.user.create({
+            data: {
+              tenantId: TENANT_A,
+              email,
+              name: globalRole,
+              passwordHash,
+              globalRole,
+            },
+          }),
+        );
+        const accessToken = await signIn(email);
+        assert.equal((await request("/api/departments", accessToken)).status, 200);
+        assert.equal(
+          (await request("/api/departments/missing/deletion-impact", accessToken)).status,
+          globalRole === "MANAGER" ? 404 : 403,
+        );
+        for (const method of ["POST", "PATCH", "DELETE"]) {
+          const path = method === "POST" ? "/api/departments" : "/api/departments/missing";
+          const response = await fetch(`${baseUrl}${path}`, {
+            method,
+            headers: { authorization: `Bearer ${accessToken}`, "content-type": "application/json" },
+            body: JSON.stringify({ name: "Manager department" }),
+          });
+          assert.equal(
+            response.status,
+            globalRole === "MANAGER" ? (method === "POST" ? 201 : 404) : 403,
+          );
+          if (response.status === 201) {
+            const { data } = (await response.json()) as { data: DepartmentRow };
+            await runAsPlatform(() => prisma.department.delete({ where: { id: data.id } }));
+          }
+        }
+      }
+    });
+
+    it("requires authentication and refuses department writes for suspended salons", async () => {
+      for (const method of ["POST", "PATCH", "DELETE"]) {
+        const path = method === "POST" ? "/api/departments" : "/api/departments/missing";
+        assert.equal((await fetch(`${baseUrl}${path}`, { method })).status, 401);
+      }
+      await runAsPlatform(() =>
+        prisma.tenant.update({ where: { id: TENANT_A }, data: { status: "SUSPENDED" } }),
+      );
+      try {
+        assert.equal((await request("/api/departments", token)).status, 200);
+        for (const method of ["POST", "PATCH", "DELETE"]) {
+          const path = method === "POST" ? "/api/departments" : "/api/departments/missing";
+          const response = await fetch(`${baseUrl}${path}`, {
+            method,
+            headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+            body: JSON.stringify({ name: "Blocked" }),
+          });
+          assert.equal(response.status, 403);
+          assert.equal(((await response.json()) as { code: string }).code, "TENANT_SUSPENDED");
+        }
+      } finally {
+        await runAsPlatform(() =>
+          prisma.tenant.update({ where: { id: TENANT_A }, data: { status: "ACTIVE" } }),
+        );
+      }
+    });
+
+    it("deletes and unassigns related records while preserving other assignments and auditing impact", async () => {
+      const fixture = await runAsPlatform(async () => {
+        const department = await prisma.department.create({
+          data: { tenantId: TENANT_A, name: "Delete section" },
+        });
+        const other = await prisma.department.findFirstOrThrow({
+          where: { tenantId: TENANT_A, name: "Hair" },
+        });
+        const staff = await prisma.user.findFirstOrThrow({
+          where: { tenantId: TENANT_A, email: EMAIL },
+        });
+        const customer = await prisma.customer.create({
+          data: { tenantId: TENANT_A, name: "Delete test customer", phone: "12345678" },
+        });
+        for (const departmentId of [department.id, other.id]) {
+          await prisma.staffDepartment.create({
+            data: { tenantId: TENANT_A, departmentId, userId: staff.id },
+          });
+          await prisma.customerDepartment.create({
+            data: { tenantId: TENANT_A, departmentId, customerId: customer.id },
+          });
+        }
+        const product = await prisma.product.create({
+          data: {
+            tenantId: TENANT_A,
+            departmentId: department.id,
+            name: "Delete test product",
+            memberPrice: "1",
+            nonmemberPrice: "2",
+          },
+        });
+        const service = await prisma.service.create({
+          data: {
+            tenantId: TENANT_A,
+            departmentId: department.id,
+            name: "Delete test service",
+            memberPrice: "1",
+            nonmemberPrice: "2",
+          },
+        });
+        return { department, other, staff, customer, product, service };
+      });
+      const path = `/api/departments/${fixture.department.id}`;
+      try {
+        const preview = await request(`${path}/deletion-impact`, token);
+        assert.equal(preview.status, 200);
+        assert.deepEqual(((await preview.json()) as { data: unknown }).data, {
+          id: fixture.department.id,
+          name: "Delete section",
+          products: 1,
+          services: 1,
+          staff: 1,
+          customers: 1,
+          commissionRules: 0,
+        });
+        assert.equal((await request(`${path}/deletion-impact`, otherToken)).status, 404);
+        assert.equal(
+          (
+            await fetch(`${baseUrl}${path}`, {
+              method: "DELETE",
+              headers: { authorization: `Bearer ${otherToken}` },
+            })
+          ).status,
+          404,
+        );
+        const deleted = await fetch(`${baseUrl}${path}`, {
+          method: "DELETE",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        assert.equal(deleted.status, 200);
+        await runAsPlatform(async () => {
+          assert.equal(
+            await prisma.department.findUnique({ where: { id: fixture.department.id } }),
+            null,
+          );
+          assert.equal(
+            (await prisma.product.findUniqueOrThrow({ where: { id: fixture.product.id } }))
+              .departmentId,
+            null,
+          );
+          assert.equal(
+            (await prisma.service.findUniqueOrThrow({ where: { id: fixture.service.id } }))
+              .departmentId,
+            null,
+          );
+          assert.ok(await prisma.user.findUnique({ where: { id: fixture.staff.id } }));
+          assert.ok(await prisma.customer.findUnique({ where: { id: fixture.customer.id } }));
+          assert.equal(
+            await prisma.staffDepartment.count({
+              where: { userId: fixture.staff.id, departmentId: fixture.department.id },
+            }),
+            0,
+          );
+          assert.equal(
+            await prisma.customerDepartment.count({
+              where: { customerId: fixture.customer.id, departmentId: fixture.department.id },
+            }),
+            0,
+          );
+          assert.equal(
+            await prisma.staffDepartment.count({
+              where: { userId: fixture.staff.id, departmentId: fixture.other.id },
+            }),
+            1,
+          );
+          assert.equal(
+            await prisma.customerDepartment.count({
+              where: { customerId: fixture.customer.id, departmentId: fixture.other.id },
+            }),
+            1,
+          );
+          const audit = await prisma.auditLog.findFirstOrThrow({
+            where: {
+              tenantId: TENANT_A,
+              targetId: fixture.department.id,
+              action: "department.delete",
+            },
+          });
+          assert.equal((audit.metadata as { actorId: string }).actorId, fixture.staff.id);
+          assert.equal((audit.metadata as { products: number }).products, 1);
+        });
+        assert.equal(
+          (
+            await fetch(`${baseUrl}${path}`, {
+              method: "DELETE",
+              headers: { authorization: `Bearer ${token}` },
+            })
+          ).status,
+          404,
+        );
+      } finally {
+        await runAsPlatform(async () => {
+          await prisma.product.delete({ where: { id: fixture.product.id } });
+          await prisma.service.delete({ where: { id: fixture.service.id } });
+          await prisma.customer.delete({ where: { id: fixture.customer.id } });
+          await prisma.staffDepartment.deleteMany({ where: { userId: fixture.staff.id } });
+          await prisma.department.deleteMany({ where: { id: fixture.department.id } });
+        });
+      }
+    });
+
+    it("rechecks commission references at deletion and preserves even historical null-rate rules", async () => {
+      const tenantId = "department-delete-rules-rt";
+      const email = `delete-rules@${DOMAIN}`;
+      const passwordHash = await hashPassword(PASSWORD);
+      await runAsPlatform(async () => {
+        await prisma.tenant.create({
+          data: { id: tenantId, slug: tenantId, name: "Deletion rules fixture" },
+        });
+        await prisma.user.create({
+          data: {
+            tenantId,
+            email,
+            name: "Deletion owner",
+            passwordHash,
+            globalRole: "SUPER_ADMIN",
+          },
+        });
+      });
+      const accessToken = await signIn(email);
+      const department = await runAsPlatform(() =>
+        prisma.department.create({ data: { tenantId, name: "Protected section" } }),
+      );
+      try {
+        const preview = await request(
+          `/api/departments/${department.id}/deletion-impact`,
+          accessToken,
+        );
+        assert.equal(
+          ((await preview.json()) as { data: { commissionRules: number } }).data.commissionRules,
+          0,
+        );
+        await runAsPlatform(() =>
+          prisma.commissionRule.create({
+            data: {
+              staffId: "department-delete-test-staff",
+              tenantId,
+              scope: "DEPARTMENT",
+              targetId: department.id,
+              scopeKey: "department-delete-test",
+              itemKind: "SERVICE",
+              rate: null,
+              actorId: "test",
+              reason: "Historical rule",
+              effectiveAt: new Date("2020-01-01"),
+            },
+          }),
+        );
+        const blocked = await fetch(`${baseUrl}/api/departments/${department.id}`, {
+          method: "DELETE",
+          headers: { authorization: `Bearer ${accessToken}` },
+        });
+        assert.equal(blocked.status, 409);
+        assert.equal(
+          ((await blocked.json()) as { code: string }).code,
+          "DEPARTMENT_HAS_COMMISSION_RULES",
+        );
+        await runAsPlatform(async () => {
+          assert.ok(await prisma.department.findUnique({ where: { id: department.id } }));
+          assert.equal(
+            await prisma.commissionRule.count({ where: { targetId: department.id } }),
+            1,
+          );
+          assert.equal(
+            await prisma.auditLog.count({
+              where: { targetId: department.id, action: "department.delete" },
+            }),
+            0,
+          );
+        });
+      } finally {
+        await runAsPlatform(async () => {
+          // Rules are append-only: clean up only through the fixture tenant cascade.
+          await prisma.tenant.delete({ where: { id: tenantId } });
+        });
       }
     });
 

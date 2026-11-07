@@ -45,6 +45,20 @@ describe("createStaffSchema", () => {
     startDate: "2026-09-01",
     payrollClassification: { commissionRole: "NON_COMMISSION", reason: "Employment agreement" },
   };
+  it("requires an employment start date but not an employment end date", () => {
+    const input = {
+      ...payrollSetup,
+      name: "Amy",
+      email: "amy@example.test",
+      password: "correct-horse-123",
+    };
+    assert.equal(createStaffSchema.parse(input).endDate, undefined);
+    assert.equal(createStaffSchema.safeParse({ ...input, startDate: undefined }).success, false);
+    assert.equal(
+      createStaffSchema.parse({ ...input, endDate: "2027-02-15" }).endDate,
+      "2027-02-15",
+    );
+  });
   it("requires the audited payroll classification whatever the role, title or legacy rate", () => {
     for (const globalRole of ["STAFF", "MANAGER", "SUPER_ADMIN"])
       assert.equal(
@@ -202,6 +216,11 @@ describe("createStaffSchema", () => {
 });
 
 describe("updateStaffSchema", () => {
+  it("allows recording or clearing an employment end date independently of payroll dates", () => {
+    assert.equal(updateStaffSchema.parse({ endDate: "2027-02-15" }).endDate, "2027-02-15");
+    assert.equal(updateStaffSchema.parse({ endDate: null }).endDate, null);
+    assert.equal(updateStaffSchema.parse({ name: "Amy" }).endDate, undefined);
+  });
   it("carries no password field, so a manager cannot bypass change-password", () => {
     const parsed = updateStaffSchema.parse({ password: "something-else" });
     assert.equal("password" in parsed, false);

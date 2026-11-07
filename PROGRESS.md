@@ -1,5 +1,40 @@
 # Glampro Suite — progress
 
+## November 7, 2026 — department delete and unassign
+
+- Added manager/admin deletion with affected-record preview, explicit confirmation,
+  read-only protection and booking/commission warnings. Products/services become
+  unassigned and staff/customer links are removed; business records and other
+  department memberships survive.
+- Any department commission-rule reference blocks deletion, including historical,
+  future and inheritance/null-rate rules. The backend rechecks under the same
+  tenant lock as commission publication, locks the department and atomically
+  deletes/audits. Existing foreign keys handle unassignment; no migration.
+- Added impact and DELETE APIs, cache invalidation, UI and PostgreSQL HTTP
+  coverage. The API suite passed 14/14; focused web tests, builds, lint and final
+  checks are recorded in the task completion report. Full-suite/browser UAT not run.
+- Updated `docs/departments.md`. This supersedes the earlier no-deletion scope;
+  protected departments have no self-service deletion path. Historical commission
+  and payroll evidence is not rewritten.
+
+## November 7, 2026 — core department management
+
+- Added admin/manager-only Departments sidebar destination and `/departments`
+  management page with create/rename drawers, validation, loading/error/empty
+  states and read-only protection. No paid entitlement module or deletion flow.
+- Added tenant-scoped POST/PATCH department endpoints; retained existing picker
+  reads for staff/cashiers. Duplicate names return a field-level 409; foreign ids
+  return 404. Existing database constraints suffice; no migration was run.
+- Department writes refresh shared pickers and affected catalogue/staff/customer
+  caches. Departments remain distinct from physical Outlets; legacy branch labels
+  elsewhere were not broadly renamed.
+- Verification: department/catalogue PostgreSQL HTTP suite 12/12, focused web
+  page/hook/navigation/route tests 28/28, shared schema test 1/1. Shared/API/web
+  builds and all three workspace lint checks passed; touched code formatting and
+  `git diff --check` passed. Full repository test suite and browser UAT not run.
+- Decision/API documentation: `docs/departments.md`; ADR 0005 amended for the
+  approved ninth sidebar item. Existing unrelated working changes preserved.
+
 ## November 7, 2026 — CP-008 report gaps implemented and accepted locally
 
 - **CP-008 DONE locally**, superseding the audit-only OPEN entry below. Added

@@ -1,16 +1,26 @@
 import { Router } from "express";
 
-import { auth } from "../middleware/auth.js";
+import {
+  idParamSchema,
+  saveDepartmentSchema,
+  type SaveDepartmentInput,
+} from "@glampro_suite/shared";
+import { auth, requireRole, requireWritableTenant } from "../middleware/auth.js";
 import { requireModule } from "../middleware/requireModule.js";
-import { listDepartments } from "../services/department.service.js";
+import { validate, validated } from "../middleware/validate.js";
+import {
+  createDepartment,
+  deleteDepartment,
+  getDepartmentDeletionImpact,
+  listDepartments,
+  renameDepartment,
+} from "../services/department.service.js";
+import { unauthorized } from "../lib/http-error.js";
 
 /**
- * Branches — the picker behind every catalogue and staff form.
+ * Departments — shared salon sections, not physical outlets.
  *
- * **Read-only on purpose.** A branch is created with the salon, during onboarding,
- * and no screen in the handoff manages them: `POST`/`PATCH` here would be an API
- * with no caller. They arrive with the screen that needs them, which is how the rest
- * of this build has handled endpoints whose UI does not exist yet.
+ * Picker reads serve every form. Management and deletion impact are manager/admin-only.
  *
  * Guarded by `catalogue` rather than a module of its own, because there is no
  * `departments` module code to guard it with. Both callers — the catalogue forms and
@@ -22,6 +32,40 @@ import { listDepartments } from "../services/department.service.js";
  */
 export const departmentsRouter = Router();
 
+departmentsRouter.get(
+  "/:id/deletion-impact",
+  auth,
+  requireModule("catalogue"),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({ data: await getDepartmentDeletionImpact(id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+departmentsRouter.delete(
+  "/:id",
+  auth,
+  requireModule("catalogue"),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  requireWritableTenant(),
+  validate(idParamSchema, "params"),
+  async (req, res, next) => {
+    try {
+      if (!req.user) throw unauthorized();
+      const { id } = validated<{ id: string }>(req, "params");
+      res.json({ data: await deleteDepartment(id, req.user.id) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 departmentsRouter.get("/", auth, requireModule("catalogue"), async (_req, res, next) => {
   try {
     res.status(200).json({ data: await listDepartments() });
@@ -29,3 +73,41 @@ departmentsRouter.get("/", auth, requireModule("catalogue"), async (_req, res, n
     next(error);
   }
 });
+
+departmentsRouter.post(
+  "/",
+  auth,
+  requireModule("catalogue"),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  requireWritableTenant(),
+  validate(saveDepartmentSchema),
+  async (req, res, next) => {
+    try {
+      res
+        .status(201)
+        .json({ data: await createDepartment(validated<SaveDepartmentInput>(req, "body")) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+departmentsRouter.patch(
+  "/:id",
+  auth,
+  requireModule("catalogue"),
+  requireRole("SUPER_ADMIN", "MANAGER"),
+  requireWritableTenant(),
+  validate(idParamSchema, "params"),
+  validate(saveDepartmentSchema),
+  async (req, res, next) => {
+    try {
+      const { id } = validated<{ id: string }>(req, "params");
+      res
+        .status(200)
+        .json({ data: await renameDepartment(id, validated<SaveDepartmentInput>(req, "body")) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);

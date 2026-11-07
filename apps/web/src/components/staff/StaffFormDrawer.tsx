@@ -366,13 +366,16 @@ export default function StaffFormDrawer({ open, onClose }: StaffFormDrawerProps)
             value={form.startDate}
             onChange={(event) => setField("startDate", event.target.value)}
             error={fieldError("startDate")}
+            required
+            hint="Required employment start date, used by payroll. This is not the payroll period start date."
           />
           <Input
-            label="End date"
+            label="Employment end date (optional)"
             type="date"
             value={form.endDate}
             onChange={(event) => setField("endDate", event.target.value)}
             error={fieldError("endDate")}
+            hint="Leave blank if the staff member is still employed. Enter their last employment day only when known; this is not the payroll period end date."
           />
         </div>
 

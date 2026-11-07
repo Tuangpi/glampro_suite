@@ -207,6 +207,13 @@ describe("the table", () => {
     renderStaff();
     await user.click(screen.getAllByRole("button", { name: "Add staff member" })[0]!);
     const dialog = within(await screen.findByRole("dialog"));
+    expect(screen.getByLabelText("Start date")).toBeRequired();
+    const endDate = screen.getByLabelText("Employment end date (optional)");
+    expect(endDate).not.toBeRequired();
+    expect(endDate).toHaveValue("");
+    expect(endDate).toHaveAccessibleDescription(
+      "Leave blank if the staff member is still employed. Enter their last employment day only when known; this is not the payroll period end date.",
+    );
     await user.type(screen.getByLabelText("Name"), "Amy");
     await user.type(screen.getByLabelText("Email"), "amy@example.test");
     await user.type(screen.getByLabelText("Password"), "correct-horse");
@@ -231,6 +238,7 @@ describe("the table", () => {
       payrollAssignment: { planId: "plan", expectedRevision: 3 },
       startDate: "2026-09-01",
     });
+    expect(createMutate.mock.calls[0]?.[0].endDate).toBeUndefined();
   });
   it("creates identity and an initial plan in one request, requiring a join date", async () => {
     const user = userEvent.setup();

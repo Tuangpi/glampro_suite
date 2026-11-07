@@ -5,6 +5,7 @@ import {
   senderConfig,
   publicOrigin,
   assertSender,
+  assertChannelAvailable,
   type Channel,
   type MessageKind,
   type ProviderInput,
@@ -267,6 +268,7 @@ export async function runMessageBatch(
               return suppress("CHANNEL_DISABLED");
             const config = senderConfig(candidate.tenantId);
             const kind = job.kind as MessageKind;
+            assertChannelAvailable(candidate.tenantId, channel);
             assertSender(config, channel, kind);
             const origin = publicOrigin();
             if (draft && (draft.origin !== origin || draft.sender !== config!.smsFrom))

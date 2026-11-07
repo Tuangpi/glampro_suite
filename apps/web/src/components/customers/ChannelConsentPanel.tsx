@@ -5,6 +5,7 @@ import { get, post, getErrorMessage } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import Checkbox from "@/components/ui/Checkbox";
 import Button from "@/components/ui/Button";
+import { useMessagingSettings, useMessagingCapabilities } from "@/hooks/useMessaging";
 
 interface Choice {
   channel: "WHATSAPP" | "SMS";
@@ -20,13 +21,22 @@ interface Data {
 }
 export default function ChannelConsentPanel({ customerId }: { customerId: string }) {
   const { tenant } = useAuth();
+  const capabilities = useMessagingCapabilities();
+  const settings = useMessagingSettings();
+  const channels = (["WHATSAPP", "SMS"] as const).filter((channel) =>
+    channel === "SMS"
+      ? capabilities.data?.smsAvailable && settings.data?.smsEnabled
+      : capabilities.data?.whatsappAvailable && settings.data?.whatsappEnabled,
+  );
   const query = useQuery({
     queryKey: ["channel-consent", tenant?.id, customerId],
     queryFn: () => get<Data>(`/messaging/customers/${customerId}`),
+    enabled: channels.length > 0,
   });
+  if (!channels.length) return null;
   return (
     <section className="border p-3 space-y-3" aria-label="Messaging consent">
-      <h3>WhatsApp / SMS choices</h3>
+      <h3>Messaging choices</h3>
       <p>
         Save phone changes first. Use an international number starting with +. No permission is
         inherited when the number changes.
@@ -38,7 +48,7 @@ export default function ChannelConsentPanel({ customerId }: { customerId: string
           <p>Notice {query.data.settings.consentVersion || "not configured"}</p>
           <p className="whitespace-pre-wrap">{query.data.settings.serviceConsentText}</p>
           <p className="whitespace-pre-wrap">{query.data.settings.marketingConsentText}</p>
-          {(["WHATSAPP", "SMS"] as const).map((channel) => (
+          {channels.map((channel) => (
             <Editor
               key={`${channel}-${JSON.stringify(query.data)}`}
               customerId={customerId}

@@ -19,10 +19,14 @@ const mocks = vi.hoisted(() => ({
   getValidationDetails: vi.fn(),
   showToast: vi.fn(),
   role: "SUPER_ADMIN",
+  capabilities: { whatsappAvailable: true, smsAvailable: true },
 }));
 
 vi.mock("@/lib/api", () => ({
-  get: mocks.get,
+  get: (url: string, ...args: unknown[]) =>
+    url === "/messaging/capabilities"
+      ? Promise.resolve(mocks.capabilities)
+      : mocks.get(url, ...args),
   put: mocks.put,
   post: mocks.post,
   getErrorMessage: mocks.getErrorMessage,
@@ -90,6 +94,7 @@ const historyCalls = () =>
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.role = "SUPER_ADMIN";
+  mocks.capabilities = { whatsappAvailable: true, smsAvailable: true };
   mocks.getErrorMessage.mockReturnValue("Configure the sender first.");
   mocks.getValidationDetails.mockReturnValue({});
   mocks.get.mockImplementation((url: string) =>
@@ -102,6 +107,22 @@ beforeEach(() => {
 });
 
 describe("messaging card", () => {
+  it("shows coming soon without settings or history requests when the system is unavailable", async () => {
+    mocks.capabilities = { whatsappAvailable: false, smsAvailable: false };
+    mount({ route: "/settings?section=messages&messages=history" });
+    expect(await screen.findByText("WhatsApp & SMS — Coming soon")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save messaging settings" })).toBeNull();
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(mocks.get).not.toHaveBeenCalled();
+  });
+
+  it("offers only the system-ready channel in settings", async () => {
+    mocks.capabilities = { whatsappAvailable: false, smsAvailable: true };
+    mount();
+    expect(await screen.findByLabelText("Send SMS messages")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Send WhatsApp messages")).toBeNull();
+    expect(screen.getByText("WhatsApp — Coming soon")).toBeInTheDocument();
+  });
   it("opens on the settings tab and does not request history", async () => {
     mount();
 

@@ -1,4 +1,5 @@
 import twilio from "twilio";
+import type { MessagingCapabilities } from "@glampro_suite/shared";
 import { HttpError } from "./http-error.js";
 
 export type Channel = "WHATSAPP" | "SMS";
@@ -43,6 +44,36 @@ export function publicOrigin(): string {
     });
   }
   return url.origin;
+}
+
+export function messagingCapabilities(tenantId: string): MessagingCapabilities {
+  const unavailable = { whatsappAvailable: false, smsAvailable: false };
+  if (process.env.MESSAGING_ENABLED !== "true") return unavailable;
+  try {
+    publicOrigin();
+    const config = senderConfig(tenantId);
+    const ready = (channel: Channel) => {
+      try {
+        for (const kind of ["CONFIRMATION", "REMINDER", "REBOOKING", "RECEIPT"] as const)
+          assertSender(config, channel, kind);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    return { whatsappAvailable: ready("WHATSAPP"), smsAvailable: ready("SMS") };
+  } catch {
+    // Invalid operator configuration must fail closed without leaking secrets.
+    return unavailable;
+  }
+}
+
+export function assertChannelAvailable(tenantId: string, channel: Channel) {
+  const capabilities = messagingCapabilities(tenantId);
+  if (!(channel === "SMS" ? capabilities.smsAvailable : capabilities.whatsappAvailable))
+    throw new HttpError(503, "This messaging channel is not available yet.", {
+      code: "MESSAGING_NOT_CONFIGURED",
+    });
 }
 
 export interface ProviderInput {

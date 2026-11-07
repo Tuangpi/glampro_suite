@@ -11,9 +11,10 @@ import { requireModule } from "../middleware/requireModule.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsTenant } from "../lib/tenant-context.js";
 import { forbidden, notFound } from "../lib/http-error.js";
-import { verifyWebhook } from "../lib/messaging-provider.js";
+import { verifyWebhook, messagingCapabilities } from "../lib/messaging-provider.js";
 import {
   getMessagingSettings,
+  tenantId,
   saveMessagingSettings,
   getChannelConsents,
   recordChannelConsent,
@@ -34,6 +35,12 @@ const handle =
   };
 export const messagingRouter = Router();
 messagingRouter.use(auth);
+messagingRouter.get(
+  "/capabilities",
+  handle(async (_req, res) => {
+    res.json({ data: messagingCapabilities(tenantId()) });
+  }),
+);
 messagingRouter.get(
   "/settings",
   handle(async (_req, res) => {

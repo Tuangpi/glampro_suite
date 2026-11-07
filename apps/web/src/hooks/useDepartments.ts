@@ -1,21 +1,63 @@
-import { useQuery } from "@tanstack/react-query";
-import type { DepartmentSummary } from "@glampro_suite/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+  DepartmentSummary,
+  SaveDepartmentInput,
+  DepartmentDeletionImpact,
+} from "@glampro_suite/shared";
 
 import { queryKeys } from "@/constants/queryKeys";
-import { get } from "@/lib/api";
+import { del, get, patch, post } from "@/lib/api";
+
+async function invalidateDepartments(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all(
+    [
+      queryKeys.departments.list().slice(0, 1),
+      queryKeys.products.list().slice(0, 1),
+      queryKeys.services.list().slice(0, 1),
+      queryKeys.staff.list().slice(0, 1),
+      queryKeys.customers.all(),
+      queryKeys.appointments.all(),
+      queryKeys.sale.items(),
+    ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+  );
+}
+
+export function useDepartmentDeletionImpact(id: string | null) {
+  return useQuery({
+    queryKey: queryKeys.departments.deletionImpact(id ?? ""),
+    queryFn: () => get<DepartmentDeletionImpact>(`/departments/${id}/deletion-impact`),
+    enabled: id !== null,
+    staleTime: 0,
+  });
+}
+
+export function useDeleteDepartment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => del<DepartmentDeletionImpact>(`/departments/${id}`),
+    onSuccess: () => invalidateDepartments(queryClient),
+  });
+}
 
 /**
- * Every branch in the salon, for the catalogue and staff form pickers.
- *
- * Cached for five minutes rather than refetched per mount: a branch is created at
- * onboarding and then barely ever, so a picker that went blank between two forms
- * would cost a round trip to learn nothing. `listDepartments` is deliberately not
- * paginated — a salon has a handful of branches, not a page of them.
+ * Shared by management and all department pickers. Writes invalidate this cache.
  */
-export function useDepartments() {
+export function useDepartments(enabled = true) {
   return useQuery({
     queryKey: queryKeys.departments.list(),
     queryFn: () => get<DepartmentSummary[]>("/departments"),
     staleTime: 5 * 60 * 1000,
+    enabled,
+  });
+}
+
+export function useSaveDepartment() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id?: string; input: SaveDepartmentInput }) =>
+      id
+        ? patch<DepartmentSummary>(`/departments/${id}`, input)
+        : post<DepartmentSummary>("/departments", input),
+    onSuccess: () => invalidateDepartments(queryClient),
   });
 }

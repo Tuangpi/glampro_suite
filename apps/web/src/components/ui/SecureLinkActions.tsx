@@ -16,7 +16,7 @@ import { useState } from "react";
 
 import Button from "@/components/ui/Button";
 import { useAuth } from "@/contexts/AuthContext";
-import { useMessagingSettings } from "@/hooks/useMessaging";
+import { useMessagingSettings, useMessagingCapabilities } from "@/hooks/useMessaging";
 import { post, del, getErrorMessage } from "@/lib/api";
 
 /** The two channels the API's `messageChannelSchema` accepts, in offer order. */
@@ -53,6 +53,7 @@ export default function SecureLinkActions({
 }: SecureLinkActionsProps) {
   const { isReadOnly } = useAuth();
   const settings = useMessagingSettings();
+  const capabilities = useMessagingCapabilities();
   const [url, setUrl] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -125,7 +126,7 @@ export default function SecureLinkActions({
           </Button>
         </>
       ) : null}
-      {receipt ? (
+      {receipt && (capabilities.data?.whatsappAvailable || capabilities.data?.smsAvailable) ? (
         <div className="space-y-2 border-t border-line-soft pt-3">
           <h3 className="text-sm font-bold text-ink">Send this receipt</h3>
           {canMessage === false ? (
@@ -139,7 +140,11 @@ export default function SecureLinkActions({
           ) : (
             <>
               {CHANNELS.map((channel) =>
-                settings.data[CHANNEL_ENABLED_KEY[channel]] ? (
+                !(channel === "SMS"
+                  ? capabilities.data?.smsAvailable
+                  : capabilities.data?.whatsappAvailable) ? null : settings.data[
+                    CHANNEL_ENABLED_KEY[channel]
+                  ] ? (
                   <Button
                     key={channel}
                     type="button"
