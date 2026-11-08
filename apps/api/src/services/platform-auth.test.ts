@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL = "postgresql://unused:unused@127.0.0.1:1/unused";
+process.env.DATABASE_URL ??= "postgresql://unused:unused@127.0.0.1:1/unused";
 process.env.JWT_SECRET = "platform-auth-unit-test";
 // Empty prevents dotenv from restoring the developer's real SMTP setting.
 process.env.SMTP_HOST = "";

@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, it } from "node:test";
 import type { NextFunction, Request, Response } from "express";
 
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL = "postgresql://unused:unused@127.0.0.1:1/unused";
+process.env.DATABASE_URL ??= "postgresql://unused:unused@127.0.0.1:1/unused";
 process.env.JWT_SECRET = "tenant-boundary-unit-test-secret";
 const { auth } = await import("./auth.js");
 const { prisma } = await import("../lib/prisma.js");

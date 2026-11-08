@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL = "postgresql://unused:unused@127.0.0.1:1/unused";
+process.env.DATABASE_URL ??= "postgresql://unused:unused@127.0.0.1:1/unused";
 const { prisma } = await import("../lib/prisma.js");
 const { Prisma } = await import("../../generated/prisma/client.js");
 const { runAsTenant } = await import("../lib/tenant-context.js");

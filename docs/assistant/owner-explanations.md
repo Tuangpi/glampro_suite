@@ -113,8 +113,8 @@ automatically applied.
 The dashboard no longer mounts the owner briefing, rebooking recommendations,
 quiet-day opportunities or saved-draft review. Those screens were removed on
 November 5, 2026 while their APIs, services, tables and the automatic rebooking
-message job remain in place (see `docs/owner-rebooking.md`, `docs/owner-quiet-days.md`,
-`docs/owner-draft-delivery.md`). The owner summary endpoint is retained because the
+message job remain in place (see `docs/assistant/owner-rebooking.md`, `docs/assistant/owner-quiet-days.md`,
+`docs/assistant/owner-draft-delivery.md`). The owner summary endpoint is retained because the
 business answers read the same figures through `ownerMetrics`.
 
 ## Verification and rollout

@@ -6,7 +6,7 @@ import nodemailer from "nodemailer";
 
 // No database or external mail: every persistence call used below is replaced.
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL = "postgresql://unused:unused@127.0.0.1:1/unused";
+process.env.DATABASE_URL ??= "postgresql://unused:unused@127.0.0.1:1/unused";
 process.env.JWT_SECRET = "isolated-auth-security-unit-tests";
 process.env.SMTP_HOST = "";
 const { prisma } = await import("../lib/prisma.js");

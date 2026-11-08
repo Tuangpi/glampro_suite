@@ -1,5 +1,10 @@
 # Commission & Payroll
 
+> Historical project checkpoints, not current status or operating permission.
+> Use the [feature index](../README.md) for authority and integration constraints,
+> the [current checklist](../TASKS.md) for status, and the
+> [development guide](../../development/demo-seeding.md) for safe test setup.
+
 ## Approved prepaid refund settlement extension — October 30, 2026
 
 Owner approved a prospective manager-confirmed actual payout/cancellation workflow,
@@ -24,7 +29,7 @@ deferred. CP-005-M1 IN PROGRESS; M2 untouched.
 
 Approved October 27, 2026. This is the active, first-priority feature project.
 The user delegated open policy decisions to the agent's recommendations. Resolve
-discrepancies explicitly in [DECISIONS.md](DECISIONS.md), not by silently following
+discrepancies explicitly in [DECISIONS.md](../DECISIONS.md), not by silently following
 current behavior or the supplied reference implementation.
 
 Source precedence:
@@ -35,7 +40,7 @@ Source precedence:
 4. Supplied reference source and tests as implementation guidance.
 5. Current commission behavior where compatible.
 
-The former staff-commission tracker is [archived](../archive/staff-commission/README.md).
+The former staff-commission tracker is [archived](../../archive/staff-commission/README.md).
 It is not a requirement source. Its SC tasks are not dependencies or acceptance
 evidence for this project. Existing application work may be reused after inspection.
 New requirements outrank incompatible old commission policy, not authentication,
@@ -148,7 +153,7 @@ requirements only as needed. Do not reread the full checkpoint history each sess
   screens, tests, demo and bundled SRS. The bundled SRS is byte-identical to the
   top-level SRS at initialization.
 
-Keep delivered sources unchanged. See [REQUIREMENTS.md](REQUIREMENTS.md) for
+Keep delivered sources unchanged. See [REQUIREMENTS.md](../REQUIREMENTS.md) for
 coverage and acceptance mapping. Source claims of passing tests are not local runs.
 
 ## Goal and scope

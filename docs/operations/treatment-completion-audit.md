@@ -5,7 +5,7 @@ Audit date: October 22, 2026. Parent status: **IN PROGRESS**.
 Regression follow-up: October 23, 2026. Owner 2FA test-helper repair complete;
 full API rerun passes with the intentional SEC-01 skip. Rollout remains unperformed.
 For the coordinated treatment/prepaid operational handoff, see
-`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/coordinated-rollout-checklist.md`.
+`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/operations/coordinated-rollout-checklist.md`.
 
 This records implementation evidence and rollout boundaries. It is not legal
 sign-off, production verification, or permission to erase real records.

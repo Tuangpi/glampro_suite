@@ -129,7 +129,7 @@ fixed-dollar grid rates), and **one was never asked** (Q2).
 ### Correction: the statement line filter does not hide rows
 
 The entry below says the payroll statement's line filter keeps `GC_SALE`. The conclusion
-is right and the reason for it was mis-stated in [TASKS.md](TASKS.md) when the change
+is right and the reason for it was mis-stated in [TASKS.md](history/TASKS.md) when the change
 landed, so it is corrected here rather than by rewriting pushed history.
 
 `COMMISSION_TYPES` in `PayrollStatementLines.tsx:15-24` is the **option list for the
@@ -147,7 +147,7 @@ wrong call for a different reason — it would have made audited rows unlabelled
 [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) reviewed the v0.9 specification
 against the code and found the money aligned but the configuration surface
 incomplete. This entry records the decisions taken now; the remaining fixes are
-tracked as CP-008 in [TASKS.md](TASKS.md).
+tracked as CP-008 in [TASKS.md](history/TASKS.md).
 
 - **`requireAttribution` is retired, not wired.** The payroll setting was stored,
   defaulted to true and rendered in Settings, but no production code ever read it.

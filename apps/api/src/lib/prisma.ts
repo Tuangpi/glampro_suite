@@ -5,8 +5,21 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../../generated/prisma/client.js";
 import { outletPredicate } from "./outlet-policy.js";
 import { currentOutletId, requireScope } from "./tenant-context.js";
+import { requireTestDatabaseUrl } from "./test-database-safety.js";
 
 const connectionString = `${process.env.DATABASE_URL}`;
+
+// NODE_TEST_CONTEXT is supplied by Node's test runner, unlike NODE_ENV which
+// application code and individual tests can change. Guard direct test invocations
+// too, before a driver or client can connect to the normal application database.
+if (process.env.NODE_TEST_CONTEXT) {
+  const testUrl = requireTestDatabaseUrl(process.env.TEST_DATABASE_URL);
+  if (connectionString !== testUrl) {
+    throw new Error(
+      "Unsafe database test connection. Run npm test with TEST_DATABASE_URL configured.",
+    );
+  }
+}
 
 const adapter = new PrismaPg({ connectionString });
 

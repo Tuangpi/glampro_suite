@@ -6,7 +6,7 @@ import nodemailer from "nodemailer";
 // SMTP is deliberately *configured* here, because that is the path that must send an
 // email. `platform-auth.test.ts` covers the unconfigured refusal instead.
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL = "postgresql://unused:unused@127.0.0.1:1/unused";
+process.env.DATABASE_URL ??= "postgresql://unused:unused@127.0.0.1:1/unused";
 process.env.JWT_SECRET = "isolated-platform-auth-delivery-tests";
 process.env.SMTP_HOST = "127.0.0.1";
 process.env.SMTP_PORT = "1";

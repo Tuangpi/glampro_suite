@@ -20,7 +20,7 @@ Neither difference is waived by passing operational reporting tests.
 ## November 7, 2026 — CP-008 local acceptance
 
 CP-008 spec-alignment implementation and supported screen/report matrix are complete
-locally; see [CP008_ACCEPTANCE.md](CP008_ACCEPTANCE.md) and the latest progress entry.
+locally; see [CP008_ACCEPTANCE.md](acceptance/CP008_ACCEPTANCE.md) and the latest progress entry.
 Appointment-to-till defaults preserve booked therapists, not till operators; actual
 cash completion and package redemption are browser-verified without earnings
 activation or approved-payroll changes. Conditional estimates retain unavailable
@@ -48,7 +48,7 @@ their API/POS/UI integration and end-to-end acceptance in CP-003–CP-007.
 ## Functional coverage
 
 CP-003 update (October 28, 2026): configuration-only completion checks accepted;
-see [CONFIGURATION_ACCEPTANCE.md](CONFIGURATION_ACCEPTANCE.md) for evidence and
+see [CONFIGURATION_ACCEPTANCE.md](acceptance/CONFIGURATION_ACCEPTANCE.md) for evidence and
 limits. This does not accept historical monetary preview, actual earnings,
 monthly close or release-wide integration.
 
@@ -152,7 +152,7 @@ Source: [SPEC_V0_9_ALIGNMENT.md](SPEC_V0_9_ALIGNMENT.md) §7. Every item below c
 money or scope, so the answers were taken explicitly rather than assumed. All thirteen
 were put to the client on **November 6, 2026**; the answers are agreed policy from that
 date, which closes several CP-008 items **by decision instead of by code** — see
-[TASKS.md](TASKS.md) and the recorded reasoning in [DECISIONS.md](DECISIONS.md).
+[TASKS.md](history/TASKS.md) and the recorded reasoning in [DECISIONS.md](DECISIONS.md).
 Rows marked **Open** are not agreed, stay provisional, and gate nothing currently in
 flight.
 

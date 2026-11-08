@@ -1,5 +1,10 @@
 # November 6, 2026 — attribution and reporting continuation
 
+> Historical continuation with superseded checkpoints below. Use the
+> [current checklist](../TASKS.md) and [report audit](../acceptance/CP008_REPORT_AUDIT.md).
+> Old commands are evidence, not current setup instructions; follow the
+> [isolated test database guide](../../development/demo-seeding.md) before rerunning checks.
+
 ## November 7 report delivery — current status
 
 **CP-008 DONE locally.** Audit gaps below were implemented: management per-holding

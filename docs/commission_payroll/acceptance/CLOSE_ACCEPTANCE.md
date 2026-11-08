@@ -30,7 +30,7 @@ calculation for 50 staff/50 cash receipts **1,154.2 ms**; not an MTD benchmark.
 
 M5 is not accepted: remaining manager/carry mounted browser flows and broader
 plan-volume performance/final money review are explicitly tracked in
-`docs/commission_payroll/APPLICATION_CLOSE_ACCEPTANCE.md`. CP-003A/006/007 and
+`docs/commission_payroll/acceptance/APPLICATION_CLOSE_ACCEPTANCE.md`. CP-003A/006/007 and
 production release remain separately gated. Only the verified disposable DB was
 written. Initial mock/immutable fixture cleanup failures and CPU-loaded web timeouts
 were resolved and complete reruns passed; no assertions/constraints disabled.
@@ -752,7 +752,7 @@ CP-006 work started. All results below describe actual local checks, not release
 or production readiness.
 
 The five remaining delivery gates are tracked as CP-005-M1–M5 in
-[TASKS.md](TASKS.md). **M1 authoritative lifecycle loading is still open**, despite
+[TASKS.md](../history/TASKS.md). **M1 authoritative lifecycle loading is still open**, despite
 passing monthly private-credit and private-transfer subsets. Sharing, restorations,
 refunds/voids and the other required unsupported paths must be integrated and
 verified, not merely rejected, before M1 is complete. Next-open corrections,

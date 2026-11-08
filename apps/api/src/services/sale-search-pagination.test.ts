@@ -4,11 +4,13 @@ import { saleItemSearchQuerySchema, type SaleItemKind } from "@glampro_suite/sha
 
 // Persistence is replaced below; never connect to an application database.
 process.env.NODE_ENV = "test";
-process.env.DATABASE_URL = "postgresql://unused:unused@127.0.0.1:1/unused";
+process.env.DATABASE_URL ??= "postgresql://unused:unused@127.0.0.1:1/unused";
 process.env.JWT_SECRET = "isolated-sale-pagination-tests";
 const { prisma } = await import("../lib/prisma.js");
 const { runAsTenant } = await import("../lib/tenant-context.js");
-const { searchSaleItems } = await import("./sale.service.js");
+const { searchSaleItems } = await import("./sale-item-search.service.js");
+const { searchSaleItems: legacySearchSaleItems } = await import("./sale.service.js");
+const { SALE_KIND_MODULE } = await import("./sale-item-policy.js");
 
 const restore: Array<() => void> = [];
 function replace(target: object, key: string, implementation: unknown) {
@@ -81,6 +83,17 @@ function search(kind: SaleItemKind, page: number, term?: string) {
 }
 
 describe("bounded sale catalog pagination", () => {
+  it("preserves the existing service export and shared search/checkout entitlement policy", () => {
+    assert.equal(legacySearchSaleItems, searchSaleItems);
+    assert.deepEqual(SALE_KIND_MODULE, {
+      SERVICE: "catalogue",
+      PRODUCT: "catalogue",
+      PACKAGE: "packages",
+      VALUE_PACKAGE: "packages",
+      GIFT_CARD: "giftCards",
+    });
+  });
+
   for (const kind of ["SERVICE", "PRODUCT", "PACKAGE", "VALUE_PACKAGE", "GIFT_CARD"] as const) {
     it(`browses all 805 ${kind} items without duplicates or oversized reads`, async () => {
       const ids: string[] = [];
@@ -113,5 +126,58 @@ describe("bounded sale catalog pagination", () => {
     );
     assert.equal(result.hasMore, false);
     assert.equal(result.searchableKinds.length, 5);
+  });
+
+  it("omits unentitled kinds without reading their catalogues", async () => {
+    replace(prisma.module, "findMany", async () => [{ code: "catalogue", isCore: true }]);
+    const result = await search("PACKAGE", 1);
+    assert.deepEqual(result.searchableKinds, ["SERVICE", "PRODUCT"]);
+    assert.deepEqual(result.items, []);
+    assert.equal(result.hasMore, false);
+    assert.equal(reads.length, 0);
+  });
+
+  it("keeps an exact normalized barcode match once when name search also returns it", async () => {
+    let barcodeReads = 0;
+    replace(prisma.product, "findFirst", async (args: unknown) => {
+      barcodeReads++;
+      assert.deepEqual((args as { where: unknown }).where, {
+        barcode: "8800000000007",
+        status: "ACTIVE",
+      });
+      return { ...rows[0], quantity: 5, barcode: "8800000000007" };
+    });
+    const result = await runAsTenant("pagination-test", () =>
+      searchSaleItems(
+        saleItemSearchQuerySchema.parse({
+          kind: "PRODUCT",
+          search: "0000",
+          barcode: " 8800000000007 ",
+          limit: 24,
+        }),
+      ),
+    );
+    assert.equal(barcodeReads, 1);
+    assert.equal(result.items.length, 1);
+    assert.equal(result.items[0]?.kind, "PRODUCT");
+    if (result.items[0]?.kind === "PRODUCT") {
+      assert.equal(result.items[0].barcode, "8800000000007");
+      assert.equal(result.items[0].lowStock, true, "the configured threshold is inclusive");
+    }
+  });
+
+  it("does not resolve barcodes when products are not entitled", async () => {
+    replace(prisma.module, "findMany", async () => [{ code: "packages", isCore: true }]);
+    replace(prisma.product, "findFirst", async () => {
+      assert.fail("unentitled barcode lookup must not execute");
+    });
+    const result = await runAsTenant("pagination-test", () =>
+      searchSaleItems(
+        saleItemSearchQuerySchema.parse({ kind: "PRODUCT", barcode: "8800000000007" }),
+      ),
+    );
+    assert.deepEqual(result.searchableKinds, ["PACKAGE", "VALUE_PACKAGE"]);
+    assert.deepEqual(result.items, []);
+    assert.equal(reads.length, 0);
   });
 });

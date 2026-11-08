@@ -212,10 +212,10 @@ earlier briefing-only acceptance limitation.
 
 Repository root: `/home/tuangpi/Documents/Aridient/Glampros/glampro_suite`.
 Related implementation notes:
-`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/owner-draft-delivery.md`,
-`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/owner-explanations.md`.
+`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/assistant/owner-draft-delivery.md`,
+`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/assistant/owner-explanations.md`.
 Coordinate with
-`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/coordinated-rollout-checklist.md`;
+`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/docs/operations/coordinated-rollout-checklist.md`;
 that checklist's historical migration counts are not current release evidence.
 
 - [ ] Name target environment/tenants, operator, data/recovery owner, go/no-go owner,

@@ -10,7 +10,7 @@ behaviour rather than a screen.
 
 OA-05 update (October 24): SMS drafts now support explicit saving, versioned review,
 approval and controlled queueing. The read-only/temporary descriptions below record
-the original OA-03 boundary. Current workflow/policy: `docs/owner-draft-delivery.md`.
+the original OA-03 boundary. Current workflow/policy: `docs/assistant/owner-draft-delivery.md`.
 WhatsApp and promotion delivery remain gated; recommendation preview itself does
 not persist or send anything.
 

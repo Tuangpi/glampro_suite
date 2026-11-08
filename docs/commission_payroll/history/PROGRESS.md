@@ -1,5 +1,10 @@
 # Commission & Payroll progress
 
+> Dated verification history, not current feature status or operating permission.
+> Use the [current checklist](../TASKS.md) and the
+> [isolated test database guide](../../development/demo-seeding.md). Recorded test
+> counts are historical evidence, not fresh verification for later changes.
+
 ## November 7, 2026 — clarify staff employment dates
 
 - Staff creation now visibly requires the employment start date. Creation and
@@ -94,7 +99,7 @@
   with identical splits; mixed service sets remain unknown. Explicit tender edits/
   clear survive rerender/refused payment; repeated holdings do not double-preview
   original ordinals. No performer derives from the till operator.
-- Acceptance matrix: [CP008_ACCEPTANCE.md](CP008_ACCEPTANCE.md). New unit/component
+- Acceptance matrix: [CP008_ACCEPTANCE.md](../acceptance/CP008_ACCEPTANCE.md). New unit/component
   cases plus real Chrome hold/pickup/reload/cancel/cash completion and package
   redemption prove immutable therapist evidence. Browser cases assert unchanged
   approved closes and versioned earnings. Synthetic booking/read fixtures are not
@@ -310,7 +315,7 @@ Cleanup evidence: `/tmp/cp008-cleanup.log`. No development/production cluster wa
   write those rules from the drawer, read them back read-only and link to the grid, or
   add a fourth `commissionSettings` mode — which first needs "the override replaces
   _which_ plan component's rate?" answered, since commission is pooled per component.
-  Recorded in [DECISIONS.md](DECISIONS.md); `TASKS.md` reclassifies the item rather than
+  Recorded in [DECISIONS.md](../DECISIONS.md); `TASKS.md` reclassifies the item rather than
   leaving a TODO that reads like a form field.
 - **Verification.** `commission.test.ts` 4/4 (new: both value-package labels and every
   kind labelled), `PayrollReport.test.tsx` 7/7 (new: `VP_SPEND` renders name plus code,
@@ -617,7 +622,7 @@ instead of being implied.
   before any assertion, so a cold first call is visible instead of being either hidden
   or mistaken for steady state.
 - **TC-01–TC-25 are evidenced by executed tests**, not by inspection:
-  `docs/commission_payroll/RELEASE_ACCEPTANCE.md` maps every case to a named test at
+  `docs/commission_payroll/acceptance/RELEASE_ACCEPTANCE.md` maps every case to a named test at
   engine, API, mounted-HTTP or UI level, with the layers marked. NFR-01–NFR-07 get an
   evidence row each, and the TC-09/10/12/16/18 chain was re-executed on a fresh
   disposable cluster (`127.0.0.1:55476/commission_collection_test`): **41 tests, 41
@@ -1276,7 +1281,7 @@ calculation for 50 staff/50 cash receipts **1,154.2 ms**; not an MTD benchmark.
 
 M5 is not accepted: remaining manager/carry mounted browser flows and broader
 plan-volume performance/final money review are explicitly tracked in
-`docs/commission_payroll/APPLICATION_CLOSE_ACCEPTANCE.md`. CP-003A/006/007 and
+`docs/commission_payroll/acceptance/APPLICATION_CLOSE_ACCEPTANCE.md`. CP-003A/006/007 and
 production release remain separately gated. Only the verified disposable DB was
 written. Initial mock/immutable fixture cleanup failures and CPU-loaded web timeouts
 were resolved and complete reruns passed; no assertions/constraints disabled.
@@ -1421,7 +1426,7 @@ This checkpoint supersedes older M2/session-only remainder statements below.
   0 failed, 9 separately gated skips**, exit 0. Shared **305/305**; full web
   **977/977** with one worker. Workspace lint/typechecks, full shared/API/web build,
   full formatting and final diff checks pass. Evidence: `/tmp/m119-*` and
-  [final review](CLOSE_ACCEPTANCE.md#november-2-2026--m1-19-final-completion-review).
+  [final review](../acceptance/CLOSE_ACCEPTANCE.md#november-2-2026--m1-19-final-completion-review).
 - Initial parallel web failure and reference-artifact formatting failure are
   retained as failed evidence, not erased. Full one-worker web rerun passes with
   no timeout/assertion changes. Delivered demo/reference artifacts are now explicit
