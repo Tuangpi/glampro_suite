@@ -36,7 +36,7 @@ const {
   mutateAsync: vi.fn(),
   getValidationDetails: vi.fn(() => ({})),
 }));
-const auth = vi.hoisted(() => ({ role: "SUPER_ADMIN", readOnly: false }));
+const auth = vi.hoisted(() => ({ role: "SUPER_ADMIN", readOnly: false, twoFactorEnabled: false }));
 
 vi.mock("@/hooks/useSettings", () => ({
   useModules,
@@ -78,7 +78,7 @@ vi.mock("@/components/settings/CommissionAttributionPolicy", () => ({
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
     isReadOnly: auth.readOnly,
-    user: { globalRole: auth.role },
+    user: { globalRole: auth.role, twoFactorEnabled: auth.twoFactorEnabled },
   }),
 }));
 vi.mock("@/lib/api", () => ({
@@ -88,10 +88,24 @@ vi.mock("@/lib/api", () => ({
 
 const { default: Settings } = await import("@/pages/Settings");
 
+it("returns verified owners from security setup to the Pay plans tab", async () => {
+  auth.twoFactorEnabled = true;
+  const user = userEvent.setup();
+  render(
+    <MemoryRouter initialEntries={["/settings?section=privacy&returnTo=pay-plans"]}>
+      <Settings />
+    </MemoryRouter>,
+  );
+  await user.click(screen.getByRole("button", { name: "Back to Pay plans" }));
+  expect(screen.getByRole("tab", { name: "Pay plans" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByLabelText("Versioned commission plans")).toBeVisible();
+});
+
 beforeEach(() => {
   vi.clearAllMocks();
   auth.role = "SUPER_ADMIN";
   auth.readOnly = false;
+  auth.twoFactorEnabled = false;
   mutateAsync.mockReset().mockResolvedValue({});
   getValidationDetails.mockReturnValue({});
   useSalonProfile.mockReturnValue({
@@ -181,12 +195,13 @@ function renderSettings(category = "salon") {
 
 describe("Settings", () => {
   it.each(["SUPER_ADMIN", "MANAGER"])(
-    "opens team & commissions on staff rates and reaches attribution for %s",
+    "opens team & commissions on company rules and reaches attribution for %s",
     async (role) => {
       auth.role = role;
       renderSettings("team");
-      // Staff rates is the tab the category opens on, because it is the job an
-      // owner arrives with; the other four are one click away.
+      // Shared defaults open first; individual editing lives on the staff profile.
+      expect(screen.getByRole("region", { name: "Company commission defaults" })).toBeVisible();
+      await userEvent.click(screen.getByRole("tab", { name: "Rate overview" }));
       expect(screen.getByRole("region", { name: "Commission matrix" })).toHaveAttribute(
         "data-editable",
         "true",
@@ -212,6 +227,7 @@ describe("Settings", () => {
   it("passes suspended read-only state to attribution policy", async () => {
     auth.readOnly = true;
     renderSettings("team");
+    await userEvent.click(screen.getByRole("tab", { name: "Rate overview" }));
     expect(screen.getByRole("region", { name: "Commission matrix" })).toHaveAttribute(
       "data-editable",
       "false",
@@ -236,6 +252,7 @@ describe("Settings", () => {
   });
   it("mounts a team panel on first visit and keeps it when the tab changes", async () => {
     const { container } = renderSettings("team");
+    await userEvent.click(screen.getByRole("tab", { name: "Rate overview" }));
     expect(screen.getByRole("region", { name: "Commission matrix" })).toBeVisible();
     expect(container.querySelector('[aria-label="Versioned commission plans"]')).toBeNull();
 

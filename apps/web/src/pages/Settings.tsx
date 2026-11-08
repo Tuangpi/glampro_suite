@@ -212,7 +212,24 @@ export default function Settings() {
                   {section.id === "messages" && <MessagingCard canEdit={canEdit} />}
                   {section.id === "privacy" && (
                     <>
-                      <TwoFactorCard />
+                      <TwoFactorCard
+                        onReturnToPayPlans={
+                          searchParams.get("returnTo") === "pay-plans"
+                            ? () => {
+                                setVisited((current) => [
+                                  ...new Set([...current, "team" as const]),
+                                ]);
+                                setSearchParams((current) => {
+                                  const next = new URLSearchParams(current);
+                                  next.set("section", "team");
+                                  next.set("team", "plans");
+                                  next.delete("returnTo");
+                                  return next;
+                                });
+                              }
+                            : undefined
+                        }
+                      />
                       {/* The salon-wide policy is the owner's to set; a manager
                           sees only their own account card. */}
                       {user?.globalRole === "SUPER_ADMIN" && <StaffSecurityPolicyCard />}
@@ -244,6 +261,7 @@ function FeatureSettings() {
  * dense tables and four "Reload" buttons on one page, and the reader had to
  * find the one they came for.
  *
+ * Company rules opens first; individual rates belong on staff profiles.
  * The URL owns the tab (`?team=`) the way it owns `?section=`, so a link can
  * open a colleague on the exact panel. `keepMounted` keeps the panels alive
  * once rendered: a half-edited matrix or plan draft survives a look at another
@@ -253,8 +271,8 @@ function FeatureSettings() {
  * configuration only.
  */
 const TEAM_TABS = [
-  { id: "rates", label: "Staff rates" },
   { id: "rules", label: "Company rules" },
+  { id: "rates", label: "Rate overview" },
   { id: "plans", label: "Pay plans" },
   { id: "progress", label: "This month" },
   { id: "attribution", label: "Attribution" },
@@ -266,13 +284,13 @@ function TeamSettings({ canEdit }: { canEdit: boolean }) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const requested = params.get("team");
-  const activeTab: TeamTab = TEAM_TABS.find((tab) => tab.id === requested)?.id ?? "rates";
+  const activeTab: TeamTab = TEAM_TABS.find((tab) => tab.id === requested)?.id ?? "rules";
   // Panels mount on first visit and stay mounted, so opening the category loads
   // one panel rather than five, and a visited draft is never thrown away.
   const [visited, setVisited] = useState<TeamTab[]>([activeTab]);
 
   function selectTab(tab: TeamTab) {
-    setVisited((current) => (current.includes(tab) ? current : [...current, tab]));
+    setVisited((current) => [...new Set([...current, activeTab, tab])]);
     setParams(
       (current) => {
         const next = new URLSearchParams(current);
@@ -284,15 +302,23 @@ function TeamSettings({ canEdit }: { canEdit: boolean }) {
   }
 
   const panels: Record<TeamTab, React.ReactNode> = {
-    rates: visited.includes("rates") ? <CommissionMatrix canEdit={canEdit} /> : null,
-    rules: visited.includes("rules") ? <CommissionRules canEdit={canEdit} /> : null,
-    plans: visited.includes("plans") ? (
-      <PayrollPlans canEdit={canEdit && user?.globalRole === "SUPER_ADMIN"} />
-    ) : null,
-    progress: visited.includes("progress") ? <PayrollProgress /> : null,
-    attribution: visited.includes("attribution") ? (
-      <CommissionAttributionPolicy canEdit={canEdit} />
-    ) : null,
+    rates:
+      activeTab === "rates" || visited.includes("rates") ? (
+        <CommissionMatrix canEdit={canEdit} />
+      ) : null,
+    rules:
+      activeTab === "rules" || visited.includes("rules") ? (
+        <CommissionRules canEdit={canEdit} />
+      ) : null,
+    plans:
+      activeTab === "plans" || visited.includes("plans") ? (
+        <PayrollPlans canEdit={canEdit && user?.globalRole === "SUPER_ADMIN"} />
+      ) : null,
+    progress: activeTab === "progress" || visited.includes("progress") ? <PayrollProgress /> : null,
+    attribution:
+      activeTab === "attribution" || visited.includes("attribution") ? (
+        <CommissionAttributionPolicy canEdit={canEdit} />
+      ) : null,
   };
 
   if (user?.globalRole !== "SUPER_ADMIN" && user?.globalRole !== "MANAGER") return null;

@@ -1,3 +1,4 @@
+import { MemoryRouter } from "react-router";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -39,13 +40,16 @@ function mount(canEdit = true) {
   });
   render(
     <QueryClientProvider client={client}>
-      <CommissionMatrix canEdit={canEdit} />
+      <MemoryRouter>
+        <CommissionMatrix canEdit={canEdit} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return client;
 }
 it("shows all kinds without conflating unconfigured rates with zero", async () => {
   mount();
+  await userEvent.click(await screen.findByRole("button", { name: "Bulk edit rates" }));
   expect(await screen.findByLabelText("Amy: Package sales")).toHaveValue("");
   expect(screen.getByText(/Blank means unconfigured/)).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Publish staff commission defaults" })).toBeDisabled();
@@ -53,6 +57,7 @@ it("shows all kinds without conflating unconfigured rates with zero", async () =
 it("atomically publishes explicit zero and inheritance with revision and reason", async () => {
   mount();
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Bulk edit rates" }));
   await user.type(await screen.findByLabelText("Amy: Package sales"), "0");
   await user.type(screen.getByLabelText("Amy: Package redemptions"), "inherit");
   await user.type(screen.getByLabelText("Bulk commission change reason"), "Split policy");
@@ -79,6 +84,7 @@ it("atomically publishes explicit zero and inheritance with revision and reason"
 it("pins draft revisions across refetch and requires explicit reload", async () => {
   const client = mount();
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Bulk edit rates" }));
   await user.type(await screen.findByLabelText("Amy: Package sales"), "15");
   await user.type(screen.getByLabelText("Bulk commission change reason"), "Preserve draft");
   act(() =>
@@ -97,6 +103,7 @@ it("pins draft revisions across refetch and requires explicit reload", async () 
 it("preserves draft after rejected publication or reload", async () => {
   mount();
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Bulk edit rates" }));
   await user.type(await screen.findByLabelText("Amy: Package sales"), "10");
   await user.type(screen.getByLabelText("Bulk commission change reason"), "Keep this");
   mocks.post.mockRejectedValue(new Error("Stale revision"));
@@ -113,7 +120,12 @@ it("preserves draft after rejected publication or reload", async () => {
 it("read-only mode permits reads and pagination but not publication", async () => {
   mount(false);
   const user = userEvent.setup();
-  expect(await screen.findByLabelText("Amy: Package sales")).toBeDisabled();
+  expect(await screen.findByRole("link", { name: "Amy" })).toHaveAttribute(
+    "href",
+    "/staff/amy?section=commission",
+  );
+  expect(screen.queryByLabelText("Amy: Package sales")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Bulk edit rates" })).not.toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Publish staff commission defaults" }),
   ).not.toBeInTheDocument();
@@ -125,6 +137,7 @@ it("read-only mode permits reads and pagination but not publication", async () =
 it("blocks invalid percentages before sending", async () => {
   mount();
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Bulk edit rates" }));
   await user.type(await screen.findByLabelText("Amy: Package sales"), "101");
   await user.type(screen.getByLabelText("Bulk commission change reason"), "Invalid draft");
   await user.click(screen.getByRole("button", { name: "Publish staff commission defaults" }));
@@ -147,6 +160,7 @@ it("blocks duplicate submission and edited controls while publishing", async () 
   );
   mount();
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Bulk edit rates" }));
   await user.type(await screen.findByLabelText("Amy: Package sales"), "10");
   await user.type(screen.getByLabelText("Bulk commission change reason"), "Pending publication");
   await user.dblClick(screen.getByRole("button", { name: "Publish staff commission defaults" }));
@@ -157,4 +171,24 @@ it("blocks duplicate submission and edited controls while publishing", async () 
   ).toBeDisabled();
   await act(async () => finish({ revision: "saved" }));
   expect(await screen.findByText(/published atomically/)).toBeInTheDocument();
+});
+
+it("starts read-only with staff deep links and requires an explicit bulk-edit action", async () => {
+  mount();
+  expect(await screen.findByRole("link", { name: "Amy" })).toHaveAttribute(
+    "href",
+    "/staff/amy?section=commission",
+  );
+  expect(screen.queryByLabelText("Amy: Services")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Bulk edit rates" }));
+  await userEvent.type(screen.getByLabelText("Amy: Services"), "0");
+  expect(screen.getByRole("button", { name: "Done bulk editing" })).toBeDisabled();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Reload commission matrix and discard draft" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Done bulk editing" })).toBeEnabled(),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Done bulk editing" }));
+  expect(screen.queryByLabelText("Amy: Services")).not.toBeInTheDocument();
 });

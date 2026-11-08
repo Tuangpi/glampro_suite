@@ -30,6 +30,7 @@ import { ChevronLeft } from "@/components/icons";
 import CommissionRules from "@/components/settings/CommissionRules";
 import PayrollPlans from "@/components/settings/PayrollPlans";
 import StaffAccessCard from "@/components/staff/StaffAccessCard";
+import StaffCommissionRates from "@/components/staff/StaffCommissionRates";
 import StaffIdentityForm from "@/components/staff/StaffIdentityForm";
 import StaffProfileSkeleton from "@/components/staff/StaffProfileSkeleton";
 import StaffRoster from "@/components/staff/StaffRoster";
@@ -70,8 +71,8 @@ const STAFF_SECTIONS = [
   },
   {
     id: "commission",
-    label: "Commission rules",
-    description: "Per-service and per-product overrides for this person.",
+    label: "Commissions",
+    description: "Default rates, exceptions and commission history for this person.",
   },
 ] as const;
 
@@ -248,7 +249,21 @@ function Profile({ id }: { id: string }) {
                     <PayrollPlans staffId={row.id} canEdit={canEditPayroll} />
                   )}
                   {section.id === "commission" && (
-                    <CommissionRules staffId={row.id} canEdit={canEditCommission} />
+                    <div key={row.id} className="flex flex-col gap-5">
+                      <StaffCommissionRates staffId={row.id} canEdit={canEditCommission} />
+                      <details className="rounded-lg border border-line p-4">
+                        <summary className="cursor-pointer text-sm font-bold text-ink">
+                          Exceptions & history
+                        </summary>
+                        <div className="mt-4">
+                          <CommissionRules
+                            staffId={row.id}
+                            canEdit={canEditCommission}
+                            exceptionsOnly
+                          />
+                        </div>
+                      </details>
+                    </div>
                   )}
                 </div>
               )}

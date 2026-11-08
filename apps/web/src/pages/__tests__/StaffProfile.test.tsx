@@ -57,6 +57,11 @@ vi.mock("@/components/settings/PayrollPlans", () => ({
     <section aria-label="Staff payroll" data-staff-id={staffId} data-can-edit={String(canEdit)} />
   ),
 }));
+vi.mock("@/components/staff/StaffCommissionRates", () => ({
+  default: ({ staffId, canEdit }: { staffId: string; canEdit: boolean }) => (
+    <section aria-label="Default rates" data-staff-id={staffId} data-can-edit={String(canEdit)} />
+  ),
+}));
 vi.mock("@/components/settings/CommissionRules", () => ({
   default: () => <section aria-label="Advanced commissions" />,
 }));
@@ -364,6 +369,30 @@ describe("the account status card", () => {
 });
 
 describe("who may write", () => {
+  it.each(["SUPER_ADMIN", "MANAGER"])("opens individual commissions for %s", (role) => {
+    auth.value = { user: { id: "manager", globalRole: role }, isReadOnly: false };
+    renderProfile("commission");
+    expect(screen.getByRole("heading", { name: "Commissions" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Default rates" })).toHaveAttribute(
+      "data-staff-id",
+      "u1",
+    );
+    expect(screen.getByRole("region", { name: "Default rates" })).toHaveAttribute(
+      "data-can-edit",
+      "true",
+    );
+    expect(screen.getByText("Exceptions & history")).toBeVisible();
+  });
+
+  it("keeps individual commission defaults read-only for a suspended salon", () => {
+    auth.value = { user: { id: "owner", globalRole: "SUPER_ADMIN" }, isReadOnly: true };
+    renderProfile("commission");
+    expect(screen.getByRole("region", { name: "Default rates" })).toHaveAttribute(
+      "data-can-edit",
+      "false",
+    );
+  });
+
   it("offers a stylist a reading page, because the API would refuse the rest", () => {
     auth.value = { user: { id: "u9", globalRole: "STAFF" }, isReadOnly: false };
     renderProfile();

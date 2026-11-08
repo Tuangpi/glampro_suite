@@ -1,5 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { Link } from "react-router";
+import { useAuth } from "@/contexts/AuthContext";
 import {
   hairPayrollExample,
   tpPayrollExample,
@@ -17,7 +19,7 @@ import {
   type PayrollSettingsWrite,
   type PayrollProfileWrite,
 } from "@glampro_suite/shared";
-import { get, post, getErrorMessage } from "@/lib/api";
+import { get, post, getErrorMessage, getErrorCode } from "@/lib/api";
 import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
@@ -111,9 +113,10 @@ export interface PayrollConfiguration {
 
 export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; staffId?: string }) {
   const client = useQueryClient();
+  const { user } = useAuth();
   const [historyPage, setHistoryPage] = useState(1);
   const query = useQuery({
-    queryKey: ["payroll-configuration", historyPage],
+    queryKey: ["payroll-configuration", historyPage, user?.twoFactorEnabled],
     queryFn: () => get<PayrollConfiguration>("/payroll-configuration", { historyPage }),
     staleTime: 0,
     placeholderData: (previous) => previous,
@@ -193,7 +196,7 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
       setError(getErrorMessage(cause));
     }
   }
-  if (query.isPending)
+  if (query.isPending && query.errorUpdateCount === 0)
     // A card the shape of the one that is coming, so choosing the Payroll section does
     // not flash a paragraph and then replace it with a form.
     return (
@@ -212,11 +215,43 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
         <Skeleton className="h-11 max-w-40" />
       </div>
     );
+  if (query.isError && getErrorCode(query.error) === "OWNER_TWO_FACTOR_REQUIRED")
+    return (
+      <Card title="Enable two-factor authentication to access pay plans">
+        <div className="space-y-3">
+          <p>
+            Your owner account needs email verification enabled before you can access pay plans.
+          </p>
+          <p className="text-sm text-ink-muted">
+            Go to Privacy &amp; security → Account security, turn on Email verification code at
+            sign-in, and confirm the six-digit code sent to your email.
+          </p>
+          <Link
+            to="/settings?section=privacy&returnTo=pay-plans"
+            className="inline-flex min-h-control items-center rounded-md bg-purple px-4.5 font-bold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple"
+          >
+            Set up email verification
+          </Link>
+          <p className="text-sm text-ink-muted">
+            After completing setup, return to Pay plans. Your plans will reload automatically.
+          </p>
+        </div>
+      </Card>
+    );
   if (query.isError || !query.data)
     return (
-      <div role="alert">
-        Unable to load commission plans.{" "}
-        <Button onClick={() => void query.refetch()}>Retry plans</Button>
+      <div role="alert" className="space-y-3">
+        <p>Unable to load commission plans.</p>
+        <p className="text-sm text-ink-muted">
+          {query.error
+            ? getErrorMessage(query.error)
+            : query.isFetching
+              ? "Loading commission plans again…"
+              : "No configuration was returned. Please retry loading the plans."}
+        </p>
+        <Button loading={query.isFetching} onClick={() => void query.refetch()}>
+          {query.isFetching ? "Retrying plans…" : "Retry plans"}
+        </Button>
       </div>
     );
   const data = query.data;

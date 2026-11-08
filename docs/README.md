@@ -44,6 +44,8 @@ working on that feature; they are not a mandatory startup checklist.
 
 ## Commission and payroll
 
+For configuration navigation, see [staff commission settings](features/staff-commission-settings.md).
+
 Use the [commission/payroll index](commission_payroll/README.md) for requirements,
 decisions, acceptance evidence, and the cutover runbook. Local acceptance is not
 production activation or authorization to pay staff.

@@ -31,15 +31,19 @@ const SCOPE_LABELS: Record<CommissionScope, string> = {
 export default function CommissionRules({
   staffId,
   canEdit,
+  exceptionsOnly = false,
 }: {
   staffId?: string;
   canEdit: boolean;
+  exceptionsOnly?: boolean;
 }) {
   const client = useQueryClient();
   const { formatDateTime, timeZone } = useSalonFormatting();
   const [page, setPage] = useState(1);
   const [kind, setKind] = useState<CommissionKind>("SERVICE");
-  const [scope, setScope] = useState<CommissionScope>(staffId ? "STAFF" : "COMPANY");
+  const [scope, setScope] = useState<CommissionScope>(
+    staffId ? (exceptionsOnly ? "ITEM" : "STAFF") : "COMPANY",
+  );
   const [target, setTarget] = useState("");
   const [search, setSearch] = useState("");
   const [rate, setRate] = useState("0");
@@ -164,7 +168,7 @@ export default function CommissionRules({
   }
   return (
     <Card
-      title={staffId ? "Advanced commissions" : "Company commission defaults"}
+      title={staffId ? "Exceptions & history" : "Company commission defaults"}
       description="Precedence: item, package, department, staff, then company. Rates never stack."
       actions={
         <Button
@@ -226,7 +230,7 @@ export default function CommissionRules({
         )}
         {config.data && (
           <>
-            {staffId && (
+            {staffId && !exceptionsOnly && (
               <p className="text-sm">
                 Legacy service fallback: {config.data.legacyServiceRate}%. Publish a staff default
                 to replace it, or Inherit to use the company default. Products default to company
@@ -235,10 +239,11 @@ export default function CommissionRules({
             )}
             {!staffId && (
               <p className="text-sm">
-                Existing staff service rates remain unchanged until the staff member is explicitly
-                set to inherit. Unconfigured kinds default to 0%, except explicitly complimentary
-                services (FOC), which default to 5%. Publishing rates does not classify a service as
-                FOC.
+                Set shared defaults here. Manage individual rates from each staff member's
+                Commissions section; use Rate overview to compare the team or bulk edit. Existing
+                staff service rates remain unchanged until the staff member is explicitly set to
+                inherit. Unconfigured kinds default to 0%, except explicitly complimentary services
+                (FOC), which default to 5%. Publishing rates does not classify a service as FOC.
               </p>
             )}
             <h4 className="mt-2 text-sm font-bold text-ink">Current rules</h4>
@@ -274,7 +279,7 @@ export default function CommissionRules({
                   value={kind}
                   onChange={(event) => {
                     setKind(event.target.value as CommissionKind);
-                    setScope(staffId ? "STAFF" : "COMPANY");
+                    setScope(staffId ? (exceptionsOnly ? "ITEM" : "STAFF") : "COMPANY");
                     setInherit(false);
                     setTarget("");
                     setPreviewItem("");
@@ -293,7 +298,7 @@ export default function CommissionRules({
                       setTarget("");
                     }}
                     options={[
-                      { value: "STAFF", label: "Staff default" },
+                      ...(!exceptionsOnly ? [{ value: "STAFF", label: "Staff default" }] : []),
                       ...(["SERVICE", "PRODUCT", "FOC"].includes(kind)
                         ? [{ value: "DEPARTMENT", label: "Department override" }]
                         : []),

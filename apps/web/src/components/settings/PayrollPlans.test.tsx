@@ -2,12 +2,19 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router";
 import { hairPayrollExample, PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
-const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), twoFactorEnabled: false }));
+vi.mock("@/contexts/AuthContext", () => ({
+  useAuth: () => ({
+    user: { globalRole: "SUPER_ADMIN", twoFactorEnabled: mocks.twoFactorEnabled },
+  }),
+}));
 vi.mock("@/lib/api", () => ({
   get: mocks.get,
   post: mocks.post,
   getErrorMessage: (e: Error) => e.message,
+  getErrorCode: (e: { code?: string }) => e?.code,
 }));
 import PayrollPlans, { type PayrollConfiguration } from "./PayrollPlans";
 
@@ -67,6 +74,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.get.mockResolvedValue(configuration());
   mocks.post.mockResolvedValue({});
+  mocks.twoFactorEnabled = false;
 });
 function mount(canEdit = true, staffId?: string) {
   const client = new QueryClient({
@@ -74,7 +82,9 @@ function mount(canEdit = true, staffId?: string) {
   });
   render(
     <QueryClientProvider client={client}>
-      <PayrollPlans canEdit={canEdit} staffId={staffId} />
+      <MemoryRouter>
+        <PayrollPlans canEdit={canEdit} staffId={staffId} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   return client;
@@ -298,7 +308,86 @@ it("fails closed when configuration cannot be loaded", async () => {
   mocks.get.mockRejectedValue(new Error("offline"));
   mount();
   expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load commission plans");
+  expect(screen.getByRole("alert")).toHaveTextContent("offline");
   expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
+});
+it("explains an owner verification refusal without exposing payroll controls", async () => {
+  mocks.get.mockRejectedValue(new Error("Owner verification is required."));
+  mount();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Owner verification is required.");
+  expect(screen.queryByLabelText("Basic monthly salary")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
+});
+it("offers security setup only for the dedicated owner two-factor requirement", async () => {
+  mocks.get.mockRejectedValue(
+    Object.assign(new Error("Owner verification is required."), {
+      code: "OWNER_TWO_FACTOR_REQUIRED",
+    }),
+  );
+  mount();
+  const link = await screen.findByRole("link", { name: "Set up email verification" });
+  expect(link).toHaveAttribute("href", "/settings?section=privacy&returnTo=pay-plans");
+  expect(screen.getByText("Enable two-factor authentication to access pay plans")).toBeVisible();
+  expect(screen.queryByText("Unable to load commission plans.")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Retry plans" })).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Basic monthly salary")).not.toBeInTheDocument();
+});
+it("does not treat other permission errors as missing two-factor setup", async () => {
+  mocks.get.mockRejectedValue(
+    Object.assign(new Error("Permission denied."), { code: "FORBIDDEN" }),
+  );
+  mount();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Permission denied.");
+  expect(screen.queryByRole("link", { name: "Set up email verification" })).not.toBeInTheDocument();
+});
+it("automatically reloads plans when the refreshed account has enabled two-factor", async () => {
+  mocks.get.mockRejectedValueOnce(
+    Object.assign(new Error("Owner verification is required."), {
+      code: "OWNER_TWO_FACTOR_REQUIRED",
+    }),
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = () => (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <PayrollPlans canEdit />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view());
+  await screen.findByRole("link", { name: "Set up email verification" });
+  mocks.twoFactorEnabled = true;
+  rerender(view());
+  expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
+  expect(mocks.get).toHaveBeenCalledTimes(2);
+});
+it("retries a failed load and restores the configuration after recovery", async () => {
+  mocks.get.mockRejectedValueOnce(new Error("offline"));
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Retry plans" }));
+  expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
+  expect(screen.queryByText("Unable to load commission plans.")).not.toBeInTheDocument();
+  expect(mocks.get).toHaveBeenCalledTimes(2);
+  expect(mocks.get).toHaveBeenLastCalledWith("/payroll-configuration", { historyPage: 1 });
+});
+it("blocks duplicate retries and keeps the latest failure visible", async () => {
+  mocks.get.mockRejectedValueOnce(new Error("offline"));
+  mount();
+  const user = userEvent.setup();
+  const retry = await screen.findByRole("button", { name: "Retry plans" });
+  let rejectRetry!: (reason: Error) => void;
+  mocks.get.mockImplementationOnce(
+    () => new Promise<PayrollConfiguration>((_resolve, reject) => (rejectRetry = reject)),
+  );
+  await user.click(retry);
+  expect(await screen.findByRole("button", { name: "Retrying plans…" })).toBeDisabled();
+  rejectRetry(new Error("Owner verification is required."));
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent("Owner verification is required."),
+  );
+  expect(screen.getByRole("button", { name: "Retry plans" })).toBeEnabled();
+  expect(mocks.get).toHaveBeenCalledTimes(2);
 });
 it("requires a reason for structured salary saves and retains edits after server failure", async () => {
   mount();

@@ -51,7 +51,7 @@ async function actor(tx: Transaction, ownerOnly = false) {
   if (!user || !["SUPER_ADMIN", ...(ownerOnly ? [] : ["MANAGER"])].includes(user.globalRole))
     throw forbidden("This payroll configuration action is not permitted.");
   if (user.globalRole === "SUPER_ADMIN" && !user.twoFactorEnabled)
-    throw forbidden("Owner verification is required.");
+    throw forbidden("Owner verification is required.", "OWNER_TWO_FACTOR_REQUIRED");
   return user;
 }
 async function write<T>(fn: (tx: Transaction) => Promise<T>, ownerOnly = false) {

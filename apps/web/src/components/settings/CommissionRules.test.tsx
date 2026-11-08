@@ -38,17 +38,27 @@ beforeEach(() => {
     ),
   );
 });
-function mount(staffId?: string, canEdit = true) {
+function mount(staffId?: string, canEdit = true, exceptionsOnly = false) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   render(
     <QueryClientProvider client={client}>
-      <CommissionRules staffId={staffId} canEdit={canEdit} />
+      <CommissionRules staffId={staffId} canEdit={canEdit} exceptionsOnly={exceptionsOnly} />
     </QueryClientProvider>,
   );
   return client;
 }
+it("limits the profile exception editor to overrides while preserving history", async () => {
+  mount("amy", true, true);
+  const user = userEvent.setup();
+  await screen.findByLabelText("Rule scope");
+  expect(screen.getByLabelText("Rule scope")).toHaveValue("ITEM");
+  expect(screen.queryByRole("option", { name: "Staff default" })).not.toBeInTheDocument();
+  expect(screen.getByText("Publication history")).toBeInTheDocument();
+  await user.selectOptions(screen.getByLabelText("Commission item type"), "PRODUCT");
+  expect(screen.getByLabelText("Rule scope")).toHaveValue("ITEM");
+});
 it("publishes company defaults with revision, reason and immediate effective time", async () => {
   mount();
   const user = userEvent.setup();

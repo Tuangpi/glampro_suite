@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   COMMISSION_KIND_LABELS,
@@ -15,6 +16,7 @@ type Edit = { staffId: string; itemKind: CommissionKind; value: string };
 export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
   const client = useQueryClient();
   const [page, setPage] = useState(1);
+  const [bulkEditing, setBulkEditing] = useState(false);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<{
     revision: string | null;
@@ -49,7 +51,8 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
     setNotice("");
   }
   async function save() {
-    if (!canEdit || busy || stale || matrix.isError || !draft || !edits.length) return;
+    if (!canEdit || !bulkEditing || busy || stale || matrix.isError || !draft || !edits.length)
+      return;
     setError("");
     setNotice("");
     try {
@@ -87,14 +90,29 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
   }
   return (
     <Card
-      title="Staff commission matrix"
-      description="The base rate each person earns per commission type."
+      title="Team rate overview"
+      description="Compare base commission defaults. Select a person to manage their rates and exceptions."
     >
       <div className="flex flex-col gap-3">
         <p className="text-sm text-ink-muted">
-          Blank means unconfigured, not zero. Enter a percentage (0 earns nothing explicitly) or
-          inherit. Item, package and department overrides from Company rules take precedence.
+          Unconfigured is not zero. Item, package and department overrides take precedence; these
+          defaults are not a guaranteed award under a pay plan.
         </p>
+        {canEdit && (
+          <Button
+            variant="secondary"
+            disabled={busy || !!draft}
+            onClick={() => setBulkEditing(!bulkEditing)}
+          >
+            {bulkEditing ? "Done bulk editing" : "Bulk edit rates"}
+          </Button>
+        )}
+        {bulkEditing && canEdit && (
+          <p className="text-sm text-ink-muted">
+            Blank means unconfigured, not zero. Enter a percentage (0 earns nothing explicitly) or
+            inherit. Publish or explicitly discard your draft before leaving bulk edit mode.
+          </p>
+        )}
         <Input
           label="Search commission staff"
           placeholder="Search by name…"
@@ -117,7 +135,7 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
           </p>
         )}
         {matrix.data && (
-          <fieldset disabled={!canEdit || busy || matrix.isError || stale}>
+          <fieldset disabled={busy || matrix.isError || stale}>
             <legend className="sr-only">Staff commission defaults</legend>
             <div className="overflow-x-auto rounded-lg border border-line">
               <table className="w-full border-collapse text-sm">
@@ -145,7 +163,12 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
                   {matrix.data.rows.map((row) => (
                     <tr key={row.staffId} className="border-b border-line-soft last:border-0">
                       <th scope="row" className="px-3 py-2 text-left font-medium text-ink">
-                        {row.name}
+                        <Link
+                          className="text-purple underline"
+                          to={`/staff/${encodeURIComponent(row.staffId)}?section=commission`}
+                        >
+                          {row.name}
+                        </Link>
                       </th>
                       {row.cells.map((cell) => {
                         const key = JSON.stringify([row.staffId, cell.itemKind]);
@@ -154,27 +177,40 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
                             key={cell.itemKind}
                             className="min-w-44 border-l border-line-soft px-3 py-2 align-top"
                           >
-                            <Input
-                              label={`${row.name}: ${COMMISSION_KIND_LABELS[cell.itemKind]}`}
-                              value={
-                                draft?.edits[key]?.value ??
-                                (cell.configured ? (cell.configuredRate ?? "inherit") : "")
-                              }
-                              placeholder="Unconfigured"
-                              onChange={(event) =>
-                                setDraft((current) => ({
-                                  revision: current ? current.revision : matrix.data!.revision,
-                                  edits: {
-                                    ...current?.edits,
-                                    [key]: {
-                                      staffId: row.staffId,
-                                      itemKind: cell.itemKind,
-                                      value: event.target.value,
+                            {bulkEditing && canEdit ? (
+                              <Input
+                                label={`${row.name}: ${COMMISSION_KIND_LABELS[cell.itemKind]}`}
+                                value={
+                                  draft?.edits[key]?.value ??
+                                  (cell.configured ? (cell.configuredRate ?? "inherit") : "")
+                                }
+                                placeholder="Unconfigured"
+                                onChange={(event) =>
+                                  setDraft((current) => ({
+                                    revision: current ? current.revision : matrix.data!.revision,
+                                    edits: {
+                                      ...current?.edits,
+                                      [key]: {
+                                        staffId: row.staffId,
+                                        itemKind: cell.itemKind,
+                                        value: event.target.value,
+                                      },
                                     },
-                                  },
-                                }))
-                              }
-                            />
+                                  }))
+                                }
+                              />
+                            ) : (
+                              <div>
+                                <p className="font-medium">{cell.rate}%</p>
+                                <p className="text-xs text-ink-muted">
+                                  {cell.configured
+                                    ? cell.configuredRate === null
+                                      ? "Use company default"
+                                      : "Custom rate"
+                                    : "Unconfigured"}
+                                </p>
+                              </div>
+                            )}
                             <p className="mt-1 text-xs text-ink-muted">
                               Default: {cell.rate}% · {cell.source}
                             </p>
@@ -187,7 +223,7 @@ export default function CommissionMatrix({ canEdit }: { canEdit: boolean }) {
               </table>
             </div>
             {!matrix.data.rows.length && <p>No active staff match this search.</p>}
-            {canEdit && (
+            {canEdit && bulkEditing && (
               <div className="mt-3 rounded-lg border border-line bg-surface-muted p-3">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <h4 className="text-sm font-bold text-ink">Publish changes</h4>

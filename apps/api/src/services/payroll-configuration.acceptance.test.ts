@@ -73,6 +73,15 @@ test(
           data: { tenantId, name: "Other branch", slug: "other-branch" },
         });
         let config = await readPayrollConfiguration();
+        await prisma.user.update({ where: { id: ownerId }, data: { twoFactorEnabled: false } });
+        try {
+          await assert.rejects(readPayrollConfiguration(), {
+            statusCode: 403,
+            code: "OWNER_TWO_FACTOR_REQUIRED",
+          });
+        } finally {
+          await prisma.user.update({ where: { id: ownerId }, data: { twoFactorEnabled: true } });
+        }
         assert.equal(config.earningsActive, false);
         assert.equal(config.settings.minimumDepositPct, "30");
         const date = config.today;

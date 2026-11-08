@@ -13,6 +13,19 @@ feature checklist above. Local acceptance is not production or payout authorizat
 
 ## Other recorded follow-ups
 
+- **DONE — pay-plan security guidance:** identify the owner two-factor requirement
+  with a dedicated API code, link to account security, provide a verified return
+  action, and reload plans when the refreshed account enables verification.
+
+- **DONE — account-security enrollment feedback:** open email verification setup
+  immediately, show sending/sent feedback, allow retry/resend, and ignore late
+  send responses after cancellation. Verification stays off until confirmation.
+
+- **DONE — staff commission configuration:** individual default rates now live in
+  Staff → Commissions, with exceptions/history secondary. Settings opens Company
+  rules and retains a read-only rate overview with explicit bulk editing. Existing
+  audited publishers, permissions and financial policy remain unchanged.
+
 | Item                                        | Status                   | Next step / source                                                                                                                                                                                               |
 | ------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | OA-07 owner assistant operational readiness | BLOCKED                  | Resolve target/operator, retention/security, provider and recovery evidence in the [readiness guide](docs/assistant/owner-release-readiness.md)                                                                  |

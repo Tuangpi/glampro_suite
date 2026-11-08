@@ -1,10 +1,11 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import TwoFactorCard from "../TwoFactorCard";
 
-const { post, auth, salon } = vi.hoisted(() => ({
+const { post, auth, salon, showToast } = vi.hoisted(() => ({
   post: vi.fn(),
+  showToast: vi.fn(),
   auth: {
     user: { globalRole: "STAFF", twoFactorEnabled: false } as {
       globalRole: string;
@@ -21,6 +22,7 @@ vi.mock("@/lib/api", () => ({
   getErrorMessage: () => "Could not verify the code.",
 }));
 vi.mock("@/contexts/AuthContext", () => ({ useAuth: () => auth }));
+vi.mock("@/components/ui/toast-store", () => ({ showToast }));
 vi.mock("@/hooks/useSettings", () => ({
   useSalonProfile: () => ({
     data: { requireStaffTwoFactor: salon.policy },
@@ -32,6 +34,7 @@ const SWITCH = "Email verification code at sign-in";
 
 beforeEach(() => {
   post.mockReset().mockResolvedValue({ sent: true });
+  showToast.mockReset();
   auth.user.globalRole = "STAFF";
   auth.user.twoFactorEnabled = false;
   auth.refreshProfile.mockReset();
@@ -74,6 +77,16 @@ it("turns the second factor off only after the confirmation is answered", async 
   expect(auth.refreshProfile).toHaveBeenCalled();
   expect(await screen.findByText(/Two-factor authentication is off/)).toBeInTheDocument();
 });
+it("offers the Pay plans return action only after account verification is enabled", async () => {
+  const onReturn = vi.fn();
+  const user = userEvent.setup();
+  const { rerender } = render(<TwoFactorCard onReturnToPayPlans={onReturn} />);
+  expect(screen.queryByRole("button", { name: "Back to Pay plans" })).not.toBeInTheDocument();
+  auth.user.twoFactorEnabled = true;
+  rerender(<TwoFactorCard onReturnToPayPlans={onReturn} />);
+  await user.click(screen.getByRole("button", { name: "Back to Pay plans" }));
+  expect(onReturn).toHaveBeenCalledOnce();
+});
 
 it("keeps a salon-required second factor on and says who can change it", () => {
   auth.user.twoFactorEnabled = true;
@@ -98,7 +111,9 @@ it("lets an owner turn their own factor off and says what still needs one", asyn
   expect(control).toHaveAttribute("aria-checked", "true");
   // The owner's switch is theirs: nothing in the UI or the API holds it on.
   expect(control).not.toBeDisabled();
-  expect(screen.getByText(/screens that move money/)).toBeVisible();
+  expect(
+    screen.getByText(/Required for pay plans and other protected owner actions/),
+  ).toBeVisible();
 
   await user.click(control);
   await user.click(screen.getByRole("button", { name: "Turn off email verification" }));
@@ -119,7 +134,7 @@ it("does not put an owner's switch under the salon's staff policy", () => {
   expect(screen.queryByText("Required by your salon")).not.toBeInTheDocument();
 });
 
-it("reports a failed enrollment without opening the code dialog", async () => {
+it("keeps a failed send in the dialog and allows retrying", async () => {
   post.mockRejectedValueOnce(new Error("SMTP unavailable"));
   const user = userEvent.setup();
   render(<TwoFactorCard />);
@@ -127,7 +142,13 @@ it("reports a failed enrollment without opening the code dialog", async () => {
   await user.click(screen.getByRole("switch", { name: SWITCH }));
 
   expect(await screen.findByText("Could not verify the code.")).toBeInTheDocument();
-  expect(screen.queryByLabelText("Verification code")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Verification code")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Verify and turn on" })).toBeDisabled();
+  expect(showToast).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Retry sending" }));
+  expect(screen.getByLabelText("Verification code")).toBeEnabled();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(showToast).toHaveBeenCalledWith("success", "Verification code sent. Check your email.");
 });
 
 it("keeps the enrollment dialog open when the code is refused", async () => {
@@ -142,4 +163,99 @@ it("keeps the enrollment dialog open when the code is refused", async () => {
   expect(await screen.findByText("Could not verify the code.")).toBeInTheDocument();
   expect(screen.getByLabelText("Verification code")).toBeInTheDocument();
   expect(auth.refreshProfile).not.toHaveBeenCalled();
+});
+
+it("opens immediately while sending and never claims verification is already on", async () => {
+  let resolveSend!: (value: { sent: true }) => void;
+  post.mockImplementationOnce(() => new Promise((resolve) => (resolveSend = resolve)));
+  const user = userEvent.setup();
+  render(<TwoFactorCard />);
+  const control = screen.getByRole("switch", { name: SWITCH });
+  await user.click(control);
+  expect(screen.getByRole("dialog", { name: "Turn on email verification" })).toBeVisible();
+  expect(screen.getByText("Sending verification code…")).toBeVisible();
+  expect(screen.getByText("Setup in progress")).toBeInTheDocument();
+  expect(screen.getByLabelText("Verification code")).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Sending code…" })).toBeDisabled();
+  expect(control).toHaveAttribute("aria-checked", "false");
+  expect(showToast).not.toHaveBeenCalled();
+  await act(async () => resolveSend({ sent: true }));
+  expect(screen.getByLabelText("Verification code")).toBeEnabled();
+  expect(screen.queryByText("Sending verification code…")).not.toBeInTheDocument();
+  expect(showToast).toHaveBeenCalledWith("success", "Verification code sent. Check your email.");
+  expect(control).toHaveAttribute("aria-checked", "false");
+});
+
+it.each(["resolve", "reject"])(
+  "ignores a late %s after cancelling the sending dialog",
+  async (outcome) => {
+    let resolveSend!: (value: { sent: true }) => void;
+    let rejectSend!: (error: Error) => void;
+    post.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          resolveSend = resolve;
+          rejectSend = reject;
+        }),
+    );
+    const user = userEvent.setup();
+    render(<TwoFactorCard />);
+    const control = screen.getByRole("switch", { name: SWITCH });
+    await user.click(control);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await act(async () => {
+      if (outcome === "resolve") resolveSend({ sent: true });
+      else rejectSend(new Error("SMTP unavailable"));
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(showToast).not.toHaveBeenCalled();
+    expect(control).toHaveAttribute("aria-checked", "false");
+    expect(control).toBeEnabled();
+    await user.click(control);
+    expect(screen.getByLabelText("Verification code")).toBeEnabled();
+    expect(post).toHaveBeenCalledTimes(2);
+  },
+);
+
+it("resends a code, clears old input and prevents overlapping sends", async () => {
+  const user = userEvent.setup();
+  render(<TwoFactorCard />);
+  await user.click(screen.getByRole("switch", { name: SWITCH }));
+  await user.type(screen.getByLabelText("Verification code"), "123456");
+  let resolveSend!: (value: { sent: true }) => void;
+  post.mockImplementationOnce(() => new Promise((resolve) => (resolveSend = resolve)));
+  await user.click(screen.getByRole("button", { name: "Resend code" }));
+  expect(screen.getByLabelText("Verification code")).toHaveValue("");
+  await user.click(screen.getByRole("button", { name: "Sending code…" }));
+  expect(post).toHaveBeenCalledTimes(2);
+  expect(screen.getByRole("button", { name: "Verify and turn on" })).toBeDisabled();
+  await act(async () => resolveSend({ sent: true }));
+  expect(screen.getByRole("button", { name: "Resend code" })).toBeEnabled();
+});
+
+it("only accepts six digits and refreshes the confirmed account before closing", async () => {
+  const user = userEvent.setup();
+  const { rerender } = render(<TwoFactorCard />);
+  await user.click(screen.getByRole("switch", { name: SWITCH }));
+  await user.type(screen.getByLabelText("Verification code"), "123ab");
+  expect(screen.getByRole("button", { name: "Verify and turn on" })).toBeDisabled();
+  await user.clear(screen.getByLabelText("Verification code"));
+  await user.type(screen.getByLabelText("Verification code"), "123456");
+  let resolveConfirm!: () => void;
+  post.mockImplementationOnce(() => new Promise<void>((resolve) => (resolveConfirm = resolve)));
+  auth.refreshProfile.mockImplementationOnce(async () => {
+    auth.user.twoFactorEnabled = true;
+  });
+  await user.click(screen.getByRole("button", { name: "Verify and turn on" }));
+  await user.keyboard("{Escape}");
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Resend code" })).toBeDisabled();
+  await act(async () => resolveConfirm());
+  rerender(<TwoFactorCard />);
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(screen.getByRole("switch", { name: SWITCH })).toHaveAttribute("aria-checked", "true");
+  expect(showToast).toHaveBeenCalledWith("success", "Email verification is now on.");
 });

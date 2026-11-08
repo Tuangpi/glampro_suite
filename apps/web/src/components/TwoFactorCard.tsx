@@ -11,21 +11,21 @@
  * flag at the point of use.
  *
  * Turning it on is an exchange, not a flip — a code is mailed and then answered —
- * so it opens a modal. A switch that appeared to succeed before the code was
- * entered would be lying until the mail arrived, which is the one thing a security
- * screen cannot do.
+ * so the modal opens immediately with sending feedback. The switch stays off
+ * until the code is confirmed; sending an email alone does not enable security.
  *
  * `refreshProfile()` after each change keeps the switch honest: the state it draws
  * comes from the session, so the session is re-read rather than a local copy being
  * trusted.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Badge from "@/components/ui/Badge";
 import Button from "@/components/ui/Button";
 import Card from "@/components/ui/Card";
 import Input from "@/components/ui/Input";
 import Modal from "@/components/ui/Modal";
 import Switch from "@/components/ui/Switch";
+import { showToast } from "@/components/ui/toast-store";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSalonProfile } from "@/hooks/useSettings";
 import { getErrorMessage, post } from "@/lib/api";
@@ -33,7 +33,7 @@ import { getErrorMessage, post } from "@/lib/api";
 /** Which dialog, if any, is open. One piece of state so two cannot both be. */
 type Step = "idle" | "enroll" | "disable";
 
-export default function TwoFactorCard() {
+export default function TwoFactorCard({ onReturnToPayPlans }: { onReturnToPayPlans?: () => void }) {
   const { user, refreshProfile } = useAuth();
   const salon = useSalonProfile();
   const [step, setStep] = useState<Step>("idle");
@@ -41,6 +41,19 @@ export default function TwoFactorCard() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const sendInFlight = useRef(false);
+  const enrollmentAttempt = useRef(0);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      enrollmentAttempt.current += 1;
+    };
+  }, []);
 
   const isOwner = user?.globalRole === "SUPER_ADMIN";
   const enrolled = user?.twoFactorEnabled === true;
@@ -48,36 +61,59 @@ export default function TwoFactorCard() {
   /** Whether the salon's policy reaches *this* account. It never reaches the owner. */
   const requiredHere = required && !isOwner;
 
-  function close() {
+  function resetDialog() {
+    enrollmentAttempt.current += 1;
     setStep("idle");
     setCode("");
     setError("");
+    setCodeSent(false);
   }
 
-  /** Sends the enrollment code; the modal it opens is where it is answered. */
+  function close() {
+    // Sending can be dismissed; a submitted security change must finish first.
+    if (pending && !sending) return;
+    resetDialog();
+  }
+
+  /** Open immediately; late send responses must not reopen a dismissed dialog. */
   async function beginEnrollment() {
+    if (sendInFlight.current || pending) return;
+    sendInFlight.current = true;
+    const attempt = ++enrollmentAttempt.current;
+    setStep("enroll");
     setError("");
     setMessage("");
     setCode("");
+    setCodeSent(false);
+    setSending(true);
     setPending(true);
     try {
       await post("/auth/two-factor/enable", {});
-      setStep("enroll");
+      if (!mounted.current || attempt !== enrollmentAttempt.current) return;
+      setCodeSent(true);
+      showToast("success", "Verification code sent. Check your email.");
     } catch (cause) {
+      if (!mounted.current || attempt !== enrollmentAttempt.current) return;
       setError(getErrorMessage(cause));
     } finally {
-      setPending(false);
+      sendInFlight.current = false;
+      if (mounted.current) {
+        setSending(false);
+        setPending(false);
+      }
     }
   }
 
   async function confirmEnrollment(event: React.FormEvent) {
     event.preventDefault();
+    if (pending || !codeSent || !/^\d{6}$/.test(code)) return;
     setError("");
     setPending(true);
     try {
       await post("/auth/two-factor/confirm", { code });
-      close();
       await refreshProfile();
+      resetDialog();
+      showToast("success", "Email verification is now on.");
       setMessage(
         "Two-factor authentication is on. Future sign-ins need a six-digit code from your email.",
       );
@@ -93,7 +129,7 @@ export default function TwoFactorCard() {
     setPending(true);
     try {
       await post("/auth/two-factor/disable", {});
-      close();
+      resetDialog();
       await refreshProfile();
       setMessage("Two-factor authentication is off. Signing in will use your password only.");
     } catch (cause) {
@@ -112,7 +148,7 @@ export default function TwoFactorCard() {
             requiredHere
               ? "Your salon requires this for every staff account, so it stays on while the policy is in place."
               : isOwner
-                ? "Owners answer a six-digit code when this is on. With it off you still sign in, but the screens that move money — payroll close, prepaid and package refunds, session transfers, commission rules — keep asking for an owner who has one."
+                ? "Get a six-digit email code when signing in. Required for pay plans and other protected owner actions."
                 : "Ask for a six-digit code sent to your email each time you sign in."
           }
           meta={
@@ -122,6 +158,8 @@ export default function TwoFactorCard() {
               <Badge variant="success" dot>
                 On
               </Badge>
+            ) : step === "enroll" ? (
+              <Badge variant="warning">Setup in progress</Badge>
             ) : null
           }
           checked={enrolled}
@@ -159,6 +197,11 @@ export default function TwoFactorCard() {
             {message}
           </p>
         ) : null}
+        {onReturnToPayPlans && enrolled ? (
+          <Button variant="secondary" onClick={onReturnToPayPlans}>
+            Back to Pay plans
+          </Button>
+        ) : null}
       </div>
 
       <Modal
@@ -166,9 +209,16 @@ export default function TwoFactorCard() {
         onClose={close}
         size="sm"
         title="Turn on email verification"
-        description="We sent a six-digit code to your email address. Enter it to finish turning two-factor authentication on."
+        description="Verify your email to finish setup. Email verification stays off until your code is confirmed."
       >
         <form className="flex flex-col gap-3" onSubmit={confirmEnrollment}>
+          <p role="status" className="text-sm text-ink-muted">
+            {sending
+              ? "Sending verification code…"
+              : codeSent
+                ? "Code sent. Check your email and enter the six-digit code below."
+                : "A verification code must be sent before you can finish setup."}
+          </p>
           {error ? (
             <p role="alert" className="rounded-md bg-danger/5 px-3 py-2.5 text-sm text-danger">
               {error}
@@ -182,15 +232,33 @@ export default function TwoFactorCard() {
             autoComplete="one-time-code"
             inputMode="numeric"
             maxLength={6}
+            pattern="[0-9]{6}"
             hint="Six digits."
             required
-            disabled={pending}
+            disabled={pending || !codeSent}
           />
+          <Button
+            variant="ghost"
+            loading={sending}
+            disabled={pending}
+            onClick={() => void beginEnrollment()}
+          >
+            {sending ? "Sending code…" : codeSent ? "Resend code" : "Retry sending"}
+          </Button>
           <div className="flex justify-end gap-2">
-            <Button variant="secondary" type="button" disabled={pending} onClick={close}>
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={pending && !sending}
+              onClick={close}
+            >
               Cancel
             </Button>
-            <Button type="submit" loading={pending}>
+            <Button
+              type="submit"
+              loading={pending && !sending}
+              disabled={pending || !codeSent || !/^\d{6}$/.test(code)}
+            >
               Verify and turn on
             </Button>
           </div>

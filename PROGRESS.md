@@ -8,6 +8,48 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 8, 2026 — actionable pay-plan security requirement
+
+- Payroll configuration now returns `OWNER_TWO_FACTOR_REQUIRED` for an owner
+  without email verification. Pay plans presents setup guidance and a direct link
+  to account security rather than a generic request error. Other failures retain
+  the existing error/retry state; authorization is unchanged.
+- Verified accounts get a fixed internal Back to Pay plans action; account-state
+  changes reload the configuration. Active team tabs render after URL navigation
+  even when Settings kept the team category mounted; visited drafts remain mounted.
+- Verification: **79 web tests / 3 files** pass serially. An initial return-flow
+  regression exposed the active-panel issue; a concurrent build/test run also hit
+  an unchanged metadata-test timeout. Both pass in the final focused rerun.
+- Added a dedicated-code assertion to the disposable CP-003 acceptance suite; it
+  was not executed because no approved disposable database target was established.
+  No application database changes, browser/provider acceptance or deployment.
+
+## November 8, 2026 — responsive account-security enrollment
+
+- Email verification setup opens immediately with sending feedback, a sent toast,
+  retry/resend controls, and a setup-in-progress badge. The switch stays off until
+  the six-digit code is confirmed and the account profile is refreshed.
+- Cancelling a send ignores its late success/failure; submitted verification cannot
+  be dismissed mid-request. Existing owner/staff policy and backend guards remain.
+- Verification: **59 tests / 4 files** pass (account security, Settings, Switch,
+  Modal); web typecheck, targeted ESLint, touched-code formatting, production build,
+  and diff checks pass. No browser/provider delivery or database acceptance performed.
+
+## November 8, 2026 — staff-first commission configuration
+
+- Added individual default-rate editing under Staff → Commissions with explicit
+  custom/inherited/unconfigured states. Exceptions and history are secondary.
+- Settings opens Company rules; Rate overview is read-only until Bulk edit rates
+  is selected, with direct links to staff profiles. Existing publishers, audit
+  reasons, effective dates, revision checks and permissions remain unchanged.
+- Workflow details: [staff commission settings](docs/features/staff-commission-settings.md).
+- Verification: all **1,309 web tests / 140 files** pass with `--maxWorkers=2`;
+  web typecheck, lint, touched-file formatting, production build and diff checks pass.
+  Initial concurrent build/full-suite execution had five unchanged PayrollPlans
+  test timeouts; the lower-concurrency full rerun passes without changing timeouts.
+  No live browser or database acceptance was performed.
+- No database operations, earnings activation or production deployment performed.
+
 ## November 8, 2026 — documentation consolidation
 
 - Grouped maintained guides into development, operations, features, assistant,
