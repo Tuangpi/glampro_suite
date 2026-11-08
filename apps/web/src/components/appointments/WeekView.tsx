@@ -1,10 +1,9 @@
-/** Week calendar: Monday-first day/staff tracks with quarter-hour drag targets.
+/** Week calendar: seven Monday-first date tracks with quarter-hour drag targets.
  * Shared geometry clips overnight occupancy to each visible 08:00–20:00 span.
  * Overlapping blocks use lanes; all writes remain server-authorized.
  */
 import type { AppointmentSummary } from "@glampro_suite/shared";
 import type { RescheduleInput } from "./CalendarView";
-import type { CalendarColumn } from "./calendar-geometry";
 
 import { Calendar } from "@/components/icons";
 import Button from "@/components/ui/Button";
@@ -39,7 +38,6 @@ export interface WeekViewProps {
   day: Date;
   /** Already loaded for the week — the component owns no query of its own. */
   appointments: AppointmentSummary[];
-  columns?: CalendarColumn[];
   onReschedule?: (id: string, input: RescheduleInput) => void;
   isPending?: boolean;
   isError?: boolean;
@@ -53,7 +51,6 @@ export interface WeekViewProps {
 export default function WeekView({
   day,
   appointments,
-  columns,
   onReschedule,
   isPending = false,
   isError = false,
@@ -97,27 +94,23 @@ export default function WeekView({
 
   const days = weekDays(salonDay);
   const byDay = bookingsOnDays(appointments, days, timeZone);
-  const staffColumns = columns ?? [{ id: null, name: "All staff" }];
-  const tracks = days.flatMap((date, index) =>
-    staffColumns.map((staff) => ({ date, index, staff })),
-  );
 
   // A quiet week still draws its frame: seven day columns of opening hours are
   // what the desk reads free time from, so the grid never gives way to a card.
   return (
     <div className="min-w-0 max-w-full rounded-card overflow-auto border border-line bg-surface">
-      <div style={{ minWidth: 68 + tracks.length * 140 }}>
+      <div style={{ minWidth: 68 + days.length * 140 }}>
         {/* Day heads — a second grid with the same template, so a head always sits exactly
           above its own column. `CALENDAR_WEEKDAY_LABELS` is Monday-first, the same first
           day `weekDays` returns. */}
         <div
           className="grid border-b border-line-soft"
-          style={{ gridTemplateColumns: gridTemplate(tracks.length) }}
+          style={{ gridTemplateColumns: gridTemplate(days.length) }}
         >
           <div className="border-r border-line-soft" />
-          {tracks.map(({ date: column, index, staff }) => (
+          {days.map((column, index) => (
             <div
-              key={`${dayKey(column)}:${staff.id}`}
+              key={dayKey(column)}
               className="flex flex-col items-center gap-1 border-r border-line-soft px-2 py-2.5"
             >
               <span className="text-2xs font-bold tracking-wide text-ink-muted uppercase">
@@ -132,7 +125,6 @@ export default function WeekView({
               >
                 {column.getDate()}
               </span>
-              <span className="text-xs font-semibold">{staff.name}</span>
             </div>
           ))}
         </div>
@@ -140,7 +132,7 @@ export default function WeekView({
         <div className="max-h-[70vh] overflow-auto">
           <div
             className="grid"
-            style={{ gridTemplateColumns: gridTemplate(tracks.length) }}
+            style={{ gridTemplateColumns: gridTemplate(days.length) }}
             aria-label={`Week of ${days[0]?.toDateString() ?? ""}`}
           >
             {/* Time gutter: hour labels, each centred on its own hour line. */}
@@ -159,14 +151,11 @@ export default function WeekView({
               ))}
             </div>
 
-            {tracks.map(({ date: column, staff }) => (
+            {days.map((column) => (
               <DayTrack
-                key={`${dayKey(column)}:${staff.id}`}
+                key={dayKey(column)}
                 day={column}
-                staffId={staff.id}
-                appointments={(byDay.get(dayKey(column)) ?? []).filter(
-                  (booking) => !columns || booking.staffId === staff.id,
-                )}
+                appointments={byDay.get(dayKey(column)) ?? []}
                 allAppointments={appointments}
                 onReschedule={onReschedule}
                 showingToday={isSameDay(column, salonToday)}
@@ -186,11 +175,10 @@ export default function WeekView({
  * One day column: the hour lines, that day's blocks in their lanes, and the now-indicator
  * when the column is today.
  *
- * A writable track accepts a date/time/staff drop; the API checks eligibility and clashes.
+ * A writable track accepts date/time drops while preserving staff assignments.
  */
 function DayTrack({
   day,
-  staffId,
   allAppointments,
   onReschedule,
   appointments,
@@ -200,7 +188,6 @@ function DayTrack({
   timeZone,
 }: {
   day: Date;
-  staffId: string | null;
   allAppointments: AppointmentSummary[];
   onReschedule?: (id: string, input: RescheduleInput) => void;
   appointments: AppointmentSummary[];
@@ -228,7 +215,6 @@ function DayTrack({
       // Exposed so a test can assert a block rendered in its own day's column, not merely
       // that a block exists somewhere on the grid.
       data-day={dayKey(day)}
-      data-column={staffId ?? "unassigned"}
       onDragOver={isReadOnly || !onReschedule ? undefined : (event) => event.preventDefault()}
       onDrop={(event) => {
         if (isReadOnly || !onReschedule) return;
@@ -241,7 +227,7 @@ function DayTrack({
           booking,
           {
             day,
-            staffId,
+            staffId: booking.staffId,
             offsetMinutes:
               (event.clientY - event.currentTarget.getBoundingClientRect().top) / PX_PER_MINUTE,
           },
@@ -259,7 +245,6 @@ function DayTrack({
           top={box.top}
           height={box.height}
           lane={lanes.get(booking.id)}
-          showStaff
           draggable={Boolean(onReschedule)}
           isReadOnly={isReadOnly}
           onEdit={onEdit}

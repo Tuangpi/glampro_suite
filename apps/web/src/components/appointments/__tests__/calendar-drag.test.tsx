@@ -29,11 +29,6 @@ const booking: AppointmentSummary = {
   createdAt: "2026-10-01T00:00:00.000Z",
   updatedAt: "2026-10-01T00:00:00.000Z",
 };
-const columns = [
-  { id: "staff-a", name: "Anna" },
-  { id: "staff-b", name: "Bea" },
-  { id: null, name: "Unassigned" },
-];
 const day = new Date("2026-10-09T04:00:00.000Z");
 const transfer = (id = booking.id) => ({
   getData: () => id,
@@ -47,41 +42,26 @@ function drop(target: Element, clientY: number, id = booking.id) {
 }
 
 describe("calendar dragging", () => {
-  it("moves between week dates and staff using snapped salon time", () => {
+  it("moves between week dates using snapped salon time without reassigning staff", () => {
     const onReschedule = vi.fn();
     const { container } = render(
-      <WeekView
-        day={day}
-        appointments={[booking]}
-        columns={columns}
-        onEdit={vi.fn()}
-        onReschedule={onReschedule}
-      />,
+      <WeekView day={day} appointments={[booking]} onEdit={vi.fn()} onReschedule={onReschedule} />,
     );
-    const source = container.querySelector(
-      '[data-day="2026-10-09"][data-column="staff-a"]',
-    ) as HTMLElement;
+    const source = container.querySelector('[data-day="2026-10-09"]') as HTMLElement;
     expect(within(source).getByRole("button")).toHaveAttribute("draggable", "true");
-    const target = container.querySelector('[data-day="2026-10-10"][data-column="staff-b"]')!;
+    const target = container.querySelector('[data-day="2026-10-10"]')!;
     drop(target, 144);
     expect(onReschedule).toHaveBeenCalledWith(booking.id, {
       startsAt: "2026-10-10T02:00:00.000Z",
-      staffId: "staff-b",
     });
   });
 
   it("ignores unknown dragged records and same-slot week drops", () => {
     const onReschedule = vi.fn();
     const { container } = render(
-      <WeekView
-        day={day}
-        appointments={[booking]}
-        columns={columns}
-        onEdit={vi.fn()}
-        onReschedule={onReschedule}
-      />,
+      <WeekView day={day} appointments={[booking]} onEdit={vi.fn()} onReschedule={onReschedule} />,
     );
-    const target = container.querySelector('[data-day="2026-10-09"][data-column="staff-a"]')!;
+    const target = container.querySelector('[data-day="2026-10-09"]')!;
     drop(target, 72, "foreign");
     drop(target, 72);
     expect(onReschedule).not.toHaveBeenCalled();
@@ -112,7 +92,6 @@ describe("calendar dragging", () => {
         <WeekView
           day={day}
           appointments={[booking]}
-          columns={columns}
           onEdit={vi.fn()}
           onReschedule={onReschedule}
           isReadOnly
@@ -153,7 +132,7 @@ describe("calendar dragging", () => {
       endsAt: "2026-10-10T01:00:00.000Z",
     };
     const { container } = render(
-      <WeekView day={day} appointments={[overnight]} columns={columns} onEdit={vi.fn()} />,
+      <WeekView day={day} appointments={[overnight]} onEdit={vi.fn()} />,
     );
     expect(container.querySelectorAll("[data-appointment]")).toHaveLength(2);
     const dates = [new Date(2026, 9, 9), new Date(2026, 9, 10)];
@@ -164,20 +143,20 @@ describe("calendar dragging", () => {
     expect(bookingsOnDays([midnight], dates, "Asia/Singapore").get("2026-10-10")).toEqual([]);
   });
 
-  it("packs simultaneous unassigned day bookings into separate lanes", () => {
+  it("packs simultaneous bookings for different staff and unassigned clients into separate lanes", () => {
     const { container } = render(
       <CalendarView
         day={day}
         appointments={[
-          { ...booking, staffId: null },
-          { ...booking, id: "second", staffId: null },
+          booking,
+          { ...booking, id: "second", staffId: "staff-b" },
+          { ...booking, id: "third", staffId: null },
         ]}
-        columns={columns}
         onEdit={vi.fn()}
       />,
     );
     const blocks = container.querySelectorAll<HTMLElement>("[data-appointment]");
-    expect(blocks[0]!.style.width).toBe("calc(50% - 4px)");
+    expect(blocks[0]!.style.width).toBe("calc(33.3333% - 4px)");
     expect(blocks[0]!.style.left).not.toBe(blocks[1]!.style.left);
   });
 

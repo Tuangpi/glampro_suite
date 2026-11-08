@@ -8,6 +8,37 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 8, 2026 — simplified Reports page
+
+- Reports is now one page: shared date filters, five business summary cards,
+  charts, and Appointments/Sales/Products/Services/Packages detail controls.
+  Removed Detailed sales, Staff & payments, Customer balances, and Daily close
+  tabs, including their page-level hooks and operational panels. Supersedes the
+  secondary-tab layout below; no replacement navigation is introduced elsewhere.
+- Underlying APIs, hooks, standalone operational components and business records
+  are unchanged. No migrations or data operations were performed.
+- Verification: 33 focused web tests passed across 5 files; web ESLint and
+  production build (including TypeScript) passed. Tests cover removed navigation,
+  absence of extra report-hook calls, keyboard detail controls, date validation,
+  loading/error/empty states and existing retained operational components.
+- Authenticated browser and database integration checks were not run.
+
+## November 8, 2026 — visual business reports
+
+- Reports now opens a visual appointments/sales/products/services/packages
+  dashboard with shared salon-local date presets, line/donut/stacked/horizontal
+  bar charts, and category detail tables. Existing operational reports remain
+  secondary tabs. Definitions: [business reports](docs/features/business-reports.md).
+- Added complete server-side category/item totals and zero-filled hourly/daily
+  series; exact-money totals, current booking statuses, outlet filtering, and
+  separate package purchase/redemption counts. No schema migration or new dependency.
+- Verification: 41 focused web tests and 6 pure backend/schema tests passed,
+  including DST and totals beyond ten items. API type check, production web build,
+  and web/API/shared ESLint passed. Local reports URL returned HTTP 200.
+- No separate TEST_DATABASE_URL or installed browser automation package is
+  available; database integration and authenticated visual-browser verification
+  were not run. No application data, activation, payments or payouts changed.
+
 ## November 8, 2026 — consolidated Payroll workspace
 
 - Settings now has Payroll with Commission progress and Monthly close tabs.

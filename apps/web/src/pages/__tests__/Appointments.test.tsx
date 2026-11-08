@@ -262,15 +262,14 @@ describe("Appointments", () => {
     // On the list view the grid's whole-day read and the roster stay dormant,
     // so opening /appointments does not pay for a view nobody asked for.
     expect(enabledWindows()).toHaveLength(0);
-    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(false);
+    expect(useCalendarStaff).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Day" }));
 
-    // The grid is now live — the only one of the three windows — and it draws the
-    // roster's columns: "Unassigned" is a column head only the grid has, never the list.
+    // The day window is live without loading a staff roster.
     expect(enabledWindows()).toHaveLength(1);
-    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(true);
-    expect(screen.getByText("Unassigned")).toBeInTheDocument();
+    expect(useCalendarStaff).not.toHaveBeenCalled();
+    expect(screen.getByText("08:00")).toBeInTheDocument();
     expect(screen.getByText("Mina Customer")).toBeInTheDocument();
   });
 
@@ -307,7 +306,7 @@ describe("Appointments", () => {
     // The day on screen is inside the week being read, whatever day of the week it is.
     expect(Number(weekFrom) <= Date.now() && Date.now() <= Number(weekTo)).toBe(true);
     // Week staff columns need the complete roster, just like the day grid.
-    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(true);
+    expect(useCalendarStaff).not.toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: "Month" }));
     expect(enabledWindows()).toHaveLength(1);
@@ -321,7 +320,7 @@ describe("Appointments", () => {
       new Date(monthFrom.getFullYear(), monthFrom.getMonth() + 1, 0).getDate(),
     );
     expect(monthTo.getHours()).toBe(23);
-    expect(useCalendarStaff.mock.calls.at(-1)?.[0]).toBe(false);
+    expect(useCalendarStaff).not.toHaveBeenCalled();
 
     // And the day grid still asks for the same anchor day: nothing on the way moved it.
     await user.click(screen.getByRole("button", { name: "Day" }));
@@ -364,8 +363,8 @@ describe("Appointments", () => {
 
     await user.click(screen.getByRole("button", { name: "Day" }));
 
-    // The grid is drawn — its roster column heads are there — but the block is not.
-    expect(screen.getByText("Unassigned")).toBeInTheDocument();
+    // The time grid is drawn, but tomorrow's block is not.
+    expect(screen.getByText("08:00")).toBeInTheDocument();
     expect(screen.queryByText("Mina Customer")).not.toBeInTheDocument();
   });
 
@@ -396,7 +395,7 @@ describe("Appointments", () => {
     render(<Appointments />);
 
     await user.click(screen.getByRole("button", { name: "Week" }));
-    expect(screen.getByText(/between day and staff columns/)).toBeInTheDocument();
+    expect(screen.getByText(/keeping its assigned staff/)).toBeInTheDocument();
 
     // The day grid is where a booking moves, so it carries no such notice — and the list
     // never did.

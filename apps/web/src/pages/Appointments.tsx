@@ -1,5 +1,5 @@
 /** Appointments: paged list and complete day/week/month occupancy reads.
- * Day/week drops change date, time and staff; month drops preserve time/staff.
+ * Day/week drops change date/time and preserve staff; month drops preserve time/staff.
  * Every write uses the shared editor or server-authorized appointment PATCH.
  */
 import { useState } from "react";
@@ -13,14 +13,12 @@ import MonthView from "@/components/appointments/MonthView";
 import WeekView from "@/components/appointments/WeekView";
 import {
   addDays,
-  buildCalendarColumns,
   dayKey,
   dayWindow,
   monthWindow,
   shiftMonth,
   startOfWeek,
   weekWindow,
-  type CalendarColumn,
 } from "@/components/appointments/calendar-geometry";
 import { Calendar, ChevronLeft, Plus, Search } from "@/components/icons";
 import Badge from "@/components/ui/Badge";
@@ -42,7 +40,6 @@ import {
   CALENDAR_PAGE_SIZE,
   useAppointmentList,
   useCalendarAppointments,
-  useCalendarStaff,
   useRescheduleAppointment,
   useUpdateAppointment,
 } from "@/hooks/useAppointments";
@@ -187,17 +184,6 @@ export default function Appointments() {
   /** The view on screen is the only one whose rows, pending and error state are drawn. */
   const calendar = showMonth ? monthCalendar : showWeek ? weekCalendar : dayCalendar;
   const calendarRows = calendar.data?.data ?? [];
-
-  // Day and week share the complete active roster, plus booked archived staff.
-  const staff = useCalendarStaff(showDay || showWeek);
-  const gridColumns: CalendarColumn[] = buildCalendarColumns(
-    calendarRows,
-    (staff.data?.data ?? []).map((member) => ({
-      id: member.id,
-      name: member.name,
-      role: member.position ?? undefined,
-    })),
-  );
 
   const update = useUpdateAppointment();
   const reschedule = useRescheduleAppointment();
@@ -442,23 +428,6 @@ export default function Appointments() {
         </p>
       ) : null}
 
-      {/* Each calendar explains its drag semantics and retains click-to-edit. */}
-      {showWeek || showMonth ? (
-        <p className="text-sm text-ink-muted">
-          {isReadOnly
-            ? "Read-only salon. Bookings cannot be changed."
-            : showMonth
-              ? "Drag a booking to another date to keep its salon-local time and staff. Open it to change the time or staff."
-              : "Drag a booking between day and staff columns to change its date, time or staff. Open it for keyboard editing."}
-        </p>
-      ) : null}
-      {showDay || showWeek ? (
-        <p className="text-sm text-ink-muted">
-          Time grids show 08:00–20:00 salon time. Use Month to see bookings outside these hours, or
-          open a booking to edit it without dragging.
-        </p>
-      ) : null}
-
       {showList ? (
         <section
           aria-busy={isPending || isFetching}
@@ -556,42 +525,26 @@ export default function Appointments() {
       ) : showWeek ? (
         <WeekView
           day={day}
-          columns={gridColumns}
           appointments={calendarRows}
-          isPending={calendar.isPending || staff.isPending}
-          isError={calendar.isError || staff.isError}
-          errorMessage={
-            calendar.error || staff.error
-              ? getErrorMessage(calendar.error || staff.error)
-              : undefined
-          }
+          isPending={calendar.isPending}
+          isError={calendar.isError}
+          errorMessage={calendar.error ? getErrorMessage(calendar.error) : undefined}
           isReadOnly={isReadOnly}
           onEdit={openEdit}
           onReschedule={handleReschedule}
-          onRetry={() => {
-            void calendar.refetch();
-            void staff.refetch();
-          }}
+          onRetry={() => void calendar.refetch()}
         />
       ) : (
         <CalendarView
           day={day}
           appointments={calendarRows}
-          columns={gridColumns}
-          isPending={calendar.isPending || staff.isPending}
-          isError={calendar.isError || staff.isError}
-          errorMessage={
-            calendar.error || staff.error
-              ? getErrorMessage(calendar.error || staff.error)
-              : undefined
-          }
+          isPending={calendar.isPending}
+          isError={calendar.isError}
+          errorMessage={calendar.error ? getErrorMessage(calendar.error) : undefined}
           isReadOnly={isReadOnly}
           onEdit={openEdit}
           onReschedule={handleReschedule}
-          onRetry={() => {
-            void calendar.refetch();
-            void staff.refetch();
-          }}
+          onRetry={() => void calendar.refetch()}
         />
       )}
 

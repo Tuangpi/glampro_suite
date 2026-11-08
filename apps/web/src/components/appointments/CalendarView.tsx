@@ -1,28 +1,6 @@
-/**
- * The day calendar — handoff screen 06's grid, one day wide.
- *
- * One column per member of staff plus an **Unassigned** column, a time gutter
- * down the left, and every booking drawn as a block placed by its real
- * `startsAt`/`endsAt` through `calendar-geometry.ts`. There is no calendar
- * library and no new contract: the blocks are the same `AppointmentSummary`
- * rows the day list shows, so the two views are one fact asked twice.
- *
- * Three things the handoff drew that this does not, because the model has
- * nothing behind them: a shift or break block on the track (there is no rota
- * table — `EmployeeLeave` is the only half modelled, and it is not read here
- * yet), an availability hint on an empty slot, and click-to-book on one. The
- * grid is a **view** of the book, and the writes still go through the drawer
- * and, in slice 6c, a drag that posts a real PATCH.
- *
- * The colour, the frame and the block itself are shared with the other two
- * views: the palette is in `constants/appointments.ts`, the gutter and the hour
- * lines are in `calendar-geometry.ts`, and the block is `AppointmentBlock`.
- * Those views are `WeekView.tsx` (day/staff tracks with dragging) and
- * `MonthView.tsx` (a chip grid) — see ADR 0018 for why each is what it is.
- *
- * The colours are the handoff's own (a purple block, an amber in-progress
- * block, a green done block) mapped onto the project's tokens rather than the
- * file's literals — `tokens.css` is copied, never edited (`AGENTS.md` rule 2).
+/** Day calendar: one shared timeline with overlapping bookings in separate lanes.
+ * Dragging changes time only; staff assignments remain in the appointment editor.
+ * Placement, hour lines and lane packing share the week calendar's geometry.
  */
 import type { DragEvent } from "react";
 
@@ -31,7 +9,6 @@ import type { AppointmentSummary } from "@glampro_suite/shared";
 import { Calendar } from "@/components/icons";
 import EmptyState from "@/components/ui/EmptyState";
 import Skeleton from "@/components/ui/Skeleton";
-import { cn, getInitials } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import { toSalonDate } from "@/lib/salon-time";
 import AppointmentBlock from "./AppointmentBlock";
@@ -46,13 +23,10 @@ import {
   blockMinutes,
   packLanes,
   dayKey,
-  type CalendarColumn,
   gridTemplate,
   nowLineTop,
   rescheduleFields,
 } from "./calendar-geometry";
-
-export type { CalendarColumn };
 
 /** The PATCH a drag produces — only the fields that actually moved. */
 export type RescheduleInput = { startsAt?: string; staffId?: string | null };
@@ -61,7 +35,6 @@ export interface CalendarViewProps {
   day: Date;
   /** Already loaded for the day — the component owns no query of its own. */
   appointments: AppointmentSummary[];
-  columns: CalendarColumn[];
   isPending?: boolean;
   isError?: boolean;
   errorMessage?: string;
@@ -71,11 +44,6 @@ export interface CalendarViewProps {
   /** A drag that moved a block. Omitted fields mean "unchanged". */
   onReschedule?: (id: string, input: RescheduleInput) => void;
   onRetry?: () => void;
-}
-
-/** Which column a booking belongs in: its performer, or Unassigned. */
-function columnOf(booking: AppointmentSummary): string | null {
-  return booking.staffId ?? null;
 }
 
 /** A plain-text retry control, so this component needs no Button import cycle. */
@@ -94,7 +62,6 @@ function RetryButton({ onRetry }: { onRetry: () => void }) {
 export default function CalendarView({
   day,
   appointments,
-  columns,
   isPending = false,
   isError = false,
   errorMessage,
@@ -103,7 +70,7 @@ export default function CalendarView({
   onReschedule,
   onRetry,
 }: CalendarViewProps) {
-  const { timeZone } = useSalonFormatting();
+  const { timeZone, formatDate } = useSalonFormatting();
   if (isPending) {
     return (
       <div className="flex flex-col gap-3 p-5" aria-busy="true">
@@ -125,17 +92,6 @@ export default function CalendarView({
     );
   }
 
-  // Buckets keyed by column, filled once rather than filtered per track — a
-  // day with 40 bookings and 6 columns is one pass, not six.
-  const byColumn = new Map<string | null, AppointmentSummary[]>();
-  for (const column of columns) byColumn.set(column.id, []);
-  for (const booking of appointments) {
-    const key = columnOf(booking);
-    const bucket = byColumn.get(key);
-    if (bucket) bucket.push(booking);
-    else byColumn.set(key, [booking]);
-  }
-
   // The anchor day and "today" are read as salon-local wall clock.
   const salonDay = toSalonDate(day, timeZone) ?? day;
   const salonToday = toSalonDate(new Date(), timeZone) ?? new Date();
@@ -147,44 +103,21 @@ export default function CalendarView({
   // exactly when someone wants to read where the free time is.
   return (
     <div className="min-w-0 max-w-full rounded-card overflow-auto border border-line bg-surface">
-      <div style={{ minWidth: 68 + columns.length * 140 }}>
-        {/* Staff header — a second grid with the same template, so a column head
-          always sits exactly above its own track. */}
+      <div style={{ minWidth: 208 }}>
         <div
           className="grid border-b border-line-soft"
-          style={{ gridTemplateColumns: gridTemplate(columns.length) }}
+          style={{ gridTemplateColumns: gridTemplate(1) }}
         >
           <div className="border-r border-line-soft" />
-          {columns.map((column) => (
-            <div
-              key={column.id ?? "unassigned"}
-              className="flex items-center gap-2.5 border-r border-line-soft px-3 py-3.5"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  "flex size-7.5 shrink-0 items-center justify-center rounded-pill text-2xs font-extrabold",
-                  column.id === null ? "bg-surface-2 text-ink-muted" : "bg-navy text-white",
-                )}
-              >
-                {column.id === null ? "?" : getInitials(column.name)}
-              </span>
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-extrabold text-ink">
-                  {column.name}
-                </span>
-                {column.role ? (
-                  <span className="block truncate text-2xs text-ink-muted">{column.role}</span>
-                ) : null}
-              </span>
-            </div>
-          ))}
+          <div className="px-3 py-3.5 text-sm font-extrabold text-ink">
+            {formatDate(dayKey(salonDay), { weekday: "long", day: "numeric", month: "long" })}
+          </div>
         </div>
 
         <div className="max-h-[70vh] overflow-auto">
           <div
             className="grid"
-            style={{ gridTemplateColumns: gridTemplate(columns.length) }}
+            style={{ gridTemplateColumns: gridTemplate(1) }}
             aria-label={`Calendar for ${day.toDateString()}`}
           >
             {/* Time gutter: hour labels, each centred on its own hour line. */}
@@ -203,20 +136,15 @@ export default function CalendarView({
               ))}
             </div>
 
-            {columns.map((column) => (
-              <StaffTrack
-                key={column.id ?? "unassigned"}
-                column={column}
-                day={salonDay}
-                appointments={byColumn.get(column.id) ?? []}
-                allAppointments={appointments}
-                showingToday={showingToday}
-                isReadOnly={isReadOnly}
-                timeZone={timeZone}
-                onEdit={onEdit}
-                onReschedule={onReschedule}
-              />
-            ))}
+            <DayTrack
+              day={salonDay}
+              appointments={appointments}
+              showingToday={showingToday}
+              isReadOnly={isReadOnly}
+              timeZone={timeZone}
+              onEdit={onEdit}
+              onReschedule={onReschedule}
+            />
           </div>
         </div>
       </div>
@@ -224,33 +152,18 @@ export default function CalendarView({
   );
 }
 
-/**
- * One vertical track: the hour lines, the day's blocks for that performer, the
- * now-indicator when the track is today, and — when writable — it is a drop
- * target for a dragged block.
- *
- * A drop reads the dragged id, finds that booking in the **whole** day (it may
- * have come from another column), turns the pointer's offset into a snapped
- * start and this track's performer into a `staffId`, and hands the resulting
- * PATCH to `onReschedule`. The server then re-checks the clash and the
- * department rule (ADR 0014, ADR 0013); the grid never decides whether a move
- * is legal, only where it was dropped.
- */
-function StaffTrack({
-  column,
+/** One shared day track; drops preserve the booking's assigned staff. */
+function DayTrack({
   day,
   appointments,
-  allAppointments,
   showingToday,
   isReadOnly,
   onEdit,
   onReschedule,
   timeZone,
 }: {
-  column: CalendarColumn;
   day: Date;
   appointments: AppointmentSummary[];
-  allAppointments: AppointmentSummary[];
   showingToday: boolean;
   isReadOnly: boolean;
   onEdit: (appointment: AppointmentSummary) => void;
@@ -279,25 +192,27 @@ function StaffTrack({
     event.preventDefault();
 
     const id = event.dataTransfer.getData("text/plain");
-    const booking = allAppointments.find((candidate) => candidate.id === id);
+    const booking = appointments.find((candidate) => candidate.id === id);
     if (!booking) return;
 
     // Pointer offset within the track, in minutes from the top of the day.
     const rect = event.currentTarget.getBoundingClientRect();
     const offsetMinutes = (event.clientY - rect.top) / PX_PER_MINUTE;
-    const input = rescheduleFields(booking, { day, offsetMinutes, staffId: column.id }, timeZone);
+    const input = rescheduleFields(
+      booking,
+      { day, offsetMinutes, staffId: booking.staffId },
+      timeZone,
+    );
     // A drop that changed nothing posts nothing.
     if (Object.keys(input).length > 0) onReschedule(booking.id, input);
   }
 
   return (
     <div
-      // Exposed so a test can assert a block rendered under its own staff head,
-      // not merely that a block exists somewhere on the grid.
-      data-column={column.id ?? "unassigned"}
+      data-day={dayKey(day)}
       className="relative border-r border-line-soft"
       style={{ height: TRACK_HEIGHT, backgroundImage: HOUR_LINES }}
-      onDragOver={isReadOnly ? undefined : (event) => event.preventDefault()}
+      onDragOver={isReadOnly || !onReschedule ? undefined : (event) => event.preventDefault()}
       onDrop={handleDrop}
     >
       {placed.map(({ booking, box }) => (
@@ -308,7 +223,7 @@ function StaffTrack({
           height={box.height}
           lane={lanes.get(booking.id)}
           isReadOnly={isReadOnly}
-          draggable
+          draggable={Boolean(onReschedule)}
           onEdit={onEdit}
         />
       ))}

@@ -1,20 +1,11 @@
-/**
- * The calendar grid — handoff screen 06.
- *
- * Rendered with its columns and rows passed in, exactly as the page does, so the
- * assertions are about what the grid *draws*: a column per performer plus an
- * Unassigned column, a block placed under its own staff head by its real time,
- * a quiet day that still draws its frame, and the read-only state. The block's
- * position is checked through the geometry module it shares, not through
- * pixel-sniffing the DOM.
- */
+/** Day timeline: placement, editing, state handling and assignment-preserving drops. */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { AppointmentSummary } from "@glampro_suite/shared";
 
-import CalendarView, { type CalendarColumn } from "../CalendarView";
+import CalendarView from "../CalendarView";
 import { HOUR_HEIGHT } from "../calendar-geometry";
 
 function booking(overrides: Partial<AppointmentSummary> = {}): AppointmentSummary {
@@ -40,44 +31,35 @@ function booking(overrides: Partial<AppointmentSummary> = {}): AppointmentSummar
   };
 }
 
-const COLUMNS: CalendarColumn[] = [
-  { id: "staff-1", name: "Stella Stylist", role: "Stylist" },
-  { id: null, name: "Unassigned" },
-];
-
 /** A date whose local hours line up with the fixture instants above. */
 const DAY = new Date(2026, 9, 9, 12, 0, 0, 0);
 
 describe("CalendarView", () => {
-  it("keeps staff tracks inside a width-constrained scroll panel", () => {
+  it("keeps the day timeline inside a width-constrained scroll panel", () => {
     const { container } = render(
-      <CalendarView day={DAY} appointments={[booking()]} columns={COLUMNS} onEdit={vi.fn()} />,
+      <CalendarView day={DAY} appointments={[booking()]} onEdit={vi.fn()} />,
     );
 
     const panel = container.firstElementChild;
     expect(panel).toHaveClass("min-w-0", "max-w-full", "overflow-auto");
-    expect(panel?.firstElementChild).toHaveStyle({ minWidth: "348px" });
+    expect(panel?.firstElementChild).toHaveStyle({ minWidth: "208px" });
   });
 
-  it("renders a track per column with its own header", () => {
+  it("shows one date timeline without staff headers or names", () => {
     const { container } = render(
-      <CalendarView day={DAY} appointments={[booking()]} columns={COLUMNS} onEdit={vi.fn()} />,
+      <CalendarView
+        day={DAY}
+        appointments={[booking(), booking({ id: "unassigned", staffId: null })]}
+        onEdit={vi.fn()}
+      />,
     );
-
-    expect(screen.getByText("Stella Stylist")).toBeInTheDocument();
-    expect(screen.getByText("Unassigned")).toBeInTheDocument();
-    // Two tracks: one per column, addressable by the staff id / "unassigned".
-    expect(container.querySelector('[data-column="staff-1"]')).not.toBeNull();
-    expect(container.querySelector('[data-column="unassigned"]')).not.toBeNull();
-  });
-
-  it("places a block under its performer's head, not just somewhere on the grid", () => {
-    const { container } = render(
-      <CalendarView day={DAY} appointments={[booking()]} columns={COLUMNS} onEdit={vi.fn()} />,
-    );
-
-    const track = container.querySelector('[data-column="staff-1"]');
-    expect(within(track as HTMLElement).getByText("Mina Customer")).toBeInTheDocument();
+    expect(screen.queryByText("Stella Stylist")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unassigned")).not.toBeInTheDocument();
+    expect(container.querySelectorAll("[data-day]")).toHaveLength(1);
+    expect(container.querySelectorAll("[data-appointment]")).toHaveLength(2);
+    expect(
+      within(container.querySelector("[data-day]") as HTMLElement).getAllByText("Signature cut"),
+    ).toHaveLength(2);
   });
 
   it("draws the block at the height the geometry says, from its own times", () => {
@@ -86,24 +68,20 @@ describe("CalendarView", () => {
         day={DAY}
         // 09:00–10:00 local, one hour → HOUR_HEIGHT tall.
         appointments={[booking()]}
-        columns={COLUMNS}
         onEdit={vi.fn()}
       />,
     );
 
-    const block = container.querySelector('[data-column="staff-1"] button');
+    const block = container.querySelector('[data-day="2026-10-09"] button');
     expect(block).toHaveStyle({ height: `${HOUR_HEIGHT}px` });
   });
 
   it("draws the day grid even when nothing is booked", () => {
-    const { container } = render(
-      <CalendarView day={DAY} appointments={[]} columns={COLUMNS} onEdit={vi.fn()} />,
-    );
+    const { container } = render(<CalendarView day={DAY} appointments={[]} onEdit={vi.fn()} />);
 
     // The frame *is* the day's opening hours, so a quiet day keeps its columns and
     // its gutter instead of being replaced by a card that hides where the free time is.
-    expect(container.querySelector('[data-column="staff-1"]')).not.toBeNull();
-    expect(container.querySelector('[data-column="unassigned"]')).not.toBeNull();
+    expect(container.querySelector('[data-day="2026-10-09"]')).not.toBeNull();
     expect(screen.getByText("08:00")).toBeInTheDocument();
     expect(container.querySelectorAll("[data-appointment]")).toHaveLength(0);
     expect(screen.queryByText("Nothing booked that day")).not.toBeInTheDocument();
@@ -112,28 +90,20 @@ describe("CalendarView", () => {
   it("opens the editor through onEdit when a block is clicked", async () => {
     const onEdit = vi.fn();
     const user = userEvent.setup();
-    render(<CalendarView day={DAY} appointments={[booking()]} columns={COLUMNS} onEdit={onEdit} />);
+    render(<CalendarView day={DAY} appointments={[booking()]} onEdit={onEdit} />);
 
     await user.click(screen.getByRole("button", { name: /Mina Customer, Scheduled/ }));
     expect(onEdit).toHaveBeenCalledTimes(1);
   });
 
   it("keeps blocks inert for a read-only salon", () => {
-    render(
-      <CalendarView
-        day={DAY}
-        appointments={[booking()]}
-        columns={COLUMNS}
-        isReadOnly
-        onEdit={vi.fn()}
-      />,
-    );
+    render(<CalendarView day={DAY} appointments={[booking()]} isReadOnly onEdit={vi.fn()} />);
     expect(screen.getByRole("button", { name: /Mina Customer/ })).toBeDisabled();
   });
 
   it("shows a loading skeleton while pending", () => {
     const { container } = render(
-      <CalendarView day={DAY} appointments={[]} columns={COLUMNS} isPending onEdit={vi.fn()} />,
+      <CalendarView day={DAY} appointments={[]} isPending onEdit={vi.fn()} />,
     );
 
     expect(container.querySelector('[aria-busy="true"]')).not.toBeNull();
@@ -159,22 +129,12 @@ describe("CalendarView", () => {
  * a normal `event.clientY` and `event.dataTransfer`.
  */
 describe("CalendarView drag-to-reschedule", () => {
-  const dragColumns: CalendarColumn[] = [
-    { id: "staff-1", name: "Stella Stylist" },
-    { id: "staff-2", name: "Nia Nailist" },
-    { id: null, name: "Unassigned" },
-  ];
-
-  /**
-   * A block on staff-1's column. Its start is built in **local** time (the grid
-   * places blocks by local hours), so a drop at the matching offset reads as
-   * "same time, new performer" whatever the runner's timezone.
-   */
+  /** A 10:00 salon-time booking, independent of the test host timezone. */
   const dragged = booking({
     id: "appt-drag",
     // 10:00 salon time (Asia/Singapore = UTC+8): 02:00 UTC.
     startsAt: "2026-10-09T02:00:00.000Z",
-    endsAt: new Date(2026, 9, 9, 11, 0).toISOString(),
+    endsAt: "2026-10-09T03:00:00.000Z",
     staffId: "staff-1",
     staffName: "Stella Stylist",
   });
@@ -222,14 +182,13 @@ describe("CalendarView drag-to-reschedule", () => {
       <CalendarView
         day={DAY}
         appointments={[dragged]}
-        columns={dragColumns}
         onEdit={vi.fn()}
         onReschedule={onReschedule}
       />,
     );
 
-    const block = container.querySelector('[data-column="staff-1"] button');
-    const track = container.querySelector('[data-column="staff-1"]');
+    const block = container.querySelector('[data-day="2026-10-09"] button');
+    const track = container.querySelector('[data-day="2026-10-09"]');
     if (!block || !track) throw new Error("Expected a block on its track.");
     stubTrackTop(track as HTMLElement, 0);
 
@@ -246,32 +205,24 @@ describe("CalendarView drag-to-reschedule", () => {
     expect(input.staffId).toBeUndefined();
   });
 
-  it("reassigns a block when dropped in another performer's column", () => {
+  it("ignores same-slot and unknown-record drops", () => {
     const onReschedule = vi.fn();
     const { container } = render(
       <CalendarView
         day={DAY}
         appointments={[dragged]}
-        columns={dragColumns}
         onEdit={vi.fn()}
         onReschedule={onReschedule}
       />,
     );
-
-    const block = container.querySelector('[data-column="staff-1"] button');
-    const target = container.querySelector('[data-column="staff-2"]');
-    if (!block || !target) throw new Error("Expected a block and a second column.");
-    stubTrackTop(target as HTMLElement, 0);
-
-    // Dropped at the same 10:00 (two hours in) but on staff-2's track.
+    const track = container.querySelector("[data-day]") as HTMLElement;
+    stubTrackTop(track, 0);
     const transfer = dataTransfer();
-    fireEvent.dragStart(block, { dataTransfer: transfer });
-    drop(target, 2 * HOUR_HEIGHT, transfer);
-
-    expect(onReschedule).toHaveBeenCalledTimes(1);
-    const [, input] = onReschedule.mock.calls[0];
-    expect(input.staffId).toBe("staff-2");
-    expect(input.startsAt).toBeUndefined();
+    transfer.setData("text/plain", dragged.id);
+    drop(track, 2 * HOUR_HEIGHT, transfer);
+    transfer.setData("text/plain", "unknown");
+    drop(track, 3 * HOUR_HEIGHT, transfer);
+    expect(onReschedule).not.toHaveBeenCalled();
   });
 
   it("does not reschedule for a read-only salon", () => {
@@ -280,14 +231,13 @@ describe("CalendarView drag-to-reschedule", () => {
       <CalendarView
         day={DAY}
         appointments={[dragged]}
-        columns={dragColumns}
         isReadOnly
         onEdit={vi.fn()}
         onReschedule={onReschedule}
       />,
     );
 
-    const track = container.querySelector('[data-column="staff-1"]');
+    const track = container.querySelector('[data-day="2026-10-09"]');
     const transfer = dataTransfer();
     transfer.setData("text/plain", "appt-drag");
     drop(track as HTMLElement, 5 * HOUR_HEIGHT, transfer);

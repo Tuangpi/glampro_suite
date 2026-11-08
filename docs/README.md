@@ -25,6 +25,7 @@ working on that feature; they are not a mandatory startup checklist.
 
 ## Salon features
 
+- [Business reports and chart definitions](features/business-reports.md)
 - [Departments](features/departments.md)
 - [Multi-outlet support](features/multi-outlet.md)
 - [Outlet hours and booking](features/outlet-booking-hours.md)

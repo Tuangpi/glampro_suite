@@ -1,9 +1,8 @@
 /**
  * Reports — handoff screen 05's tiles, `/api/reports`.
  *
- * The phase's full report catalogue, export and charts are still ahead of this
- * file (`docs/roadmap.md` → Phase 7); the MVP carries the dashboard's four
- * numbers plus screen 10's date-range overview. The tiles live here rather than
+ * The reporting overview includes complete business-chart aggregates alongside
+ * the existing detailed tables. The dashboard tiles live here rather than
  * in four bespoke endpoints because they are **one question asked of one
  * window**: how was today.
  *
@@ -34,6 +33,7 @@ import { prisma } from "../lib/prisma.js";
 import { currentOutletId } from "../lib/tenant-context.js";
 import { salonDayBounds } from "../lib/wall-clock.js";
 import { ownerMetrics } from "./owner-metrics.service.js";
+import { buildReportAnalytics } from "./report-analytics.js";
 
 /** Shared salon-local metrics, retaining the dashboard's legacy net-paid alias. */
 export async function dashboardSummary(query: DashboardQuery): Promise<DashboardSummary> {
@@ -192,88 +192,115 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
     return `${parts["year"]}-${parts["month"]}-${parts["day"]}`;
   }
 
-  const [sales, lines, performances, payments, commissions, liability, refunds, reconciliation] =
-    await Promise.all([
-      prisma.sale.findMany({
-        where: { status: "COMPLETED", soldAt },
-        select: {
-          soldAt: true,
-          totalQuantity: true,
-          totalAmount: true,
-          paidAmount: true,
-          taxAmount: true,
+  const [
+    sales,
+    lines,
+    performances,
+    payments,
+    commissions,
+    liability,
+    refunds,
+    reconciliation,
+    appointments,
+    redemptions,
+  ] = await Promise.all([
+    prisma.sale.findMany({
+      where: { status: "COMPLETED", soldAt },
+      select: {
+        soldAt: true,
+        totalQuantity: true,
+        totalAmount: true,
+        paidAmount: true,
+        taxAmount: true,
+      },
+      orderBy: { soldAt: "asc" },
+    }),
+    prisma.saleLine.findMany({
+      where: { sale: { status: "COMPLETED", soldAt } },
+      select: {
+        itemType: true,
+        itemId: true,
+        itemName: true,
+        quantity: true,
+        lineTotal: true,
+        discountAmount: true,
+        voucherDiscountAmount: true,
+        sale: { select: { soldAt: true } },
+      },
+    }),
+    prisma.employeePerformance.findMany({
+      where: {
+        OR: [
+          { refundAdjustment: false, sale: { status: "COMPLETED", soldAt } },
+          { refundAdjustment: true, createdAt: { gte: from, lte: to } },
+        ],
+      },
+      select: {
+        refundAdjustment: true,
+        amount: true,
+        user: { select: { id: true, name: true, position: true } },
+      },
+    }),
+    prisma.salePayment.findMany({
+      where: { sale: { status: "COMPLETED", soldAt } },
+      select: { method: true, amount: true },
+    }),
+    // A commission either belongs to a completed sale in the range or, when it is
+    // booked against a period, was created in the range. Counting the second kind
+    // by its sale date would drop it when the sale predates the commission.
+    prisma.employeeCommission.findMany({
+      where: {
+        ledgerVersion: null,
+        OR: [
+          { refundAdjustment: false, sale: { status: "COMPLETED", soldAt } },
+          { refundAdjustment: true, createdAt: { gte: from, lte: to } },
+          { saleId: null, createdAt: { gte: from, lte: to } },
+        ],
+      },
+      select: {
+        userId: true,
+        reconciliationRequired: true,
+        amount: true,
+        user: { select: { name: true, position: true } },
+      },
+    }),
+    liabilitySnapshot(),
+    prisma.saleRefund.findMany({
+      where: { refundedAt: { gte: from, lte: to } },
+      select: {
+        amount: true,
+        refundedAt: true,
+        payouts: true,
+        sale: { select: { taxAmount: true } },
+      },
+    }),
+    prisma.employeeCommission.count({
+      where: {
+        ledgerVersion: null,
+        reconciliationRequired: true,
+        OR: [
+          { sale: { refund: { refundedAt: { gte: from, lte: to } } } },
+          { sale: { status: "VOID", voidedAt: { gte: from, lte: to } } },
+        ],
+      },
+    }),
+    prisma.appointment.findMany({
+      where: { startsAt: soldAt, ...(currentOutletId() ? { outletId: currentOutletId()! } : {}) },
+      select: { startsAt: true, status: true },
+    }),
+    prisma.customerRedemption.aggregate({
+      where: {
+        itemType: "PACKAGE",
+        usedAt: soldAt,
+        revertedAt: null,
+        sale: {
+          status: "COMPLETED",
+          ...(currentOutletId() ? { outletId: currentOutletId()! } : {}),
         },
-        orderBy: { soldAt: "asc" },
-      }),
-      prisma.saleLine.findMany({
-        where: { sale: { status: "COMPLETED", soldAt } },
-        select: {
-          itemType: true,
-          itemId: true,
-          itemName: true,
-          quantity: true,
-          lineTotal: true,
-          discountAmount: true,
-          voucherDiscountAmount: true,
-        },
-      }),
-      prisma.employeePerformance.findMany({
-        where: {
-          OR: [
-            { refundAdjustment: false, sale: { status: "COMPLETED", soldAt } },
-            { refundAdjustment: true, createdAt: { gte: from, lte: to } },
-          ],
-        },
-        select: {
-          refundAdjustment: true,
-          amount: true,
-          user: { select: { id: true, name: true, position: true } },
-        },
-      }),
-      prisma.salePayment.findMany({
-        where: { sale: { status: "COMPLETED", soldAt } },
-        select: { method: true, amount: true },
-      }),
-      // A commission either belongs to a completed sale in the range or, when it is
-      // booked against a period, was created in the range. Counting the second kind
-      // by its sale date would drop it when the sale predates the commission.
-      prisma.employeeCommission.findMany({
-        where: {
-          ledgerVersion: null,
-          OR: [
-            { refundAdjustment: false, sale: { status: "COMPLETED", soldAt } },
-            { refundAdjustment: true, createdAt: { gte: from, lte: to } },
-            { saleId: null, createdAt: { gte: from, lte: to } },
-          ],
-        },
-        select: {
-          userId: true,
-          reconciliationRequired: true,
-          amount: true,
-          user: { select: { name: true, position: true } },
-        },
-      }),
-      liabilitySnapshot(),
-      prisma.saleRefund.findMany({
-        where: { refundedAt: { gte: from, lte: to } },
-        select: {
-          amount: true,
-          refundedAt: true,
-          payouts: true,
-          sale: { select: { taxAmount: true } },
-        },
-      }),
-      prisma.employeeCommission.count({
-        where: {
-          ledgerVersion: null,
-          reconciliationRequired: true,
-          OR: [
-            { sale: { refund: { refundedAt: { gte: from, lte: to } } } },
-            { sale: { status: "VOID", voidedAt: { gte: from, lte: to } } },
-          ],
-        },
-      }),
-    ]);
+      },
+      _sum: { quantity: true },
+    }),
+  ]);
 
   const byDay = new Map<
     string,
@@ -395,6 +422,25 @@ export async function reportOverview(query: ReportRangeQuery): Promise<ReportOve
   }
 
   return reportOverviewSchema.parse({
+    analytics: buildReportAnalytics({
+      from,
+      to,
+      timeZone: query.timeZone,
+      sales: sales.map((sale) => ({
+        soldAt: sale.soldAt,
+        totalAmount: sale.totalAmount.toFixed(2),
+      })),
+      lines: lines.map((line) => ({
+        itemType: line.itemType,
+        itemId: line.itemId,
+        itemName: line.itemName,
+        quantity: line.quantity,
+        revenue: line.lineTotal.minus(line.voucherDiscountAmount).toFixed(2),
+        soldAt: line.sale.soldAt,
+      })),
+      appointments,
+      sessionsRedeemed: redemptions._sum.quantity ?? 0,
+    }),
     from: query.from,
     to: query.to,
     totals: {

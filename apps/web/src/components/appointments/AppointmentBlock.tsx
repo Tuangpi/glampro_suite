@@ -37,11 +37,6 @@ export interface AppointmentBlockProps {
   draggable?: boolean;
   /** Where the block sits when another booking shares its column at the same time. */
   lane?: LanePlacement;
-  /**
-   * Adds the performer's name, for a grid with no staff columns (the week has seven day
-   * columns instead, so "who" is not readable off the column head).
-   */
-  showStaff?: boolean;
   onEdit: (appointment: AppointmentSummary) => void;
 }
 
@@ -60,7 +55,6 @@ export default function AppointmentBlock({
   isReadOnly = false,
   draggable = false,
   lane,
-  showStaff = false,
   onEdit,
 }: AppointmentBlockProps) {
   const { formatTime } = useSalonFormatting();
@@ -104,25 +98,13 @@ export default function AppointmentBlock({
     >
       <p className="truncate text-xs leading-tight font-extrabold text-ink">{customer}</p>
       {compact ? null : (
-        <p
-          className={cn(
-            "mt-0.5 truncate text-2xs",
-            showStaff ? "text-ink-muted" : APPOINTMENT_BLOCK_TEXT[tone],
-          )}
-        >
-          {showStaff ? (booking.staffName ?? "Unassigned") : (booking.serviceName ?? "—")}
+        <p className={cn("mt-0.5 truncate text-2xs", APPOINTMENT_BLOCK_TEXT[tone])}>
+          {booking.serviceName ?? "—"}
         </p>
       )}
       {compact ? null : (
-        <p
-          className={cn(
-            "truncate text-2xs",
-            showStaff ? APPOINTMENT_BLOCK_TEXT[tone] : "text-ink-muted",
-          )}
-        >
-          {showStaff
-            ? (booking.serviceName ?? "—")
-            : `${formatTime(booking.startsAt)} – ${formatTime(booking.endsAt)}`}
+        <p className="truncate text-2xs text-ink-muted">
+          {formatTime(booking.startsAt)} – {formatTime(booking.endsAt)}
         </p>
       )}
     </button>

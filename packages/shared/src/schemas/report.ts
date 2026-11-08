@@ -195,7 +195,51 @@ export const reportStaffSchema = z.object({
 
 export type ReportStaff = z.infer<typeof reportStaffSchema>;
 
+export const reportAnalyticsSchema = z.object({
+  salesAmount: z.string(),
+  granularity: z.enum(["hour", "day"]),
+  appointments: z.object({
+    total: z.number().int().nonnegative(),
+    scheduled: z.number().int().nonnegative(),
+    inProgress: z.number().int().nonnegative(),
+    completed: z.number().int().nonnegative(),
+    cancelled: z.number().int().nonnegative(),
+    noShow: z.number().int().nonnegative(),
+  }),
+  sessionsRedeemed: z.number().int().nonnegative(),
+  categories: z.array(
+    z.object({
+      key: z.enum(["services", "products", "packages", "other"]),
+      label: z.string(),
+      quantity: z.number().int().nonnegative(),
+      revenue: z.string(),
+    }),
+  ),
+  items: z.array(reportItemSchema),
+  timeline: z.array(
+    z.object({
+      key: z.string(),
+      label: z.string(),
+      sales: z.number().int().nonnegative(),
+      revenue: z.string(),
+      services: z.string(),
+      products: z.string(),
+      packages: z.string(),
+      other: z.string(),
+      scheduled: z.number().int().nonnegative(),
+      inProgress: z.number().int().nonnegative(),
+      completed: z.number().int().nonnegative(),
+      cancelled: z.number().int().nonnegative(),
+      noShow: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
+export type ReportAnalytics = z.infer<typeof reportAnalyticsSchema>;
+
 export const reportOverviewSchema = z.object({
+  /** Complete range aggregates, independent of the legacy top-ten list. */
+  analytics: reportAnalyticsSchema.optional(),
   from: z.string(),
   to: z.string(),
   totals: z.object({

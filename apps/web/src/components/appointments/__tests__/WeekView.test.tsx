@@ -49,20 +49,16 @@ function booking(overrides: Partial<AppointmentSummary> = {}): AppointmentSummar
 const WEEK = at(9, 12);
 
 describe("WeekView", () => {
-  it("contains a wide staff grid inside a width-constrained scroll panel", () => {
-    const columns = Array.from({ length: 5 }, (_, index) => ({
-      id: `staff-${index + 1}`,
-      name: `Staff ${index + 1}`,
-    }));
+  it("contains exactly seven date columns inside a width-constrained scroll panel", () => {
     const { container } = render(
-      <WeekView day={WEEK} appointments={[booking()]} columns={columns} onEdit={vi.fn()} />,
+      <WeekView day={WEEK} appointments={[booking()]} onEdit={vi.fn()} />,
     );
 
     // jsdom checks the containment contract, not browser layout dimensions.
     const panel = container.firstElementChild;
     expect(panel).toHaveClass("min-w-0", "max-w-full", "overflow-auto");
-    expect(panel?.firstElementChild).toHaveStyle({ minWidth: "4968px" });
-    expect(container.querySelectorAll("[data-day]")).toHaveLength(35);
+    expect(panel?.firstElementChild).toHaveStyle({ minWidth: "1048px" });
+    expect(container.querySelectorAll("[data-day]")).toHaveLength(7);
   });
 
   it("draws seven Monday-first columns, and only the anchor's own week", () => {
@@ -153,10 +149,11 @@ describe("WeekView", () => {
     expect(new Set(lefts).size).toBe(2);
   });
 
-  it("names the performer on the block, since a day column has no staff head", () => {
+  it("shows customer and service without staff names", () => {
     render(<WeekView day={WEEK} appointments={[booking()]} onEdit={vi.fn()} />);
 
-    expect(screen.getByText("Stella Stylist")).toBeInTheDocument();
+    expect(screen.queryByText("Stella Stylist")).not.toBeInTheDocument();
+    expect(screen.getByText("Mina Customer")).toBeInTheDocument();
     expect(screen.getByText("Signature cut")).toBeInTheDocument();
   });
 
@@ -173,13 +170,11 @@ describe("WeekView", () => {
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ id: "appt-1" }));
   });
 
-  it("never makes a block draggable — the week cannot move a booking", () => {
+  it("does not enable dragging without a reschedule callback", () => {
     const { container } = render(
       <WeekView day={WEEK} appointments={[booking()]} onEdit={vi.fn()} />,
     );
 
-    // ADR 0018, decision 5: one gutter and one snapped slot are what make "which minute"
-    // unambiguous, and the week has neither. The day grid is where a block moves.
     expect(container.querySelector("[data-appointment]")).toHaveAttribute("draggable", "false");
   });
 
