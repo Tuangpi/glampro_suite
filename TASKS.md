@@ -55,6 +55,25 @@ Do not update external PDFs or tracking systems on the user's behalf.
 
 ## Incremental code refactoring
 
+- **DONE — cart item visibility correction:** remove fixed-height sale/cart
+  squeezing and nested item scrolling; grow rows/editors naturally with page
+  scrolling and compact the header/payment footer. Sale regression tests and
+  headless Chrome component layout checks passed; full authenticated sale-page
+  acceptance remains to be checked on the actual till screen. Supersedes the
+  bounded desktop layout recorded below.
+
+- **DONE — catalogue-first sale UX (A + B):** wider responsive catalogue with
+  added quantities and sticky desktop browsing controls; compact cart with
+  one-row editing and visible staff summaries/warnings. Financial behavior and
+  server-bounded catalogue search remain unchanged. Authenticated viewport
+  acceptance remains to be checked on the actual till screen.
+
+- **DONE — focused sale workspace:** prioritize customer/cart/payment in a
+  bounded desktop layout; move holdings and personal progress into drawers;
+  preserve visible allocation summaries and existing financial behavior.
+  Sale regression tests and web quality checks pass; authenticated viewport
+  acceptance remains to be checked on the actual till screen.
+
 - **DONE — sales catalogue boundary:** extract read-only POS item search from
   `sale.service.ts`, preserve the public export, and share item/module policy with
   checkout. Financial write behavior and transaction boundaries stay unchanged.

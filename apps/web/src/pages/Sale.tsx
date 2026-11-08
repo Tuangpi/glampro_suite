@@ -63,7 +63,6 @@ import SaleListPagination from "@/components/sale/SaleListPagination";
 import SaleHistoryPanel from "@/components/sale/SaleHistoryPanel";
 import VoidSaleDialog from "@/components/sale/VoidSaleDialog";
 import Button from "@/components/ui/Button";
-import Card from "@/components/ui/Card";
 import Drawer from "@/components/ui/Drawer";
 import Modal from "@/components/ui/Modal";
 import Tabs from "@/components/ui/Tabs";
@@ -152,6 +151,8 @@ export default function Sale() {
   const [historicalReceipt, setHistoricalReceipt] = useState(false);
   const [heldPage, setHeldPage] = useState(1);
   const [heldOpen, setHeldOpen] = useState(false);
+  const [packagesOpen, setPackagesOpen] = useState(false);
+  const [progressOpen, setProgressOpen] = useState(false);
   const cartSection = useRef<HTMLDivElement>(null);
   /** The parked cart this till is ringing up, or `null` for an ordinary sale. */
   const [heldSaleId, updateHeldSaleId] = useState<string | null>(
@@ -698,6 +699,13 @@ export default function Sale() {
         search={search}
         isMember={isMember}
         onAdd={handleAdd}
+        quantityForItem={(item) =>
+          cart.lines.reduce(
+            (sum, line) =>
+              sum + (line.itemType === item.kind && line.itemId === item.id ? line.quantity : 0),
+            0,
+          )
+        }
         onRetry={() => void items.refetch()}
         onClearSearch={() => {
           setSearchInput("");
@@ -711,17 +719,26 @@ export default function Sale() {
   return (
     <div className="flex min-w-0 flex-col gap-4 pb-24 lg:pb-0">
       {!receipt ? (
-        <header>
-          <h2 className="text-xl">Sale</h2>
-          <p className="mt-1 text-sm text-ink-muted">
-            Add services and products to the cart, then take payment.
-          </p>
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl">Sale</h2>
+            <p className="mt-1 text-sm text-ink-muted">
+              Add services and products to the cart, then take payment.
+            </p>
+          </div>
+          <PosStaffSwitch disabled={cartLocked || checkoutOpen} />
         </header>
       ) : null}
 
       {!receipt && (
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <PosStaffSwitch disabled={cartLocked || checkoutOpen} />
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
+          {["SUPER_ADMIN", "MANAGER", "STAFF"].includes(user?.globalRole ?? "") ? (
+            <Button variant="ghost" aria-haspopup="dialog" onClick={() => setProgressOpen(true)}>
+              Your commission progress
+            </Button>
+          ) : (
+            <span />
+          )}
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" aria-haspopup="dialog" onClick={() => setHeldOpen(true)}>
               Held carts
@@ -836,11 +853,11 @@ export default function Sale() {
           ) : null}
         </>
       ) : (
-        <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
-          <div className="min-w-0">
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_340px] xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="min-w-0 lg:sticky lg:top-[calc(var(--sp-topbar-h,76px)+1rem)] lg:max-h-[calc(100dvh-var(--sp-topbar-h,76px)-2rem)] lg:overflow-y-auto">
             <section
               aria-label="Items to sell"
-              className="flex flex-col gap-4 rounded-card border border-line bg-surface p-4"
+              className="flex flex-col gap-3 rounded-card border border-line bg-surface p-3"
             >
               {/*
                 The scanner's field. A gun types the code like a keyboard and
@@ -885,23 +902,26 @@ export default function Sale() {
                 </form>
               </details>
 
-              <div className="relative order-first">
-                <Search
-                  aria-hidden
-                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-muted"
-                />
-                <input
-                  type="search"
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="Search services, products, packages…"
-                  aria-label="Search the catalogue"
-                  className="h-control w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-ink transition-colors placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-purple"
-                />
+              <div className="order-first bg-surface py-1 lg:sticky lg:top-0 lg:z-10">
+                <div className="relative">
+                  <Search
+                    aria-hidden
+                    className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-ink-muted"
+                  />
+                  <input
+                    type="search"
+                    value={searchInput}
+                    onChange={(event) => setSearchInput(event.target.value)}
+                    placeholder={`Search ${SALE_KIND_LABELS[activeKind].toLowerCase()}…`}
+                    aria-label="Search the catalogue"
+                    className="h-control w-full rounded-md border border-line bg-surface pr-3 pl-9 text-sm text-ink transition-colors placeholder:text-ink-muted focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-purple"
+                  />
+                </div>
               </div>
 
               {kinds.length > 0 ? (
                 <Tabs
+                  className="lg:[&>[role=tablist]]:sticky lg:[&>[role=tablist]]:top-14 lg:[&>[role=tablist]]:z-10 [&>[role=tablist]]:bg-surface"
                   label="Item categories"
                   activeId={activeKind}
                   onChange={(id) => {
@@ -937,9 +957,24 @@ export default function Sale() {
             ref={cartSection}
             id="sale-cart"
             tabIndex={-1}
-            className="flex min-w-0 scroll-mt-24 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-purple lg:sticky lg:top-24"
+            className="flex min-w-0 scroll-mt-24 flex-col gap-3 focus-visible:outline-2 focus-visible:outline-purple"
           >
-            <Card title="Customer">
+            <section
+              aria-label="Sale customer"
+              className="shrink-0 rounded-card border border-line bg-surface p-3"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-sm font-bold text-ink">Customer</h3>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  aria-haspopup="dialog"
+                  disabled={!customer || cartLocked}
+                  onClick={() => setPackagesOpen(true)}
+                >
+                  Packages & credit
+                </Button>
+              </div>
               <CustomerPicker
                 customer={customer}
                 onSelect={(next) => {
@@ -958,16 +993,9 @@ export default function Sale() {
                   Select a customer to issue this package, credit or gift card.
                 </p>
               ) : null}
-            </Card>
-            <ActivePackagesPanel
-              customerId={customer?.id ?? null}
-              disabled={cartLocked}
-              onRedeem={handleRedeem}
-            />
-            {/* FR-POS-09: the seller's own base and band progress, never a colleague's. */}
-            <PosPayrollProgress />
+            </section>
             {heldSaleId ? (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-card border border-purple/40 bg-surface-2 px-4 py-2.5">
+              <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-card border border-purple/40 bg-surface-2 px-4 py-2.5">
                 <p className="text-xs text-ink-body">
                   Ringing up the <span className="font-bold text-ink">held cart</span> you picked up
                   at current catalogue prices. Taking payment completes it and checks prices again.
@@ -1027,6 +1055,30 @@ export default function Sale() {
               holdPending={holdSale.isPending}
             />
 
+            <Drawer
+              open={packagesOpen}
+              onClose={() => setPackagesOpen(false)}
+              title="Customer packages & credit"
+              description={customer?.name}
+            >
+              {packagesOpen ? (
+                <ActivePackagesPanel
+                  customerId={customer?.id ?? null}
+                  disabled={cartLocked}
+                  onRedeem={(redemption, item) => {
+                    setPackagesOpen(false);
+                    handleRedeem(redemption, item);
+                  }}
+                />
+              ) : null}
+            </Drawer>
+            <Drawer
+              open={progressOpen}
+              onClose={() => setProgressOpen(false)}
+              title="Your commission progress"
+            >
+              {progressOpen ? <PosPayrollProgress /> : null}
+            </Drawer>
             <Drawer
               open={heldOpen}
               onClose={() => setHeldOpen(false)}

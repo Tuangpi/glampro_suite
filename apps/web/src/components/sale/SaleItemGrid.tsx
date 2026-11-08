@@ -24,6 +24,7 @@ import Skeleton from "@/components/ui/Skeleton";
 import { SALE_KIND_LABELS } from "@/constants/sale";
 import { formatDuration } from "@/lib/utils";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
+import { cn } from "@/lib/utils";
 
 export interface SaleItemGridProps {
   /** The tab this grid sits under — for the empty "no rows" sentence. */
@@ -38,6 +39,7 @@ export interface SaleItemGridProps {
   onAdd: (item: SaleItem) => void;
   onRetry: () => void;
   onClearSearch: () => void;
+  quantityForItem?: (item: SaleItem) => number;
 }
 
 export default function SaleItemGrid({
@@ -50,6 +52,7 @@ export default function SaleItemGrid({
   onAdd,
   onRetry,
   onClearSearch,
+  quantityForItem,
 }: SaleItemGridProps) {
   const { formatPrice } = useSalonFormatting();
   if (isPending) {
@@ -99,23 +102,31 @@ export default function SaleItemGrid({
   }
 
   return (
-    <ul aria-label={SALE_KIND_LABELS[kind]} className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <ul
+      aria-label={SALE_KIND_LABELS[kind]}
+      className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,10rem),1fr))] gap-2"
+    >
       {items.map((item) => {
         const price = isMember && item.memberPrice !== null ? item.memberPrice : item.price;
+        const quantity = quantityForItem?.(item) ?? 0;
         return (
           <li key={`${item.kind}:${item.id}`}>
             <button
               type="button"
               onClick={() => onAdd(item)}
               aria-label={`Add ${item.name} to the cart, ${formatPrice(price)}`}
-              className="flex min-h-control w-full flex-col gap-1.5 rounded-card border border-line bg-surface p-4 text-left transition-colors hover:border-purple focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple"
+              aria-description={quantity > 0 ? `${quantity} in cart` : undefined}
+              className={cn(
+                "flex h-full min-h-28 w-full flex-col gap-1.5 rounded-card border p-3 text-left transition-colors hover:border-purple focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple",
+                quantity > 0 ? "border-purple bg-purple-soft" : "border-line bg-surface",
+              )}
             >
               <span className="flex items-start justify-between gap-2">
                 <span className="min-w-0 break-words font-bold text-ink">{item.name}</span>
                 <Plus aria-hidden className="shrink-0 text-base text-purple" />
               </span>
 
-              <span className="flex items-center gap-2 text-sm">
+              <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
                 <span className="font-heavy text-ink">{formatPrice(price)}</span>
                 {/* Shown beside, not instead: a walk-in's cashier must see the
                     price they are actually charging. */}
@@ -129,6 +140,9 @@ export default function SaleItemGrid({
               <span className="text-xs text-ink-muted">
                 <ItemMeta item={item} />
               </span>
+              {quantity > 0 ? (
+                <span className="mt-auto text-xs font-bold text-purple">{quantity} in cart</span>
+              ) : null}
             </button>
           </li>
         );

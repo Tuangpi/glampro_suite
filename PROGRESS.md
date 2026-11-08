@@ -8,6 +8,63 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 8, 2026 — prevent squeezed cart items
+
+- Supersedes the fixed-height workspace below: removed the sale page's desktop
+  height limit and the cart body's nested scrolling/flex-shrink constraints.
+  The cart grows naturally with its items and expanded editors; shorter screens
+  scroll the page. Catalogue browsing retains its own sticky desktop viewport.
+- Reduced cart header padding, removed the empty description spacing, and
+  compacted totals/footer spacing. Desktop checkout footer sticks to the bottom
+  of the viewport while within the cart. Financial rules remain unchanged.
+- Verification: 175 sale-related tests passed across 16 files; web ESLint and
+  production build (including TypeScript) passed. Regression tests cover 1/3/6
+  rows and the absence of fixed-height/nested-scroll constraints.
+- Temporary headless Chrome fixture rendered the actual CartPanel with sample
+  data: 12 checks covering 1/3/6 rows and an expanded editor at actual CSS
+  viewports 1366×625, 1024×457 and 500×701. Every row fit inside the natural cart
+  body, with visible overflow and no internal scrollbar. Three-row body measured
+  548px, six-row body 1097px; header 47px and footer about 106px. No app data or
+  authentication was accessed. Full authenticated sale-page acceptance remains
+  unverified; the fixture and measurement output are temporary files in /tmp.
+
+## November 8, 2026 — catalogue-first browsing and compact cart
+
+- Widened the catalogue, tightened responsive item cards and kept desktop search
+  and category controls sticky. Cards highlight added items and show quantities
+  summed across matching cart lines; member-price hints wrap on narrow cards.
+- Cart rows now expose item/price/quantity and named staff allocation summaries,
+  with unassigned/unavailable staff visible. Item name or Edit details opens one
+  inline editor at a time for therapist, discount, attribution and estimates.
+  Quantity/remove/payment remain directly accessible; opening/closing editors
+  does not change financial or assignment values.
+- Department filtering was not added: the bounded POS search contract supports
+  kind/search, not department filtering. No misleading current-page-only filter,
+  new dependency, API contract, database or financial-policy change was introduced.
+- Verification: 172 sale-related tests passed across 16 files; web ESLint and
+  production build (including TypeScript) passed. Coverage includes added-card
+  quantities, one-row editing, unavailable staff, discounts and appointment
+  therapist/payment handoff. Authenticated browser/viewport checks were not run.
+
+## November 8, 2026 — focused sale workspace
+
+- Desktop POS now uses a viewport-bounded two-column workspace with separately
+  scrolling catalogue/cart items and a non-scrolling totals/payment footer.
+  Smaller screens retain page scrolling and the existing cart shortcut.
+- Customer selection remains above the cart. Packages/credit and personal
+  commission progress open in focus-managed drawers; redemption still hands the
+  selected holding into the existing payment dialog. Cashiers are not offered
+  personal commission progress.
+- Cart lines show item/price/quantity/therapist before attribution controls.
+  Saved staff allocation summaries remain visible; commission estimates are
+  mounted only when expanded. Search now names the selected catalogue category.
+- Verification: 169 tests passed across 16 sale-related files; web ESLint,
+  production build (including TypeScript), and Git whitespace checks passed.
+  Added drawer handoff/cancellation, focus, role visibility, layout structure,
+  search scope, line ordering and estimate disclosure regression coverage.
+- No API, financial-policy, database, or dependency changes. Authenticated
+  browser/viewport checks and database integration checks were not run.
+
 ## November 8, 2026 — simplified Reports page
 
 - Reports is now one page: shared date filters, five business summary cards,

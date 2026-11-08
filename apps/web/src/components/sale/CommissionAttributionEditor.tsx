@@ -96,6 +96,7 @@ export default function CommissionAttributionEditor({
       <Button
         variant="ghost"
         disabled={disabled}
+        aria-expanded={open}
         onClick={() => {
           setDraft(value ?? {});
           setError(null);

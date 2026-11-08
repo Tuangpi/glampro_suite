@@ -1,5 +1,5 @@
 /**
- * The cart panel — the right column of handoff screen 01, visible at all times.
+ * The cart panel — naturally growing rows and a sticky desktop checkout footer.
  *
  * A `Card` with one line per `CartLine` component, the sale totals in its body and the
  * take-payment and hold buttons in its footer. The totals are cents-exact
@@ -73,6 +73,7 @@ export default function CartPanel({
 }: CartPanelProps) {
   const { formatPrice } = useSalonFormatting();
   const [clearOpen, setClearOpen] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
   const locked = disabled || holdPending;
   const units = lines.reduce((sum, line) => sum + line.quantity, 0);
   // Every line carries both figures: what it costs **after** its discount, and what the
@@ -94,7 +95,8 @@ export default function CartPanel({
     <>
       <Card
         flush
-        className="h-[min(90dvh,46rem)] min-h-96 [&>div]:min-h-0 [&>div]:flex-1 [&>div]:overflow-y-auto [&>footer]:shrink-0 lg:h-[max(36rem,calc(100dvh-10rem))]"
+        label="Sale cart"
+        className="overflow-visible [&>header]:rounded-t-card [&>header]:px-3 [&>header]:py-2 [&>div]:min-h-48 [&>footer]:rounded-b-card [&>footer]:py-2 lg:[&>footer]:sticky lg:[&>footer]:bottom-0 lg:[&>footer]:z-10"
         title={
           <span className="flex items-center gap-2">
             Cart
@@ -106,21 +108,16 @@ export default function CartPanel({
             </span>
           </span>
         }
-        description={
-          <span className="sr-only">
-            {units} {units === 1 ? "item" : "items"} in cart
-          </span>
-        }
         actions={
           lines.length > 0 ? (
-            <Button variant="ghost" disabled={locked} onClick={() => setClearOpen(true)}>
+            <Button variant="ghost" size="sm" disabled={locked} onClick={() => setClearOpen(true)}>
               Clear cart
             </Button>
           ) : undefined
         }
         footer={
           lines.length > 0 ? (
-            <div className="flex flex-col gap-4 p-1">
+            <div className="flex flex-col gap-2 p-1">
               {discountCents > 0 ? (
                 <>
                   <div className="flex items-baseline justify-between text-sm text-ink-muted">
@@ -137,7 +134,7 @@ export default function CartPanel({
               ) : null}
               <div className="flex items-baseline justify-between gap-3">
                 <span className="font-bold text-ink">Total</span>
-                <span className="text-3xl font-heavy text-ink tabular-nums">
+                <span className="text-xl font-heavy text-ink tabular-nums">
                   {formatPrice(totalCents / 100)}
                 </span>
               </div>
@@ -177,11 +174,17 @@ export default function CartPanel({
             className="h-full py-8"
           />
         ) : (
-          <ul aria-label="Cart items" className="divide-y divide-line-soft px-5">
+          <ul aria-label="Cart items" className="divide-y divide-line-soft px-3">
             {priced.map(({ line, unitPrice, listPrice }) => (
               <CartLine
                 key={cartLineKey(line)}
                 line={line}
+                editing={editingKey === cartLineKey(line)}
+                onEdit={() =>
+                  setEditingKey((current) =>
+                    current === cartLineKey(line) ? null : cartLineKey(line),
+                  )
+                }
                 customerId={customerId}
                 unitPrice={unitPrice}
                 listPrice={listPrice}
@@ -192,7 +195,10 @@ export default function CartPanel({
                 sellerOptions={sellerOptions}
                 onAttribution={onAttribution}
                 onDiscount={onDiscount}
-                onRemove={onRemove}
+                onRemove={(key) => {
+                  if (editingKey === key) setEditingKey(null);
+                  onRemove(key);
+                }}
                 disabled={locked}
               />
             ))}
@@ -214,6 +220,7 @@ export default function CartPanel({
               variant="danger"
               disabled={locked}
               onClick={() => {
+                setEditingKey(null);
                 onClear();
                 setClearOpen(false);
               }}

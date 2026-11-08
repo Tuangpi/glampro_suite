@@ -34,13 +34,70 @@ function props(overrides: Partial<CartPanelProps> = {}): CartPanelProps {
 }
 
 describe("CartPanel", () => {
-  it("summarizes units in the header and keeps compact staff selection accessible", () => {
+  it.each([1, 3, 6])(
+    "keeps all %i rows in a naturally growing body, separate from checkout",
+    (count) => {
+      const values = props();
+      render(
+        <CartPanel
+          {...values}
+          lines={Array.from({ length: count }, (_, index) => ({
+            ...values.lines[0]!,
+            itemId: `service-${index}`,
+            name: `Service ${index + 1}`,
+          }))}
+        />,
+      );
+      const cart = screen.getByRole("region", { name: "Sale cart" });
+      const list = within(cart).getByRole("list", { name: "Cart items" });
+      expect(within(list).getAllByRole("button", { name: /^Edit Service/ })).toHaveLength(count);
+      expect(cart).toHaveClass("overflow-visible");
+      expect(cart).not.toHaveClass("[&>div]:overflow-y-auto", "lg:flex-1");
+      expect(
+        screen.getByRole("button", { name: "Take payment" }).closest("footer"),
+      ).not.toContainElement(list);
+    },
+  );
+
+  it("edits one line at a time without changing staff or discounts on open/close", async () => {
+    const user = userEvent.setup();
+    const values = props();
+    render(
+      <CartPanel
+        {...values}
+        lines={[values.lines[0]!, { ...values.lines[0]!, itemId: "s2", name: "Facial" }]}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Edit Root colour" }));
+    expect(screen.getByRole("combobox", { name: "Who performed Root colour" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Edit Facial" }));
+    expect(
+      screen.queryByRole("combobox", { name: "Who performed Root colour" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Who performed Facial" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(values.onStaff).not.toHaveBeenCalled();
+    expect(values.onDiscount).not.toHaveBeenCalled();
+  });
+
+  it("keeps unavailable staff visible when a row is closed and in its editor", async () => {
+    const user = userEvent.setup();
+    const values = props();
+    render(<CartPanel {...values} lines={[{ ...values.lines[0]!, staffId: "former-staff" }]} />);
+    expect(screen.getByText("Therapist: Unavailable staff")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Edit Root colour" }));
+    expect(screen.getByRole("combobox", { name: "Who performed Root colour" })).toHaveDisplayValue(
+      "Unavailable staff — select another",
+    );
+  });
+
+  it("summarizes units and staff without exposing an editing form", () => {
     render(<CartPanel {...props()} />);
     expect(screen.getByRole("heading", { name: "Cart" })).toBeInTheDocument();
     expect(screen.getByText("2 items")).toBeVisible();
-    const staff = screen.getByRole("combobox", { name: "Who performed Root colour" });
-    expect(staff).toHaveDisplayValue("Unassigned");
-    expect(screen.getByText("Staff")).toBeVisible();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByText("Therapist: Unassigned")).toBeVisible();
     expect(screen.getByText("25% off", { exact: false })).toBeVisible();
     expect(screen.getAllByRole("listitem")).toHaveLength(1);
   });
@@ -65,7 +122,7 @@ describe("CartPanel", () => {
     );
     expect(screen.getByText("4 items")).toBeVisible();
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.getAllByRole("combobox")).toHaveLength(1);
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Who performed Shampoo")).not.toBeInTheDocument();
   });
 
@@ -115,6 +172,7 @@ describe("CartPanel", () => {
     const group = screen.getByRole("group", { name: "Quantity controls for Root colour" });
     await user.click(within(group).getByRole("button", { name: "One more Root colour" }));
     expect(callbacks.onQuantity).toHaveBeenLastCalledWith("SERVICE:s1:", 3);
+    await user.click(screen.getByRole("button", { name: "Edit Root colour" }));
     const edit = screen.getByRole("button", { name: "Edit discount" });
     expect(edit).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByLabelText("Discount percent for Root colour")).not.toBeVisible();

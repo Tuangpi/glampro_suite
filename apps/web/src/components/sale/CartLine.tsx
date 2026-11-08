@@ -53,6 +53,8 @@ export interface CartLineProps {
   sellerOptions?: StaffOption[];
   onAttribution?: (key: string, value: CommissionAttribution | undefined) => void;
   customerId?: string;
+  editing: boolean;
+  onEdit: () => void;
 }
 
 export default function CartLine({
@@ -69,6 +71,8 @@ export default function CartLine({
   sellerOptions,
   onAttribution,
   customerId,
+  editing,
+  onEdit,
 }: CartLineProps) {
   const { formatPrice } = useSalonFormatting();
   const key = cartLineKey(line);
@@ -80,6 +84,7 @@ export default function CartLine({
   // rate of one percent.
   const [discountDraft, setDiscountDraft] = useState<string | null>(null);
   const [discountOpen, setDiscountOpen] = useState(false);
+  const [estimateOpen, setEstimateOpen] = useState(false);
   const discountId = useId();
 
   function commit(raw: string) {
@@ -105,28 +110,40 @@ export default function CartLine({
 
   const totalCents = cartTotalCents([{ unitPrice, quantity: line.quantity }]);
   const discounted = line.discountPercent !== undefined && line.discountPercent > 0;
+  const editorId = useId();
+  const staffLabel = (id: string, options: StaffOption[]) =>
+    performerOptions(options).find((person) => person.value === id)?.label ?? "Unavailable staff";
+  const summaries = (["sellers", "performers"] as const).flatMap((kind) => {
+    const shares = line.attribution?.[kind];
+    if (!shares?.length) return [];
+    const options = kind === "sellers" ? (sellerOptions ?? []) : staffOptions;
+    return [
+      {
+        kind,
+        label: kind === "sellers" ? "Sold by" : "Performed by",
+        text: shares
+          .map((share) => `${staffLabel(share.staffId, options)} · ${share.share / 100}%`)
+          .join(", "),
+        unavailable: shares.some((share) => !options.some((person) => person.id === share.staffId)),
+      },
+    ];
+  });
 
   return (
-    <li className="flex min-w-0 flex-col gap-3 py-4">
-      {onAttribution && sellerOptions ? (
-        <CommissionAttributionEditor
-          value={line.attribution}
-          sellers={sellerOptions}
-          performers={line.itemType === "SERVICE" ? staffOptions : undefined}
-          disabled={disabled}
-          onChange={(value) => onAttribution(key, value)}
-        />
-      ) : null}
-      {onAttribution && sellerOptions ? (
-        <CartCommissionPreview
-          line={line}
-          customerId={customerId}
-          staff={sellerOptions ?? staffOptions}
-        />
-      ) : null}
+    <li className={cn("flex min-w-0 flex-col gap-2 py-3", editing && "bg-surface-2")}>
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <p className="text-sm font-bold break-words text-ink">{line.name}</p>
+          <button
+            type="button"
+            disabled={disabled}
+            onClick={onEdit}
+            aria-label={`Edit ${line.name}`}
+            aria-expanded={editing}
+            aria-controls={editorId}
+            className="min-h-control text-left text-sm font-bold break-words text-ink hover:text-purple focus-visible:outline-2 focus-visible:outline-purple disabled:cursor-not-allowed"
+          >
+            {line.name}
+          </button>
           <p className="mt-1 text-xs text-ink-muted">
             {discounted
               ? `${formatPrice(unitPrice)} each · ${line.discountPercent}% off ${formatPrice(listPrice)}`
@@ -188,55 +205,127 @@ export default function CartLine({
           type="button"
           className="min-h-control rounded-md px-2 text-xs font-bold text-ink-muted transition-colors hover:bg-surface-2 hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple disabled:cursor-not-allowed disabled:opacity-60"
           disabled={disabled}
-          aria-expanded={discountOpen}
-          aria-controls={discountId}
-          onClick={() => setDiscountOpen(!discountOpen)}
+          aria-expanded={editing}
+          aria-controls={editorId}
+          onClick={onEdit}
         >
-          {discountOpen ? "Close discount" : discounted ? "Edit discount" : "Add discount"}
+          {editing ? "Done" : "Edit details"}
         </button>
       </div>
 
-      {attribution === "service" && staffOptions.length > 0 ? (
-        <div className="flex items-center gap-3">
-          <span aria-hidden="true" className="text-xs text-ink-muted">
-            Staff
-          </span>
-          <div className="min-w-0 flex-1">
-            <Select
-              label={`Who performed ${line.name}`}
-              hideLabel
-              placeholder=""
-              value={line.staffId ?? ""}
-              onChange={(event) => onStaff(key, event.target.value || undefined)}
-              options={[{ value: "", label: "Unassigned" }, ...performerOptions(staffOptions)]}
-              disabled={disabled}
-            />
-          </div>
+      {!editing || (attribution === "service" && staffOptions.length === 0) ? (
+        <div className="space-y-1 text-xs text-ink-muted">
+          {attribution === "service" && !line.attribution?.performers?.length ? (
+            <p
+              className={
+                !line.staffId || !staffOptions.some((person) => person.id === line.staffId)
+                  ? "text-warning"
+                  : undefined
+              }
+            >
+              Therapist: {line.staffId ? staffLabel(line.staffId, staffOptions) : "Unassigned"}
+            </p>
+          ) : null}
+          {summaries.map((summary) => (
+            <p
+              key={summary.kind}
+              role="group"
+              aria-label={summary.label}
+              className={summary.unavailable ? "text-warning" : undefined}
+            >
+              {summary.label}: {summary.text}
+            </p>
+          ))}
         </div>
       ) : null}
 
-      <div id={discountId} hidden={!discountOpen}>
-        <label className="flex items-center justify-between gap-2 rounded-md bg-surface-2 p-2 text-sm text-ink-body">
-          <span>Discount (%)</span>
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            placeholder="off"
-            aria-label={`Discount percent for ${line.name}`}
-            value={discountDraft ?? line.discountPercent ?? ""}
-            onChange={(event) => setDiscountDraft(event.target.value)}
-            onBlur={(event) => commitDiscount(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                commitDiscount((event.target as HTMLInputElement).value);
-              }
-            }}
+      <div
+        id={editorId}
+        hidden={!editing}
+        className="space-y-3 rounded-md border border-line bg-surface p-2"
+      >
+        {attribution === "service" && staffOptions.length > 0 ? (
+          <div className="flex items-center gap-3">
+            <span aria-hidden="true" className="text-xs text-ink-muted">
+              Staff
+            </span>
+            <div className="min-w-0 flex-1">
+              <Select
+                label={`Who performed ${line.name}`}
+                hideLabel
+                placeholder=""
+                value={line.staffId ?? ""}
+                onChange={(event) => onStaff(key, event.target.value || undefined)}
+                options={[
+                  { value: "", label: "Unassigned" },
+                  ...(line.staffId && !staffOptions.some((person) => person.id === line.staffId)
+                    ? [{ value: line.staffId, label: "Unavailable staff — select another" }]
+                    : []),
+                  ...performerOptions(staffOptions),
+                ]}
+                disabled={disabled}
+              />
+            </div>
+          </div>
+        ) : null}
+
+        <button
+          type="button"
+          disabled={disabled}
+          aria-expanded={discountOpen}
+          aria-controls={discountId}
+          onClick={() => setDiscountOpen(!discountOpen)}
+          className="min-h-control text-xs font-bold text-purple focus-visible:outline-2 focus-visible:outline-purple"
+        >
+          {discountOpen ? "Close discount" : discounted ? "Edit discount" : "Add discount"}
+        </button>
+
+        {onAttribution && sellerOptions ? (
+          <CommissionAttributionEditor
+            value={line.attribution}
+            sellers={sellerOptions}
+            performers={line.itemType === "SERVICE" ? staffOptions : undefined}
             disabled={disabled}
-            className={cn(CONTROL_CLASS, "h-control w-20 text-center")}
+            onChange={(value) => onAttribution(key, value)}
           />
-        </label>
+        ) : null}
+        {onAttribution && sellerOptions && line.attribution ? (
+          <details
+            className="rounded-md border border-line-soft px-2 py-1"
+            onToggle={(event) => setEstimateOpen(event.currentTarget.open)}
+          >
+            <summary className="min-h-control cursor-pointer content-center text-xs font-bold text-ink-muted">
+              Commission estimate
+            </summary>
+            {editing && estimateOpen ? (
+              <CartCommissionPreview line={line} customerId={customerId} staff={sellerOptions} />
+            ) : null}
+          </details>
+        ) : null}
+
+        <div id={discountId} hidden={!discountOpen}>
+          <label className="flex items-center justify-between gap-2 rounded-md bg-surface-2 p-2 text-sm text-ink-body">
+            <span>Discount (%)</span>
+            <input
+              type="number"
+              min={0}
+              max={100}
+              step={1}
+              placeholder="off"
+              aria-label={`Discount percent for ${line.name}`}
+              value={discountDraft ?? line.discountPercent ?? ""}
+              onChange={(event) => setDiscountDraft(event.target.value)}
+              onBlur={(event) => commitDiscount(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  commitDiscount((event.target as HTMLInputElement).value);
+                }
+              }}
+              disabled={disabled}
+              className={cn(CONTROL_CLASS, "h-control w-20 text-center")}
+            />
+          </label>
+        </div>
       </div>
     </li>
   );

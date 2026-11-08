@@ -234,6 +234,107 @@ beforeEach(() => {
 });
 
 describe("sale workspace", () => {
+  it("shows catalogue quantities as items are added, adjusted, and removed", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    const add = screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" });
+    expect(within(add).queryByText(/in cart/)).not.toBeInTheDocument();
+    await user.click(add);
+    expect(within(add).getByText("1 in cart")).toBeVisible();
+    await user.click(add);
+    expect(within(add).getByText("2 in cart")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "One fewer Root colour" }));
+    expect(within(add).getByText("1 in cart")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Remove Root colour from the cart" }));
+    expect(within(add).queryByText(/in cart/)).not.toBeInTheDocument();
+  });
+
+  it("hands credit from the customer drawer to payment without losing the cart", async () => {
+    const user = userEvent.setup();
+    get.mockImplementation(async (path: string) =>
+      path === "/customers/c1/holdings"
+        ? {
+            holdings: [
+              {
+                id: "credit-1",
+                kind: "PREPAID_CREDIT",
+                name: "Customer credit",
+                serviceIds: [],
+                quantityRemaining: null,
+                amountRemaining: "100.00",
+                expiresAt: null,
+              },
+            ],
+          }
+        : { items: [] },
+    );
+    renderSale();
+    await user.type(screen.getByRole("searchbox", { name: /Attach a customer/ }), "Jane");
+    await user.click(screen.getByRole("button", { name: `Attach ${CUSTOMER.name}, member` }));
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$70.00" }));
+    await user.click(screen.getByRole("button", { name: "Packages & credit" }));
+    await user.click(await screen.findByRole("button", { name: "Pay with credit" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Customer packages & credit" }),
+    ).not.toBeInTheDocument();
+    const payment = screen.getByRole("dialog");
+    expect(within(payment).getByLabelText("Tender 1")).toHaveValue("PREPAID_CREDIT");
+    expect(cartPanel()).toHaveTextContent("Root colour");
+    await user.click(within(payment).getByRole("button", { name: "Cancel" }));
+    expect(cartPanel()).toHaveTextContent("Root colour");
+    expect(screen.getByRole("button", { name: "Packages & credit" })).toBeEnabled();
+  });
+
+  it("opens customer packages on demand without displacing the cart and restores focus", async () => {
+    const user = userEvent.setup();
+    get.mockImplementation(async (path: string) =>
+      path === "/customers/c1/holdings" ? { holdings: [] } : { items: [] },
+    );
+    renderSale();
+    const trigger = screen.getByRole("button", { name: "Packages & credit" });
+    expect(trigger).toBeDisabled();
+    expect(get).not.toHaveBeenCalledWith("/customers/c1/holdings");
+    await user.type(screen.getByRole("searchbox", { name: /Attach a customer/ }), "Jane");
+    await user.click(screen.getByRole("button", { name: `Attach ${CUSTOMER.name}, member` }));
+    expect(trigger).toBeEnabled();
+    await user.click(trigger);
+    const drawer = screen.getByRole("dialog", { name: "Customer packages & credit" });
+    expect(
+      await within(drawer).findByText("This customer holds no packages or credit."),
+    ).toBeVisible();
+    expect(screen.getByRole("region", { name: "Sale cart" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it("keeps personal progress in a dismissible drawer for eligible roles", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    const trigger = screen.getByRole("button", { name: "Your commission progress" });
+    await user.click(trigger);
+    expect(screen.getByRole("dialog", { name: "Your commission progress" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveFocus();
+  });
+
+  it("does not offer personal commission progress to cashiers", () => {
+    role.value = "CASHIER";
+    renderSale();
+    expect(
+      screen.queryByRole("button", { name: "Your commission progress" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("names catalogue search for its selected category", async () => {
+    const user = userEvent.setup();
+    renderSale();
+    const search = screen.getByRole("searchbox", { name: "Search the catalogue" });
+    expect(search).toHaveAttribute("placeholder", "Search services…");
+    await user.click(screen.getByRole("tab", { name: "Products" }));
+    expect(search).toHaveAttribute("placeholder", "Search products…");
+  });
+
   it("records a later payment from the receipt using current debt rather than checkout totals", async () => {
     const state = {
       saleId: "sale-1",
@@ -276,15 +377,16 @@ describe("sale workspace", () => {
     });
   });
 
-  it("keeps the empty cart tall and its content scrollable", () => {
+  it("lets cart items grow with the page rather than squeezing them into a fixed workspace", () => {
     renderSale();
-    expect(cartPanel()).toHaveClass(
+    expect(cartPanel()).toHaveClass("overflow-visible", "[&>div]:min-h-48", "lg:[&>footer]:sticky");
+    expect(cartPanel()).not.toHaveClass(
       "h-[min(90dvh,46rem)]",
-      "min-h-96",
-      "lg:h-[max(36rem,calc(100dvh-10rem))]",
       "[&>div]:overflow-y-auto",
-      "[&>footer]:shrink-0",
+      "lg:flex-1",
     );
+    const workspace = document.getElementById("sale-cart")!;
+    expect(workspace.parentElement).not.toHaveClass("lg:min-h-0", "lg:flex-1", "lg:items-stretch");
     expect(screen.getByText("The cart is empty").closest(".h-full")).not.toBeNull();
   });
 
@@ -618,6 +720,7 @@ describe("performer identities", () => {
     });
     renderSale(undefined, "/sale?appointment=booking");
     await user.click(screen.getByRole("button", { name: "Load appointment into empty cart" }));
+    await user.click(await screen.findByRole("button", { name: "Edit Root colour" }));
     await waitFor(() =>
       expect(screen.getByRole("combobox", { name: "Who performed Root colour" })).toHaveValue(
         "therapist",
@@ -741,6 +844,7 @@ describe("performer identities", () => {
     );
     renderSale();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Edit Root colour" }));
     const picker = screen.getByRole("combobox", { name: "Who performed Root colour" });
     expect(
       within(picker).getAllByRole("option", { name: "Sam Lee (sam.a@example.test)" }),
@@ -1536,6 +1640,7 @@ describe("discounting a line", () => {
 
     // The rate is committed on blur, the same way the quantity is, so typing "1" of "10"
     // never briefly sets one percent.
+    await user.click(screen.getByRole("button", { name: "Edit Root colour" }));
     await user.click(screen.getByRole("button", { name: "Add discount" }));
     const discount = screen.getByLabelText("Discount percent for Root colour");
     await user.type(discount, "25");
@@ -1579,6 +1684,7 @@ describe("discounting a line", () => {
 
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
 
+    await user.click(screen.getByRole("button", { name: "Edit Root colour" }));
     await user.click(screen.getByRole("button", { name: "Add discount" }));
     const discount = screen.getByLabelText("Discount percent for Root colour");
     await user.type(discount, "10");
