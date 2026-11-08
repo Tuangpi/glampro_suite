@@ -1,4 +1,4 @@
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, useLocation } from "react-router";
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -57,13 +57,17 @@ vi.mock("@/components/settings/PayrollPlans", () => ({
   ),
 }));
 vi.mock("@/components/settings/PayrollWorkspace", () => ({
-  default: () => <section aria-label="Monthly payroll workspace" />,
+  default: ({ period }: { period?: string }) => (
+    <section aria-label="Monthly payroll workspace" data-period={period} />
+  ),
 }));
 vi.mock("@/components/settings/MyEarnings", () => ({
   default: () => <section aria-label="My earnings" />,
 }));
 vi.mock("@/components/payroll/PayrollProgress", () => ({
-  default: () => <section aria-label="Month-to-date commission progress" />,
+  default: ({ period }: { period?: string }) => (
+    <section aria-label="Month-to-date commission progress" data-period={period} />
+  ),
 }));
 vi.mock("@/components/settings/CommissionMatrix", () => ({
   default: ({ canEdit }: { canEdit: boolean }) => (
@@ -87,6 +91,50 @@ vi.mock("@/lib/api", () => ({
 }));
 
 const { default: Settings } = await import("@/pages/Settings");
+
+function LocationProbe() {
+  return <output data-testid="location">{useLocation().search}</output>;
+}
+
+it("redirects old team progress bookmarks while retaining the month and other parameters", () => {
+  render(
+    <MemoryRouter
+      initialEntries={["/settings?section=team&team=progress&period=2026-09&returnTo=pay-plans"]}
+    >
+      <Settings />
+      <LocationProbe />
+    </MemoryRouter>,
+  );
+  const params = new URLSearchParams(screen.getByTestId("location").textContent ?? "");
+  expect(params.get("section")).toBe("payroll");
+  expect(params.get("payroll")).toBe("progress");
+  expect(params.get("period")).toBe("2026-09");
+  expect(params.get("returnTo")).toBe("pay-plans");
+  expect(params.has("team")).toBe(false);
+});
+
+it("keeps earning configuration in Team without a duplicate progress tab", () => {
+  render(
+    <MemoryRouter initialEntries={["/settings?section=team"]}>
+      <Settings />
+    </MemoryRouter>,
+  );
+  expect(screen.getByRole("tab", { name: "Company rules" })).toBeVisible();
+  expect(screen.queryByRole("tab", { name: "Commission progress" })).not.toBeInTheDocument();
+});
+
+it.each([
+  ["/settings?section=payroll&team=progress&period=2026-09", "Monthly payroll workspace"],
+  ["/settings?section=team&team=progress&period=2026-09", "Monthly payroll workspace"],
+])("passes the linked payroll month through %s", (entry, label) => {
+  render(
+    <MemoryRouter initialEntries={[entry]}>
+      <Settings />
+    </MemoryRouter>,
+  );
+  expect(screen.getByLabelText(label)).toHaveAttribute("data-period", "2026-09");
+  expect(screen.getByRole("region", { name: "Payroll" })).toBeVisible();
+});
 
 it("returns verified owners from security setup to the Pay plans tab", async () => {
   auth.twoFactorEnabled = true;

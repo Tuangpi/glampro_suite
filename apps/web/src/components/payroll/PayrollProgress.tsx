@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { Link } from "react-router";
 import type { PayrollProgressRow, PayrollProgressView } from "@glampro_suite/shared";
 import { get, getErrorMessage } from "@/lib/api";
 import Badge from "@/components/ui/Badge";
@@ -96,7 +97,7 @@ export default function PayrollProgress({
   selfOnly = false,
   compact = false,
   showSessions = !compact,
-  title = "Month-to-date progress",
+  title = "Commission progress",
 }: PayrollProgressProps) {
   const query = useQuery({
     queryKey: ["payroll-progress", period ?? "current", selfOnly],
@@ -120,144 +121,215 @@ export default function PayrollProgress({
   const rows = selfOnly ? (data?.scope === "SELF" ? data.rows : []) : (data?.rows ?? []);
   const own = rows[0];
   const currency = data?.currency ?? "SGD";
+  const dashboard = selfOnly && compact && showSessions;
   return (
-    <Card
-      title={title}
-      description="Commission progress for the payroll month, read from the last calculation."
-      actions={
-        <Button
-          variant="secondary"
-          size="sm"
-          disabled={query.isFetching}
-          onClick={() => void query.refetch()}
-        >
-          Refresh
-        </Button>
-      }
-    >
-      <div role="group" aria-label="Month-to-date commission progress" className="space-y-3">
-        {query.isFetching && !data && <p role="status">Loading progress…</p>}
-        {query.isError && (
-          <p role="alert">
-            {getErrorMessage(query.error)}{" "}
-            <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>
-              Retry progress
-            </Button>
-          </p>
-        )}
-        {data && (
-          <>
-            <p className="flex flex-wrap items-center gap-2 text-sm text-ink-muted">
-              {data.estimated ? (
-                <Badge variant="warning" dot>
-                  Estimated
-                </Badge>
-              ) : (
-                <Badge variant="success" dot>
-                  Frozen
-                </Badge>
-              )}
-              <span>
-                {data.periodKey} · {currency}
-                {data.timeZone ? ` · ${data.timeZone}` : ""}
-              </span>
+    <>
+      <Card
+        title={title}
+        description={
+          dashboard
+            ? undefined
+            : "Read-only results from the latest Payroll close calculation. Not a live calculation."
+        }
+        actions={
+          <Button
+            variant="secondary"
+            size="sm"
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            {dashboard ? "Refresh" : "Refresh saved results"}
+          </Button>
+        }
+      >
+        <div role="group" aria-label="Month-to-date commission progress" className="space-y-3">
+          {query.isFetching && !data && <p role="status">Loading progress…</p>}
+          {query.isError && (
+            <p role="alert">
+              {getErrorMessage(query.error)}{" "}
+              <Button variant="secondary" size="sm" onClick={() => void query.refetch()}>
+                Retry progress
+              </Button>
             </p>
-            <p className="text-sm text-ink-muted">
-              {data.basis === "APPROVED" && data.approval
-                ? `Approved ${data.approval.at}. These figures match the frozen period report and exports.`
-                : data.basis === "ESTIMATED" && data.calculation
-                  ? `Estimated from the calculation taken ${data.calculation.calculatedAt}. Later sales and redemptions appear after the month is recalculated; approval freezes it.`
-                  : `No payroll has been calculated for ${data.periodKey} yet, so there is nothing to estimate. An owner or manager can calculate the month under Settings → Payroll close.`}
-            </p>
-            {rows.length === 0 && (
-              <p>
-                {selfOnly
-                  ? `No payroll statement for you in ${data.periodKey}.`
-                  : `No staff statement is part of the ${data.periodKey} calculation.`}
+          )}
+          {data && !query.isError && (
+            <>
+              <p className="flex flex-wrap items-center gap-2 text-sm text-ink-muted">
+                {data.basis === "NOT_CALCULATED" ? (
+                  <Badge variant="neutral">Not calculated</Badge>
+                ) : data.estimated ? (
+                  <Badge variant="warning" dot>
+                    Estimated
+                  </Badge>
+                ) : (
+                  <Badge variant="success" dot>
+                    {dashboard ? "Approved" : "Frozen"}
+                  </Badge>
+                )}
+                <span>
+                  {dashboard
+                    ? new Intl.DateTimeFormat("en", {
+                        month: "long",
+                        year: "numeric",
+                        timeZone: "UTC",
+                      }).format(new Date(`${data.periodKey}-01T00:00:00Z`))
+                    : data.periodKey}{" "}
+                  · {currency}
+                  {!dashboard && data.timeZone ? ` · ${data.timeZone}` : ""}
+                </span>
               </p>
-            )}
-            {compact && own && (
-              <dl className="grid grid-cols-2 gap-2">
-                <Figure
-                  label="Plan"
-                  value={own.planName ?? (own.planId ? "Plan" : "Flat fallback")}
-                />
-                <Figure
-                  label="Stage"
-                  value={
-                    own.tenureMonth ? `${own.stageName} · month ${own.tenureMonth}` : own.stageName
+              {dashboard && data.basis === "NOT_CALCULATED" && (
+                <p className="py-6 text-center text-sm text-ink-muted">
+                  Commission appears after your manager calculates this month’s payroll.
+                </p>
+              )}
+              {dashboard && own && data.basis !== "NOT_CALCULATED" && (
+                <div className="rounded-lg bg-surface-muted px-4 py-5">
+                  <p className="text-sm text-ink-muted">
+                    {data.estimated ? "Estimated commission" : "Approved commission"}
+                  </p>
+                  <p className="mt-1 text-3xl font-heavy text-ink">{own.estimate}</p>
+                </div>
+              )}
+              {dashboard && data.basis !== "NOT_CALCULATED" && (
+                <details className="text-xs text-ink-muted">
+                  <summary className="cursor-pointer">Calculation details</summary>
+                  <p className="mt-2">
+                    {data.basis === "APPROVED" && data.approval
+                      ? `Approved ${data.approval.at}. Figures are finalized.`
+                      : `Last calculated ${data.calculation?.calculatedAt}. Later activity appears after recalculation.`}
+                  </p>
+                  <p>
+                    Snapshot: {data.calculation?.version} ·{" "}
+                    {data.calculation?.inputHash.slice(0, 12)}
+                  </p>
+                </details>
+              )}
+              {!dashboard && (
+                <p className="text-sm text-ink-muted">
+                  {data.basis === "APPROVED" && data.approval
+                    ? `Approved ${data.approval.at}. These figures match the frozen period report and exports.`
+                    : data.basis === "ESTIMATED" && data.calculation
+                      ? `Estimated from the calculation taken ${data.calculation.calculatedAt}. Later sales and redemptions appear after the month is recalculated; approval freezes it.`
+                      : `No payroll has been calculated for ${data.periodKey} yet. This does not mean there were no sales or that commission is zero. An owner or manager must calculate the month in Payroll close first.`}
+                </p>
+              )}
+              {!selfOnly && data.scope === "SALON" && (
+                <Link
+                  className="inline-block text-purple underline"
+                  to={`/settings?section=payroll&payroll=close&period=${encodeURIComponent(data.periodKey)}`}
+                >
+                  Open Payroll close for {data.periodKey}
+                </Link>
+              )}
+              {!dashboard && (
+                <p className="text-xs text-ink-muted">
+                  Refresh only reloads saved results. It does not recalculate payroll or change
+                  earning rules.
+                </p>
+              )}
+              {rows.length === 0 && data.basis !== "NOT_CALCULATED" && (
+                <p>
+                  {selfOnly
+                    ? `No payroll statement for you in ${data.periodKey}.`
+                    : `No staff statement is part of the ${data.periodKey} calculation.`}
+                </p>
+              )}
+              {compact && own && data.basis !== "NOT_CALCULATED" && (
+                <dl className="grid grid-cols-2 gap-2">
+                  <Figure
+                    label="Plan"
+                    value={own.planName ?? (own.planId ? "Plan" : "Flat fallback")}
+                  />
+                  <Figure
+                    label="Stage"
+                    value={
+                      own.tenureMonth
+                        ? `${own.stageName} · month ${own.tenureMonth}`
+                        : own.stageName
+                    }
+                  />
+                  <Figure
+                    label={`Base month to date${own.mainComponent ? ` (${own.mainComponent})` : ""}`}
+                    value={own.mainBase}
+                  />
+                  <Figure label="Rate now" value={own.currentRate ? `${own.currentRate}%` : "—"} />
+                  <Figure label="To next band" value={own.gapToNext ?? "—"} />
+                  {!dashboard && <Figure label="Estimated commission" value={own.estimate} />}
+                </dl>
+              )}
+              {!compact && rows.length > 0 && (
+                <Table
+                  caption={`Month-to-date commission progress for ${data.periodKey}`}
+                  columns={COLUMNS}
+                  rows={rows}
+                  rowKey={(row) => row.staff.id}
+                  className="rounded-lg"
+                  footer={
+                    <tr className="text-sm">
+                      <td className="px-4 py-3 text-ink-muted" colSpan={4}>
+                        {data.totals.staff} staff · {data.totals.lines} base lines
+                      </td>
+                      <td className="px-4 py-3 text-right">{data.totals.baseAmount}</td>
+                      <td className="px-4 py-3" colSpan={2} />
+                      <td className="px-4 py-3 text-right">{data.totals.commission}</td>
+                      <td className="px-4 py-3 text-right">{data.totals.incentive}</td>
+                      <td className="px-4 py-3 text-right font-heavy">{data.totals.estimate}</td>
+                    </tr>
                   }
                 />
-                <Figure
-                  label={`Base month to date${own.mainComponent ? ` (${own.mainComponent})` : ""}`}
-                  value={own.mainBase}
-                />
-                <Figure label="Rate now" value={own.currentRate ? `${own.currentRate}%` : "—"} />
-                <Figure label="To next band" value={own.gapToNext ?? "—"} />
-                <Figure label="Estimated commission" value={own.estimate} />
-              </dl>
-            )}
-            {!compact && rows.length > 0 && (
-              <Table
-                caption={`Month-to-date commission progress for ${data.periodKey}`}
-                columns={COLUMNS}
-                rows={rows}
-                rowKey={(row) => row.staff.id}
-                className="rounded-lg"
-                footer={
-                  <tr className="text-sm">
-                    <td className="px-4 py-3 text-ink-muted" colSpan={4}>
-                      {data.totals.staff} staff · {data.totals.lines} base lines
-                    </td>
-                    <td className="px-4 py-3 text-right">{data.totals.baseAmount}</td>
-                    <td className="px-4 py-3" colSpan={2} />
-                    <td className="px-4 py-3 text-right">{data.totals.commission}</td>
-                    <td className="px-4 py-3 text-right">{data.totals.incentive}</td>
-                    <td className="px-4 py-3 text-right font-heavy">{data.totals.estimate}</td>
-                  </tr>
-                }
-              />
-            )}
-            {data.basis !== "NOT_CALCULATED" && (
-              <p className="text-xs text-ink-muted">
-                Figures are copied from the stored calculation snapshot ({data.calculation?.version}{" "}
-                {data.calculation?.inputHash.slice(0, 12)}), not recalculated here.
-              </p>
-            )}
-            {selfOnly && own?.activity && (
-              <section aria-label="My commission activity" className="space-y-2">
-                <h3 className="font-bold">My commission activity</h3>
+              )}
+              {!dashboard && data.basis !== "NOT_CALCULATED" && (
                 <p className="text-xs text-ink-muted">
-                  Activity from the last calculation, not live session attendance. Commission is
-                  pooled by plan component, not allocated to each type.
+                  Figures are copied from the stored calculation snapshot (
+                  {data.calculation?.version} {data.calculation?.inputHash.slice(0, 12)}), not
+                  recalculated here.
                 </p>
-                <table className="w-full text-left text-sm">
-                  <caption className="sr-only">Your activity by commission type</caption>
-                  <thead>
-                    <tr>
-                      <th>Type</th>
-                      <th>Base (4 dp)</th>
-                      <th>Units</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {own.activity.map((row) => (
-                      <tr key={row.commissionType}>
-                        <td>{row.commissionType}</td>
-                        <td>{row.baseAmount}</td>
-                        <td>{row.units}</td>
+              )}
+              {selfOnly && own?.activity && (
+                <details
+                  open={dashboard ? undefined : true}
+                  aria-label="My commission activity"
+                  className="space-y-2"
+                >
+                  <summary className="cursor-pointer font-bold">Commission activity</summary>
+                  <p className="text-xs text-ink-muted">
+                    Activity from the last calculation, not live session attendance. Commission is
+                    pooled by plan component, not allocated to each type.
+                  </p>
+                  <table className="w-full text-left text-sm">
+                    <caption className="sr-only">Your activity by commission type</caption>
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Base (4 dp)</th>
+                        <th>Units</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </section>
-            )}
-            {selfOnly && data.scope === "SELF" && showSessions && (
-              <OwnPayrollSessions key={data.periodKey} period={data.periodKey} />
-            )}
-          </>
-        )}
-      </div>
-    </Card>
+                    </thead>
+                    <tbody>
+                      {own.activity.map((row) => (
+                        <tr key={row.commissionType}>
+                          <td>{row.commissionType}</td>
+                          <td>{row.baseAmount}</td>
+                          <td>{row.units}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </details>
+              )}
+              {!dashboard && selfOnly && data.scope === "SELF" && showSessions && (
+                <OwnPayrollSessions key={data.periodKey} period={data.periodKey} />
+              )}
+            </>
+          )}
+        </div>
+      </Card>
+      {dashboard && data && !query.isError && data.scope === "SELF" && (
+        <Card title="Package sessions">
+          <OwnPayrollSessions key={data.periodKey} period={data.periodKey} compact />
+        </Card>
+      )}
+    </>
   );
 }

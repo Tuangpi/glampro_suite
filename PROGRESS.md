@@ -8,6 +8,83 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 8, 2026 — consolidated Payroll workspace
+
+- Settings now has Payroll with Commission progress and Monthly close tabs.
+  Team & commissions contains only earning configuration. Existing close links
+  still open close; old team-progress links redirect with month/parameters intact.
+- Both tabs mount lazily and stay mounted after visiting to preserve close drafts.
+  Same-month progress/close links use the new Payroll routes. My earnings and
+  manager/owner/read-only access boundaries remain unchanged.
+- Verification: 83 focused web tests across 7 files passed; production web build
+  (including TypeScript), web ESLint, and diff whitespace checks passed.
+- Navigation-only change: no database operations, earnings activation, approvals,
+  payouts or calculation changes. Existing unrelated working-tree edits retained.
+
+## November 8, 2026 — commission progress and close navigation
+
+- Renamed This month to Commission progress. Uncalculated months say Not
+  calculated, explain that missing results are not zero earnings, and omit the
+  redundant missing-statement message. Refresh explicitly reads saved output.
+- Added same-month in-app links between management progress and Payroll close;
+  linked close months load without calculating. Self-service has no management
+  link. Close actions invalidate current/explicit-month and self progress caches.
+- Verification: 80 web tests across 7 files passed; 21 pure backend close/progress
+  tests passed; web production build (including TypeScript), web ESLint, and
+  `git diff --check` passed. Backend checks did not access a database.
+- No separate TEST_DATABASE_URL is configured, so database-backed end-to-end
+  verification was not run. No application data, activation, approvals, payouts
+  or financial formulas were changed. Existing unrelated edits were preserved.
+
+## November 8, 2026 — focused pay-plan list and editor
+
+- Supersedes the section-link layout below. Pay plans opens a compact list with
+  status, assignment count and Edit/View, Assign staff and History actions. The
+  editor separates Details, Earning rules and Review; uncommon rules retain a
+  visible summary behind disclosures. Templates, policies, historical impact,
+  audit and technical tools are separate views. Activation is compact/read-only.
+- Removed disconnected company deposit/refund fields, descriptive-only positions
+  and raw outlet IDs from editors without deleting saved values. Salary and
+  employment forms remain on staff profiles, not duplicated in Settings.
+- Settings writes require an action-local audit confirmation. Failed requests
+  preserve reason/draft; switching plans protects unsaved metadata/rules/JSON.
+  Unrelated policy saves preserve rule drafts; assignment refuses unpublished
+  or not-yet-effective-in-the-month plans. Assignment/profile UI is extracted to
+  its own focused component with type-only configuration coupling.
+- No application data, migrations, activation, payouts or financial formula
+  changes. Authenticated browser and real-month reconciliation remain unverified.
+- Verification: **111 tests / 6 files passed**, followed by **8 activation-status
+  tests passed** including the new compact-layout check (112 distinct tests).
+  Web TypeScript, web ESLint and production web build passed. Regression coverage
+  includes hidden-value preservation, action confirmation/cancel/retry, stale
+  revisions, draft/discard boundaries, scoped assignment, staff-profile saves,
+  advanced rules and historical monetary preview/history navigation. A duplicate
+  validation-message key warning found during tests was fixed and the clean
+  suite rerun passed; no tests or validators were disabled.
+
+## November 8, 2026 — clearer pay-plan workflow and truthful status
+
+- Pay plans now explains setup, separates rules/staff/company policies with section
+  navigation, and preserves mounted drafts. Sales types use plain labels; hints
+  explain base percentages, tier methods, effective dates, salary and cost alerts.
+  Technical calculation, version and tenure JSON is behind disclosure controls.
+- The read-only activation card validates `/api/payroll-cutover` responses and
+  distinguishes not activated, scheduled, active, rolled back and unavailable.
+  It does not trust the configuration endpoint's hard-coded inactive placeholder.
+  Invalid/missing activation evidence fails unknown, with retry, not inactive.
+- Company-wide deposit/refund values remain visible but read-only because they
+  are not operational defaults. Existing per-package deposit enforcement and
+  explicitly supplied refund fees are unchanged. Missing-plan messaging now
+  discloses that commission-earning staff can block monthly payroll.
+- Verification: **92 web tests / 5 files passed**, covering activation states,
+  malformed responses/recovery, editor navigation, saves, revisions and settings.
+  Web TypeScript checks, web ESLint and production web build passed. Initial
+  failures were isolated to parent mocks counting the new status API request;
+  activation is tested independently and parent mocks now isolate that boundary.
+- No authenticated browser acceptance, database integration tests, real-month
+  reconciliation, migration, payroll activation, payout or application-data writes
+  were performed. Operational release gates remain open.
+
 ## November 8, 2026 — actionable pay-plan security requirement
 
 - Payroll configuration now returns `OWNER_TWO_FACTOR_REQUIRED` for an owner

@@ -3,7 +3,13 @@ import { useQuery } from "@tanstack/react-query";
 import { get, getErrorMessage } from "@/lib/api";
 import Button from "@/components/ui/Button";
 
-export default function OwnPayrollSessions({ period }: { period: string }) {
+export default function OwnPayrollSessions({
+  period,
+  compact = false,
+}: {
+  period: string;
+  compact?: boolean;
+}) {
   const [page, setPage] = useState(1);
   const query = useQuery({
     queryKey: ["own-payroll-sessions", period, page],
@@ -26,7 +32,7 @@ export default function OwnPayrollSessions({ period }: { period: string }) {
   });
   return (
     <section aria-label="My recorded package sessions" className="space-y-2">
-      <h3 className="font-bold">My recorded package sessions</h3>
+      {!compact && <h3 className="font-bold">My recorded package sessions</h3>}
       {query.isError ? (
         <p role="alert">{getErrorMessage(query.error)}</p>
       ) : query.isPending ? (
@@ -35,9 +41,13 @@ export default function OwnPayrollSessions({ period }: { period: string }) {
         <p>Own session evidence unavailable.</p>
       ) : (
         <>
-          <p className="text-xs text-ink-muted">{query.data.evidence}</p>
+          {!compact && <p className="text-xs text-ink-muted">{query.data.evidence}</p>}
           {query.data.total === 0 ? (
-            <p>No recorded package-session attribution for you this month.</p>
+            <p className="py-3 text-sm text-ink-muted">
+              {compact
+                ? "No sessions recorded this month."
+                : "No recorded package-session attribution for you this month."}
+            </p>
           ) : (
             <ul>
               {query.data.rows.map((row) => (
@@ -48,15 +58,19 @@ export default function OwnPayrollSessions({ period }: { period: string }) {
               ))}
             </ul>
           )}
-          <Button disabled={page === 1 || query.isFetching} onClick={() => setPage(page - 1)}>
-            Previous own session page
-          </Button>
-          <Button
-            disabled={page >= query.data.pages || query.isFetching}
-            onClick={() => setPage(page + 1)}
-          >
-            Next own session page
-          </Button>
+          {(!compact || query.data.pages > 1) && (
+            <div className="flex flex-wrap gap-2">
+              <Button disabled={page === 1 || query.isFetching} onClick={() => setPage(page - 1)}>
+                Previous own session page
+              </Button>
+              <Button
+                disabled={page >= query.data.pages || query.isFetching}
+                onClick={() => setPage(page + 1)}
+              >
+                Next own session page
+              </Button>
+            </div>
+          )}
         </>
       )}
     </section>

@@ -23,12 +23,11 @@ import SalonLogoCard from "@/components/settings/SalonLogoCard";
 import CommissionRules from "@/components/settings/CommissionRules";
 import MyEarnings from "@/components/settings/MyEarnings";
 import PayrollPlans from "@/components/settings/PayrollPlans";
-import PayrollProgress from "@/components/payroll/PayrollProgress";
 import PayrollWorkspace from "@/components/settings/PayrollWorkspace";
 import CommissionMatrix from "@/components/settings/CommissionMatrix";
 import CommissionAttributionPolicy from "@/components/settings/CommissionAttributionPolicy";
 
-import { useSearchParams } from "react-router";
+import { Navigate, useSearchParams } from "react-router";
 import { OUTLETS_UI_ENABLED } from "@/constants/outlets";
 import Outlets from "@/pages/Outlets";
 
@@ -75,13 +74,13 @@ const ALL_SETTINGS_SECTIONS = [
   },
   {
     id: "payroll",
-    label: "Payroll close",
-    description: "Monthly payroll review, frozen statements and separate payout confirmation.",
+    label: "Payroll",
+    description: "Commission progress, monthly close and approved payroll statements.",
   },
   {
     id: "my-payroll",
     label: "My earnings",
-    description: "Your own month-to-date progress and your own frozen statements.",
+    description: "Your commission overview.",
   },
   {
     id: "messages",
@@ -133,6 +132,14 @@ export default function Settings() {
       next.set("section", section);
       return next;
     });
+  }
+
+  if (requestedSection === "team" && searchParams.get("team") === "progress") {
+    const next = new URLSearchParams(searchParams);
+    next.set("section", "payroll");
+    next.set("payroll", "progress");
+    next.delete("team");
+    return <Navigate to={`?${next.toString()}`} replace />;
   }
 
   return (
@@ -207,7 +214,9 @@ export default function Settings() {
                   {OUTLETS_UI_ENABLED && section.id === "outlets" && <Outlets />}
                   {section.id === "booking" && <OperatingHoursCard canEdit={canEdit} />}
                   {section.id === "team" && <TeamSettings canEdit={canEdit} />}
-                  {section.id === "payroll" && <PayrollWorkspace />}
+                  {section.id === "payroll" && (
+                    <PayrollWorkspace period={searchParams.get("period") ?? undefined} />
+                  )}
                   {section.id === "my-payroll" && <MyEarnings />}
                   {section.id === "messages" && <MessagingCard canEdit={canEdit} />}
                   {section.id === "privacy" && (
@@ -255,11 +264,9 @@ function FeatureSettings() {
 }
 
 /**
- * Team & commissions — five separate jobs, so they are five tabs rather than
- * five stacked panels: rates per person, company overrides, pay plans, the
- * month so far, and what a sale must record. The old single scroll put three
- * dense tables and four "Reload" buttons on one page, and the reader had to
- * find the one they came for.
+ * Team & commissions groups earning configuration into four focused tabs:
+ * company rules, staff rates, pay plans and sale attribution. Progress and
+ * monthly close belong to Payroll instead of this configuration workspace.
  *
  * Company rules opens first; individual rates belong on staff profiles.
  * The URL owns the tab (`?team=`) the way it owns `?section=`, so a link can
@@ -274,7 +281,6 @@ const TEAM_TABS = [
   { id: "rules", label: "Company rules" },
   { id: "rates", label: "Rate overview" },
   { id: "plans", label: "Pay plans" },
-  { id: "progress", label: "This month" },
   { id: "attribution", label: "Attribution" },
 ] as const;
 
@@ -314,7 +320,6 @@ function TeamSettings({ canEdit }: { canEdit: boolean }) {
       activeTab === "plans" || visited.includes("plans") ? (
         <PayrollPlans canEdit={canEdit && user?.globalRole === "SUPER_ADMIN"} />
       ) : null,
-    progress: activeTab === "progress" || visited.includes("progress") ? <PayrollProgress /> : null,
     attribution:
       activeTab === "attribution" || visited.includes("attribution") ? (
         <CommissionAttributionPolicy canEdit={canEdit} />

@@ -1,4 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ get: vi.fn() }));
@@ -83,7 +85,9 @@ it("shows own base activity by type without pretending pooled commission is per-
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      <PayrollProgress selfOnly />
+      <MemoryRouter>
+        <PayrollProgress selfOnly />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   expect(
@@ -126,7 +130,7 @@ function mount(element: React.ReactElement = <PayrollProgress period="2026-09" /
     <QueryClientProvider
       client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
     >
-      {element}
+      <MemoryRouter>{element}</MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -163,9 +167,30 @@ it("shows no invented figure for a month nobody has calculated", async () => {
     await screen.findByText(/No payroll has been calculated for 2026-09 yet/),
   ).toBeInTheDocument();
   expect(screen.queryByRole("table")).not.toBeInTheDocument();
-  expect(
-    screen.getByText("No staff statement is part of the 2026-09 calculation."),
-  ).toBeInTheDocument();
+  expect(screen.getByText("Not calculated")).toBeInTheDocument();
+  expect(screen.queryByText("Estimated")).not.toBeInTheDocument();
+  expect(screen.queryByText(/No staff statement is part/)).not.toBeInTheDocument();
+  expect(screen.getByRole("link", { name: "Open Payroll close for 2026-09" })).toHaveAttribute(
+    "href",
+    "/settings?section=payroll&payroll=close&period=2026-09",
+  );
+});
+
+it("does not offer management navigation on a self-service progress card", async () => {
+  mocks.get.mockResolvedValue({ ...uncalculated(), scope: "SELF" });
+  mount(<PayrollProgress selfOnly />);
+  await screen.findByText("Not calculated");
+  expect(screen.queryByRole("link", { name: /Open Payroll close/ })).not.toBeInTheDocument();
+});
+
+it("refreshes the saved projection without calculating payroll", async () => {
+  mount();
+  await screen.findByText("Alice Tan");
+  mocks.get.mockResolvedValue(frozen());
+  await userEvent.click(screen.getByRole("button", { name: "Refresh saved results" }));
+  await screen.findByText("Frozen");
+  await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
+  expect(mocks.get.mock.calls.every(([url]) => url === "/payroll-close/progress")).toBe(true);
 });
 
 it("renders one staff member's own line as a compact panel", async () => {
@@ -189,8 +214,35 @@ it("allows My earnings to show sessions in compact mode without accepting a salo
 it("does not mount self-service sessions for a salon-scoped progress response", async () => {
   mocks.get.mockResolvedValue(estimated());
   mount(<PayrollProgress selfOnly compact showSessions />);
-  await screen.findByText("2026-09 · SGD · Asia/Singapore");
+  await screen.findByText("September 2026 · SGD");
   expect(screen.queryByText("Own recorded sessions")).not.toBeInTheDocument();
+});
+
+it("keeps the earnings dashboard empty state short without inventing zero earnings", async () => {
+  mocks.get.mockResolvedValue({ ...uncalculated(), scope: "SELF" });
+  mount(<PayrollProgress selfOnly compact showSessions title="This month" />);
+  expect(await screen.findByText("Not calculated")).toBeInTheDocument();
+  expect(screen.getByText("September 2026 · SGD")).toBeInTheDocument();
+  expect(screen.getByText(/Commission appears after your manager/)).toBeInTheDocument();
+  expect(screen.queryByText(/No payroll statement/)).not.toBeInTheDocument();
+  expect(screen.queryByText("0.00")).not.toBeInTheDocument();
+  expect(screen.queryByText("Estimated")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
+  expect(mocks.get.mock.calls.every(([url]) => url === "/payroll-close/progress")).toBe(true);
+});
+
+it("highlights approved earnings without calling them an estimate", async () => {
+  mocks.get.mockResolvedValue({ ...frozen(), scope: "SELF" });
+  mount(<PayrollProgress selfOnly compact showSessions />);
+  expect(await screen.findByText("Approved")).toBeInTheDocument();
+  expect(screen.getByText("Approved commission")).toBeInTheDocument();
+  expect(screen.getByText("200.00")).toBeInTheDocument();
+  expect(screen.queryByText("Estimated commission")).not.toBeInTheDocument();
+  const summary = screen.getByText("Calculation details");
+  expect(summary.closest("details")).not.toHaveAttribute("open");
+  await userEvent.click(summary);
+  expect(screen.getByText(/Approved 2026-10-02/)).toBeVisible();
 });
 
 it("says so when the caller has no statement in the month", async () => {

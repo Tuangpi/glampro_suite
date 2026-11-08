@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), downloadFile: vi.fn() }));
@@ -106,15 +107,53 @@ function approvedState(overrides: Record<string, unknown> = {}) {
     ),
   );
 }
-function mount(isOwner = true, canWrite = true) {
+function mount(isOwner = true, canWrite = true, initialPeriod?: string) {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <QueryClientProvider
-      client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
-    >
-      <PayrollClose isOwner={isOwner} canWrite={canWrite} />
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <PayrollClose isOwner={isOwner} canWrite={canWrite} initialPeriod={initialPeriod} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
+  return client;
 }
+
+it("opens the linked month without calculating and links back to its progress", async () => {
+  mount(true, true, "2026-09");
+  await screen.findByText("Amy (departed)");
+  expect(screen.getByLabelText("Payroll month")).toHaveValue("2026-09");
+  expect(mocks.get).toHaveBeenCalledWith("/payroll-close/2026-09");
+  expect(mocks.post).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("link", { name: "View commission progress for 2026-09" }),
+  ).toHaveAttribute("href", "/settings?section=payroll&payroll=progress&period=2026-09");
+});
+
+it("ignores invalid linked months", () => {
+  mount(true, true, "2026-13");
+  expect(mocks.get).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("Payroll month")).toHaveValue("");
+});
+
+it.each(["Calculate payroll", "Approve payroll"])(
+  "%s invalidates current-month and explicit-month progress results",
+  async (action) => {
+    const client = mount();
+    client.setQueryData(["payroll-progress", "current", false], { previous: true });
+    client.setQueryData(["payroll-progress", "2026-09", true], { previous: true });
+    const user = await load();
+    if (action === "Approve payroll")
+      await user.type(screen.getByLabelText("Payroll action reason"), "Reviewed payroll");
+    await user.click(screen.getByRole("button", { name: action }));
+    await waitFor(() =>
+      expect(client.getQueryState(["payroll-progress", "current", false])?.isInvalidated).toBe(
+        true,
+      ),
+    );
+    expect(client.getQueryState(["payroll-progress", "2026-09", true])?.isInvalidated).toBe(true);
+  },
+);
 async function load() {
   const user = userEvent.setup();
   await user.type(screen.getByLabelText("Payroll month"), "2026-09");

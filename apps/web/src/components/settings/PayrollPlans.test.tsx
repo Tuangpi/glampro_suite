@@ -4,6 +4,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router";
 import { hairPayrollExample, PAYROLL_DEFAULT_SETTINGS } from "@glampro_suite/shared";
+vi.mock("./PayrollActivationStatus", () => ({
+  default: () => (
+    <section aria-label="Payroll activation status">Activation checked separately</section>
+  ),
+}));
 const mocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), twoFactorEnabled: false }));
 vi.mock("@/contexts/AuthContext", () => ({
   useAuth: () => ({
@@ -94,145 +99,71 @@ function mount(canEdit = true, staffId?: string) {
 function enter(label: string, value: string) {
   fireEvent.change(screen.getByLabelText(label), { target: { value } });
 }
-it("offers scoped assignments without changing the single staff timeline or trusting client scope", async () => {
-  const data = configuration();
-  data.plans[0]!.outletIds = ["branch-a", "branch-b"];
-  data.plans[0]!.versions[0]!.status = "PUBLISHED";
-  mocks.get.mockResolvedValue(data);
-  mount(true, "amy");
-  const user = userEvent.setup();
-  await screen.findByLabelText("Assignment plan");
-  expect(screen.getByText(/One plan timeline per staff member/)).toBeInTheDocument();
-  await user.selectOptions(screen.getByLabelText("Assignment plan"), "hair");
-  expect(screen.getByRole("option", { name: "Hair — selected outlets" })).toBeInTheDocument();
-  enter("Payroll change reason", "Branch coverage");
-  await user.click(screen.getByRole("button", { name: "Assign selected staff" }));
-  await waitFor(() =>
-    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/assignments", {
-      expectedRevision: 0,
-      staffIds: ["amy"],
-      planId: "hair",
-      fromDate: data.today,
-      reason: "Branch coverage",
+
+async function openEditor(step = "rules", editable = true) {
+  await userEvent.click(
+    await screen.findByRole("button", { name: editable ? "Edit Hair" : "View Hair" }),
+  );
+  await userEvent.click(
+    screen.getByRole("tab", {
+      name:
+        step === "details" ? "1. Details" : step === "review" ? "3. Review" : "2. Earning rules",
     }),
   );
-});
-it("limits the staff panel to the selected identity and saves profiles independently", async () => {
-  const data = configuration();
-  data.staff.push({ ...data.staff[0]!, id: "ben", name: "Ben" });
-  mocks.get.mockResolvedValue(data);
-  mount(true, "amy");
-  const user = userEvent.setup();
-  expect(await screen.findByLabelText("Payroll change reason")).toBeInTheDocument();
-  expect(screen.queryByLabelText("New or duplicate plan name")).not.toBeInTheDocument();
-  expect(screen.queryByRole("option", { name: "Ben" })).not.toBeInTheDocument();
-  enter("Payroll change reason", "Salary review");
-  await user.click(screen.getByRole("button", { name: "Save salary profile" }));
-  await waitFor(() =>
-    expect(mocks.post).toHaveBeenCalledWith(
-      "/payroll-configuration/staff/amy/profile",
-      expect.objectContaining({ expectedRevision: 0, reason: "Salary review" }),
-    ),
-  );
-});
+}
+async function confirm(reason = "Annual review") {
+  const dialog = await screen.findByRole("dialog", {
+    name: "Confirm payroll configuration change",
+  });
+  fireEvent.change(within(dialog).getByLabelText("Change reason"), { target: { value: reason } });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm change" }));
+}
+async function review() {
+  await userEvent.click(screen.getByRole("tab", { name: "3. Review" }));
+}
 
-it("preserves unsaved salary fields while changing audit pages", async () => {
-  mocks.get.mockResolvedValue({ ...configuration(), historyTotal: 201 });
+it("opens a compact plan list without duplicate payroll forms or disconnected fields", async () => {
   mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  enter("Basic monthly salary", "1200");
-  await user.click(screen.getByRole("button", { name: "Next audit page" }));
-  await waitFor(() =>
-    expect(mocks.get).toHaveBeenCalledWith("/payroll-configuration", { historyPage: 2 }),
+  expect(await screen.findByRole("region", { name: "Pay-plan list" })).toBeVisible();
+  expect(screen.getByRole("button", { name: "Edit Hair" })).toBeVisible();
+  expect(screen.getByRole("link", { name: "Staff payroll profiles" })).toHaveAttribute(
+    "href",
+    "/staff",
   );
-  expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("1200");
-});
-it("saves metadata with a reason and does not overwrite unsaved rule edits", async () => {
-  mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Plan description"));
-  enter("Plan description", "Revised description");
-  enter("Plan change reason", "Metadata review");
-  await user.click(screen.getByRole("button", { name: "Save plan metadata" }));
-  await waitFor(() =>
-    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/plans/hair/metadata", {
-      expectedRevision: 1,
-      reason: "Metadata review",
-      name: "Hair",
-      description: "Revised description",
-      positions: [],
-      outletIds: [],
-    }),
-  );
-  enter(
-    "Component name",
-    `${(screen.getByLabelText("Component name") as HTMLInputElement).value} revised`,
-  );
-  expect(screen.getByRole("button", { name: "Save plan metadata" })).toBeDisabled();
-});
-
-it("navigates audit pages using server totals rather than truncating history", async () => {
-  mocks.get.mockResolvedValue({ ...configuration(), historyTotal: 201 });
-  mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  expect(screen.getByRole("button", { name: "Previous audit page" })).toBeDisabled();
-  await user.click(screen.getByRole("button", { name: "Next audit page" }));
-  await waitFor(() =>
-    expect(mocks.get).toHaveBeenCalledWith("/payroll-configuration", { historyPage: 2 }),
-  );
-  await waitFor(() =>
-    expect(screen.getByRole("button", { name: "Previous audit page" })).toBeEnabled(),
-  );
-});
-it("uses the shared exact calculator and explains the historical preview", async () => {
-  mount();
-  expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
-  expect(screen.getByText(/compares the last completed salon month/)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Check historical inputs" })).toBeInTheDocument();
-  expect(
-    screen.getByRole("img", { name: "Commission method comparison chart" }),
-  ).toBeInTheDocument();
-});
-it("does not expose historical staff inputs to managers", async () => {
-  mount(false);
-  await screen.findByText("Calculated commission: S$546.40");
-  expect(screen.queryByRole("button", { name: "Check historical inputs" })).not.toBeInTheDocument();
-});
-it("does not expose historical staff inputs to company owners using outlet sessions", async () => {
-  const config = configuration();
-  config.outletId = "branch";
-  mocks.get.mockResolvedValue(config);
-  mount(true);
-  await screen.findByText("Calculated commission: S$546.40");
-  expect(screen.queryByRole("button", { name: "Check historical inputs" })).not.toBeInTheDocument();
-});
-it("removes historical inputs immediately when owner permissions are revoked", async () => {
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = (canEdit: boolean) => (
-    <QueryClientProvider client={client}>
-      <PayrollPlans canEdit={canEdit} />
-    </QueryClientProvider>
-  );
-  const { rerender } = render(view(true));
-  await screen.findByRole("button", { name: "Check historical inputs" });
-  rerender(view(false));
-  expect(
-    screen.queryByRole("region", { name: "Historical payroll input readiness" }),
-  ).not.toBeInTheDocument();
-  expect(mocks.get).toHaveBeenCalledTimes(1);
-});
-it("requires a reason and publishes only the saved revision", async () => {
-  mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.click(screen.getByRole("button", { name: "Publish saved version" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Enter a change reason");
+  expect(screen.getByLabelText("Component name")).not.toBeVisible();
+  for (const label of [
+    "Basic monthly salary",
+    "Staff join date",
+    "Minimum package deposit percentage",
+    "Refund administration fee",
+    "Plan positions (comma-separated, blank = all)",
+    "Plan outlet IDs (comma-separated, blank = company-wide)",
+  ])
+    expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
   expect(mocks.post).not.toHaveBeenCalled();
-  enter("Plan change reason", "Approved sample");
-  await user.click(screen.getByRole("button", { name: "Publish saved version" }));
+});
+
+it("keeps rule drafts while moving between steps and the list", async () => {
+  mount();
+  await openEditor();
+  enter("Component name", "New service rules");
+  await review();
+  expect(screen.getAllByText("New service rules").some((node) => node.tagName === "STRONG")).toBe(
+    true,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "All plans" }));
+  await openEditor();
+  expect(screen.getByLabelText("Component name")).toHaveValue("New service rules");
+});
+
+it("requires an action-local reason and publishes only the saved revision", async () => {
+  mount();
+  await openEditor("review");
+  await userEvent.click(screen.getByRole("button", { name: "Publish saved version" }));
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByRole("button", { name: "Confirm change" })).toBeDisabled();
+  expect(mocks.post).not.toHaveBeenCalled();
+  await confirm("Approved sample");
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/plans/hair/publish", {
       expectedRevision: 1,
@@ -240,15 +171,23 @@ it("requires a reason and publishes only the saved revision", async () => {
     }),
   );
 });
-it("edits components without mutating published rules and prevents publishing unsaved work", async () => {
+
+it("cancels a publication without sending a request", async () => {
   mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Component name"));
+  await openEditor("review");
+  await userEvent.click(screen.getByRole("button", { name: "Publish saved version" }));
+  await userEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Close" }));
+  expect(mocks.post).not.toHaveBeenCalled();
+});
+
+it("saves edited rules with their original revision and blocks publishing unsaved work", async () => {
+  mount();
+  await openEditor();
   enter("Component name", "New cash name");
+  await review();
   expect(screen.getByRole("button", { name: "Publish saved version" })).toBeDisabled();
-  enter("Plan change reason", "Rename component");
-  await user.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await userEvent.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await confirm();
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
       "/payroll-configuration/plans/hair/draft",
@@ -261,261 +200,180 @@ it("edits components without mutating published rules and prevents publishing un
     ),
   );
 });
-it("does not silently rebase a draft when a newer revision arrives", async () => {
+
+it("retains a failed save and its reason for retry", async () => {
+  mocks.post.mockRejectedValueOnce(new Error("Revision conflict"));
+  mount();
+  await openEditor();
+  enter("Component name", "Retained draft");
+  await review();
+  await userEvent.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await confirm("Keep this reason");
+  expect(await screen.findByRole("alert")).toHaveTextContent("Revision conflict");
+  expect(screen.getByLabelText("Change reason")).toHaveValue("Keep this reason");
+  expect(screen.getByLabelText("Component name")).toHaveValue("Retained draft");
+});
+
+it("does not silently rebase a stale rule draft", async () => {
   const client = mount();
-  await screen.findByText("Calculated commission: S$546.40");
-  enter(
-    "Component name",
-    `${(screen.getByLabelText("Component name") as HTMLInputElement).value} changed`,
-  );
+  await openEditor();
+  enter("Component name", "Changed locally");
   const next = configuration();
   next.plans[0]!.revision = 2;
   mocks.get.mockResolvedValue(next);
   await client.invalidateQueries({ queryKey: ["payroll-configuration"] });
-  expect(await screen.findByText(/This draft is stale/)).toBeInTheDocument();
+  expect(await screen.findByText(/This draft is stale/)).toBeVisible();
+  await review();
   expect(screen.getByRole("button", { name: "Save plan draft" })).toBeDisabled();
 });
-it("keeps manager controls read-only and does not invent missing salary profiles", async () => {
-  const config = configuration();
-  delete config.staff[0]!.profile;
-  mocks.get.mockResolvedValue(config);
-  mount(false);
-  await screen.findByText("Calculated commission: S$546.40");
-  expect(screen.queryByRole("button", { name: "Publish saved version" })).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Component name")).toBeDisabled();
-  expect(screen.queryByLabelText("Basic monthly salary")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Staff join date")).toBeDisabled();
-});
-it("bulk assigns selected staff with the assignment revision", async () => {
+
+it("requires explicit discard before switching plans with unsaved rules", async () => {
+  const data = configuration();
+  data.plans.push({ ...data.plans[0]!, id: "second", name: "Second" });
+  mocks.get.mockResolvedValue(data);
   mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.click(screen.getByLabelText("Amy"));
-  await user.selectOptions(screen.getByLabelText("Assignment plan"), "hair");
-  enter("Plan change reason", "New assignment");
-  await user.click(screen.getByRole("button", { name: "Assign selected staff" }));
+  await openEditor();
+  enter("Component name", "Unsaved rules");
+  await userEvent.click(screen.getByRole("button", { name: "All plans" }));
+  await userEvent.click(screen.getByRole("button", { name: "Edit Second" }));
+  expect(screen.getByRole("dialog", { name: "Discard unsaved plan rules?" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  await userEvent.click(screen.getByRole("button", { name: "Edit Second" }));
+  await userEvent.click(screen.getByRole("button", { name: "Discard and continue" }));
+  expect(screen.getByLabelText("Component name")).not.toHaveValue("Unsaved rules");
+});
+
+it("preserves hidden metadata when saving details and protects unsaved metadata on switching plans", async () => {
+  const data = configuration();
+  data.plans[0]!.positions = ["Senior"];
+  data.plans[0]!.outletIds = ["branch-a"];
+  data.plans.push({ ...data.plans[0]!, id: "second", name: "Second" });
+  mocks.get.mockResolvedValue(data);
+  mount();
+  await openEditor("details");
+  enter("Plan description", "Revised description");
+  await userEvent.click(screen.getByRole("button", { name: "All plans" }));
+  await userEvent.click(screen.getByRole("button", { name: "Edit Second" }));
+  expect(screen.getByRole("dialog")).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+  await openEditor("details");
+  await userEvent.click(screen.getByRole("button", { name: "Save plan metadata" }));
+  await confirm();
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/payroll-configuration/plans/hair/metadata",
+      expect.objectContaining({
+        positions: ["Senior"],
+        outletIds: ["branch-a"],
+        description: "Revised description",
+        expectedRevision: 1,
+      }),
+    ),
+  );
+});
+
+it("keeps template creation out of the list and creates an audited sample draft", async () => {
+  mount();
+  await screen.findByRole("button", { name: "Create plan" });
+  expect(screen.getByLabelText("New or duplicate plan name")).not.toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Create plan" }));
+  enter("New or duplicate plan name", "New stylist plan");
+  await userEvent.click(screen.getByRole("button", { name: "Create hair stylist sample draft" }));
+  await confirm();
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/payroll-configuration/plans",
+      expect.objectContaining({
+        name: "New stylist plan",
+        positions: [],
+        definition: hairPayrollExample(),
+      }),
+    ),
+  );
+});
+
+it("bulk assigns published plans without showing salary forms", async () => {
+  const data = configuration();
+  data.plans[0]!.versions[0]!.status = "PUBLISHED";
+  mocks.get.mockResolvedValue(data);
+  mount();
+  await userEvent.click(await screen.findByRole("button", { name: "Assign staff to Hair" }));
+  await userEvent.click(screen.getByLabelText("Amy"));
+  expect(screen.queryByLabelText("Basic monthly salary")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Assignment plan")).toHaveValue("hair");
+  await userEvent.click(screen.getByRole("button", { name: "Assign selected staff" }));
+  await confirm("New assignment");
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/assignments", {
       expectedRevision: 0,
       staffIds: ["amy"],
       planId: "hair",
-      fromDate: "2026-10-27",
+      fromDate: data.today,
       reason: "New assignment",
     }),
   );
 });
-it("fails closed when configuration cannot be loaded", async () => {
-  mocks.get.mockRejectedValue(new Error("offline"));
+
+it("does not offer unpublished plans for assignment", async () => {
   mount();
-  expect(await screen.findByRole("alert")).toHaveTextContent("Unable to load commission plans");
-  expect(screen.getByRole("alert")).toHaveTextContent("offline");
-  expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
+  await userEvent.click(await screen.findByRole("button", { name: "Assign staff to Hair" }));
+  expect(screen.queryByRole("option", { name: "Hair — all outlets" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByLabelText("Amy"));
+  expect(screen.getByRole("button", { name: "Assign selected staff" })).toBeDisabled();
 });
-it("explains an owner verification refusal without exposing payroll controls", async () => {
-  mocks.get.mockRejectedValue(new Error("Owner verification is required."));
+
+it("keeps advanced filters, staged rates and incentives in saved rule definitions", async () => {
+  const data = configuration();
+  const original = data.plans[0]!.versions[0]!.definition;
+  original.components[0]!.categoryInclude = ["hair"];
+  original.components[0]!.categoryExclude = ["retail"];
+  original.components[0]!.monthlyCap = "1500";
+  mocks.get.mockResolvedValue(data);
   mount();
-  expect(await screen.findByRole("alert")).toHaveTextContent("Owner verification is required.");
-  expect(screen.queryByLabelText("Basic monthly salary")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
-});
-it("offers security setup only for the dedicated owner two-factor requirement", async () => {
-  mocks.get.mockRejectedValue(
-    Object.assign(new Error("Owner verification is required."), {
-      code: "OWNER_TWO_FACTOR_REQUIRED",
-    }),
-  );
-  mount();
-  const link = await screen.findByRole("link", { name: "Set up email verification" });
-  expect(link).toHaveAttribute("href", "/settings?section=privacy&returnTo=pay-plans");
-  expect(screen.getByText("Enable two-factor authentication to access pay plans")).toBeVisible();
-  expect(screen.queryByText("Unable to load commission plans.")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Retry plans" })).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Basic monthly salary")).not.toBeInTheDocument();
-});
-it("does not treat other permission errors as missing two-factor setup", async () => {
-  mocks.get.mockRejectedValue(
-    Object.assign(new Error("Permission denied."), { code: "FORBIDDEN" }),
-  );
-  mount();
-  expect(await screen.findByRole("alert")).toHaveTextContent("Permission denied.");
-  expect(screen.queryByRole("link", { name: "Set up email verification" })).not.toBeInTheDocument();
-});
-it("automatically reloads plans when the refreshed account has enabled two-factor", async () => {
-  mocks.get.mockRejectedValueOnce(
-    Object.assign(new Error("Owner verification is required."), {
-      code: "OWNER_TWO_FACTOR_REQUIRED",
-    }),
-  );
-  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const view = () => (
-    <QueryClientProvider client={client}>
-      <MemoryRouter>
-        <PayrollPlans canEdit />
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
-  const { rerender } = render(view());
-  await screen.findByRole("link", { name: "Set up email verification" });
-  mocks.twoFactorEnabled = true;
-  rerender(view());
-  expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
-  expect(mocks.get).toHaveBeenCalledTimes(2);
-});
-it("retries a failed load and restores the configuration after recovery", async () => {
-  mocks.get.mockRejectedValueOnce(new Error("offline"));
-  mount();
-  const user = userEvent.setup();
-  await user.click(await screen.findByRole("button", { name: "Retry plans" }));
-  expect(await screen.findByText("Calculated commission: S$546.40")).toBeInTheDocument();
-  expect(screen.queryByText("Unable to load commission plans.")).not.toBeInTheDocument();
-  expect(mocks.get).toHaveBeenCalledTimes(2);
-  expect(mocks.get).toHaveBeenLastCalledWith("/payroll-configuration", { historyPage: 1 });
-});
-it("blocks duplicate retries and keeps the latest failure visible", async () => {
-  mocks.get.mockRejectedValueOnce(new Error("offline"));
-  mount();
-  const user = userEvent.setup();
-  const retry = await screen.findByRole("button", { name: "Retry plans" });
-  let rejectRetry!: (reason: Error) => void;
-  mocks.get.mockImplementationOnce(
-    () => new Promise<PayrollConfiguration>((_resolve, reject) => (rejectRetry = reject)),
-  );
-  await user.click(retry);
-  expect(await screen.findByRole("button", { name: "Retrying plans…" })).toBeDisabled();
-  rejectRetry(new Error("Owner verification is required."));
-  await waitFor(() =>
-    expect(screen.getByRole("alert")).toHaveTextContent("Owner verification is required."),
-  );
-  expect(screen.getByRole("button", { name: "Retry plans" })).toBeEnabled();
-  expect(mocks.get).toHaveBeenCalledTimes(2);
-});
-it("requires a reason for structured salary saves and retains edits after server failure", async () => {
-  mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Basic monthly salary"));
-  enter("Basic monthly salary", "1234.56");
-  await user.click(screen.getByRole("button", { name: "Save salary profile" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Enter a change reason");
-  expect(mocks.post).not.toHaveBeenCalled();
-  enter("Plan change reason", "Salary review");
-  mocks.post.mockRejectedValueOnce(new Error("Revision conflict"));
-  await user.click(screen.getByRole("button", { name: "Save salary profile" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("Revision conflict");
-  expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("1234.56");
-  expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/staff/amy/profile", {
-    expectedRevision: 0,
-    reason: "Salary review",
-    basicSalary: "1234.56",
-    fixedOvertime: "0",
-    levy: "0",
-    salesAlertPct: "40",
-  });
-});
-it("routes structured join-date settings with required reason and revision", async () => {
-  mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Staff join date"));
-  enter("Staff join date", "2026-08-01");
-  enter("Plan change reason", "Correct employment date");
-  await user.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
-  await waitFor(() =>
-    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/staff/amy/settings", {
-      expectedRevision: 0,
-      reason: "Correct employment date",
-      expectedJoinDate: "2026-09-01",
-      joinDate: "2026-08-01",
-      stageEndOverride: null,
-    }),
-  );
-});
-it("routes structured salon settings with required reason and revision", async () => {
-  mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.click(screen.getByText("Salon commission settings (configuration only)"));
-  await user.clear(screen.getByLabelText("Minimum package deposit percentage"));
-  enter("Minimum package deposit percentage", "45");
-  enter("Plan change reason", "New deposit policy");
-  await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));
-  await waitFor(() =>
-    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/settings", {
-      ...PAYROLL_DEFAULT_SETTINGS,
-      expectedRevision: 0,
-      reason: "New deposit policy",
-      minimumDepositPct: "45",
-    }),
-  );
-});
-it("does not discard salary edits or rebase them when configuration is refreshed", async () => {
-  const client = mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Basic monthly salary"));
-  enter("Basic monthly salary", "1200");
-  const next = configuration();
-  next.staff[0]!.profile = { ...next.staff[0]!.profile!, revision: 1, basicSalary: "1500" };
-  mocks.get.mockResolvedValue(next);
-  await client.invalidateQueries({ queryKey: ["payroll-configuration"] });
-  await waitFor(() =>
-    expect(screen.getByRole("alert")).toHaveTextContent("Salary profile changed"),
-  );
-  expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("1200");
-  expect(screen.getByRole("button", { name: "Save salary profile" })).toBeDisabled();
-});
-it("saves structured stage and incentive edits in the revision-bound draft", async () => {
-  mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  enter("Stage 1 name", "Probation");
-  enter("Incentive 1 row 1 award", "125.50");
-  enter("Plan change reason", "New stage and award");
-  await user.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await openEditor();
+  expect(screen.getByText(/Advanced earning rules/)).toHaveTextContent("category filters apply");
+  enter("Component name", "Preserve advanced rules");
+  await review();
+  expect(screen.getByText("Category filters apply.")).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await confirm();
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
       "/payroll-configuration/plans/hair/draft",
       expect.objectContaining({
-        expectedRevision: 1,
-        definition: expect.objectContaining({
-          stages: expect.arrayContaining([
-            expect.objectContaining({ key: "new", name: "Probation" }),
-          ]),
-          incentives: expect.arrayContaining([
-            expect.objectContaining({
-              rows: expect.arrayContaining([expect.objectContaining({ amount: "125.50" })]),
-            }),
-          ]),
-        }),
+        definition: {
+          ...original,
+          components: original.components.map((component, index) =>
+            index === 0 ? { ...component, name: "Preserve advanced rules" } : component,
+          ),
+        },
       }),
     ),
   );
 });
-it("blocks invalid tenure ranges from being saved or published", async () => {
+
+it("validates tenure rules before offering a draft save", async () => {
   mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Stage 2 from month"));
-  await user.type(screen.getByLabelText("Stage 2 from month"), "3");
+  await openEditor();
+  await userEvent.click(screen.getByText(/Tenure stages, incentives and ordering/));
+  enter("Stage 1 from month", "5");
+  await review();
   expect(screen.getByRole("button", { name: "Save plan draft" })).toBeDisabled();
-  expect(screen.getByRole("button", { name: "Publish saved version" })).toBeDisabled();
-  expect(screen.getAllByText(/Stages must cover tenure without gaps/).length).toBeGreaterThan(0);
   expect(mocks.post).not.toHaveBeenCalled();
 });
-it("saves normalized category filters and reordered components", async () => {
+
+it("updates category filters and component order through advanced controls", async () => {
   mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.type(
-    screen.getByLabelText("Included category keys (comma-separated, blank = all)"),
-    "hair, skin, hair",
-  );
-  await user.tab();
-  await user.type(screen.getByLabelText("Excluded category keys (comma-separated)"), "retail");
-  await user.tab();
-  await user.click(screen.getByRole("button", { name: "Move Product up" }));
-  enter("Plan change reason", "Filter and reorder");
-  await user.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await openEditor();
+  await userEvent.click(screen.getByText(/Advanced earning rules/));
+  const included = screen.getByLabelText("Included category keys (comma-separated, blank = all)");
+  fireEvent.change(included, { target: { value: "hair, skin, hair" } });
+  fireEvent.blur(included);
+  await userEvent.click(screen.getByText(/Tenure stages, incentives and ordering/));
+  await userEvent.click(screen.getByRole("button", { name: "Move Product up" }));
+  await review();
+  await userEvent.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await confirm();
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
       "/payroll-configuration/plans/hair/draft",
@@ -524,9 +382,8 @@ it("saves normalized category filters and reordered components", async () => {
           components: expect.arrayContaining([
             expect.objectContaining({
               key: "cash_pkg",
-              sort: 2,
               categoryInclude: ["hair", "skin"],
-              categoryExclude: ["retail"],
+              sort: 2,
             }),
             expect.objectContaining({ key: "product", sort: 1 }),
           ]),
@@ -535,21 +392,36 @@ it("saves normalized category filters and reordered components", async () => {
     ),
   );
 });
-it("updates the chart and calculator together when selecting a tenure stage", async () => {
+
+it("preserves a rules draft while company policy is saved", async () => {
   mount();
-  const user = userEvent.setup();
-  await screen.findByText("Calculated commission: S$546.40");
-  await user.clear(screen.getByLabelText("Calculator monthly base"));
-  await user.type(screen.getByLabelText("Calculator monthly base"), "4000");
-  expect(screen.getByText("Calculated commission: S$0.00")).toBeInTheDocument();
-  await user.selectOptions(screen.getByLabelText("Calculator stage"), "new");
-  expect(screen.getByText("Calculated commission: S$160.00")).toBeInTheDocument();
-  expect(screen.getByText(/Commission vs base, New staff stage/)).toBeInTheDocument();
+  await openEditor();
+  enter("Component name", "Rules stay here");
+  await userEvent.click(screen.getByRole("button", { name: "Payroll policies" }));
+  await userEvent.selectOptions(
+    screen.getByLabelText("Negative commission base policy"),
+    "WRITE_OFF",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save salon commission settings" }));
+  await confirm();
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  await userEvent.click(screen.getByRole("button", { name: "All plans" }));
+  await openEditor();
+  expect(screen.getByLabelText("Component name")).toHaveValue("Rules stay here");
 });
 
-it("carries posted money from the readiness check into the rule version comparison", async () => {
+it("opens version history separately from the rule editor", async () => {
+  mount();
+  await userEvent.click(await screen.findByRole("button", { name: "History for Hair" }));
+  expect(screen.getByText("Version history and comparison")).toBeVisible();
+  expect(screen.getByLabelText("Component name")).not.toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Back to editor" }));
+  expect(screen.getByRole("tab", { name: "1. Details" })).toBeVisible();
+});
+
+it("keeps historical monetary preview and comparison connected across views", async () => {
   mocks.get.mockImplementation(async (url: string) =>
-    url === "/payroll-configuration/plans/hair/historical-preview"
+    url.endsWith("/historical-preview")
       ? {
           status: "AVAILABLE",
           earningsActive: false,
@@ -567,12 +439,7 @@ it("carries posted money from the readiness check into the rule version comparis
             currency: "SGD",
             calculationVersion: "cp-005-v2",
             inputHash: "hash",
-            afterVersion: {
-              id: "v1",
-              versionNo: 1,
-              status: "DRAFT",
-              effectiveFrom: "2026-10-27",
-            },
+            afterVersion: { id: "v1", versionNo: 1, status: "DRAFT", effectiveFrom: "2026-10-27" },
             rows: [
               {
                 staffId: "amy",
@@ -591,68 +458,132 @@ it("carries posted money from the readiness check into the rule version comparis
       : configuration(),
   );
   mount();
-  await screen.findByText("Calculated commission: S$546.40");
-  // Money reaches the comparison only through a completed check, never from a rule diff.
-  expect(
-    screen.queryByRole("region", { name: "Posted money under the selected version" }),
-  ).not.toBeInTheDocument();
+  await openEditor();
+  await userEvent.click(screen.getByRole("button", { name: "Review historical impact" }));
   await userEvent.click(screen.getByRole("button", { name: "Check historical inputs" }));
-  const money = await screen.findByRole("region", {
-    name: "Posted money under the selected version",
-  });
+  await screen.findByText(/Historical commission impact/);
+  await userEvent.click(screen.getByRole("button", { name: "Back to editor" }));
+  await userEvent.click(screen.getByRole("button", { name: "Version history" }));
+  const money = screen.getByRole("region", { name: "Posted money under the selected version" });
   expect(money).toHaveTextContent("Posted 2026-09 commission: S$120.00");
   expect(money).toHaveTextContent("change +S$10.50");
-  expect(money).toHaveTextContent("the month's frozen approved calculation");
-  expect(money).toHaveTextContent(
-    "not the difference between the two rule versions selected above",
-  );
-  expect(within(money).getByRole("row", { name: /Salon total/ })).toHaveTextContent("+S$10.50");
 });
 
-it("renders a salon with no plans yet instead of reading a definition off a null draft", async () => {
-  // The empty configuration is the first thing a fresh salon sees: no plan means
-  // no selected plan and no draft. Comparing `draft?.planId` with `plan?.id` there
-  // held (`undefined === undefined`) and the draft was dereferenced as if it
-  // existed, which took the whole Team & commissions section down.
+it("keeps staff-specific payroll profiles and scoped assignment saves functional", async () => {
   const data = configuration();
-  data.plans = [];
+  data.plans[0]!.versions[0]!.status = "PUBLISHED";
+  data.plans[0]!.outletIds = ["branch-a"];
+  mocks.get.mockResolvedValue(data);
+  mount(true, "amy");
+  await screen.findByLabelText("Basic monthly salary");
+  enter("Basic monthly salary", "1234.56");
+  enter("Payroll change reason", "Salary review");
+  await userEvent.click(screen.getByRole("button", { name: "Save salary profile" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/payroll-configuration/staff/amy/profile",
+      expect.objectContaining({
+        basicSalary: "1234.56",
+        expectedRevision: 0,
+        reason: "Salary review",
+      }),
+    ),
+  );
+  await userEvent.selectOptions(screen.getByLabelText("Assignment plan"), "hair");
+  enter("Payroll change reason", "Branch coverage");
+  await userEvent.click(screen.getByRole("button", { name: "Assign selected staff" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith("/payroll-configuration/assignments", {
+      expectedRevision: 0,
+      staffIds: ["amy"],
+      planId: "hair",
+      fromDate: data.today,
+      reason: "Branch coverage",
+    }),
+  );
+});
+
+it("requires staff-profile reasons and retains salary edits on failure", async () => {
+  mount(true, "amy");
+  await screen.findByLabelText("Basic monthly salary");
+  enter("Basic monthly salary", "2400");
+  await userEvent.click(screen.getByRole("button", { name: "Save salary profile" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Enter a change reason");
+  mocks.post.mockRejectedValueOnce(new Error("Salary conflict"));
+  enter("Payroll change reason", "Salary review");
+  await userEvent.click(screen.getByRole("button", { name: "Save salary profile" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("Salary conflict");
+  expect(screen.getByLabelText("Basic monthly salary")).toHaveValue("2400");
+});
+
+it("retains staff employment revision checks", async () => {
+  mount(true, "amy");
+  await screen.findByLabelText("Staff join date");
+  enter("Staff join date", "2026-08-01");
+  enter("Payroll change reason", "Correct join date");
+  await userEvent.click(screen.getByRole("button", { name: "Save staff payroll settings" }));
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/payroll-configuration/staff/amy/settings",
+      expect.objectContaining({
+        expectedRevision: 0,
+        expectedJoinDate: "2026-09-01",
+        joinDate: "2026-08-01",
+      }),
+    ),
+  );
+});
+
+it("edits only connected policies and preserves hidden company values in the save", async () => {
+  const data = configuration();
+  data.settings.minimumDepositPct = "42";
+  data.settings.refundAdminFee = "87.50";
   mocks.get.mockResolvedValue(data);
   mount();
-  expect(await screen.findByText(/0 active plans/)).toBeInTheDocument();
-  expect(screen.getByLabelText("Commission plan")).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Save plan draft" })).not.toBeInTheDocument();
-  expect(screen.getByText(/without a plan \(flat fallback\)/)).toBeInTheDocument();
+  await userEvent.click(await screen.findByRole("button", { name: "Payroll policies" }));
+  expect(screen.queryByLabelText("Minimum package deposit percentage")).not.toBeInTheDocument();
+  await userEvent.selectOptions(
+    screen.getByLabelText("Negative commission base policy"),
+    "WRITE_OFF",
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Save salon commission settings" }));
+  await confirm();
+  await waitFor(() =>
+    expect(mocks.post).toHaveBeenCalledWith(
+      "/payroll-configuration/settings",
+      expect.objectContaining({
+        negativeBase: "WRITE_OFF",
+        minimumDepositPct: "42",
+        refundAdminFee: "87.50",
+        expectedRevision: 0,
+      }),
+    ),
+  );
 });
 
-it("stops offering gift-card commission that nothing can produce", async () => {
-  // CP-008 (d): no loader writes a GC_SALE base line, so a component that counted it
-  // would promise commission on revenue the close can never see. The picker narrows;
-  // the contract keeps the value (see the round-trip test below).
+it("isolates the calculator and optional method comparison in Review", async () => {
   mount();
-  await screen.findByLabelText("Component name");
+  await openEditor("review");
+  expect(screen.getByText("Calculated commission: S$546.40")).toBeVisible();
+  await userEvent.click(screen.getByText("Compare calculation methods"));
+  expect(screen.getByRole("img", { name: "Commission method comparison chart" })).toBeVisible();
+  enter("Calculator monthly base", "4000");
+  await userEvent.selectOptions(screen.getByLabelText("Calculator stage"), "new");
+  expect(screen.getByText("Calculated commission: S$160.00")).toBeVisible();
+});
+
+it("preserves stored unsupported sales types on unrelated rule edits", async () => {
+  const data = configuration();
+  data.plans[0]!.versions[0]!.definition.components[0]!.commissionTypes = ["SVC", "GC_SALE"];
+  mocks.get.mockResolvedValue(data);
+  mount();
+  await openEditor();
   expect(screen.queryByRole("checkbox", { name: "GC_SALE" })).not.toBeInTheDocument();
-  // The seven types that do have producers remain, so this is a narrowing, not a purge.
-  for (const type of ["SVC", "PRD", "PKG_SALE", "PKG_RED", "FOC", "VP_SALE", "VP_SPEND"])
-    expect(screen.getByRole("checkbox", { name: type })).toBeInTheDocument();
-});
-
-it("leaves a stored gift-card rule alone when another field of its component changes", async () => {
-  const data = configuration();
-  const stored = data.plans[0]!.versions[0]!.definition.components[0]!;
-  // A definition saved while the picker still offered GC_SALE must survive an edit to
-  // an unrelated field: the schema is strict, so unlinking the checkbox and the value
-  // would strand that definition rather than fix it.
-  stored.commissionTypes = ["SVC", "GC_SALE"];
-  mocks.get.mockResolvedValue(data);
-  mount();
-  const user = userEvent.setup();
-  await screen.findByLabelText("Component name");
-  enter(
-    "Component name",
-    `${(screen.getByLabelText("Component name") as HTMLInputElement).value} revised`,
-  );
-  enter("Plan change reason", "Rename component");
-  await user.click(screen.getByRole("button", { name: "Save plan draft" }));
+  expect(screen.getByRole("checkbox", { name: "Services" })).toBeVisible();
+  enter("Component name", "Renamed component");
+  await review();
+  await userEvent.click(screen.getByRole("button", { name: "Save plan draft" }));
+  await confirm();
   await waitFor(() =>
     expect(mocks.post).toHaveBeenCalledWith(
       "/payroll-configuration/plans/hair/draft",
@@ -665,4 +596,128 @@ it("leaves a stored gift-card rule alone when another field of its component cha
       }),
     ),
   );
+});
+
+it("keeps managers read-only and historical monetary inputs owner-only", async () => {
+  mount(false);
+  await openEditor("rules", false);
+  expect(screen.getByLabelText("Component name")).toBeDisabled();
+  await review();
+  expect(screen.queryByRole("button", { name: "Publish saved version" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Review historical impact" }));
+  expect(screen.queryByRole("button", { name: "Check historical inputs" })).not.toBeInTheDocument();
+});
+
+it("does not expose company-only staff or impact actions in an outlet session", async () => {
+  mocks.get.mockResolvedValue({ ...configuration(), outletId: "branch" });
+  mount();
+  await openEditor();
+  await userEvent.click(screen.getByRole("button", { name: "Review historical impact" }));
+  expect(screen.queryByRole("button", { name: "Check historical inputs" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Payroll policies" })).not.toBeInTheDocument();
+});
+
+it("removes historical inputs immediately when edit permission is revoked", async () => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = (canEdit: boolean) => (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <PayrollPlans canEdit={canEdit} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view(true));
+  await openEditor();
+  await userEvent.click(screen.getByRole("button", { name: "Review historical impact" }));
+  expect(screen.getByRole("button", { name: "Check historical inputs" })).toBeVisible();
+  rerender(view(false));
+  expect(screen.queryByRole("button", { name: "Check historical inputs" })).not.toBeInTheDocument();
+});
+
+it("paginates configuration history without discarding editor drafts", async () => {
+  mocks.get.mockResolvedValue({ ...configuration(), historyTotal: 201 });
+  mount();
+  await openEditor();
+  enter("Component name", "Draft survives history");
+  await userEvent.click(screen.getByRole("button", { name: "Configuration history" }));
+  expect(screen.getByRole("button", { name: "Previous audit page" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Next audit page" }));
+  await waitFor(() =>
+    expect(mocks.get).toHaveBeenCalledWith("/payroll-configuration", { historyPage: 2 }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "All plans" }));
+  await openEditor();
+  expect(screen.getByLabelText("Component name")).toHaveValue("Draft survives history");
+});
+
+it("handles an empty salon without inventing a selected plan", async () => {
+  mocks.get.mockResolvedValue({ ...configuration(), plans: [] });
+  mount();
+  expect(await screen.findByText(/No pay plans yet/)).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Edit Hair" })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Create plan" }));
+  expect(screen.getByLabelText("New or duplicate plan name")).toBeVisible();
+});
+
+it("explains the dedicated owner security requirement and links to setup", async () => {
+  mocks.get.mockRejectedValue(
+    Object.assign(new Error("Owner verification is required."), {
+      code: "OWNER_TWO_FACTOR_REQUIRED",
+    }),
+  );
+  mount();
+  expect(await screen.findByRole("link", { name: /Set up/ })).toHaveAttribute(
+    "href",
+    expect.stringContaining("returnTo=pay-plans"),
+  );
+  expect(screen.queryByRole("button", { name: "Create plan" })).not.toBeInTheDocument();
+});
+
+it("keeps generic load failures distinct from security enrollment and supports retry", async () => {
+  mocks.get.mockRejectedValueOnce(new Error("offline"));
+  mount();
+  expect(await screen.findByRole("alert")).toHaveTextContent("offline");
+  expect(screen.queryByRole("link", { name: /Set up/ })).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Retry plans" }));
+  expect(await screen.findByRole("button", { name: "Edit Hair" })).toBeVisible();
+});
+
+it("automatically reloads plans when the refreshed account has enabled two-factor", async () => {
+  mocks.get.mockRejectedValueOnce(
+    Object.assign(new Error("Owner verification is required."), {
+      code: "OWNER_TWO_FACTOR_REQUIRED",
+    }),
+  );
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = () => (
+    <QueryClientProvider client={client}>
+      <MemoryRouter>
+        <PayrollPlans canEdit />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(view());
+  await screen.findByRole("link", { name: "Set up email verification" });
+  mocks.twoFactorEnabled = true;
+  rerender(view());
+  expect(await screen.findByRole("button", { name: "Edit Hair" })).toBeVisible();
+  expect(mocks.get).toHaveBeenCalledTimes(2);
+});
+it("blocks duplicate retries and keeps the latest failure visible", async () => {
+  mocks.get.mockRejectedValueOnce(new Error("offline"));
+  mount();
+  const user = userEvent.setup();
+  const retry = await screen.findByRole("button", { name: "Retry plans" });
+  let rejectRetry!: (reason: Error) => void;
+  mocks.get.mockImplementationOnce(
+    () => new Promise<PayrollConfiguration>((_resolve, reject) => (rejectRetry = reject)),
+  );
+  await user.click(retry);
+  expect(await screen.findByRole("button", { name: "Retrying plans…" })).toBeDisabled();
+  rejectRetry(new Error("Owner verification is required."));
+  await waitFor(() =>
+    expect(screen.getByRole("alert")).toHaveTextContent("Owner verification is required."),
+  );
+  expect(screen.getByRole("button", { name: "Retry plans" })).toBeEnabled();
+  expect(mocks.get).toHaveBeenCalledTimes(2);
 });

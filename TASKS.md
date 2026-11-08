@@ -13,6 +13,22 @@ feature checklist above. Local acceptance is not production or payout authorizat
 
 ## Other recorded follow-ups
 
+- **DONE locally — Payroll navigation:** move management commission progress out
+  of Team & commissions into Payroll alongside Monthly close. Preserve legacy
+  bookmarks, same-month links, lazy loading, draft mounting and access guards.
+  No earning policy or payroll state transitions changed.
+
+- **DONE locally — commission progress clarity:** distinguish uncalculated,
+  estimated and frozen results; connect progress and Payroll close by month;
+  refresh progress caches after close actions. Database-backed end-to-end
+  verification remains blocked by missing separate `TEST_DATABASE_URL`; real-month
+  reconciliation and activation retain the feature checklist's operational gates.
+
+- **DONE — focused pay-plan workflow:** compact list, stepped editor, action-local
+  audit confirmation, separate assignment/policy/history/impact/tools views. Remove
+  disconnected fields and duplicate staff payroll forms without deleting stored
+  values. Preserve financial rules, permissions and activation boundaries.
+
 - **DONE — pay-plan security guidance:** identify the owner two-factor requirement
   with a dedicated API code, link to account security, provide a verified return
   action, and reload plans when the refreshed account enables verification.

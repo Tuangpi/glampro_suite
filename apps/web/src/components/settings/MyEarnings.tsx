@@ -41,22 +41,15 @@ export default function MyEarnings() {
   const statements = history.data?.statements ?? [];
   if (!eligible)
     return (
-      <Card title="Your frozen statements">
+      <Card title="Statement history">
         <p>Commission statements belong to the staff member they were calculated for.</p>
       </Card>
     );
   return (
     <>
-      <PayrollProgress selfOnly compact showSessions title="Your month-to-date progress" />
-      <Card
-        title="Your frozen statements"
-        description="Approved payroll months that include you, newest first."
-      >
+      <PayrollProgress selfOnly compact showSessions title="This month" />
+      <Card title="Statement history">
         <div className="space-y-3">
-          <p className="text-sm text-ink-muted">
-            Only your own approved months are listed. Basic salary and take-home are never shown
-            here; they belong to the payslip the owner downloads.
-          </p>
           {history.isPending && <p role="status">Loading your statements…</p>}
           {history.isError && (
             <p role="alert">
@@ -67,12 +60,12 @@ export default function MyEarnings() {
             </p>
           )}
           {history.data && statements.length === 0 && (
-            <p>No approved payroll month includes you yet.</p>
+            <p className="py-4 text-sm text-ink-muted">No approved statements yet.</p>
           )}
           {statements.length > 0 && (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-sm">
-                <caption>Your frozen payroll statements</caption>
+                <caption className="sr-only">Your approved commission statements</caption>
                 <thead>
                   <tr>
                     <th>Month</th>
@@ -195,6 +188,23 @@ export default function MyEarnings() {
           )}
         </div>
       </Card>
+      <details className="rounded-lg border border-line px-4 py-3 text-sm text-ink-muted">
+        <summary className="cursor-pointer font-medium text-ink">About these figures</summary>
+        <div className="mt-3 space-y-2">
+          <p>
+            This read-only view shows your commission, not your full payslip. Basic salary and
+            take-home pay belong to the payslip the owner downloads.
+          </p>
+          <p>
+            Estimates use the last saved payroll calculation, not live sales. Refresh reloads saved
+            results; only an owner or manager can recalculate payroll in Payroll close.
+          </p>
+          <p>
+            Approved statements are finalized and listed newest first. Package sessions show
+            recorded attribution only; unavailable legacy evidence is not inferred.
+          </p>
+        </div>
+      </details>
     </>
   );
 }

@@ -10,9 +10,6 @@ import {
   calculatePayrollComponent,
   comparePayrollMethods,
   payrollCommissionCurve,
-  payrollStageSchedule,
-  payrollTenureMonth,
-  resolvePayrollStage,
   type PayrollPlanDefinition,
   type PayrollComponent,
   type PayrollAssignment,
@@ -24,17 +21,16 @@ import Card from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import Select from "@/components/ui/Select";
+import Modal from "@/components/ui/Modal";
+import Tabs from "@/components/ui/Tabs";
 import Skeleton from "@/components/ui/Skeleton";
 import PayrollDefinitionEditor from "./PayrollDefinitionEditor";
+import PayrollActivationStatus from "./PayrollActivationStatus";
+import PayrollAssignments from "./PayrollAssignments";
 import PayrollVersionComparison from "./PayrollVersionComparison";
 import PayrollHistoricalPreview from "./PayrollHistoricalPreview";
 import type { PayrollPostedMoney } from "./payroll-impact";
-import {
-  PayrollProfileForm,
-  PayrollSalonSettingsForm,
-  PayrollStaffSettingsForm,
-  PayrollPlanMetadataForm,
-} from "./PayrollSettingsForms";
+import { PayrollSalonSettingsForm, PayrollPlanMetadataForm } from "./PayrollSettingsForms";
 
 /**
  * The commission types a plan component may count. `GC_SALE` is deliberately absent:
@@ -55,6 +51,24 @@ const COMPONENT_COMMISSION_TYPES: readonly PayrollComponent["commissionTypes"][n
   "VP_SALE",
   "VP_SPEND",
 ];
+
+const COMMISSION_TYPE_LABELS: Record<string, string> = {
+  SVC: "Services",
+  PRD: "Products",
+  PKG_SALE: "Package sales",
+  PKG_RED: "Package redemptions",
+  FOC: "Complimentary services",
+  VP_SALE: "Value-package sales",
+  VP_SPEND: "Value-package spending",
+};
+
+const METHOD_LABELS: Record<PayrollComponent["method"], string> = {
+  FLAT: "Flat percentage",
+  TIER_WHOLE: "Reached rate on the whole amount",
+  TIER_SLICE: "Each tier at its own rate",
+  TIER_MIXED: "Mixed tier rules",
+  FIXED_PER_UNIT: "Fixed amount per unit",
+};
 
 interface Version {
   id: string;
@@ -122,6 +136,14 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
     placeholderData: (previous) => previous,
   });
   const [selected, setSelected] = useState("");
+  const [view, setView] = useState("list");
+  const [step, setStep] = useState("details");
+  const [metadataDirty, setMetadataDirty] = useState(false);
+  const [metadataKey, setMetadataKey] = useState(0);
+  const [pendingSave, setPendingSave] = useState<{ url: string; body: object } | null>(null);
+  const [discardTarget, setDiscardTarget] = useState<{ view: string; planId?: string } | null>(
+    null,
+  );
   const [draft, setDraft] = useState<{
     planId: string;
     revision: number;
@@ -176,7 +198,13 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
     }
     return { calculator, comparison, curve, calculatorError };
   }, [selectedComponent, base, stageKey, units]);
-  async function save(url: string, body: object) {
+  async function save(url: string, body: object, confirmed = false) {
+    if (!staffId && !confirmed) {
+      setReason("");
+      setError("");
+      setPendingSave({ url, body });
+      return;
+    }
     setError("");
     setNotice("");
     try {
@@ -186,12 +214,17 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
         url: `/payroll-configuration${url}`,
         body: { ...body, reason },
       });
-      setDraft(null);
-      setAdvanced(null);
+      if (url.endsWith("/draft")) {
+        setDraft(null);
+        setAdvanced(null);
+      }
       setReason("");
       await client.invalidateQueries({ queryKey: ["payroll-configuration"] });
       await client.invalidateQueries({ queryKey: ["staff"] });
-      setNotice("Configuration saved. Plan-based earnings remain inactive.");
+      setNotice("Configuration saved. Payroll activation and posted money are unchanged.");
+      if (url.endsWith("/metadata")) setMetadataDirty(false);
+      setPendingSave(null);
+      if (url === "/plans" || url.endsWith("/duplicate")) setView("list");
     } catch (cause) {
       setError(getErrorMessage(cause));
     }
@@ -290,13 +323,25 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
   const activeAssignments = data.assignments.rows.filter(
     (r) => r.fromDate <= data.today && (!r.toDate || r.toDate >= data.today),
   );
+  function navigate(nextView: string, planId?: string) {
+    if (
+      (nextView === "create" || (planId && planId !== plan?.id)) &&
+      (draft || advanced !== null || metadataDirty)
+    ) {
+      setDiscardTarget({ view: nextView, planId });
+      return;
+    }
+    if (planId) setSelected(planId);
+    setView(nextView);
+  }
   if (staffId)
     return (
       <Card
         title="Commission plan and payroll"
-        description="Save staff identity changes separately. Plan-based earnings remain inactive."
+        description="Assign a published plan and maintain payroll details. Save staff identity changes separately."
       >
-        {error && <p role="alert">{error}</p>}
+        <PayrollActivationStatus today={data.today} compact />
+        {error && !pendingSave && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
         {data.outletId ? (
           <p>Switch to company context to manage staff assignments and payroll profiles.</p>
@@ -322,829 +367,935 @@ export default function PayrollPlans({ canEdit, staffId }: { canEdit: boolean; s
     );
   return (
     <Card
-      title="Versioned commission plans"
-      description="Configuration preview only. Legacy earnings are unchanged until controlled cutover."
+      title="Pay plans"
+      description="Define commission rules, assign staff, and preview earnings before publishing."
     >
       <div className="space-y-4">
-        <p>
-          {data.plans.filter((p) => !p.archived).length} active plans ·{" "}
-          {new Set(activeAssignments.map((r) => r.staffId)).size} staff on a plan ·{" "}
-          {
-            data.staff.filter(
-              (s) => !s.disabled && !activeAssignments.some((r) => r.staffId === s.id),
-            ).length
-          }{" "}
-          without a plan (flat fallback)
-        </p>
+        <PayrollActivationStatus today={data.today} compact />
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={() => navigate("list")}>
+            All plans
+          </Button>
+          {canEdit && <Button onClick={() => navigate("create")}>Create plan</Button>}
+          {!data.outletId && (
+            <Button variant="secondary" onClick={() => navigate("policies")}>
+              Payroll policies
+            </Button>
+          )}
+          <Button variant="secondary" onClick={() => navigate("audit")}>
+            Configuration history
+          </Button>
+          <Link to="/staff" className="text-sm font-bold text-purple">
+            Staff payroll profiles
+          </Link>
+        </div>
+        <details>
+          <summary className="text-sm text-ink-muted">How pay plans work</summary>
+          <p className="mt-2 text-sm text-ink-muted">
+            Create rules, test a calculation, publish an effective version, then assign staff.
+            Publishing does not activate payroll. Salary and employment details belong on each staff
+            profile.
+          </p>
+        </details>
+        {view === "list" && (
+          <section aria-label="Pay-plan list" className="space-y-3">
+            {!data.plans.length && <p>No pay plans yet. Create a plan to get started.</p>}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-line">
+                    <th className="p-3">Plan</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3">Assigned staff</th>
+                    <th className="p-3">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.plans.map((item) => {
+                    const latest = item.versions[0];
+                    const published = item.versions.find(
+                      (v) => v.status === "PUBLISHED" && v.effectiveFrom <= data.today,
+                    );
+                    const status = item.archived
+                      ? "Archived"
+                      : latest?.status === "DRAFT"
+                        ? published
+                          ? "Published · draft changes"
+                          : "Draft"
+                        : latest && latest.effectiveFrom > data.today
+                          ? `Scheduled · ${latest.effectiveFrom}`
+                          : "Published";
+                    return (
+                      <tr key={item.id} className="border-b border-line">
+                        <td className="p-3 font-bold">{item.name}</td>
+                        <td className="p-3">{status}</td>
+                        <td className="p-3">{item.staffCount}</td>
+                        <td className="flex flex-wrap gap-2 p-3">
+                          <Button variant="secondary" onClick={() => navigate("edit", item.id)}>
+                            {canEdit ? `Edit ${item.name}` : `View ${item.name}`}
+                          </Button>
+                          {!data.outletId && canEdit && !item.archived && (
+                            <Button variant="secondary" onClick={() => navigate("assign", item.id)}>
+                              Assign staff to {item.name}
+                            </Button>
+                          )}
+                          <Button variant="secondary" onClick={() => navigate("history", item.id)}>
+                            History for {item.name}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-sm text-ink-muted">
+              {
+                data.staff.filter(
+                  (person) =>
+                    !person.disabled && !activeAssignments.some((row) => row.staffId === person.id),
+                ).length
+              }{" "}
+              staff without a current plan assignment. Commission-earning staff need an applicable
+              published plan before monthly payroll.
+            </p>
+          </section>
+        )}
         {data.outletId && (
           <p>
             Outlet-scoped plans only. Staff assignments and salary profiles require company context.
           </p>
         )}
-        {error && <p role="alert">{error}</p>}
+        {error && !pendingSave && <p role="alert">{error}</p>}
         {notice && <p role="status">{notice}</p>}
         {stale && <p role="alert">This draft is stale. Reload and discard it before saving.</p>}
-        <Button
-          variant="secondary"
-          disabled={mutation.isPending}
-          onClick={async () => {
-            await query.refetch();
-            setDraft(null);
-            setAdvanced(null);
-          }}
-        >
-          Reload and discard plan draft
-        </Button>
-        <Input
-          label="Plan change reason"
-          placeholder="e.g. Base rate raised from 4% to 5%"
-          value={reason}
-          onChange={(e) => setReason(e.target.value)}
-          disabled={!canEdit || mutation.isPending}
-        />
-        <Select
-          label="Commission plan"
-          value={plan?.id ?? ""}
-          onChange={(e) => {
-            setSelected(e.target.value);
-            setDraft(null);
-            setAdvanced(null);
-          }}
-          options={data.plans.map((p) => ({
-            value: p.id,
-            label: `${p.name} · ${p.staffCount} staff${p.archived ? " (archived)" : ""}`,
-          }))}
-        />
-        {canEdit && (
-          <div className="space-y-2">
-            <Input
-              label="New or duplicate plan name"
-              placeholder="e.g. Hair stylist plan 2027"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <div className="flex flex-wrap gap-2">
-              {["Hair", "TP"].map((sample) => (
-                <Button
-                  key={sample}
-                  disabled={locked || !name.trim()}
-                  onClick={() =>
-                    void save("/plans", {
-                      name,
-                      description: `${sample} sample — review before publishing`,
-                      positions: [],
-                      outletIds: data.outletId ? [data.outletId] : [],
-                      definition: sample === "Hair" ? hairPayrollExample() : tpPayrollExample(),
-                    })
-                  }
-                >
-                  Create {sample} sample draft
-                </Button>
-              ))}
-              {plan && (
-                <Button
-                  variant="secondary"
-                  disabled={locked || !name.trim()}
-                  onClick={() =>
-                    void save(`/plans/${plan.id}/duplicate`, {
-                      name,
-                      description: plan.description,
-                      positions: plan.positions,
-                      outletIds: data.outletId ? [data.outletId] : plan.outletIds,
-                      expectedRevision: plan.revision,
-                    })
-                  }
-                >
-                  Duplicate plan
-                </Button>
-              )}
-            </div>
-          </div>
+        {view === "edit" && (
+          <Button
+            variant="secondary"
+            disabled={mutation.isPending}
+            onClick={async () => {
+              await query.refetch();
+              setDraft(null);
+              setAdvanced(null);
+            }}
+          >
+            Reload and discard plan draft
+          </Button>
         )}
-        {plan && version && definition && (
-          <>
-            <PayrollPlanMetadataForm
-              key={plan.id}
-              value={{
-                revision: plan.revision,
-                name: plan.name,
-                description: plan.description,
-                positions: plan.positions,
-                outletIds: plan.outletIds,
-              }}
-              canEdit={
-                canEdit &&
-                !mutation.isPending &&
-                !query.isFetching &&
-                !plan.archived &&
-                !draft &&
-                advanced === null
-              }
-              save={(body) => save(`/plans/${plan.id}/metadata`, body)}
+        <section
+          hidden={!["edit", "create", "history", "tools"].includes(view)}
+          aria-label="Plan workspace"
+          className="space-y-4"
+        >
+          {plan && view !== "create" && (
+            <h3 className="font-bold">
+              {plan.name}
+              {draft ? " · unsaved rules" : ""}
+            </h3>
+          )}
+          {view === "edit" && (
+            <Tabs
+              label="Plan editor steps"
+              activeId={step}
+              onChange={setStep}
+              items={[
+                { id: "details", label: "1. Details", content: null },
+                { id: "rules", label: "2. Earning rules", content: null },
+                { id: "review", label: "3. Review", content: null },
+              ]}
             />
-            <p>
-              {plan.description} · Positions: {plan.positions.join(", ") || "All"} ·{" "}
-              {plan.archived
-                ? "Archived"
-                : version.status === "DRAFT"
-                  ? "Draft"
-                  : version.effectiveFrom > data.today
-                    ? "Scheduled"
-                    : "Published"}{" "}
-              · Revision {plan.revision}
-            </p>
-            <Select
-              label="Plan component"
-              value={component?.key ?? ""}
-              onChange={(e) => setComponentKey(e.target.value)}
-              options={[...definition.components]
-                .sort((a, b) => a.sort - b.sort)
-                .map((c) => ({ value: c.key, label: c.name }))}
-            />
-            {component && (
-              <fieldset disabled={locked || plan.archived} className="space-y-3">
-                <Input
-                  label="Component name"
-                  placeholder="e.g. Service commission"
-                  value={component.name}
-                  onChange={(e) => editComponent({ name: e.target.value })}
-                />
-                <div className="flex flex-wrap gap-3" aria-label="Sales that count">
-                  {COMPONENT_COMMISSION_TYPES.map((type) => (
-                    <label key={type}>
-                      <input
-                        type="checkbox"
-                        checked={component.commissionTypes.includes(type)}
-                        onChange={(e) =>
-                          editComponent({
-                            commissionTypes: e.target.checked
-                              ? [...component.commissionTypes, type]
-                              : component.commissionTypes.filter((v) => v !== type),
-                          })
-                        }
-                      />{" "}
-                      {type}
-                    </label>
-                  ))}
-                </div>
-                <Input
-                  label="Base percentage"
-                  placeholder="e.g. 5"
-                  value={component.basePct}
-                  onChange={(e) => editComponent({ basePct: e.target.value })}
-                />
-                <Input
-                  key={`${plan.id}-${component.key}-include-${JSON.stringify(component.categoryInclude)}`}
-                  label="Included category keys (comma-separated, blank = all)"
-                  hint="Use the category keys recorded on commission base lines. Exclusions take precedence."
-                  placeholder="e.g. COLOUR, TREATMENT"
-                  defaultValue={component.categoryInclude?.join(", ") ?? ""}
-                  onBlur={(e) =>
-                    editComponent({
-                      categoryInclude: [
-                        ...new Set(
-                          e.target.value
-                            .split(",")
-                            .map((value) => value.trim())
-                            .filter(Boolean),
-                        ),
-                      ],
-                    })
+          )}
+          {canEdit && (
+            <div hidden={view !== "create"} className="space-y-3 rounded-lg border border-line p-4">
+              <h3 className="font-bold">Create a plan</h3>
+              <p className="text-sm text-ink-muted">
+                Start from a sample or duplicate the selected plan. Templates are examples, not
+                approved pay policies; review all rates before publishing.
+              </p>
+              <Input
+                label="New or duplicate plan name"
+                placeholder="e.g. Hair stylist plan 2027"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <div className="flex flex-wrap gap-2">
+                {["Hair", "TP"].map((sample) => (
+                  <Button
+                    key={sample}
+                    disabled={locked || !name.trim()}
+                    onClick={() =>
+                      void save("/plans", {
+                        name,
+                        description: `${sample} sample — review before publishing`,
+                        positions: [],
+                        outletIds: data.outletId ? [data.outletId] : [],
+                        definition: sample === "Hair" ? hairPayrollExample() : tpPayrollExample(),
+                      })
+                    }
+                  >
+                    Create {sample === "Hair" ? "hair stylist" : "therapist (TP)"} sample draft
+                  </Button>
+                ))}
+                {plan && (
+                  <Button
+                    variant="secondary"
+                    disabled={locked || !name.trim()}
+                    onClick={() =>
+                      void save(`/plans/${plan.id}/duplicate`, {
+                        name,
+                        description: plan.description,
+                        positions: plan.positions,
+                        outletIds: data.outletId ? [data.outletId] : plan.outletIds,
+                        expectedRevision: plan.revision,
+                      })
+                    }
+                  >
+                    Duplicate {plan.name}
+                  </Button>
+                )}
+              </div>
+            </div>
+          )}
+          {plan && version && definition && (
+            <>
+              <div hidden={view !== "edit" || step !== "details"}>
+                <PayrollPlanMetadataForm
+                  key={`${plan.id}-${metadataKey}`}
+                  onDirtyChange={setMetadataDirty}
+                  value={{
+                    revision: plan.revision,
+                    name: plan.name,
+                    description: plan.description,
+                    positions: plan.positions,
+                    outletIds: plan.outletIds,
+                  }}
+                  canEdit={
+                    canEdit &&
+                    !mutation.isPending &&
+                    !query.isFetching &&
+                    !plan.archived &&
+                    !draft &&
+                    advanced === null
                   }
+                  save={(body) => save(`/plans/${plan.id}/metadata`, body)}
                 />
-                <Input
-                  key={`${plan.id}-${component.key}-exclude-${JSON.stringify(component.categoryExclude)}`}
-                  label="Excluded category keys (comma-separated)"
-                  placeholder="e.g. RETAIL, GIFT_CARD"
-                  defaultValue={component.categoryExclude?.join(", ") ?? ""}
-                  onBlur={(e) =>
-                    editComponent({
-                      categoryExclude: [
-                        ...new Set(
-                          e.target.value
-                            .split(",")
-                            .map((value) => value.trim())
-                            .filter(Boolean),
-                        ),
-                      ],
-                    })
-                  }
-                />
-                <Input
-                  label="Monthly cap (blank for no cap)"
-                  placeholder="e.g. 1500.00"
-                  value={component.monthlyCap ?? ""}
-                  onChange={(e) => editComponent({ monthlyCap: e.target.value || null })}
-                />
+                <p className="text-sm text-ink-muted">
+                  {plan.outletIds.length ? "Selected outlets" : "Salon-wide"} · Version{" "}
+                  {version.versionNo} ·{" "}
+                  {version.status === "DRAFT"
+                    ? "Draft"
+                    : version.effectiveFrom > data.today
+                      ? "Scheduled"
+                      : "Published"}{" "}
+                  · effective {version.effectiveFrom}
+                </p>
+              </div>
+              <div hidden={view !== "edit" || step !== "rules"} className="space-y-4">
                 <Select
-                  label="Calculation method"
-                  value={component.method}
-                  onChange={(e) =>
-                    editComponent({ method: e.target.value as PayrollComponent["method"] })
-                  }
-                  options={[
-                    { value: "FLAT", label: "Flat percentage" },
-                    { value: "TIER_WHOLE", label: "Whole amount — reached rate on all base" },
-                    { value: "TIER_SLICE", label: "By slice — each band at its own rate" },
-                    { value: "TIER_MIXED", label: "Mixed — whole or slice per band" },
-                    { value: "FIXED_PER_UNIT", label: "Fixed amount per credited unit" },
-                  ]}
+                  label="Plan component"
+                  value={component?.key ?? ""}
+                  onChange={(e) => setComponentKey(e.target.value)}
+                  options={[...definition.components]
+                    .sort((a, b) => a.sort - b.sort)
+                    .map((c) => ({ value: c.key, label: c.name }))}
                 />
-                {component.method === "FLAT" && (
-                  <Input
-                    label="Flat rate percentage"
-                    placeholder="e.g. 5"
-                    value={component.flatRatePct ?? ""}
-                    onChange={(e) => editComponent({ flatRatePct: e.target.value })}
-                  />
-                )}
-                {component.method === "FIXED_PER_UNIT" && (
-                  <Input
-                    label="Fixed amount per unit"
-                    placeholder="0.00"
-                    value={component.fixedAmount ?? ""}
-                    onChange={(e) => editComponent({ fixedAmount: e.target.value })}
-                  />
-                )}
-                {component.bands.map((band, index) => (
-                  <div className="flex flex-wrap items-end gap-2" key={index}>
+                {component && (
+                  <fieldset disabled={locked || plan.archived} className="space-y-3">
                     <Input
-                      label={`Band ${index + 1} upper limit (blank = uncapped)`}
-                      placeholder="e.g. 10000"
-                      value={band.upperLimit ?? ""}
-                      onChange={(e) =>
-                        editComponent({
-                          bands: component.bands.map((b, i) =>
-                            i === index ? { ...b, upperLimit: e.target.value || null } : b,
-                          ),
-                        })
-                      }
+                      label="Component name"
+                      placeholder="e.g. Service commission"
+                      value={component.name}
+                      onChange={(e) => editComponent({ name: e.target.value })}
                     />
-                    <Input
-                      label={`Band ${index + 1} standard rate`}
-                      placeholder="e.g. 3"
-                      value={band.ratePct}
-                      onChange={(e) =>
-                        editComponent({
-                          bands: component.bands.map((b, i) =>
-                            i === index ? { ...b, ratePct: e.target.value } : b,
-                          ),
-                        })
-                      }
-                    />
-                    {definition.stages
-                      .filter((s) => s.key !== "std")
-                      .map((stage) => (
+                    <div className="flex flex-wrap gap-3" aria-label="Sales that count">
+                      {COMPONENT_COMMISSION_TYPES.map((type) => (
+                        <label key={type}>
+                          <input
+                            type="checkbox"
+                            checked={component.commissionTypes.includes(type)}
+                            onChange={(e) =>
+                              editComponent({
+                                commissionTypes: e.target.checked
+                                  ? [...component.commissionTypes, type]
+                                  : component.commissionTypes.filter((v) => v !== type),
+                              })
+                            }
+                          />{" "}
+                          {COMMISSION_TYPE_LABELS[type] ?? type}
+                        </label>
+                      ))}
+                    </div>
+                    <details>
+                      <summary>
+                        Advanced earning rules · {component.basePct}% base
+                        {component.monthlyCap ? ` · cap ${component.monthlyCap}` : ""}
+                        {component.categoryInclude?.length || component.categoryExclude?.length
+                          ? " · category filters apply"
+                          : ""}
+                      </summary>
+                      <div className="space-y-3 pt-3">
                         <Input
-                          key={stage.key}
-                          label={`Band ${index + 1} ${stage.name} rate (blank = standard)`}
-                          placeholder="e.g. 4"
-                          value={band.stageRates?.[stage.key] ?? ""}
-                          onChange={(e) =>
+                          label="Base percentage"
+                          hint="Share of eligible sales used as the base, not the commission rate. Example: 5,000 sales × 100% base × 10% flat rate = 500 commission."
+                          placeholder="e.g. 5"
+                          value={component.basePct}
+                          onChange={(e) => editComponent({ basePct: e.target.value })}
+                        />
+                        <Input
+                          key={`${plan.id}-${component.key}-include-${JSON.stringify(component.categoryInclude)}`}
+                          label="Included category keys (comma-separated, blank = all)"
+                          hint="Use the category keys recorded on commission base lines. Exclusions take precedence."
+                          placeholder="e.g. COLOUR, TREATMENT"
+                          defaultValue={component.categoryInclude?.join(", ") ?? ""}
+                          onBlur={(e) =>
                             editComponent({
-                              bands: component.bands.map((b, i) =>
-                                i === index
-                                  ? {
-                                      ...b,
-                                      stageRates: {
-                                        ...b.stageRates,
-                                        [stage.key]: e.target.value || null,
-                                      },
-                                    }
-                                  : b,
-                              ),
+                              categoryInclude: [
+                                ...new Set(
+                                  e.target.value
+                                    .split(",")
+                                    .map((value) => value.trim())
+                                    .filter(Boolean),
+                                ),
+                              ],
                             })
                           }
                         />
+                        <Input
+                          key={`${plan.id}-${component.key}-exclude-${JSON.stringify(component.categoryExclude)}`}
+                          label="Excluded category keys (comma-separated)"
+                          placeholder="e.g. RETAIL, GIFT_CARD"
+                          defaultValue={component.categoryExclude?.join(", ") ?? ""}
+                          onBlur={(e) =>
+                            editComponent({
+                              categoryExclude: [
+                                ...new Set(
+                                  e.target.value
+                                    .split(",")
+                                    .map((value) => value.trim())
+                                    .filter(Boolean),
+                                ),
+                              ],
+                            })
+                          }
+                        />
+                        <Input
+                          label="Monthly cap (blank for no cap)"
+                          placeholder="e.g. 1500.00"
+                          value={component.monthlyCap ?? ""}
+                          onChange={(e) => editComponent({ monthlyCap: e.target.value || null })}
+                        />
+                      </div>
+                    </details>
+                    <Select
+                      label="Calculation method"
+                      hint="Whole amount uses the reached rate on the entire base. By slice applies each rate only to its band."
+                      value={component.method}
+                      onChange={(e) =>
+                        editComponent({ method: e.target.value as PayrollComponent["method"] })
+                      }
+                      options={[
+                        { value: "FLAT", label: "Flat percentage" },
+                        { value: "TIER_WHOLE", label: "Whole amount — reached rate on all base" },
+                        { value: "TIER_SLICE", label: "By slice — each band at its own rate" },
+                        { value: "TIER_MIXED", label: "Mixed — whole or slice per band" },
+                        { value: "FIXED_PER_UNIT", label: "Fixed amount per credited unit" },
+                      ]}
+                    />
+                    {component.method === "FLAT" && (
+                      <Input
+                        label="Flat rate percentage"
+                        placeholder="e.g. 5"
+                        value={component.flatRatePct ?? ""}
+                        onChange={(e) => editComponent({ flatRatePct: e.target.value })}
+                      />
+                    )}
+                    {component.method === "FIXED_PER_UNIT" && (
+                      <Input
+                        label="Fixed amount per unit"
+                        placeholder="0.00"
+                        value={component.fixedAmount ?? ""}
+                        onChange={(e) => editComponent({ fixedAmount: e.target.value })}
+                      />
+                    )}
+                    {component.method.startsWith("TIER_") &&
+                      component.bands.map((band, index) => (
+                        <div className="flex flex-wrap items-end gap-2" key={index}>
+                          <Input
+                            label={`Band ${index + 1} upper limit (blank = uncapped)`}
+                            placeholder="e.g. 10000"
+                            value={band.upperLimit ?? ""}
+                            onChange={(e) =>
+                              editComponent({
+                                bands: component.bands.map((b, i) =>
+                                  i === index ? { ...b, upperLimit: e.target.value || null } : b,
+                                ),
+                              })
+                            }
+                          />
+                          <Input
+                            label={`Band ${index + 1} standard rate`}
+                            placeholder="e.g. 3"
+                            value={band.ratePct}
+                            onChange={(e) =>
+                              editComponent({
+                                bands: component.bands.map((b, i) =>
+                                  i === index ? { ...b, ratePct: e.target.value } : b,
+                                ),
+                              })
+                            }
+                          />
+                          {definition.stages
+                            .filter((s) => s.key !== "std")
+                            .map((stage) => (
+                              <Input
+                                key={stage.key}
+                                label={`Band ${index + 1} ${stage.name} rate (blank = standard)`}
+                                placeholder="e.g. 4"
+                                value={band.stageRates?.[stage.key] ?? ""}
+                                onChange={(e) =>
+                                  editComponent({
+                                    bands: component.bands.map((b, i) =>
+                                      i === index
+                                        ? {
+                                            ...b,
+                                            stageRates: {
+                                              ...b.stageRates,
+                                              [stage.key]: e.target.value || null,
+                                            },
+                                          }
+                                        : b,
+                                    ),
+                                  })
+                                }
+                              />
+                            ))}
+                          {component.method === "TIER_MIXED" && (
+                            <Select
+                              label={`Band ${index + 1} applies`}
+                              value={band.applyMode}
+                              onChange={(e) =>
+                                editComponent({
+                                  bands: component.bands.map((b, i) =>
+                                    i === index
+                                      ? { ...b, applyMode: e.target.value as "WHOLE" | "SLICE" }
+                                      : b,
+                                  ),
+                                })
+                              }
+                              options={[
+                                { value: "WHOLE", label: "From $1" },
+                                { value: "SLICE", label: "Slice only" },
+                              ]}
+                            />
+                          )}
+                          <Button
+                            variant="secondary"
+                            onClick={() =>
+                              editComponent({
+                                bands: component.bands.filter((_, i) => i !== index),
+                              })
+                            }
+                          >
+                            Remove band {index + 1}
+                          </Button>
+                        </div>
                       ))}
-                    {component.method === "TIER_MIXED" && (
-                      <Select
-                        label={`Band ${index + 1} applies`}
-                        value={band.applyMode}
-                        onChange={(e) =>
-                          editComponent({
-                            bands: component.bands.map((b, i) =>
-                              i === index
-                                ? { ...b, applyMode: e.target.value as "WHOLE" | "SLICE" }
-                                : b,
+                    <div className="flex flex-wrap gap-2">
+                      {component.method.startsWith("TIER_") && (
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            editComponent({
+                              bands: [
+                                ...component.bands,
+                                { upperLimit: null, ratePct: "0", applyMode: "SLICE" },
+                              ],
+                            })
+                          }
+                        >
+                          Add band
+                        </Button>
+                      )}
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          change({
+                            ...definition,
+                            components: [
+                              ...definition.components,
+                              {
+                                key: crypto.randomUUID(),
+                                name: "New component",
+                                commissionTypes: ["SVC"],
+                                basePct: "100",
+                                method: "FLAT",
+                                flatRatePct: "0",
+                                bands: [],
+                                sort: definition.components.length + 1,
+                              },
+                            ],
+                          })
+                        }
+                      >
+                        Add component
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          change({
+                            ...definition,
+                            components: [
+                              ...definition.components,
+                              {
+                                ...component,
+                                key: crypto.randomUUID(),
+                                name: `${component.name} copy`,
+                              },
+                            ],
+                          })
+                        }
+                      >
+                        Duplicate component
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          change({
+                            ...definition,
+                            components: definition.components.filter(
+                              (c) => c.key !== component.key,
                             ),
                           })
                         }
-                        options={[
-                          { value: "WHOLE", label: "From $1" },
-                          { value: "SLICE", label: "Slice only" },
-                        ]}
-                      />
-                    )}
-                    <Button
-                      variant="secondary"
-                      onClick={() =>
-                        editComponent({ bands: component.bands.filter((_, i) => i !== index) })
+                      >
+                        Remove component
+                      </Button>
+                    </div>
+                  </fieldset>
+                )}
+                <details>
+                  <summary>
+                    Tenure stages, incentives and ordering · {definition.stages.length} stages ·{" "}
+                    {definition.incentives.length} incentives
+                  </summary>
+                  <PayrollDefinitionEditor
+                    definition={definition}
+                    disabled={locked || plan.archived || advanced !== null}
+                    onChange={change}
+                  />
+                </details>
+                {[...new Set(validation.errors)].map((message) => (
+                  <p role="alert" key={message}>
+                    {message}
+                  </p>
+                ))}
+                {[...new Set(validation.warnings)].map((message) => (
+                  <p key={message}>{message}</p>
+                ))}
+              </div>
+              <div hidden={view !== "tools"}>
+                <details open>
+                  <summary>Advanced definition JSON backup and import</summary>
+                  <Button
+                    variant="secondary"
+                    disabled={locked || plan.archived}
+                    onClick={() =>
+                      void save(`/plans/${plan.id}/archive`, { expectedRevision: plan.revision })
+                    }
+                  >
+                    Archive plan
+                  </Button>
+                  <p>
+                    Edit the complete plan JSON. Validation is required before saving; monetary
+                    values are strings.
+                  </p>
+                  <label className="block">
+                    Plan definition JSON
+                    <textarea
+                      className="min-h-64 w-full rounded border p-2 font-mono text-sm"
+                      disabled={locked || plan.archived}
+                      value={advanced ?? JSON.stringify(definition, null, 2)}
+                      onChange={(e) => setAdvanced(e.target.value)}
+                    />
+                  </label>
+                  <Button
+                    disabled={locked || advanced === null}
+                    onClick={() => {
+                      try {
+                        change(payrollPlanDefinitionSchema.parse(JSON.parse(advanced!)));
+                        setAdvanced(null);
+                        setError("");
+                      } catch (cause) {
+                        setError(cause instanceof Error ? cause.message : "Invalid plan JSON.");
                       }
-                    >
-                      Remove band {index + 1}
-                    </Button>
+                    }}
+                  >
+                    Apply JSON to draft
+                  </Button>
+                </details>
+              </div>
+              <div hidden={view !== "edit" || step !== "review"} className="space-y-4">
+                <h3 className="font-bold">Review before publishing</h3>
+                <p className="text-sm text-ink-muted">
+                  {definition.stages.length} tenure stages · {definition.incentives.length}{" "}
+                  incentive rules. Existing advanced rules remain in place.
+                </p>
+                {definition.components.map((rule) => (
+                  <div key={rule.key} className="rounded-lg border border-line p-3 text-sm">
+                    <strong>{rule.name}</strong>
+                    <p>
+                      {rule.commissionTypes
+                        .map((type) => COMMISSION_TYPE_LABELS[type] ?? type)
+                        .join(", ")}
+                    </p>
+                    <p>
+                      {METHOD_LABELS[rule.method]} ·{" "}
+                      {rule.method === "FLAT"
+                        ? `${rule.flatRatePct}% rate`
+                        : rule.method === "FIXED_PER_UNIT"
+                          ? `${rule.fixedAmount} per unit`
+                          : `${rule.bands.length} tier bands`}{" "}
+                      · {rule.basePct}% base{rule.monthlyCap ? ` · cap ${rule.monthlyCap}` : ""}
+                    </p>
+                    {!!(rule.categoryInclude?.length || rule.categoryExclude?.length) && (
+                      <p>Category filters apply.</p>
+                    )}
                   </div>
                 ))}
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      editComponent({
-                        bands: [
-                          ...component.bands,
-                          { upperLimit: null, ratePct: "0", applyMode: "SLICE" },
-                        ],
-                      })
-                    }
-                  >
-                    Add band
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      change({
-                        ...definition,
-                        components: [
-                          ...definition.components,
-                          {
-                            key: crypto.randomUUID(),
-                            name: "New component",
-                            commissionTypes: ["SVC"],
-                            basePct: "100",
-                            method: "FLAT",
-                            flatRatePct: "0",
-                            bands: [],
-                            sort: definition.components.length + 1,
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    Add component
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      change({
-                        ...definition,
-                        components: [
-                          ...definition.components,
-                          {
-                            ...component,
-                            key: crypto.randomUUID(),
-                            name: `${component.name} copy`,
-                          },
-                        ],
-                      })
-                    }
-                  >
-                    Duplicate component
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      change({
-                        ...definition,
-                        components: definition.components.filter((c) => c.key !== component.key),
-                      })
-                    }
-                  >
-                    Remove component
-                  </Button>
-                </div>
-              </fieldset>
-            )}
-            <PayrollDefinitionEditor
-              definition={definition}
-              disabled={locked || plan.archived || advanced !== null}
-              onChange={change}
-            />
-            {validation.errors.map((message) => (
-              <p role="alert" key={message}>
-                {message}
-              </p>
-            ))}
-            {validation.warnings.map((message) => (
-              <p key={message}>{message}</p>
-            ))}
-            <details>
-              <summary>Advanced definition JSON backup and import</summary>
-              <p>
-                Edit the complete plan JSON. Validation is required before saving; monetary values
-                are strings.
-              </p>
-              <label className="block">
-                Plan definition JSON
-                <textarea
-                  className="min-h-64 w-full rounded border p-2 font-mono text-sm"
+                <Input
+                  label="Plan effective date"
+                  hint="The published version can be selected from this date. Staff also need an applicable plan assignment; publishing does not activate payroll."
+                  type="date"
+                  min={data.today}
+                  value={
+                    draft?.date ??
+                    (version.effectiveFrom < data.today ? data.today : version.effectiveFrom)
+                  }
                   disabled={locked || plan.archived}
-                  value={advanced ?? JSON.stringify(definition, null, 2)}
-                  onChange={(e) => setAdvanced(e.target.value)}
-                />
-              </label>
-              <Button
-                disabled={locked || advanced === null}
-                onClick={() => {
-                  try {
-                    change(payrollPlanDefinitionSchema.parse(JSON.parse(advanced!)));
-                    setAdvanced(null);
-                    setError("");
-                  } catch (cause) {
-                    setError(cause instanceof Error ? cause.message : "Invalid plan JSON.");
-                  }
-                }}
-              >
-                Apply JSON to draft
-              </Button>
-            </details>
-            <Input
-              label="Plan effective date"
-              type="date"
-              min={data.today}
-              value={
-                draft?.date ??
-                (version.effectiveFrom < data.today ? data.today : version.effectiveFrom)
-              }
-              disabled={locked || plan.archived}
-              onChange={(e) =>
-                setDraft({
-                  planId: plan.id,
-                  revision: draft?.revision ?? plan.revision,
-                  definition,
-                  date: e.target.value,
-                })
-              }
-            />
-            {canEdit && (
-              <div className="flex gap-2">
-                <Button
-                  disabled={
-                    locked || plan.archived || !!validation.errors.length || advanced !== null
-                  }
-                  onClick={() =>
-                    void save(`/plans/${plan.id}/draft`, {
-                      expectedRevision: draft?.revision ?? plan.revision,
-                      effectiveFrom:
-                        draft?.date ??
-                        (version.effectiveFrom < data.today ? data.today : version.effectiveFrom),
+                  onChange={(e) =>
+                    setDraft({
+                      planId: plan.id,
+                      revision: draft?.revision ?? plan.revision,
                       definition,
+                      date: e.target.value,
                     })
                   }
-                >
-                  Save plan draft
-                </Button>
-                <Button
-                  disabled={
-                    locked ||
-                    plan.archived ||
-                    version.status !== "DRAFT" ||
-                    !!draft ||
-                    advanced !== null
-                  }
-                  onClick={() =>
-                    void save(`/plans/${plan.id}/publish`, { expectedRevision: plan.revision })
-                  }
-                >
-                  Publish saved version
-                </Button>
-                <Button
-                  variant="secondary"
-                  disabled={locked || plan.archived}
-                  onClick={() =>
-                    void save(`/plans/${plan.id}/archive`, { expectedRevision: plan.revision })
-                  }
-                >
-                  Archive plan
-                </Button>
+                />
+                {canEdit && (
+                  <div className="flex gap-2">
+                    <Button
+                      disabled={
+                        locked || plan.archived || !!validation.errors.length || advanced !== null
+                      }
+                      onClick={() =>
+                        void save(`/plans/${plan.id}/draft`, {
+                          expectedRevision: draft?.revision ?? plan.revision,
+                          effectiveFrom:
+                            draft?.date ??
+                            (version.effectiveFrom < data.today
+                              ? data.today
+                              : version.effectiveFrom),
+                          definition,
+                        })
+                      }
+                    >
+                      Save plan draft
+                    </Button>
+                    <Button
+                      disabled={
+                        locked ||
+                        plan.archived ||
+                        version.status !== "DRAFT" ||
+                        metadataDirty ||
+                        !!draft ||
+                        advanced !== null
+                      }
+                      onClick={() =>
+                        void save(`/plans/${plan.id}/publish`, { expectedRevision: plan.revision })
+                      }
+                    >
+                      Publish saved version
+                    </Button>
+                  </div>
+                )}
               </div>
-            )}
-            <details>
-              <summary>Version history and comparison</summary>
-              <PayrollVersionComparison
-                key={plan.id}
-                versions={plan.versions}
-                draft={draft?.definition}
-                postedMoney={postedMoney[`${plan.id}-${plan.revision}`]}
-              />
-              {plan.versions.map((v, index) => (
-                <div key={v.id} className="my-2 border-b pb-2">
-                  <p>
-                    Version {v.versionNo} · {v.status} · effective {v.effectiveFrom} · {v.actorId}:{" "}
-                    {v.reason}
-                  </p>
-                  <pre className="overflow-auto text-xs">
-                    {JSON.stringify(v.definition, null, 2)}
-                  </pre>
-                  {index === 0 && draft && (
-                    <p>
-                      Unsaved draft differs:{" "}
-                      {JSON.stringify(draft.definition) !== JSON.stringify(v.definition)
-                        ? "Yes"
-                        : "No"}
-                    </p>
+              <div hidden={view !== "history"}>
+                <details open>
+                  <summary>Version history and comparison</summary>
+                  <PayrollVersionComparison
+                    key={plan.id}
+                    versions={plan.versions}
+                    draft={draft?.definition}
+                    postedMoney={postedMoney[`${plan.id}-${plan.revision}`]}
+                  />
+                  {plan.versions.map((v, index) => (
+                    <div key={v.id} className="my-2 border-b pb-2">
+                      <p>
+                        Version {v.versionNo} · {v.status} · effective {v.effectiveFrom} ·{" "}
+                        {v.actorId}: {v.reason}
+                      </p>
+                      <details>
+                        <summary>Advanced version definition</summary>
+                        <pre className="overflow-auto text-xs">
+                          {JSON.stringify(v.definition, null, 2)}
+                        </pre>
+                      </details>
+                      {index === 0 && draft && (
+                        <p>
+                          Unsaved draft differs:{" "}
+                          {JSON.stringify(draft.definition) !== JSON.stringify(v.definition)
+                            ? "Yes"
+                            : "No"}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </details>
+              </div>
+              <div hidden={view !== "edit" || step !== "review"}>
+                <section aria-label="Commission calculator" className="space-y-2">
+                  <h3>Test calculator and method comparison</h3>
+                  <Input
+                    label="Calculator monthly base"
+                    placeholder="e.g. 25000.00"
+                    value={base}
+                    onChange={(e) => setBase(e.target.value)}
+                  />
+                  <Input
+                    label="Calculator credited units"
+                    placeholder="e.g. 120"
+                    value={units}
+                    onChange={(e) => setUnits(e.target.value)}
+                  />
+                  <Select
+                    label="Calculator stage"
+                    value={stageKey}
+                    onChange={(e) => setStageKey(e.target.value)}
+                    options={[
+                      { value: "std", label: "Standard" },
+                      ...definition.stages
+                        .filter((s) => s.key !== "std")
+                        .map((s) => ({ value: s.key, label: s.name })),
+                    ]}
+                  />
+                  {calculatorError && <p role="alert">{calculatorError}</p>}
+                  {calculator && (
+                    <>
+                      <p>Calculated commission: S${calculator.amount}</p>
+                      <details>
+                        <summary>Calculation breakdown</summary>
+                        <pre className="overflow-auto text-xs">
+                          {JSON.stringify(calculator.working, null, 2)}
+                        </pre>
+                      </details>
+                    </>
                   )}
-                </div>
-              ))}
-            </details>
-            <section aria-label="Commission calculator" className="space-y-2">
-              <h3>Test calculator and method comparison</h3>
-              <Input
-                label="Calculator monthly base"
-                placeholder="e.g. 25000.00"
-                value={base}
-                onChange={(e) => setBase(e.target.value)}
-              />
-              <Input
-                label="Calculator credited units"
-                placeholder="e.g. 120"
-                value={units}
-                onChange={(e) => setUnits(e.target.value)}
-              />
-              <Select
-                label="Calculator stage"
-                value={stageKey}
-                onChange={(e) => setStageKey(e.target.value)}
-                options={[
-                  { value: "std", label: "Standard" },
-                  ...definition.stages
-                    .filter((s) => s.key !== "std")
-                    .map((s) => ({ value: s.key, label: s.name })),
-                ]}
-              />
-              {calculatorError && <p role="alert">{calculatorError}</p>}
-              {calculator && (
-                <>
-                  <p>Calculated commission: S${calculator.amount}</p>
-                  <pre className="overflow-auto text-xs">
-                    {JSON.stringify(calculator.working, null, 2)}
-                  </pre>
-                </>
-              )}
-              {comparison.map((row) => (
-                <p key={row.method}>
-                  {row.method}: S${row.result.amount}
-                </p>
-              ))}
-              {!!curve.length && (
-                <>
-                  <p>
-                    Commission vs base,{" "}
-                    {definition.stages.find((stage) => stage.key === stageKey)?.name ?? "Standard"}{" "}
-                    stage, S$0–30,000. Test base: S${base}. Blue: whole; green: slice; purple:
-                    mixed.
-                  </p>
-                  <svg
-                    role="img"
-                    aria-label="Commission method comparison chart"
-                    viewBox="0 0 600 200"
-                    className="w-full max-w-2xl border"
-                  >
-                    <title>Selected-stage whole, slice and mixed comparison</title>
-                    {["TIER_WHOLE", "TIER_SLICE", "TIER_MIXED"].map((method, i) => (
-                      <polyline
-                        key={method}
-                        fill="none"
-                        stroke={["#2563eb", "#16a34a", "#9333ea"][i]}
-                        points={curve
-                          .map(
-                            (point) =>
-                              `${Number(point.base) / 50},${200 - Number(point.methods.find((m) => m.method === method)?.result.amount ?? 0) / 50}`,
-                          )
-                          .join(" ")}
-                      />
+                  <details>
+                    <summary>Compare calculation methods</summary>
+                    {comparison.map((row) => (
+                      <p key={row.method}>
+                        {row.method}: S${row.result.amount}
+                      </p>
                     ))}
-                    <line
-                      x1={Number(base) / 50}
-                      x2={Number(base) / 50}
-                      y1="0"
-                      y2="200"
-                      stroke="currentColor"
-                      strokeDasharray="4"
-                    />
-                  </svg>
-                </>
+                    {!!curve.length && (
+                      <>
+                        <p>
+                          Commission vs base,{" "}
+                          {definition.stages.find((stage) => stage.key === stageKey)?.name ??
+                            "Standard"}{" "}
+                          stage, S$0–30,000. Test base: S${base}. Blue: whole; green: slice; purple:
+                          mixed.
+                        </p>
+                        <svg
+                          role="img"
+                          aria-label="Commission method comparison chart"
+                          viewBox="0 0 600 200"
+                          className="w-full max-w-2xl border"
+                        >
+                          <title>Selected-stage whole, slice and mixed comparison</title>
+                          {["TIER_WHOLE", "TIER_SLICE", "TIER_MIXED"].map((method, i) => (
+                            <polyline
+                              key={method}
+                              fill="none"
+                              stroke={["#2563eb", "#16a34a", "#9333ea"][i]}
+                              points={curve
+                                .map(
+                                  (point) =>
+                                    `${Number(point.base) / 50},${200 - Number(point.methods.find((m) => m.method === method)?.result.amount ?? 0) / 50}`,
+                                )
+                                .join(" ")}
+                            />
+                          ))}
+                          <line
+                            x1={Number(base) / 50}
+                            x2={Number(base) / 50}
+                            y1="0"
+                            y2="200"
+                            stroke="currentColor"
+                            strokeDasharray="4"
+                          />
+                        </svg>
+                      </>
+                    )}
+                  </details>
+                </section>
+              </div>
+              {view === "edit" && (
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" onClick={() => setView("impact")}>
+                    Review historical impact
+                  </Button>
+                  <Button variant="secondary" onClick={() => setView("history")}>
+                    Version history
+                  </Button>
+                  <Button variant="secondary" onClick={() => setView("tools")}>
+                    Advanced tools
+                  </Button>
+                </div>
               )}
-            </section>
-          </>
-        )}
+              {["tools", "history"].includes(view) && (
+                <Button variant="secondary" onClick={() => setView("edit")}>
+                  Back to editor
+                </Button>
+              )}
+            </>
+          )}
+        </section>
         {!data.outletId && (
           <>
-            <PayrollAssignments
-              key={`assign-${data.assignments.revision}`}
-              data={data}
-              canEdit={canEdit && !mutation.isPending && !query.isFetching}
-              staffId={staffId}
-              save={save}
-            />
-            <details>
-              <summary>Salon commission settings (configuration only)</summary>
+            <section
+              hidden={view !== "assign"}
+              aria-label="Assign staff"
+              className="space-y-4 rounded-lg border border-line p-4"
+            >
+              <h3 className="font-bold">Assign staff to {plan?.name}</h3>
+              <PayrollAssignments
+                key={`assign-${plan?.id}-${data.assignments.revision}`}
+                data={data}
+                canEdit={canEdit && !mutation.isPending && !query.isFetching}
+                save={save}
+                initialPlanId={plan?.id}
+              />
+            </section>
+            <section
+              hidden={view !== "policies"}
+              aria-label="Payroll policies"
+              className="space-y-4 rounded-lg border border-line p-4"
+            >
+              <h3 className="font-bold">Payroll policies</h3>
               <PayrollSalonSettingsForm
                 value={data.settings}
                 canEdit={canEdit && !mutation.isPending && !query.isFetching}
                 save={(body) => save("/settings", body)}
               />
-            </details>
+            </section>
           </>
         )}
-        <details>
-          <summary>Configuration audit ({data.historyTotal} events)</summary>
+        <div hidden={view !== "audit"}>
+          <details id="pay-plan-audit" className="scroll-mt-4 rounded-lg border border-line p-4">
+            <summary>Configuration audit ({data.historyTotal} events)</summary>
+            <p>
+              Page {historyPage} of {Math.max(1, Math.ceil(data.historyTotal / data.historyLimit))}.
+              New activity may shift page boundaries; refresh to see the latest events.
+            </p>
+            <Button
+              variant="secondary"
+              disabled={historyPage <= 1 || query.isFetching}
+              onClick={() => setHistoryPage((page) => page - 1)}
+            >
+              Previous audit page
+            </Button>
+            <Button
+              variant="secondary"
+              disabled={historyPage * data.historyLimit >= data.historyTotal || query.isFetching}
+              onClick={() => setHistoryPage((page) => page + 1)}
+            >
+              Next audit page
+            </Button>
+            {data.history.map((e) => (
+              <div key={e.id}>
+                <p>
+                  {e.createdAt} · {e.kind} · revision {e.revision} · {e.actorId}: {e.reason}
+                </p>
+                <pre className="overflow-auto text-xs">{JSON.stringify(e.payload, null, 2)}</pre>
+              </div>
+            ))}
+          </details>
+        </div>
+        <div hidden={view !== "impact"}>
+          <h3 className="font-bold">Historical impact — {plan?.name}</h3>
           <p>
-            Page {historyPage} of {Math.max(1, Math.ceil(data.historyTotal / data.historyLimit))}.
-            New activity may shift page boundaries; refresh to see the latest events.
+            The historical impact preview compares the last completed salon month&apos;s posted
+            commission with the plan&apos;s latest saved rules. It never changes posted money, and
+            unsaved edits are not included.
           </p>
-          <Button
-            variant="secondary"
-            disabled={historyPage <= 1 || query.isFetching}
-            onClick={() => setHistoryPage((page) => page - 1)}
-          >
-            Previous audit page
-          </Button>
-          <Button
-            variant="secondary"
-            disabled={historyPage * data.historyLimit >= data.historyTotal || query.isFetching}
-            onClick={() => setHistoryPage((page) => page + 1)}
-          >
-            Next audit page
-          </Button>
-          {data.history.map((e) => (
-            <div key={e.id}>
-              <p>
-                {e.createdAt} · {e.kind} · revision {e.revision} · {e.actorId}: {e.reason}
-              </p>
-              <pre className="overflow-auto text-xs">{JSON.stringify(e.payload, null, 2)}</pre>
-            </div>
-          ))}
-        </details>
-        <p>
-          The historical impact preview compares the last completed salon month&apos;s posted
-          commission with the plan&apos;s latest saved rules. It never changes posted money, and
-          unsaved edits are not included.
-        </p>
-        {canEdit && !data.outletId && plan && (
-          <PayrollHistoricalPreview
-            key={`${plan.id}-${plan.revision}`}
-            planId={plan.id}
-            revision={plan.revision}
-            disabled={mutation.isPending || query.isFetching}
-            onResult={recordPostedMoney}
-          />
-        )}
-      </div>
-    </Card>
-  );
-}
-
-function PayrollAssignments({
-  data,
-  canEdit,
-  save,
-  staffId,
-}: {
-  data: PayrollConfiguration;
-  canEdit: boolean;
-  save: (url: string, body: object) => Promise<void>;
-  staffId?: string;
-}) {
-  const [staffIds, setStaffIds] = useState<string[]>(staffId ? [staffId] : []);
-  const [planId, setPlanId] = useState("");
-  const [date, setDate] = useState(data.today);
-  const [personId, setPersonId] = useState(staffId ?? data.staff[0]?.id ?? "");
-  const person = data.staff.find((s) => s.id === personId);
-  const assignment = data.assignments.rows.find(
-    (r) =>
-      r.staffId === personId && r.fromDate <= data.today && (!r.toDate || r.toDate >= data.today),
-  );
-  const definition = data.plans
-    .find((p) => p.id === assignment?.planId)
-    ?.versions.find((v) => v.status === "PUBLISHED" && v.effectiveFrom <= data.today)?.definition;
-  let schedule: unknown = [];
-  try {
-    if (definition && person?.settings.joinDate)
-      schedule = {
-        tenureMonth: payrollTenureMonth(
-          person.settings.joinDate,
-          data.today.slice(0, 7),
-          data.settings.joinAfterDay,
-        ),
-        stage: resolvePayrollStage(
-          definition.stages,
-          payrollTenureMonth(
-            person.settings.joinDate,
-            data.today.slice(0, 7),
-            data.settings.joinAfterDay,
-          ),
-          person.settings.stageEndOverride,
-        ).name,
-        schedule: payrollStageSchedule(
-          definition.stages,
-          person.settings.joinDate,
-          data.settings.joinAfterDay,
-        ),
-      };
-  } catch (cause) {
-    schedule = cause instanceof Error ? cause.message : "Unavailable";
-  }
-  return (
-    <section className="space-y-3" aria-label="Staff plans and payroll profiles">
-      <h3>Staff assignments and payroll profiles</h3>
-      <p className="text-xs text-ink-muted">
-        One plan timeline per staff member. Eligible outlets pool together; other outlet activity
-        requires separate flat-rule fallback. Assignments snapshot plan outlet scope. Earnings
-        remain inactive.
-      </p>
-      <fieldset disabled={!canEdit}>
-        <legend>Assign plan (select one or more staff)</legend>
-        {data.staff
-          .filter((s) => !s.disabled && (!staffId || s.id === staffId))
-          .map((s) => (
-            <label key={s.id} className="mr-3 inline-block">
-              <input
-                type="checkbox"
-                checked={staffIds.includes(s.id)}
-                onChange={(e) =>
-                  setStaffIds(
-                    e.target.checked ? [...staffIds, s.id] : staffIds.filter((id) => id !== s.id),
-                  )
-                }
-              />{" "}
-              {s.name}
-            </label>
-          ))}
-        <Select
-          label="Assignment plan"
-          value={planId}
-          onChange={(e) => setPlanId(e.target.value)}
-          options={[
-            { value: "", label: "No plan — flat fallback" },
-            ...data.plans
-              .filter((p) => !p.archived)
-              .map((p) => ({
-                value: p.id,
-                label: `${p.name}${p.outletIds.length ? " — selected outlets" : " — all outlets"}`,
-              })),
-          ]}
-        />
-        <Input
-          label="Assignment from date"
-          type="date"
-          min={data.today}
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
-        <Button
-          disabled={!staffIds.length}
-          onClick={() =>
-            void save("/assignments", {
-              expectedRevision: data.assignments.revision,
-              staffIds,
-              planId: planId || null,
-              fromDate: date,
-            })
-          }
-        >
-          Assign selected staff
-        </Button>
-      </fieldset>
-      <Select
-        label="Payroll staff member"
-        value={personId}
-        onChange={(e) => setPersonId(e.target.value)}
-        options={data.staff
-          .filter((s) => !staffId || s.id === staffId)
-          .map((s) => ({ value: s.id, label: s.name }))}
-      />
-      {person && (
-        <div className="space-y-3" key={person.id}>
-          <p>Stage schedule (automatic progression; override affects stage selection):</p>
-          <pre className="overflow-auto text-xs">{JSON.stringify(schedule, null, 2)}</pre>
-          <PayrollStaffSettingsForm
-            value={person.settings}
-            canEdit={canEdit}
-            save={(body) => save(`/staff/${person.id}/settings`, body)}
-          />
-          {person.profile && (
-            <PayrollProfileForm
-              value={person.profile}
-              canEdit={canEdit}
-              save={(body) => save(`/staff/${person.id}/profile`, body)}
+          {canEdit && !data.outletId && plan && (
+            <PayrollHistoricalPreview
+              key={`${plan.id}-${plan.revision}`}
+              planId={plan.id}
+              revision={plan.revision}
+              disabled={mutation.isPending || query.isFetching}
+              onResult={recordPostedMoney}
             />
           )}
-          <h4>Assignment history</h4>
-          {data.assignments.rows
-            .filter((r) => r.staffId === personId)
-            .map((r) => (
-              <p key={r.id}>
-                {data.plans.find((p) => p.id === r.planId)?.name ?? r.planId}: {r.fromDate} to{" "}
-                {r.toDate ?? "ongoing"} ·{" "}
-                {/* Outlet attribution is parked: a salon without branches only ever
-                    reaches the salon-wide case, so name that rather than a scope it
-                    has no way to configure. */}
-                {r.outletIds?.length ? `Outlets: ${r.outletIds.join(", ")}` : "Salon-wide"}
-              </p>
-            ))}
+          <Button variant="secondary" onClick={() => setView("edit")}>
+            Back to editor
+          </Button>
         </div>
-      )}
-    </section>
+        <Modal
+          open={!!pendingSave}
+          onClose={() => {
+            if (!mutation.isPending) setPendingSave(null);
+          }}
+          title="Confirm payroll configuration change"
+          description="A reason is required for the audit history. This does not activate payroll or send payments."
+          footer={
+            <Button
+              disabled={
+                !canEdit || reason.trim().length < 3 || mutation.isPending || query.isFetching
+              }
+              onClick={() => pendingSave && void save(pendingSave.url, pendingSave.body, true)}
+            >
+              Confirm change
+            </Button>
+          }
+        >
+          <Input
+            label="Change reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="e.g. Annual commission review"
+            disabled={mutation.isPending}
+          />
+          {error && <p role="alert">{error}</p>}
+        </Modal>
+        <Modal
+          open={!!discardTarget}
+          onClose={() => setDiscardTarget(null)}
+          title="Discard unsaved plan rules?"
+          description="Switching plans will discard unsaved details, rule changes and JSON edits for this plan."
+          footer={
+            <Button
+              onClick={() => {
+                if (!discardTarget) return;
+                setDraft(null);
+                setAdvanced(null);
+                setMetadataDirty(false);
+                setMetadataKey((value) => value + 1);
+                if (discardTarget.planId) setSelected(discardTarget.planId);
+                setView(discardTarget.view);
+                setDiscardTarget(null);
+              }}
+            >
+              Discard and continue
+            </Button>
+          }
+        >
+          <Button variant="secondary" onClick={() => setDiscardTarget(null)}>
+            Keep editing
+          </Button>
+        </Modal>
+      </div>
+    </Card>
   );
 }

@@ -49,22 +49,27 @@ it("submits explicit commission classification without inferring it from login r
 it("validates metadata and retains its original revision until explicit reload", async () => {
   const save = vi.fn();
   const user = userEvent.setup();
-  const value = { revision: 1, name: "Hair", description: "Initial", positions: [], outletIds: [] };
+  const value = {
+    revision: 1,
+    name: "Hair",
+    description: "Initial",
+    positions: ["Senior"],
+    outletIds: ["branch-a"],
+  };
   const { rerender } = render(<PayrollPlanMetadataForm value={value} canEdit save={save} />);
   await user.clear(screen.getByLabelText("Plan name"));
   expect(screen.getByRole("button", { name: "Save plan metadata" })).toBeDisabled();
   await user.type(screen.getByLabelText("Plan name"), "Hair revised");
-  await user.type(
-    screen.getByLabelText("Plan positions (comma-separated, blank = all)"),
-    "Stylist, Senior, Stylist",
-  );
+  expect(
+    screen.queryByLabelText("Plan positions (comma-separated, blank = all)"),
+  ).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Save plan metadata" }));
   expect(save).toHaveBeenCalledWith({
     expectedRevision: 1,
     name: "Hair revised",
     description: "Initial",
-    positions: ["Stylist", "Senior"],
-    outletIds: [],
+    positions: ["Senior"],
+    outletIds: ["branch-a"],
   });
   rerender(
     <PayrollPlanMetadataForm
@@ -77,7 +82,9 @@ it("validates metadata and retains its original revision until explicit reload",
   expect(screen.getByRole("button", { name: "Save plan metadata" })).toBeDisabled();
   await user.click(screen.getByRole("button", { name: "Reload plan metadata" }));
   expect(screen.getByLabelText("Plan name")).toHaveValue("Server name");
-  expect(screen.getByLabelText("Plan positions (comma-separated, blank = all)")).toHaveValue("");
+  expect(
+    screen.queryByLabelText("Plan outlet IDs (comma-separated, blank = company-wide)"),
+  ).not.toBeInTheDocument();
 });
 
 it("submits exact salary values with the original expected revision", async () => {
@@ -223,17 +230,15 @@ it("submits structured salon settings and preserves nullable cutoff semantics", 
   );
   await user.type(screen.getByLabelText("Join-after cutoff day (blank = no cutoff)"), "15");
   await user.selectOptions(screen.getByLabelText("Negative commission base policy"), "WRITE_OFF");
-  await user.clear(screen.getByLabelText("Minimum package deposit percentage"));
-  await user.type(screen.getByLabelText("Minimum package deposit percentage"), "35.5");
-  await user.clear(screen.getByLabelText("Refund administration fee"));
-  await user.type(screen.getByLabelText("Refund administration fee"), "99.90");
+  expect(screen.queryByLabelText("Minimum package deposit percentage")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Refund administration fee")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));
   expect(save).toHaveBeenLastCalledWith({
     expectedRevision: 5,
     joinAfterDay: 15,
     negativeBase: "WRITE_OFF",
-    minimumDepositPct: "35.5",
-    refundAdminFee: "99.90",
+    minimumDepositPct: "30",
+    refundAdminFee: "100",
   });
   await user.clear(screen.getByLabelText("Join-after cutoff day (blank = no cutoff)"));
   await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));
@@ -254,7 +259,7 @@ it("rejects invalid salon settings and blocks saving newer revisions until reloa
       save={save}
     />,
   );
-  expect(screen.getByLabelText("Minimum package deposit percentage")).toHaveValue("30");
+  expect(screen.queryByLabelText("Minimum package deposit percentage")).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Reload salon commission settings" }));
   await user.click(screen.getByRole("button", { name: "Save salon commission settings" }));
   expect(save).toHaveBeenCalledWith(

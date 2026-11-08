@@ -120,27 +120,26 @@ export function PayrollProfileForm({ value, canEdit, save }: FormProps<Profile>)
         />
       ))}
       <p className="text-sm text-ink-muted">
-        Configuration only. These values do not change legacy earnings or approved payroll.
+        Used by monthly plan payroll; saving does not activate payroll or change approved
+        statements. Levy is included in the payroll-cost-to-sales ratio, not deducted from take-home
+        pay. Sales alert percentage warns when that ratio exceeds the threshold; it is not a
+        commission rate.
       </p>
     </FormFrame>
   );
 }
 
-export function PayrollPlanMetadataForm({ value, canEdit, save }: FormProps<PayrollPlanMetadata>) {
+export function PayrollPlanMetadataForm({
+  value,
+  canEdit,
+  save,
+  onDirtyChange,
+}: FormProps<PayrollPlanMetadata> & { onDirtyChange?: (dirty: boolean) => void }) {
   const form = useRevisionFields(value);
-  const [positions, setPositions] = useState(value.positions.join(", "));
-  const list = (text: string) => [
-    ...new Set(
-      text
-        .split(",")
-        .map((v) => v.trim())
-        .filter(Boolean),
-    ),
-  ];
   const parsed = payrollPlanMetadataSchema.safeParse({
     name: form.fields.name,
     description: form.fields.description,
-    positions: list(positions),
+    positions: form.fields.positions,
     outletIds: form.fields.outletIds,
   });
   return (
@@ -150,7 +149,7 @@ export function PayrollPlanMetadataForm({ value, canEdit, save }: FormProps<Payr
       stale={form.stale}
       reload={() => {
         form.reload();
-        setPositions(value.positions.join(", "));
+        onDirtyChange?.(false);
       }}
       errors={
         parsed.success
@@ -165,26 +164,25 @@ export function PayrollPlanMetadataForm({ value, canEdit, save }: FormProps<Payr
         label="Plan name"
         placeholder="e.g. Senior stylist commission plan"
         value={form.fields.name}
-        onChange={(e) => form.setFields({ ...form.fields, name: e.target.value })}
+        onChange={(e) => {
+          form.setFields({ ...form.fields, name: e.target.value });
+          onDirtyChange?.(true);
+        }}
       />
       <Input
         label="Plan description"
         placeholder="e.g. Commission for stylists after probation"
         value={form.fields.description}
-        onChange={(e) => form.setFields({ ...form.fields, description: e.target.value })}
+        onChange={(e) => {
+          form.setFields({ ...form.fields, description: e.target.value });
+          onDirtyChange?.(true);
+        }}
       />
-      <Input
-        label="Plan positions (comma-separated, blank = all)"
-        placeholder="e.g. Senior stylist, Stylist"
-        value={positions}
-        onChange={(e) => setPositions(e.target.value)}
-      />
-      <Input
-        label="Plan outlet IDs (comma-separated, blank = company-wide)"
-        value={form.fields.outletIds.join(", ")}
-        readOnly
-        hint="Outlet scope is immutable. Duplicate the plan to change scope. Outlet-scoped plans cannot yet be assigned to staff."
-      />
+      {form.fields.outletIds.length > 0 && (
+        <p className="text-sm text-ink-muted">
+          Scope: selected outlets. Existing scope is preserved.
+        </p>
+      )}
       <p className="text-sm text-ink-muted">
         Metadata changes do not modify published rule definitions. Save or discard rule edits before
         changing metadata.
@@ -300,6 +298,7 @@ export function PayrollSalonSettingsForm({ value, canEdit, save }: FormProps<Set
     >
       <Input
         label="Join-after cutoff day (blank = no cutoff)"
+        hint="Joining after this day delays tenure progression by one month. It does not change the employment start date."
         type="number"
         min={1}
         max={31}
@@ -319,6 +318,7 @@ export function PayrollSalonSettingsForm({ value, canEdit, save }: FormProps<Set
       />
       <Select
         label="Negative commission base policy"
+        hint="Carry forward offsets a future month's eligible base with the negative balance. Write off does not carry that balance forward."
         value={fields.negativeBase}
         options={[
           { value: "CARRY_FORWARD", label: "Carry forward" },
@@ -331,24 +331,9 @@ export function PayrollSalonSettingsForm({ value, canEdit, save }: FormProps<Set
           })
         }
       />
-      <Input
-        label="Minimum package deposit percentage"
-        inputMode="decimal"
-        placeholder="e.g. 20"
-        value={fields.minimumDepositPct}
-        onChange={(e) => form.setFields({ ...form.fields, minimumDepositPct: e.target.value })}
-      />
-      <Input
-        label="Refund administration fee"
-        inputMode="decimal"
-        placeholder="0.00"
-        value={fields.refundAdminFee}
-        onChange={(e) => form.setFields({ ...form.fields, refundAdminFee: e.target.value })}
-      />
       <p className="text-sm text-ink-muted">
         Staff attribution requirements are enforced by the Team › Attribution policy, not by a
-        switch here. Configuration only. Checkout and earnings behavior remains unchanged until
-        controlled cutover.
+        switch here. Saving these policies does not activate payroll or change approved statements.
       </p>
     </FormFrame>
   );

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { PayrollAdjustment, PayrollStatement, QueryParams } from "@glampro_suite/shared";
 import { downloadFile, get, post, getErrorMessage } from "@/lib/api";
@@ -36,13 +37,16 @@ type PayrollExportKind = "workbook.xlsx" | "payslips.pdf" | "ledger.csv";
 export default function PayrollClose({
   canWrite,
   isOwner,
+  initialPeriod = "",
 }: {
   canWrite: boolean;
   isOwner: boolean;
+  initialPeriod?: string;
 }) {
   const client = useQueryClient();
-  const [month, setMonth] = useState("");
-  const [period, setPeriod] = useState("");
+  const validInitialPeriod = /^\d{4}-(0[1-9]|1[0-2])$/.test(initialPeriod) ? initialPeriod : "";
+  const [month, setMonth] = useState(validInitialPeriod);
+  const [period, setPeriod] = useState(validInitialPeriod);
   const [reason, setReason] = useState("");
   const [reference, setReference] = useState("");
   const [staffId, setStaffId] = useState("");
@@ -107,7 +111,10 @@ export default function PayrollClose({
       setError(getErrorMessage(cause));
     } finally {
       // Conflicts and changed source data must reload the current revision too.
-      await client.invalidateQueries({ queryKey: ["payroll-close", period] });
+      await Promise.all([
+        client.invalidateQueries({ queryKey: ["payroll-close", period] }),
+        client.invalidateQueries({ queryKey: ["payroll-progress"] }),
+      ]);
     }
   }
   const busy = mutation.isPending || query.isFetching || download.isPending;
@@ -118,6 +125,18 @@ export default function PayrollClose({
       <p>
         Salon-wide payroll. Approval freezes statements; recording payout does not transfer money.
       </p>
+      <p className="text-sm text-ink-muted">
+        Calculate saves a snapshot for Commission progress. Later transactions require
+        recalculation; viewing or refreshing progress does not calculate or approve payroll.
+      </p>
+      {period && (
+        <Link
+          className="text-purple underline"
+          to={`/settings?section=payroll&payroll=progress&period=${encodeURIComponent(period)}`}
+        >
+          View commission progress for {period}
+        </Link>
+      )}
       <div className="flex flex-wrap items-end gap-3">
         <Input
           label="Payroll month"

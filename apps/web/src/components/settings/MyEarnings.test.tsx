@@ -125,7 +125,7 @@ it("shows only the caller's own month-to-date progress", async () => {
 
 it("lists the caller's frozen months without salary columns", async () => {
   mount();
-  expect(await screen.findByText("Your frozen payroll statements")).toBeInTheDocument();
+  expect(await screen.findByText("Your approved commission statements")).toBeInTheDocument();
   expect(screen.getByText("2026-09")).toBeInTheDocument();
   expect(screen.getByText("2026-08")).toBeInTheDocument();
   expect(screen.getByText("2150.5000")).toBeInTheDocument();
@@ -149,9 +149,18 @@ it("opens one frozen statement and shows its components", async () => {
 it("says so when no approved month includes the caller", async () => {
   mocks.get.mockResolvedValue(history({ statements: [], hasMore: false }));
   mount();
-  expect(
-    await screen.findByText("No approved payroll month includes you yet."),
-  ).toBeInTheDocument();
+  expect(await screen.findByText("No approved statements yet.")).toBeInTheDocument();
+});
+
+it("keeps payslip explanations behind an accessible disclosure", async () => {
+  mount();
+  const summary = screen.getByText("About these figures");
+  const disclosure = summary.closest("details");
+  expect(disclosure).not.toHaveAttribute("open");
+  expect(screen.getByText(/Basic salary and/)).not.toBeVisible();
+  await userEvent.click(summary);
+  expect(disclosure).toHaveAttribute("open");
+  expect(screen.getByText(/Basic salary and/)).toBeVisible();
 });
 
 it("surfaces a refusal instead of an empty list", async () => {
