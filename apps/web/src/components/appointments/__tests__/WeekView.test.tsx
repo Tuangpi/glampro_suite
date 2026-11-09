@@ -3,10 +3,10 @@
  *
  * Rendered with a week of rows passed in, exactly as the page does, so the assertions are
  * about what the week *draws*: seven Monday-first columns on the day grid's own scale,
- * each booking in the column of the **day it starts on** and in no other, overlapping
+ * each same-day booking in its own column and in no other, overlapping
  * bookings side by side in lanes, and the read-only state the view is defined by
- * (ADR 0018). The straddle rule is checked by what is *absent*: a booking that crosses
- * midnight is drawn on neither of its days.
+ * (ADR 0018). An overnight booking entirely outside the visible 08:00–20:00 window
+ * is drawn on neither of its days.
  */
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -17,7 +17,7 @@ import type { AppointmentSummary } from "@glampro_suite/shared";
 import WeekView from "../WeekView";
 import { HOUR_HEIGHT } from "../calendar-geometry";
 
-/** Local-time helper: the grid reads local hours, so the fixtures must too. */
+/** Host-local dates for calendar anchors and record metadata, not booking times. */
 function at(day: number, hour: number, minute = 0): Date {
   return new Date(2026, 9, day, hour, minute, 0, 0);
 }
@@ -110,13 +110,14 @@ describe("WeekView", () => {
     });
   });
 
-  it("draws a booking that crosses midnight on neither of its days", () => {
-    // ADR 0018, decision 2: the gutter is 08:00–20:00, so 23:00 → 01:00 is un-drawable on
-    // both. It is in the week's read — it starts inside the week — and on no day of it.
+  it("draws no block for an overnight booking entirely outside visible salon hours", () => {
+    // 23:00 on October 9 → 01:00 on October 10 in Asia/Singapore (UTC+8).
+    // Neither day overlaps the 08:00–20:00 grid. Explicit instants keep the fixture
+    // independent of the machine's timezone.
     const overnight = booking({
       id: "appt-overnight",
-      startsAt: at(9, 23).toISOString(),
-      endsAt: at(10, 1).toISOString(),
+      startsAt: "2026-10-09T15:00:00.000Z",
+      endsAt: "2026-10-09T17:00:00.000Z",
     });
     const { container } = render(
       <WeekView day={WEEK} appointments={[overnight]} onEdit={vi.fn()} />,

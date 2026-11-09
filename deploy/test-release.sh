@@ -2,6 +2,21 @@
 # No real service operations or databases: every case gets an isolated root.
 set -Eeuo pipefail
 base=$(cd "$(dirname "$0")" && pwd)
+# Guard the shared deployment account and runtime isolation against naming drift.
+for unit in "$base"/systemd/*.service; do
+  grep -qx 'User=glampro_suite' "$unit"
+  grep -qx 'Group=glampro_suite-code' "$unit"
+  grep -qx 'EnvironmentFile=/etc/glampro_suite/production.env' "$unit"
+  grep -q '^WorkingDirectory=/opt/glampro_suite/' "$unit"
+  grep -q '^ExecStart=/opt/glampro_suite-runtime/node-v24\.21\.0/bin/node ' "$unit"
+done
+grep -qx 'PORT=9100' "$base/.env.production.example"
+grep -q '^deploy ALL=(root) NOPASSWD:' "$base/glampro_suite.sudoers"
+for service in glampro_suite-api glampro_suite-worker glampro_suite-migration-status; do
+  test -f "$base/systemd/$service.service"
+  grep -q "/usr/bin/systemctl restart $service.service" "$base/glampro_suite.sudoers"
+done
+test -f "$base/systemd/glampro_suite-migrate@.service"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
@@ -14,8 +29,8 @@ printf '%s\n' "$*" >> "$TEST_LOG"
 if [[ -f $TEST_FAILURE ]]; then
   reason=$(cat "$TEST_FAILURE")
   if [[ $reason == migration && "$*" == *migration-status* ]]; then exit 1; fi
-  if [[ $reason == restart && "$*" == 'restart glampro-api.service' && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
-  if [[ $reason == worker && "$*" == 'is-active --quiet glampro-worker.service' && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
+  if [[ $reason == restart && "$*" == 'restart glampro_suite-api.service' && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
+  if [[ $reason == worker && "$*" == 'is-active --quiet glampro_suite-worker.service' && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
 fi
 MOCK
 cat > "$tmp/bin/sudo" <<'MOCK'
@@ -25,6 +40,8 @@ exec "$@"
 MOCK
 cat > "$tmp/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
+printf 'curl %s\n' "$*" >> "$TEST_LOG"
+if [[ "$*" == *'/health/ready'* && "$*" != *'http://127.0.0.1:9100/health/ready'* ]]; then exit 1; fi
 if [[ -f $TEST_FAILURE && $(cat "$TEST_FAILURE") == health && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
 exit 0
 MOCK
@@ -38,10 +55,10 @@ new_case() {
   mkdir -p "$TEST_ROOT/releases" "$TEST_ROOT/incoming"
   printf 'salon.example.com\n' > "$TEST_ROOT/public-host"
   rm -f "$TEST_FAILURE"
-  sed -e "s@^ROOT=/opt/glampro\$@ROOT=$TEST_ROOT@" \
+  sed -e "s@^ROOT=/opt/glampro_suite\$@ROOT=$TEST_ROOT@" \
       -e "s@/usr/bin/systemctl@$tmp/bin/systemctl@g" \
-      -e "s@/usr/local/bin/node@$tmp/bin/node@g" \
-      -e "s@/etc/glampro/public-host@$TEST_ROOT/public-host@g" "$base/release.sh" > "$tmp/run.sh"
+      -e "s@/opt/glampro_suite-runtime/node-v24.21.0/bin/node@$tmp/bin/node@g" \
+      -e "s@/etc/glampro_suite/public-host@$TEST_ROOT/public-host@g" "$base/release.sh" > "$tmp/run.sh"
 }
 archive() {
   local version=$1 dir="$tmp/package"
@@ -97,9 +114,10 @@ archive v1.0.1
 printf 'restart\n' > "$TEST_FAILURE"
 reject deploy v1.0.1 schema-compatible
 [[ ! -e $TEST_ROOT/current ]]
-grep -q 'stop glampro-api.service' "$TEST_LOG"
+grep -q 'stop glampro_suite-api.service' "$TEST_LOG"
+grep -q 'curl .*http://127.0.0.1:9100/health/ready' "$TEST_LOG"
 new_case locked
 archive v1.0.0
 (exec 8>"$TEST_ROOT/deploy.lock"; flock -n 8; reject deploy v1.0.0 schema-compatible)
-! grep -q 'glampro-migrate@' "$TEST_LOG"
+! grep -q 'glampro_suite-migrate@' "$TEST_LOG"
 echo 'Deployment regression tests passed: activation, rollback, recovery, checksum, lock, confirmations.'

@@ -434,6 +434,16 @@ export default function Appointments() {
         </div>
       </header>
 
+      {showWeek || showMonth ? (
+        <p className="text-sm text-ink-muted">
+          {isReadOnly
+            ? "Read-only view — appointments cannot be dragged or rescheduled."
+            : showWeek
+              ? "Drag an appointment to another day or time, keeping its assigned staff."
+              : "Drag an appointment to another date to keep its salon-local time and staff."}
+        </p>
+      ) : null}
+
       {/* Said out loud rather than silently truncated: a month drawn from one page has
           holes in it, and a hole in a calendar reads as free time. `total` comes from the
           envelope, so this is the response's own number rather than a second count. */}

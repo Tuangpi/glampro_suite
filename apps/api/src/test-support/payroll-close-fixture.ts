@@ -220,6 +220,6 @@ export async function payrollCloseFixture(
   // does not. The matrix and performance suites assert wall-clock budgets on what the
   // close path does, so give the planner the statistics it would have in service
   // instead of letting the samples describe a first-touch estimate.
-  await prisma.$executeRawUnsafe("ANALYZE");
+  await prisma.$executeRaw`ANALYZE`;
   return { tenantId, ownerId, managerId, staffId, cashierId, ids, scope };
 }

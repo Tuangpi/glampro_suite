@@ -161,33 +161,24 @@ beforeEach(() => {
 });
 
 describe("Appointments", () => {
-  it.each(["List", "Day", "Week", "Month"])(
-    "remembers %s after the page is reopened",
-    (label) => {
-      // Start with a different preference so List is also tested as a saved change.
-      localStorage.setItem("glampro.appointments.view.v1", "month");
-      const page = render(<Appointments />);
-      fireEvent.click(screen.getByRole("button", { name: label }));
+  it.each(["List", "Day", "Week", "Month"])("remembers %s after the page is reopened", (label) => {
+    // Start with a different preference so List is also tested as a saved change.
+    localStorage.setItem("glampro.appointments.view.v1", "month");
+    const page = render(<Appointments />);
+    fireEvent.click(screen.getByRole("button", { name: label }));
 
-      expect(localStorage.getItem("glampro.appointments.view.v1")).toBe(label.toLowerCase());
-      page.unmount();
-      render(<Appointments />);
+    expect(localStorage.getItem("glampro.appointments.view.v1")).toBe(label.toLowerCase());
+    page.unmount();
+    render(<Appointments />);
 
-      expect(screen.getByRole("button", { name: label })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
-    },
-  );
+    expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-pressed", "true");
+  });
 
   it.each([null, "invalid-view"])("defaults to List for preference %s", (saved) => {
     if (saved !== null) localStorage.setItem("glampro.appointments.view.v1", saved);
     render(<Appointments />);
 
-    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps views usable when browser storage is unavailable", () => {
@@ -199,15 +190,9 @@ describe("Appointments", () => {
     });
     try {
       render(<Appointments />);
-      expect(screen.getByRole("button", { name: "List" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
       fireEvent.click(screen.getByRole("button", { name: "Day" }));
-      expect(screen.getByRole("button", { name: "Day" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(screen.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
     } finally {
       read.mockRestore();
       write.mockRestore();
@@ -450,12 +435,25 @@ describe("Appointments", () => {
     await user.click(screen.getByRole("button", { name: "Week" }));
     expect(screen.getByText(/keeping its assigned staff/)).toBeInTheDocument();
 
-    // The day grid is where a booking moves, so it carries no such notice — and the list
-    // never did.
+    // Week/month instructions should not linger when switching to the day or list view.
     await user.click(screen.getByRole("button", { name: "Day" }));
-    expect(screen.queryByText(/Read-only view/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/keeping its assigned staff/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Month" }));
     expect(screen.getByText(/keep its salon-local time and staff/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "List" }));
+    expect(screen.queryByText(/keep its salon-local time and staff/)).not.toBeInTheDocument();
+  });
+
+  it("does not suggest dragging in read-only week and month views", async () => {
+    readOnly.value = true;
+    const user = userEvent.setup();
+    render(<Appointments />);
+
+    for (const view of ["Week", "Month"]) {
+      await user.click(screen.getByRole("button", { name: view }));
+      expect(screen.getByText(/Read-only view/)).toBeInTheDocument();
+      expect(screen.queryByText(/Drag an appointment/)).not.toBeInTheDocument();
+    }
   });
 });

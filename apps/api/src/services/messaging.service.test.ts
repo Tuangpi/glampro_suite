@@ -561,7 +561,8 @@ describe("messaging PostgreSQL integration", { skip: !process.env.DATABASE_URL }
     assert.match(html, /20\.00/);
     assert.ok(!html.includes("PRIVATE-INTERNAL-NOTE"));
     assert.ok(!html.includes("8123"));
-    assert.ok(!html.includes("Private customer"));
+    // Customer names are receipt facts shared by the POS, public link and email.
+    assert.match(html, /Customer: Private customer/);
     assert.ok(link.expiresAt.getTime() - Date.now() <= 30 * 86400000);
     const queued = await inA(() => queueReceipt(sale.id, "SMS"));
     assert.equal((await inA(() => queueReceipt(sale.id, "SMS"))).id, queued.id);

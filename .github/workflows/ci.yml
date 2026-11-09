@@ -76,4 +76,5 @@ jobs:
       - name: Scan source and dependencies before install scripts execute
         run: |
           npm ci --ignore-scripts
-          clamscan --recursive --infected --max-filesize=100M --max-scansize=500M --alert-exceeds-max=yes --exclude-dir='^./.git' .
+          # Trivy's generated vulnerability database is scanner data, not source or dependencies.
+          clamscan --recursive --infected --max-filesize=100M --max-scansize=500M --alert-exceeds-max=yes --exclude-dir='^\./\.git(/|$)' --exclude-dir='^\./\.cache/trivy(/|$)' .

@@ -1,4 +1,5 @@
 import type { CompanyPurgeInput } from "@glampro_suite/shared";
+import { Prisma } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform } from "../lib/tenant-context.js";
 import { conflict, notFound } from "../lib/http-error.js";
@@ -141,10 +142,11 @@ export async function purgeCompany(id: string, input: CompanyPurgeInput, actorId
         await tx.$executeRaw`UPDATE tenants SET "ownerUserId" = NULL WHERE id = ${id}`;
         let deletedRows = 0;
         for (const table of TENANT_PURGE_ORDER) {
-          // The table name comes from the literal list above, never from input.
-          deletedRows += await tx.$executeRawUnsafe(
-            `DELETE FROM "${table}" WHERE "tenantId" = $1`,
-            id,
+          // Identifiers cannot be bound as values. Only the fixed allowlist above
+          // supplies this SQL fragment; the tenant id remains a bound parameter.
+          const identifier = Prisma.raw(`"${table}"`);
+          deletedRows += await tx.$executeRaw(
+            Prisma.sql`DELETE FROM ${identifier} WHERE "tenantId" = ${id}`,
           );
         }
         await tx.$executeRaw`DELETE FROM tenants WHERE id = ${id}`;

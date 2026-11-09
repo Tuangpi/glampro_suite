@@ -81,6 +81,19 @@ describe("common customer receipt", () => {
     assert.doesNotMatch(body, /Glampro|Customer note|Owner/);
     assert.ok(body.indexOf('class="receipt-items"') < body.indexOf('class="receipt-payment"'));
   });
+  it("includes the escaped customer name in the receipt and public page", () => {
+    const namedSale = { ...sale, customerName: 'Alex <Customer> & "Guest"' };
+    for (const render of [renderCustomerReceipt, renderCustomerReceiptPage]) {
+      const body = render(namedSale, company);
+      assert.match(body, /Customer: Alex &lt;Customer&gt; &amp; &quot;Guest&quot;/);
+      assert.doesNotMatch(body, /<Customer>|Customer note|Owner/);
+    }
+  });
+  it("labels receipts without a customer name as walk-in", () => {
+    for (const render of [renderCustomerReceipt, renderCustomerReceiptPage]) {
+      assert.match(render(sale, company), /Customer: Walk-in/);
+    }
+  });
   it("uses only the sale outlet public contacts and escapes company data", () => {
     const body = renderCustomerReceipt(
       {
