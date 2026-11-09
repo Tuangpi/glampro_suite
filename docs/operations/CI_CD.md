@@ -20,7 +20,7 @@ account. Replace `salon.example.com`, version examples, and repository placehold
    | --------------------- | ----------------------------------------------- |
    | `VPS_HOST`            | VPS hostname/IPv4 (not an IPv6 literal)         |
    | `VPS_PORT`            | SSH port, e.g. `22`                             |
-   | `VPS_USER`            | `deploy`                                |
+   | `VPS_USER`            | `deploy`                                        |
    | `VPS_SSH_PRIVATE_KEY` | Dedicated Ed25519 private key                   |
    | `VPS_KNOWN_HOSTS`     | Host-key line verified against provider console |
 

@@ -161,33 +161,24 @@ beforeEach(() => {
 });
 
 describe("Appointments", () => {
-  it.each(["List", "Day", "Week", "Month"])(
-    "remembers %s after the page is reopened",
-    (label) => {
-      // Start with a different preference so List is also tested as a saved change.
-      localStorage.setItem("glampro.appointments.view.v1", "month");
-      const page = render(<Appointments />);
-      fireEvent.click(screen.getByRole("button", { name: label }));
+  it.each(["List", "Day", "Week", "Month"])("remembers %s after the page is reopened", (label) => {
+    // Start with a different preference so List is also tested as a saved change.
+    localStorage.setItem("glampro.appointments.view.v1", "month");
+    const page = render(<Appointments />);
+    fireEvent.click(screen.getByRole("button", { name: label }));
 
-      expect(localStorage.getItem("glampro.appointments.view.v1")).toBe(label.toLowerCase());
-      page.unmount();
-      render(<Appointments />);
+    expect(localStorage.getItem("glampro.appointments.view.v1")).toBe(label.toLowerCase());
+    page.unmount();
+    render(<Appointments />);
 
-      expect(screen.getByRole("button", { name: label })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
-    },
-  );
+    expect(screen.getByRole("button", { name: label })).toHaveAttribute("aria-pressed", "true");
+  });
 
   it.each([null, "invalid-view"])("defaults to List for preference %s", (saved) => {
     if (saved !== null) localStorage.setItem("glampro.appointments.view.v1", saved);
     render(<Appointments />);
 
-    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps views usable when browser storage is unavailable", () => {
@@ -199,15 +190,9 @@ describe("Appointments", () => {
     });
     try {
       render(<Appointments />);
-      expect(screen.getByRole("button", { name: "List" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(screen.getByRole("button", { name: "List" })).toHaveAttribute("aria-pressed", "true");
       fireEvent.click(screen.getByRole("button", { name: "Day" }));
-      expect(screen.getByRole("button", { name: "Day" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      );
+      expect(screen.getByRole("button", { name: "Day" })).toHaveAttribute("aria-pressed", "true");
     } finally {
       read.mockRestore();
       write.mockRestore();
