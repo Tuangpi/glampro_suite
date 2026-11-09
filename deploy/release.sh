@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Run as glampro-deploy, never as root. systemd units/sudoers are root-owned.
+# Run as deploy, never as root. systemd units/sudoers are root-owned.
 set -Eeuo pipefail
 umask 027
-ROOT=/opt/glampro
+ROOT=/opt/glampro_suite
 mode=${1:-}
 version=${2:-}
 [[ ${3:-} == schema-compatible ]] || { echo 'Confirm schema compatibility explicitly' >&2; exit 1; }
@@ -36,8 +36,8 @@ if [[ $mode == rollback ]]; then
 fi
 # Does not apply schema changes. Secrets are loaded by the root-owned unit.
 ln -sfn "$release" "$ROOT/candidate"
-sudo -n /usr/bin/systemctl restart glampro-migration-status.service
-public_host=$(cat /etc/glampro/public-host)
+sudo -n /usr/bin/systemctl restart glampro_suite-migration-status.service
+public_host=$(cat /etc/glampro_suite/public-host)
 [[ $public_host =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]+$ ]] || { echo 'Invalid public hostname' >&2; exit 1; }
 worker_enabled=false
 [[ ! -e $ROOT/worker-enabled ]] || worker_enabled=true
@@ -47,18 +47,18 @@ switch_to() {
 }
 restart_services() {
   # Stop the worker first: never let an old worker overlap a new API release.
-  sudo -n /usr/bin/systemctl stop glampro-worker.service || return 1
-  sudo -n /usr/bin/systemctl restart glampro-api.service || return 1
+  sudo -n /usr/bin/systemctl stop glampro_suite-worker.service || return 1
+  sudo -n /usr/bin/systemctl restart glampro_suite-api.service || return 1
   if [[ $worker_enabled == true ]]; then
-    sudo -n /usr/bin/systemctl restart glampro-worker.service || return 1
+    sudo -n /usr/bin/systemctl restart glampro_suite-worker.service || return 1
     sleep 2
-    /usr/bin/systemctl is-active --quiet glampro-worker.service || return 1
+    /usr/bin/systemctl is-active --quiet glampro_suite-worker.service || return 1
   fi
 }
 ready() {
   local attempt
   for attempt in {1..12}; do
-    if /usr/bin/systemctl is-active --quiet glampro-api.service &&
+    if /usr/bin/systemctl is-active --quiet glampro_suite-api.service &&
        curl --fail --silent --max-time 5 http://127.0.0.1:9000/health/ready >/dev/null &&
        curl --fail --silent --max-time 5 --resolve "$public_host:443:127.0.0.1" "https://$public_host/" >/dev/null; then
       return 0
@@ -77,8 +77,8 @@ recover() {
       if restart_services && ready; then echo 'Previous application restored.' >&2;
       else echo 'CRITICAL: recovery failed; administrator intervention required.' >&2; fi
     else
-      sudo -n /usr/bin/systemctl stop glampro-worker.service || true
-      sudo -n /usr/bin/systemctl stop glampro-api.service || true
+      sudo -n /usr/bin/systemctl stop glampro_suite-worker.service || true
+      sudo -n /usr/bin/systemctl stop glampro_suite-api.service || true
       rm -f "$ROOT/current"
       echo 'No previous release; application stopped.' >&2
     fi

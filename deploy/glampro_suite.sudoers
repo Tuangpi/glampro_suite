@@ -1,0 +1,4 @@
+# Install ROOT-OWNED with visudo -cf validation; never grant arbitrary sudo/bash.
+# Deployment may control only application services and read-only migration status.
+# Database migrations deliberately require the administrator, not this account.
+deploy ALL=(root) NOPASSWD: /usr/bin/systemctl restart glampro_suite-api.service, /usr/bin/systemctl stop glampro_suite-api.service, /usr/bin/systemctl restart glampro_suite-worker.service, /usr/bin/systemctl stop glampro_suite-worker.service, /usr/bin/systemctl restart glampro_suite-migration-status.service

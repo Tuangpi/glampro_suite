@@ -5,10 +5,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=glampro
-Group=glampro-code
-WorkingDirectory=/opt/glampro/current/apps/api
-EnvironmentFile=/etc/glampro/production.env
+User=glampro_suite
+Group=glampro_suite-code
+WorkingDirectory=/opt/glampro_suite/current/apps/api
+EnvironmentFile=/etc/glampro_suite/production.env
 ExecStart=/usr/local/bin/node dist/src/index.js
 Restart=on-failure
 RestartSec=5
@@ -19,7 +19,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectHome=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/glampro
+ReadWritePaths=/var/lib/glampro_suite
 
 [Install]
 WantedBy=multi-user.target
