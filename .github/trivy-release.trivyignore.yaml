@@ -1,0 +1,17 @@
+# Paths are relative to the release scan root (bundle), not the repository root.
+# These exceptions do not apply to vulnerabilities, secrets, or other Dockerfiles.
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - node_modules/bcrypt/Dockerfile
+    statement: >-
+      bcrypt ships an upstream native-module build Dockerfile. This release runs
+      directly under systemd as glampro_suite; this Dockerfile is never built or
+      executed by our release or deployment workflows. Reassess if Docker is adopted.
+  - id: DS-0029
+    paths:
+      - node_modules/bcrypt/Dockerfile
+    statement: >-
+      The apt-get instruction belongs to bcrypt's unused upstream build Dockerfile,
+      not the production host setup. The systemd deployment does not execute it.
+      Reassess if Docker is adopted.

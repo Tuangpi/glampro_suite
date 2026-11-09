@@ -234,6 +234,11 @@ git push origin v1.0.0
 
 CI gates formatting, lint, types, tests/build, deployment regressions, npm audit,
 Semgrep, Trivy, and ClamAV. Fix failures; scans do not prove an application secure.
+The release scan uses `.github/trivy-release.trivyignore.yaml` to exempt only
+`DS-0002` and `DS-0029` in `node_modules/bcrypt/Dockerfile`, relative to `bundle`.
+This upstream build Dockerfile is not used by the systemd deployment. Vulnerability,
+secret, and other misconfiguration checks remain enabled; reassess these exceptions
+if the build or deployment starts using Docker.
 Runtime/uploads, host security, signing, and full DAST need separate controls.
 Checksums detect corruption, not malicious maintainer changes. Treat deployment
 key holders and release maintainers as trusted production operators.
