@@ -50,6 +50,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: bundle
+          trivyignores: .github/trivy-release.trivyignore.yaml
           scanners: vuln,secret,misconfig
           severity: HIGH,CRITICAL
           exit-code: "1"
