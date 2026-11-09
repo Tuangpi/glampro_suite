@@ -8,6 +8,22 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 9, 2026 — Ubuntu VPS CI/CD configuration
+
+- Added GitHub CI, scanned versioned GHCR releases, manual production deploy/rollback,
+  container definitions and isolated deployment-script regression tests. Setup and
+  limitations: [CI/CD guide](docs/operations/CI_CD.md). No VPS or database changes.
+- Passed formatting, lint, typechecks, application build, 348 shared tests,
+  actionlint workflow validation, Compose configuration validation, and mocked
+  deployment/recovery tests. Docker daemon unavailable: images/startup not verified.
+- Full web suite: 1361 passed, 5 failed (4 payroll timeouts and an appointment text
+  assertion). Isolated rerun: 44 passed, appointment assertion still fails.
+  API integration tests blocked by missing disposable `TEST_DATABASE_URL`.
+- Security baseline flags existing unsafe Prisma raw-query calls for review;
+  npm audit reports 14 advisories (13 moderate, 1 high). No exception or
+  application-code changes made. Trivy/ClamAV and GitHub/VPS
+  execution remain unverified. CI is intentionally blocking, not bypassed.
+
 ## November 9, 2026 — full-page sale history
 
 - Replaced the history drawer with `/sale/history` and full-page receipt routes,

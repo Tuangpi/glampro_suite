@@ -1,0 +1,26 @@
+rules:
+  - id: no-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Do not evaluate dynamic code.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: no-shell-command-execution
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Avoid shell command execution; use explicit executable and argument arrays.
+    pattern-either:
+      - pattern: child_process.exec(...)
+      - pattern: child_process.execSync(...)
+    paths:
+      include: [apps/api/src]
+  - id: no-unsafe-prisma-raw
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Use Prisma parameterized queries, not unsafe raw SQL.
+    pattern-either:
+      - pattern: $DB.$queryRawUnsafe(...)
+      - pattern: $DB.$executeRawUnsafe(...)
+    paths:
+      exclude: ["**/*.test.ts"]

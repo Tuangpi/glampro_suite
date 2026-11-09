@@ -1,0 +1,83 @@
+name: glampro
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-application: &application
+  env_file:
+    - /opt/glampro/.env.production
+  environment:
+    NODE_ENV: production
+    PORT: "9000"
+    UPLOADS_DIR: /data/uploads
+  init: true
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  logging: *logging
+  depends_on:
+    database:
+      condition: service_healthy
+
+services:
+  database:
+    image: ${POSTGRES_IMAGE:?Set a pinned PostgreSQL image in .env.production}
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+
+  api:
+    <<: *application
+    image: ${API_IMAGE:?Missing release API_IMAGE}
+    volumes:
+      - uploads:/data/uploads
+
+  worker:
+    <<: *application
+    image: ${API_IMAGE:?Missing release API_IMAGE}
+    profiles: [messaging]
+    command: [node, dist/src/message-worker.js]
+    healthcheck:
+      disable: true
+    volumes:
+      - uploads:/data/uploads
+
+  web:
+    image: ${WEB_IMAGE:?Missing release WEB_IMAGE}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+  migrator:
+    <<: *application
+    image: ${MIGRATOR_IMAGE:?Missing release MIGRATOR_IMAGE}
+    profiles: [tools]
+    restart: "no"
+
+volumes:
+  database:
+  uploads:

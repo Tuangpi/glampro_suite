@@ -42,6 +42,9 @@ The development seed creates one demo salon; it is not a reset. See
 
 ## Common commands
 
+Production CI/CD setup: [Ubuntu VPS guide](docs/operations/CI_CD.md) covers GitHub
+settings, security scans, configuration values, versioned releases, and rollback.
+
 | Command                     | Purpose                                                        |
 | --------------------------- | -------------------------------------------------------------- |
 | `npm run dev`               | Start shared build watcher, API, and web                       |

@@ -18,6 +18,7 @@ working on that feature; they are not a mandatory startup checklist.
 
 ## Operations
 
+- [Ubuntu VPS CI/CD setup, releases, and rollback](operations/CI_CD.md)
 - [Platform console and company onboarding](operations/platform-console.md)
 - [WhatsApp/SMS configuration and safety](operations/whatsapp-sms-integration.md)
 - [Coordinated rollout and recovery checklist](operations/coordinated-rollout-checklist.md)

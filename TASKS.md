@@ -13,6 +13,11 @@ feature checklist above. Local acceptance is not production or payout authorizat
 
 ## Other recorded follow-ups
 
+- **BLOCKED operationally — CI/CD:** configuration and [setup guide](docs/operations/CI_CD.md)
+  added; configure GitHub/VPS, resolve existing appointment assertion and security
+  findings, verify disposable API tests, build/run containers, and exercise real
+  deployment/recovery before production use. No deployment authorization implied.
+
 - **DONE locally — Payroll navigation:** move management commission progress out
   of Team & commissions into Payroll alongside Monthly close. Preserve legacy
   bookmarks, same-month links, lazy loading, draft mounting and access guards.

@@ -1,0 +1,79 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci-disposable-only
+          POSTGRES_DB: glampro_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d glampro_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://ci:ci-disposable-only@127.0.0.1:5432/glampro_test
+      TEST_DATABASE_URL: postgresql://ci:ci-disposable-only@127.0.0.1:5432/glampro_test
+      JWT_SECRET: ci-only-not-a-production-secret-at-least-48-characters
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run verify
+      - run: npm run build
+      - name: Deployment script regression tests
+        run: bash deploy/test-release.sh
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Dependency vulnerability gate
+        run: npm audit --audit-level=high
+      - name: Static security analysis
+        run: |
+          python3 -m venv /tmp/semgrep
+          /tmp/semgrep/bin/pip install semgrep==1.184.0
+          /tmp/semgrep/bin/semgrep scan --config .github/semgrep.yml --error --strict apps/api/src apps/web/src packages/shared/src
+      - name: Source vulnerabilities, secrets and configuration
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: false
+      - name: Install antivirus and refresh signatures
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clamav
+          sudo systemctl stop clamav-freshclam || true
+          sudo freshclam
+      - name: Scan source and dependencies before install scripts execute
+        run: |
+          npm ci --ignore-scripts
+          clamscan --recursive --infected --max-filesize=100M --max-scansize=500M --alert-exceeds-max=yes --exclude-dir='^./.git' .

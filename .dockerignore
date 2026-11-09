@@ -1,0 +1,17 @@
+**/node_modules
+**/dist
+**/coverage
+**/*.tsbuildinfo
+**/.env
+**/.env.*
+.git
+.github
+.tk0020-logs
+backups
+**/uploads
+apps/api/generated
+design
+docs
+deploy
+PROGRESS.md
+TASKS.md
