@@ -5,7 +5,7 @@ import { prisma } from "./lib/prisma.js";
 
 const app = createApp();
 
-const server = app.listen(env.port, () => {
+const server = app.listen(env.port, env.host, () => {
   logger.info(`Glampro API listening on port ${env.port}`, { environment: env.nodeEnv });
 });
 

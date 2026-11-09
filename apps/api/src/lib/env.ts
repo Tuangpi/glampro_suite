@@ -11,7 +11,7 @@ function required(name: string): string {
   const value = process.env[name];
   if (!value || value.trim() === "") {
     throw new Error(
-      `Missing required environment variable ${name}. Copy apps/api/.env.example to apps/api/.env (or set it in .env.docker) and try again.`,
+      `Missing required environment variable ${name}. Copy apps/api/.env.example to apps/api/.env (or inject it through the service environment) and try again.`,
     );
   }
   return value;
@@ -42,6 +42,7 @@ export const env = {
   isProduction,
   isTest,
   port: optionalNumber("PORT", 9000),
+  host: process.env.HOST?.trim() || "0.0.0.0",
   databaseUrl: required("DATABASE_URL"),
   jwtSecret: required("JWT_SECRET"),
   /** Defaults to the access secret + "-refresh" so single-secret setups still work. */

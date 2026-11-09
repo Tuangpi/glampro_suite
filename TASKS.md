@@ -15,7 +15,7 @@ feature checklist above. Local acceptance is not production or payout authorizat
 
 - **BLOCKED operationally — CI/CD:** configuration and [setup guide](docs/operations/CI_CD.md)
   added; configure GitHub/VPS, resolve existing appointment assertion and security
-  findings, verify disposable API tests, build/run containers, and exercise real
+  findings, verify disposable API tests, validate Ubuntu 22.04 native services, and exercise real
   deployment/recovery before production use. No deployment authorization implied.
 
 - **DONE locally — Payroll navigation:** move management commission progress out

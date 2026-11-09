@@ -10,7 +10,7 @@ on:
         description: "Deploy a new release or restore a previously healthy release"
         required: true
         type: choice
-        options: [deploy, rollback]
+        options: [deploy, activate, rollback]
       schema_compatible:
         description: "I verified this release and the previous release work with the current database schema"
         required: true
@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   production:
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-22.04
     timeout-minutes: 20
     environment:
       name: production
@@ -35,12 +35,15 @@ jobs:
       VPS_PORT: ${{ secrets.VPS_PORT }}
       VPS_USER: ${{ secrets.VPS_USER }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Validate request
         env:
           SCHEMA_COMPATIBLE: ${{ inputs.schema_compatible }}
         run: |
           [[ "$VERSION" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-          [[ "$OPERATION" == deploy || "$OPERATION" == rollback ]]
+          [[ "$OPERATION" == deploy || "$OPERATION" == activate || "$OPERATION" == rollback ]]
           [[ "$SCHEMA_COMPATIBLE" == true ]]
           [[ "$VPS_HOST" =~ ^[a-zA-Z0-9.-]+$ && "$VPS_USER" =~ ^[a-z_][a-z0-9_-]*$ && "$VPS_PORT" =~ ^[0-9]+$ ]]
       - name: Download published release
@@ -48,10 +51,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          mkdir bundle
           gh release download "$VERSION" --pattern 'release.tar.gz*'
           sha256sum --check release.tar.gz.sha256
-          tar -xzf release.tar.gz -C bundle
       - name: Configure verified SSH
         env:
           SSH_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
@@ -64,7 +65,7 @@ jobs:
       - name: Upload release and deploy
         run: |
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "mkdir -p /opt/glampro/incoming/$VERSION"
-          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$VPS_PORT" bundle/* "$VPS_USER@$VPS_HOST:/opt/glampro/incoming/$VERSION/"
+          scp -o BatchMode=yes -o StrictHostKeyChecking=yes -P "$VPS_PORT" release.tar.gz release.tar.gz.sha256 deploy/release.sh "$VPS_USER@$VPS_HOST:/opt/glampro/incoming/$VERSION/"
           ssh -o BatchMode=yes -o StrictHostKeyChecking=yes -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" "bash /opt/glampro/incoming/$VERSION/release.sh $OPERATION $VERSION schema-compatible"
       - name: Verify public HTTPS path
         env:

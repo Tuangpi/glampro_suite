@@ -1,66 +1,99 @@
 #!/usr/bin/env bash
-# Executed on the VPS. All release paths are fixed; never eval a release manifest.
+# Run as glampro-deploy, never as root. systemd units/sudoers are root-owned.
 set -Eeuo pipefail
-umask 077
+umask 027
 ROOT=/opt/glampro
 mode=${1:-}
 version=${2:-}
 [[ ${3:-} == schema-compatible ]] || { echo 'Confirm schema compatibility explicitly' >&2; exit 1; }
-[[ $mode == deploy || $mode == rollback ]] || { echo 'Expected deploy or rollback' >&2; exit 1; }
+[[ $mode == deploy || $mode == activate || $mode == rollback ]] || { echo 'Expected deploy, activate or rollback' >&2; exit 1; }
 [[ $version =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo 'Invalid version' >&2; exit 1; }
 mkdir -p "$ROOT/releases"
 exec 9>"$ROOT/deploy.lock"
 flock -n 9 || { echo 'Another production operation is running' >&2; exit 1; }
 release="$ROOT/releases/$version"
 if [[ $mode == deploy ]]; then
-  [[ ! -e $release ]] || { echo 'Release already exists; use rollback or a new version' >&2; exit 1; }
+  [[ ! -e $release ]] || { echo 'Release exists; publish a new version or roll back' >&2; exit 1; }
+  # Workflow uploads an archive, not an expanded tree: symlinks/modes are preserved.
+  (cd "$ROOT/incoming/$version" && sha256sum --check release.tar.gz.sha256)
   mkdir "$release"
-  # Copy from an unprivileged, separately uploaded bundle before validation.
-  cp "$ROOT/incoming/$version/compose.production.yml" "$release/compose.production.yml"
-  cp "$ROOT/incoming/$version/images.env" "$release/images.env"
-  cp "$ROOT/incoming/$version/release.sh" "$release/release.sh"
+  tar --extract --gzip --file "$ROOT/incoming/$version/release.tar.gz" --directory "$release" --no-same-owner --no-same-permissions
+  chmod -R g+rX,o-rwx "$release"
 fi
-[[ -f $release/images.env && -f $release/compose.production.yml ]] || { echo 'Missing release files' >&2; exit 1; }
-for key in API_IMAGE WEB_IMAGE MIGRATOR_IMAGE; do
-  [[ $(grep -c "^$key=" "$release/images.env") == 1 ]] || { echo "Invalid $key" >&2; exit 1; }
-  grep -Eq "^$key=ghcr\.io/[a-z0-9_./-]+@sha256:[a-f0-9]{64}$" "$release/images.env" || { echo "Unpinned $key" >&2; exit 1; }
-done
-[[ $(wc -l < "$release/images.env") == 3 ]] || { echo 'Unexpected manifest content' >&2; exit 1; }
-compose() {
-  local dir=$1; shift
-  docker compose --env-file "$ROOT/.env.production" --env-file "$dir/images.env" -f "$dir/compose.production.yml" "$@"
-}
-previous=$(readlink -f "$ROOT/current" || true)
+[[ -f $release/VERSION && $(cat "$release/VERSION") == "$version" ]] || { echo 'Release version mismatch' >&2; exit 1; }
+[[ -f $release/PLATFORM && $(cat "$release/PLATFORM") == ubuntu-22.04-x64 ]] || { echo 'Wrong release platform' >&2; exit 1; }
+[[ $(uname -m) == x86_64 ]] || { echo 'Release requires x86-64 VPS' >&2; exit 1; }
+[[ $(/usr/local/bin/node -p 'process.versions.node') == "$(cat "$release/NODE_VERSION")" ]] || { echo 'Install the exact release Node version before deployment' >&2; exit 1; }
+[[ -f $release/apps/api/dist/src/index.js && -f $release/apps/web/dist/index.html ]] || { echo 'Incomplete release' >&2; exit 1; }
+previous=''
+if [[ -L $ROOT/current ]]; then previous=$(readlink -f "$ROOT/current");
+elif [[ -e $ROOT/current ]]; then echo 'current must be a release symlink' >&2; exit 1; fi
+if [[ -n $previous && ( $previous != "$ROOT/releases/"* || ! -f $previous/success ) ]]; then
+  echo 'Current path is not a recorded healthy release; manual review required' >&2; exit 1
+fi
 if [[ $mode == rollback ]]; then
   [[ -f $release/success ]] || { echo 'Rollback requires a previously healthy release' >&2; exit 1; }
-  [[ ${3:-} == schema-compatible ]] || { echo 'Confirm schema compatibility explicitly' >&2; exit 1; }
 fi
-compose "$release" config --quiet
-compose "$release" pull
-# Schema modifications are deliberately NOT automatic. Run migrate deploy only
-# under the separately documented owner-approved migration procedure.
-compose "$release" run --rm migrator ../../node_modules/.bin/prisma migrate status
-restore() {
-  echo 'Deployment failed.' >&2
-  if [[ -n $previous && -f $previous/success ]]; then
-    echo 'Restoring previous application images (database is NOT restored).' >&2
-    compose "$previous" up -d --remove-orphans --wait --wait-timeout 180 || return 1
+# Does not apply schema changes. Secrets are loaded by the root-owned unit.
+ln -sfn "$release" "$ROOT/candidate"
+sudo -n /usr/bin/systemctl restart glampro-migration-status.service
+public_host=$(cat /etc/glampro/public-host)
+[[ $public_host =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]+$ ]] || { echo 'Invalid public hostname' >&2; exit 1; }
+worker_enabled=false
+[[ ! -e $ROOT/worker-enabled ]] || worker_enabled=true
+switch_to() {
+  ln -sfn "$1" "$ROOT/.current-next"
+  mv -Tf "$ROOT/.current-next" "$ROOT/current"
+}
+restart_services() {
+  # Stop the worker first: never let an old worker overlap a new API release.
+  sudo -n /usr/bin/systemctl stop glampro-worker.service || return 1
+  sudo -n /usr/bin/systemctl restart glampro-api.service || return 1
+  if [[ $worker_enabled == true ]]; then
+    sudo -n /usr/bin/systemctl restart glampro-worker.service || return 1
+    sleep 2
+    /usr/bin/systemctl is-active --quiet glampro-worker.service || return 1
   fi
 }
-if ! compose "$release" up -d --remove-orphans --wait --wait-timeout 180; then
-  restore
-  exit 1
-fi
-healthy=false
-for attempt in {1..12}; do
-  if curl --fail --silent --max-time 10 http://127.0.0.1:8080/api/health >/dev/null &&
-     curl --fail --silent --max-time 10 http://127.0.0.1:8080/ >/dev/null; then
-    healthy=true; break
+ready() {
+  local attempt
+  for attempt in {1..12}; do
+    if /usr/bin/systemctl is-active --quiet glampro-api.service &&
+       curl --fail --silent --max-time 5 http://127.0.0.1:9000/health/ready >/dev/null &&
+       curl --fail --silent --max-time 5 --resolve "$public_host:443:127.0.0.1" "https://$public_host/" >/dev/null; then
+      return 0
+    fi
+    sleep 5
+  done
+  return 1
+}
+recover() {
+  local status=$?
+  trap - EXIT
+  if [[ $status != 0 ]]; then
+    echo 'Deployment failed; database and uploads were not restored.' >&2
+    if [[ -n $previous ]]; then
+      switch_to "$previous"
+      if restart_services && ready; then echo 'Previous application restored.' >&2;
+      else echo 'CRITICAL: recovery failed; administrator intervention required.' >&2; fi
+    else
+      sudo -n /usr/bin/systemctl stop glampro-worker.service || true
+      sudo -n /usr/bin/systemctl stop glampro-api.service || true
+      rm -f "$ROOT/current"
+      echo 'No previous release; application stopped.' >&2
+    fi
   fi
-  sleep 5
-done
-if [[ $healthy != true ]]; then restore; exit 1; fi
-date -u +%FT%TZ > "$release/success"
-ln -sfn "$release" "$ROOT/current"
+  exit "$status"
+}
+# Catch signals, restart failures, and local readiness failures after activation.
+trap recover EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+switch_to "$release"
+restart_services
+ready
+# Marker is not refreshed by rollback; it records initial successful activation.
+if [[ ! -f $release/success ]]; then date -u +%FT%TZ > "$release/success"; fi
 printf '%s %s %s\n' "$(date -u +%FT%TZ)" "$mode" "$version" >> "$ROOT/deployments.log"
+trap - EXIT INT TERM
 echo "Healthy release: $version"

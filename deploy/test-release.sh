@@ -1,40 +1,105 @@
 #!/usr/bin/env bash
-# Exercise the real release script using isolated paths and mocked external tools.
+# No real service operations or databases: every case gets an isolated root.
 set -Eeuo pipefail
 base=$(cd "$(dirname "$0")" && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-mkdir -p "$tmp/bin" "$tmp/root/incoming/v1.0.0" "$tmp/root/incoming/v1.0.1"
-sed "s@^ROOT=/opt/glampro\$@ROOT=$tmp/root@" "$base/release.sh" > "$tmp/release.sh"
-export TEST_LOG="$tmp/log" TEST_FAILURE="$tmp/failure"
-cat > "$tmp/bin/docker" <<'EOF'
+mkdir -p "$tmp/bin"
+export TEST_ROOT TEST_LOG TEST_FAILURE
+TEST_LOG="$tmp/commands.log"
+TEST_FAILURE="$tmp/failure"
+cat > "$tmp/bin/systemctl" <<'MOCK'
 #!/usr/bin/env bash
-echo "$*" >> "$TEST_LOG"
-if [[ -f $TEST_FAILURE && "$*" == *releases/v1.0.1/* && "$*" == *'up -d'* ]]; then exit 1; fi
-EOF
-printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/curl"
+printf '%s\n' "$*" >> "$TEST_LOG"
+if [[ -f $TEST_FAILURE ]]; then
+  reason=$(cat "$TEST_FAILURE")
+  if [[ $reason == migration && "$*" == *migration-status* ]]; then exit 1; fi
+  if [[ $reason == restart && "$*" == 'restart glampro-api.service' && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
+  if [[ $reason == worker && "$*" == 'is-active --quiet glampro-worker.service' && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
+fi
+MOCK
+cat > "$tmp/bin/sudo" <<'MOCK'
+#!/usr/bin/env bash
+[[ $1 == -n ]] && shift
+exec "$@"
+MOCK
+cat > "$tmp/bin/curl" <<'MOCK'
+#!/usr/bin/env bash
+if [[ -f $TEST_FAILURE && $(cat "$TEST_FAILURE") == health && $(readlink "$TEST_ROOT/current") == *v1.0.1 ]]; then exit 1; fi
+exit 0
+MOCK
+printf '#!/usr/bin/env bash\nprintf "24.21.0\\n"\n' > "$tmp/bin/node"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/sleep"
+printf '#!/usr/bin/env bash\nprintf "x86_64\\n"\n' > "$tmp/bin/uname"
 chmod +x "$tmp/bin/"*
 export PATH="$tmp/bin:$PATH"
-for version in v1.0.0 v1.0.1; do
-  dir="$tmp/root/incoming/$version"
-  cp "$base/compose.production.yml" "$base/release.sh" "$dir/"
-  for component in API WEB MIGRATOR; do
-    printf '%s_IMAGE=ghcr.io/example/app@sha256:%064d\n' "$component" 0
-  done > "$dir/images.env"
+new_case() {
+  TEST_ROOT="$tmp/$1"
+  mkdir -p "$TEST_ROOT/releases" "$TEST_ROOT/incoming"
+  printf 'salon.example.com\n' > "$TEST_ROOT/public-host"
+  rm -f "$TEST_FAILURE"
+  sed -e "s@^ROOT=/opt/glampro\$@ROOT=$TEST_ROOT@" \
+      -e "s@/usr/bin/systemctl@$tmp/bin/systemctl@g" \
+      -e "s@/usr/local/bin/node@$tmp/bin/node@g" \
+      -e "s@/etc/glampro/public-host@$TEST_ROOT/public-host@g" "$base/release.sh" > "$tmp/run.sh"
+}
+archive() {
+  local version=$1 dir="$tmp/package"
+  rm -rf "$dir"
+  mkdir -p "$dir/apps/api/dist/src" "$dir/apps/web/dist" "$dir/deploy" "$TEST_ROOT/incoming/$version"
+  printf '%s\n' "$version" > "$dir/VERSION"
+  printf 'ubuntu-22.04-x64\n' > "$dir/PLATFORM"
+  printf '24.21.0\n' > "$dir/NODE_VERSION"
+  touch "$dir/apps/api/dist/src/index.js" "$dir/apps/web/dist/index.html"
+  cp "$base/release.sh" "$dir/deploy/"
+  tar -czf "$TEST_ROOT/incoming/$version/release.tar.gz" -C "$dir" .
+  (cd "$TEST_ROOT/incoming/$version" && sha256sum release.tar.gz > release.tar.gz.sha256)
+}
+run() { bash "$tmp/run.sh" "$@"; }
+reject() { if run "$@" >/dev/null 2>&1; then echo "Unexpected success: $*" >&2; exit 1; fi; }
+new_case success
+archive v1.0.0
+reject deploy 'v1.0.0;id' schema-compatible
+reject deploy v1.0.0
+run deploy v1.0.0 schema-compatible
+[[ $(readlink "$TEST_ROOT/current") == "$TEST_ROOT/releases/v1.0.0" ]]
+reject deploy v1.0.0 schema-compatible
+reject rollback v1.0.0
+reject rollback v9.0.0 schema-compatible
+archive v1.0.1
+run deploy v1.0.1 schema-compatible
+run activate v1.0.1 schema-compatible
+run rollback v1.0.0 schema-compatible
+[[ $(readlink "$TEST_ROOT/current") == "$TEST_ROOT/releases/v1.0.0" ]]
+printf 'wrong-version\n' > "$TEST_ROOT/releases/v1.0.1/VERSION"
+reject activate v1.0.1 schema-compatible
+printf 'v1.0.1\n' > "$TEST_ROOT/releases/v1.0.1/VERSION"
+printf '99.0.0\n' > "$TEST_ROOT/releases/v1.0.1/NODE_VERSION"
+reject activate v1.0.1 schema-compatible
+for failure in restart health migration worker; do
+  new_case "$failure"
+  archive v1.0.0
+  run deploy v1.0.0 schema-compatible
+  archive v1.0.1
+  if [[ $failure == worker ]]; then touch "$TEST_ROOT/worker-enabled"; fi
+  printf '%s\n' "$failure" > "$TEST_FAILURE"
+  reject deploy v1.0.1 schema-compatible
+  [[ $(readlink "$TEST_ROOT/current") == "$TEST_ROOT/releases/v1.0.0" ]]
+  [[ ! -f $TEST_ROOT/releases/v1.0.1/success ]]
 done
-if bash "$tmp/release.sh" deploy 'v1.0.0;id' schema-compatible 2>/dev/null; then echo 'Unsafe version accepted'; exit 1; fi
-if bash "$tmp/release.sh" deploy v1.0.0 2>/dev/null; then echo 'Unconfirmed deployment accepted'; exit 1; fi
-bash "$tmp/release.sh" deploy v1.0.0 schema-compatible
-[[ $(readlink "$tmp/root/current") == "$tmp/root/releases/v1.0.0" ]]
-if bash "$tmp/release.sh" deploy v1.0.0 schema-compatible 2>/dev/null; then echo 'Duplicate accepted'; exit 1; fi
-if bash "$tmp/release.sh" rollback v1.0.0 2>/dev/null; then echo 'Unconfirmed rollback accepted'; exit 1; fi
-touch "$TEST_FAILURE"
-if bash "$tmp/release.sh" deploy v1.0.1 schema-compatible; then echo 'Failed deployment accepted'; exit 1; fi
-[[ $(readlink "$tmp/root/current") == "$tmp/root/releases/v1.0.0" ]]
-grep -q 'releases/v1.0.0/compose.production.yml up -d' "$TEST_LOG"
-bash "$tmp/release.sh" rollback v1.0.0 schema-compatible
-! grep -Eq 'migrate deploy|down|volume rm' "$TEST_LOG"
-# Reject digest-less manifests before executing Docker.
-sed -i 's/@sha256:[a-f0-9]*/:latest/' "$tmp/root/releases/v1.0.0/images.env"
-if bash "$tmp/release.sh" rollback v1.0.0 schema-compatible 2>/dev/null; then echo 'Mutable image accepted'; exit 1; fi
-echo 'Deployment regression tests passed.'
+new_case checksum
+archive v1.0.0
+printf 'corrupt' >> "$TEST_ROOT/incoming/v1.0.0/release.tar.gz"
+reject deploy v1.0.0 schema-compatible
+[[ ! -e $TEST_ROOT/current ]]
+new_case first-failure
+archive v1.0.1
+printf 'restart\n' > "$TEST_FAILURE"
+reject deploy v1.0.1 schema-compatible
+[[ ! -e $TEST_ROOT/current ]]
+grep -q 'stop glampro-api.service' "$TEST_LOG"
+new_case locked
+archive v1.0.0
+(exec 8>"$TEST_ROOT/deploy.lock"; flock -n 8; reject deploy v1.0.0 schema-compatible)
+! grep -q 'glampro-migrate@' "$TEST_LOG"
+echo 'Deployment regression tests passed: activation, rollback, recovery, checksum, lock, confirmations.'

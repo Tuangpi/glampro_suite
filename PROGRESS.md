@@ -10,6 +10,19 @@
 
 ## November 9, 2026 — Ubuntu VPS CI/CD configuration
 
+- Revised for the actual Ubuntu 22.04 VPS without Docker: native application
+  archives, systemd services, host nginx, protected shared storage and root-owned
+  configuration. Branch checks now use the actual default branch `master`.
+  Removed container/GHCR deployment; the GitHub test database container is CI-only.
+  Guide: [CI/CD setup](docs/operations/CI_CD.md). No VPS/database operations.
+- The earlier Docker verification notes below describe the superseded configuration;
+  native deployment verification: shell regression tests, actionlint, nginx syntax,
+  systemd unit verification (local Node path substituted), formatting, lint,
+  typechecks, application build and 348 shared tests passed. Packaged workspace
+  links, native bcrypt loading and Prisma schema/config validation passed in an
+  isolated temporary copy. Local OS is Ubuntu 26.04, not the target 22.04: actual
+  target compatibility, systemd startup, GitHub/VPS execution and recovery remain
+  unverified. No disposable API test database or production data was touched.
 - Added GitHub CI, scanned versioned GHCR releases, manual production deploy/rollback,
   container definitions and isolated deployment-script regression tests. Setup and
   limitations: [CI/CD guide](docs/operations/CI_CD.md). No VPS or database changes.

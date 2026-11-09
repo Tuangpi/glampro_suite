@@ -1,0 +1,20 @@
+[Unit]
+Description=Glampro migration deploy for %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=glampro
+Group=glampro-code
+WorkingDirectory=/opt/glampro/releases/%i/apps/api
+EnvironmentFile=/etc/glampro/production.env
+Environment=PRISMA_HIDE_UPDATE_MESSAGE=true
+Environment=CHECKPOINT_DISABLE=1
+ExecStart=/usr/local/bin/node ../../node_modules/prisma/build/index.js migrate deploy --config prisma.config.ts
+TimeoutStartSec=300
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
