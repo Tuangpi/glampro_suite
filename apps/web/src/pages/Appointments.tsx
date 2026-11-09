@@ -59,6 +59,18 @@ const VIEW_OPTIONS = [
 
 type AppointmentView = (typeof VIEW_OPTIONS)[number]["key"];
 
+const VIEW_STORAGE_KEY = "glampro.appointments.view.v1";
+
+function savedAppointmentView(): AppointmentView {
+  try {
+    const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+    return VIEW_OPTIONS.find((option) => option.key === saved)?.key ?? "list";
+  } catch {
+    // Browser storage can be unavailable; the calendar must still work.
+    return "list";
+  }
+}
+
 /** Whether the list is showing the salon's own day. */
 function isToday(day: Date, timeZone: string): boolean {
   return (
@@ -147,7 +159,16 @@ export default function Appointments() {
   // the anchor day, the week the seven days that hold it, the month the calendar month.
   // `day` stays the anchor all four share, so switching view never moves the desk
   // somewhere it did not ask to be.
-  const [view, setView] = useState<AppointmentView>("list");
+  const [view, setView] = useState<AppointmentView>(savedAppointmentView);
+
+  function selectView(nextView: AppointmentView) {
+    setView(nextView);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, nextView);
+    } catch {
+      // Keep switching views usable even when the browser cannot save preferences.
+    }
+  }
 
   // Booking defaults come from `bookingStart(day)` at the moment the drawer opens
   // — see that function; there is no effect writing into state for it.
@@ -382,7 +403,7 @@ export default function Appointments() {
                 key={option.key}
                 type="button"
                 aria-pressed={view === option.key}
-                onClick={() => setView(option.key)}
+                onClick={() => selectView(option.key)}
                 className={cn(
                   "h-control rounded-sm px-3 text-sm font-medium transition",
                   view === option.key
