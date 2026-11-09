@@ -37,6 +37,7 @@ import { before, describe, it } from "node:test";
 
 import {
   CORE_MODULE_CODES,
+  saleListQuerySchema,
   DEFAULT_SALE_ITEM_LIMIT,
   MODULE_CODES,
   SALE_ITEM_KINDS,
@@ -46,11 +47,12 @@ import {
 
 import { SaleLineItemType } from "../../generated/prisma/enums.js";
 import { prisma } from "../lib/prisma.js";
-import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
+import { runAsPlatform, runAsTenant, runAtOutlet } from "../lib/tenant-context.js";
 import { listDirectTips, recordDirectTip, returnDirectTip } from "./direct-tip.service.js";
 import { randomUUID } from "node:crypto";
 import {
   completeSale,
+  listSales,
   createSale,
   getSale,
   previewVoucher,
@@ -2398,6 +2400,114 @@ describe(
           }),
         ),
         hasCode("HOLDING_REQUIRES_CUSTOMER"),
+      );
+    });
+  },
+);
+
+describe(
+  "sale history server filters and isolation",
+  { skip: databaseUrl ? false : "DATABASE_URL is not set" },
+  () => {
+    before(seed);
+    it("filters before pagination, excludes holds, and keeps salon and outlet scopes", async () => {
+      const customerName = `History ${randomUUID()}`;
+      const fixtures = await runAsPlatform(async () => {
+        await prisma.tenant.update({
+          where: { id: TENANT_A },
+          data: { timeZone: "Asia/Singapore" },
+        });
+        const outlet = await prisma.outlet.create({
+          data: { tenantId: TENANT_A, name: "History outlet", slug: randomUUID() },
+        });
+        const otherOutlet = await prisma.outlet.create({
+          data: { tenantId: TENANT_A, name: "Other history outlet", slug: randomUUID() },
+        });
+        const customer = await prisma.customer.create({
+          data: { tenantId: TENANT_A, name: customerName },
+        });
+        const foreign = await prisma.customer.create({
+          data: { tenantId: TENANT_B, name: customerName },
+        });
+        const rows = [];
+        for (const [index, instant] of [
+          "2026-11-08T15:59:59Z",
+          "2026-11-08T16:00:00Z",
+          "2026-11-09T15:59:59Z",
+          "2026-11-09T16:00:00Z",
+        ].entries()) {
+          rows.push(
+            await prisma.sale.create({
+              data: {
+                tenantId: TENANT_A,
+                outletId: outlet.id,
+                customerId: customer.id,
+                status: index === 2 ? "VOID" : "COMPLETED",
+                receiptNumber: 900000000 + index,
+                soldAt: new Date(instant),
+                totalQuantity: 1,
+                totalAmount: 10,
+                paidAmount: 10,
+              },
+            }),
+          );
+        }
+        for (const data of [
+          {
+            tenantId: TENANT_A,
+            customerId: customer.id,
+            outletId: outlet.id,
+            status: "HELD" as const,
+          },
+          {
+            tenantId: TENANT_A,
+            customerId: customer.id,
+            outletId: otherOutlet.id,
+            status: "COMPLETED" as const,
+          },
+          {
+            tenantId: TENANT_B,
+            customerId: foreign.id,
+            outletId: null,
+            status: "COMPLETED" as const,
+          },
+        ])
+          await prisma.sale.create({
+            data: {
+              ...data,
+              soldAt: new Date("2026-11-09T00:00:00Z"),
+              totalQuantity: 1,
+              totalAmount: 10,
+              paidAmount: 10,
+            },
+          });
+        return { outlet, rows };
+      });
+      const query = saleListQuerySchema.parse({
+        status: "HISTORY",
+        search: customerName.toLowerCase(),
+        from: "2026-11-09",
+        to: "2026-11-09",
+        limit: 1,
+      });
+      const read = (page: number) =>
+        runAsTenant(TENANT_A, () =>
+          runAtOutlet(fixtures.outlet.id, () => listSales({ ...query, page })),
+        );
+      const first = await read(1);
+      const second = await read(2);
+      assert.equal(first.items[0]?.id, fixtures.rows[2]?.id);
+      assert.equal(first.hasMore, true);
+      assert.equal(second.items[0]?.id, fixtures.rows[1]?.id);
+      assert.equal(second.hasMore, false);
+      const receipt = await runAsTenant(TENANT_A, () =>
+        runAtOutlet(fixtures.outlet.id, () =>
+          listSales(saleListQuerySchema.parse({ status: "HISTORY", search: "#900000001" })),
+        ),
+      );
+      assert.deepEqual(
+        receipt.items.map((row) => row.id),
+        [fixtures.rows[1]?.id],
       );
     });
   },

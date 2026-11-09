@@ -28,7 +28,7 @@
  *    it would only invite a second sale onto the same receipt.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 
 import {
   MAX_SALE_LINES,
@@ -60,7 +60,6 @@ import SaleCollectionsPanel from "@/components/sale/SaleCollectionsPanel";
 import RefundSaleDialog from "@/components/sale/RefundSaleDialog";
 import SaleItemGrid from "@/components/sale/SaleItemGrid";
 import SaleListPagination from "@/components/sale/SaleListPagination";
-import SaleHistoryPanel from "@/components/sale/SaleHistoryPanel";
 import VoidSaleDialog from "@/components/sale/VoidSaleDialog";
 import Button from "@/components/ui/Button";
 import Drawer from "@/components/ui/Drawer";
@@ -83,6 +82,7 @@ import {
   useRefundSale,
   useResumeHold,
   useSaleCart,
+  useSaleReceipt,
   useSaleItems,
   useVoidSale,
 } from "@/hooks/useSale";
@@ -116,7 +116,16 @@ const GRANTING_KINDS: ReadonlySet<SaleItemKind> = new Set<SaleItemKind>([
 ]);
 
 export default function Sale() {
+  const { receiptId } = useParams<{ receiptId: string }>();
+  return <SaleWorkspace key={receiptId ?? "till"} />;
+}
+
+function SaleWorkspace() {
   const [params, setParams] = useSearchParams();
+  const navigate = useNavigate();
+  const { receiptId } = useParams<{ receiptId: string }>();
+  const storedReceipt = useSaleReceipt(receiptId ?? null);
+  const historyLocation = `/sale/history${params.size ? `?${params}` : ""}`;
   const appointmentId = params.get("appointment");
   const [appointmentError, setAppointmentError] = useState<string | null>(null);
   const { isReadOnly, tenant, user } = useAuth();
@@ -147,8 +156,9 @@ export default function Sale() {
     method: "PACKAGE" | "PREPAID_CREDIT";
     holdingId: string;
   } | null>(null);
-  const [receipt, setReceipt] = useState<SaleDetail | null>(null);
-  const [historicalReceipt, setHistoricalReceipt] = useState(false);
+  const [localReceipt, setReceipt] = useState<SaleDetail | null>(null);
+  const receipt = receiptId ? (storedReceipt.data ?? null) : localReceipt;
+  const historicalReceipt = !!receiptId;
   const [heldPage, setHeldPage] = useState(1);
   const [heldOpen, setHeldOpen] = useState(false);
   const [packagesOpen, setPackagesOpen] = useState(false);
@@ -716,6 +726,24 @@ export default function Sale() {
     );
   }
 
+  if (receiptId && (!receipt || receipt.id !== receiptId)) {
+    return (
+      <section className="space-y-4">
+        <Button variant="secondary" onClick={() => navigate(historyLocation)}>
+          Back to history
+        </Button>
+        {storedReceipt.isError ? (
+          <div role="alert">
+            <p>The receipt could not be opened.</p>
+            <Button onClick={() => void storedReceipt.refetch()}>Try again</Button>
+          </div>
+        ) : (
+          <p role="status">Opening receipt…</p>
+        )}
+      </section>
+    );
+  }
+
   return (
     <div className="flex min-w-0 flex-col gap-4 pb-24 lg:pb-0">
       {!receipt ? (
@@ -748,14 +776,13 @@ export default function Sale() {
                   ? ` · ${heldCarts.data.items.length}${heldCarts.data.hasMore ? "+" : ""} on page ${heldPage}`
                   : ""}
             </Button>
-            <SaleHistoryPanel
+            <Button
+              variant="secondary"
               disabled={holdSale.isPending || busyHoldId !== null}
-              onOpen={(sale) => {
-                if (holdAction.current || holdSale.isPending) return;
-                setHistoricalReceipt(true);
-                setReceipt(sale);
-              }}
-            />
+              onClick={() => navigate("/sale/history")}
+            >
+              Browse sale history
+            </Button>
           </div>
         </div>
       )}
@@ -788,20 +815,35 @@ export default function Sale() {
       ) : null}
       {receipt ? (
         <>
+          {receiptId ? (
+            <nav aria-label="Receipt navigation" className="flex gap-2 print:hidden">
+              <Button variant="secondary" onClick={() => navigate(historyLocation)}>
+                Back to history
+              </Button>
+              <Button variant="ghost" onClick={() => navigate("/sale")}>
+                Back to sale
+              </Button>
+            </nav>
+          ) : null}
           <ReceiptView
             sale={receipt}
             historical={historicalReceipt}
             onNewSale={
               historicalReceipt
                 ? () => {
+                    if (receiptId) {
+                      navigate(historyLocation);
+                      return;
+                    }
                     setReceipt(null);
-                    setHistoricalReceipt(false);
                     setVoidOpen(false);
                     setRefundOpen(false);
                   }
                 : startNewSale
             }
-            returnLabel={historicalReceipt ? "Back to cart" : "New sale"}
+            returnLabel={
+              receiptId ? "Back to history" : historicalReceipt ? "Back to cart" : "New sale"
+            }
             customerEmail={historicalReceipt ? null : (customer?.email ?? null)}
             canVoid={canVoid && !isReadOnly}
             onVoid={() => {
@@ -815,13 +857,21 @@ export default function Sale() {
             }}
           />
 
-          <SaleCollectionsPanel sale={receipt} />
-          <DirectTipsPanel
-            key={`${tenant?.id}:${receipt.id}`}
-            sale={receipt}
-            staff={staffRows}
-            canReturn={canRefund}
-          />
+          <section
+            aria-label="Additional actions"
+            className="min-w-0 rounded-card border border-line bg-surface px-4 print:hidden"
+          >
+            <SaleCollectionsPanel sale={receipt} />
+            <DirectTipsPanel
+              key={`${tenant?.id}:${receipt.id}`}
+              sale={receipt}
+              staff={staffRows}
+              staffLoading={staff.isPending}
+              staffError={staff.isError}
+              onRetryStaff={() => void staff.refetch()}
+              canReturn={canRefund}
+            />
+          </section>
 
           {voidOpen ? (
             <VoidSaleDialog

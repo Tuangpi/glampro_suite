@@ -2,6 +2,8 @@ import {
   recordPayrollLifecyclePosting,
   verifyPayrollLifecycleRetry,
 } from "./payroll-lifecycle-posting.js";
+import { salonTimeZone } from "../lib/salon-clock.js";
+import { salonDayBounds } from "../lib/wall-clock.js";
 import {
   payrollSessionCreditFunding,
   payrollSessionInstalmentFunding,
@@ -2231,6 +2233,7 @@ type SaleTransaction = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 
 /** The receipt's own columns, plus the names a printed receipt shows. */
 const SALE_SELECT = {
+  outlet: { select: { name: true, address: true, phone: true } },
   collectionCurrency: true,
   id: true,
   outletId: true,
@@ -2305,6 +2308,7 @@ const SALE_SELECT = {
 /** Serialises a sale row into the contract, parsing so a forgotten column throws. */
 function toSaleDetail(row: Prisma.SaleGetPayload<{ select: typeof SALE_SELECT }>): SaleDetail {
   return saleDetailSchema.parse({
+    receiptOutlet: row.outlet ?? null,
     id: row.id,
     outletId: row.outletId,
     receiptNumber: row.receiptNumber,
@@ -2591,8 +2595,35 @@ export async function resumeSale(saleId: string): Promise<ResumeSale> {
  */
 export async function listSales(query: SaleListQuery): Promise<SaleList> {
   const page = query.page ?? 1;
+  const term = query.search?.trim();
+  const receiptTerm = term?.replace(/^#/, "");
+  const receiptNumber = receiptTerm && /^\d+$/.test(receiptTerm) ? Number(receiptTerm) : null;
+  const timeZone = query.from || query.to ? await salonTimeZone() : null;
+  const where: Prisma.SaleWhereInput = {
+    status: query.status === "HISTORY" ? { in: ["COMPLETED", "VOID"] } : query.status,
+    ...(term
+      ? {
+          OR: [
+            { customer: { name: { contains: term, mode: "insensitive" } } },
+            ...(receiptNumber !== null &&
+            Number.isSafeInteger(receiptNumber) &&
+            receiptNumber <= MAX_RECEIPT_NUMBER
+              ? [{ receiptNumber }]
+              : []),
+          ],
+        }
+      : {}),
+    ...(timeZone
+      ? {
+          soldAt: {
+            ...(query.from ? { gte: salonDayBounds(query.from, timeZone).from } : {}),
+            ...(query.to ? { lt: salonDayBounds(query.to, timeZone).to } : {}),
+          },
+        }
+      : {}),
+  };
   const rows = await prisma.sale.findMany({
-    where: { status: query.status },
+    where,
     select: {
       id: true,
       receiptNumber: true,

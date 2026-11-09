@@ -8,6 +8,20 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 9, 2026 — full-page sale history
+
+- Replaced the history drawer with `/sale/history` and full-page receipt routes,
+  responsive results, server-side receipt/customer search, status/date filters,
+  URL pagination, and loading/error/retry/empty states. No new sidebar item.
+- Reused draft storage and existing receipt actions. Route tests cover browser
+  Back, filter/page restoration, active carts, resumed holds and read-only access.
+- Verification: shared suite 348 passed; focused web suite 117 passed across sale,
+  receipt, collections and tip tests; web/API typechecks and builds passed.
+- Added database filtering/pagination/tenant/outlet regression coverage, but its
+  execution is blocked by missing `TEST_DATABASE_URL`. No application database
+  fallback, migration or data cleanup was attempted. Authenticated visual and
+  real database acceptance remain outstanding.
+
 ## November 8, 2026 — prevent squeezed cart items
 
 - Supersedes the fixed-height workspace below: removed the sale page's desktop
@@ -287,6 +301,53 @@
 - These are historical executed results, not fresh verification for later changes.
   Scope and limitations: [report audit/delivery](docs/commission_payroll/acceptance/CP008_REPORT_AUDIT.md).
   No production activation, migration, or approved-payroll rewrite was authorized.
+
+## November 9, 2026 — receipt counter layout
+
+- Moved checkout confirmation above the receipt, promoted New sale/Back to cart,
+  clarified payment hierarchy, and placed payment first on mobile. Refund/void
+  evidence remains visible in the receipt header; management actions are collapsed.
+- Grouped post-sale records without hiding collection balances or uncertain retries.
+  Standard/thermal print layouts retain header, items, then totals. No financial
+  contracts, API behavior, dependencies, or database operations changed.
+- Full web run: **1,350 passed / 6 failed**. Receipt tests **12/12** and sale-page
+  tests **69/69** passed. Five payroll-plan failures passed on isolated rerun;
+  the untouched appointment dragging-copy test still failed (isolated **44/45**).
+- Web lint, build (including typecheck), touched-file formatting, and diff checks
+  passed. Live authenticated browser and physical printer acceptance were not
+  performed; component tests are not visual or physical-print evidence.
+
+## November 9, 2026 — compact post-sale actions
+
+- Replaced nested post-sale cards with grouped rows. Settled receipts retain the
+  authoritative balance while allocation evidence and empty history move under
+  Details. Read errors, collection-blocking currency and uncertain retries remain
+  visible; collection validation, confirmation and idempotency are unchanged.
+- Moved direct-tip entry into Add tip; reused the styled native selector with
+  alphabetical names and explicit staff loading/error/empty states. No automatic
+  recipient choice or new staff-search dependency. Tip returns remain in history.
+- Focused collection, tip, receipt and sale suites: **112/112 passed**. Web build
+  (including typecheck), lint, touched-file formatting and diff checks passed.
+  Full web suite and live browser visual acceptance were not rerun for this slice.
+  No database operations or changes to financial contracts were performed.
+
+## November 9, 2026 — common company receipt
+
+- Print, shared links and HTML email now use one customer-safe shared template and
+  stylesheet, with company branding and sale-outlet contact information. Private
+  sale notes/attribution are excluded. POS controls stay outside the document.
+- Added optional receiptOutlet contact data from the existing sale relation; no
+  schema migration. Saved GST registration is authoritative on every surface;
+  email no longer invents a missing historical number from current settings.
+- Headless Chrome fixtures retained 45 long lines at 720/302/219 px without
+  horizontal overflow. This is layout-fixture evidence, not authenticated browser,
+  email-client, secure-link HTTP or physical-printer acceptance.
+- Shared suite **344/344**, sale page **69/69**, final receipt suite **13/13**, and
+  pure API email renderer **6/6** passed. Shared build, API typecheck, web production
+  build/typecheck, workspace lint, formatting and diff checks passed. Pure email
+  tests used an unused isolated test URL, with no database reads or writes.
+- No application database operations, deployment, payment or ledger changes were
+  performed. Secure-link HTTP/database integration was not exercised in this slice.
 
 ## Earlier history
 

@@ -515,11 +515,19 @@ export type CompleteSaleInput = z.infer<typeof completeSaleSchema>;
  * second one. Pages use a stable soldAt/id ordering; concurrent writes may move rows
  * between pages, so this is live browsing rather than a frozen export.
  */
-export const saleListQuerySchema = z.object({
-  status: saleStatusSchema.default("HELD"),
-  limit: z.coerce.number().int().min(1).max(MAX_SALE_LIST).default(MAX_SALE_LIST),
-  page: z.coerce.number().int().min(1).max(1000000).optional(),
-});
+export const saleListQuerySchema = z
+  .object({
+    status: z.union([saleStatusSchema, z.literal("HISTORY")]).default("HELD"),
+    search: z.string().trim().max(100).optional(),
+    from: z.iso.date().optional(),
+    to: z.iso.date().optional(),
+    limit: z.coerce.number().int().min(1).max(MAX_SALE_LIST).default(MAX_SALE_LIST),
+    page: z.coerce.number().int().min(1).max(1000000).optional(),
+  })
+  .refine((query) => !query.from || !query.to || query.from <= query.to, {
+    message: "End date must be on or after start date.",
+    path: ["to"],
+  });
 
 export type SaleListQuery = z.infer<typeof saleListQuerySchema>;
 
@@ -631,6 +639,11 @@ export type SalePayment = z.infer<typeof salePaymentSchema>;
  * totalAmount`), and a client that subtracts two strings gets a float.
  */
 export const saleDetailSchema = z.object({
+  /** Current public contact details of this sale's outlet, never the active till outlet. */
+  receiptOutlet: z
+    .object({ name: z.string(), address: z.string().nullable(), phone: z.string().nullable() })
+    .nullable()
+    .optional(),
   collectionCurrency: z.literal("SGD").nullable().optional(),
   outletId: z.string().nullable().optional(),
   id: z.string(),

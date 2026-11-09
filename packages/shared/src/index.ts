@@ -5,6 +5,7 @@
  * file layout can change without touching every call site.
  */
 export * from "./constants.js";
+export * from "./customer-receipt.js";
 export * from "./package-allocation.js";
 export * from "./commission-payroll/index.js";
 export * from "./schemas/payroll-holding.js";

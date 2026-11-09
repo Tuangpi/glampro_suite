@@ -27,7 +27,16 @@ const tip = {
   returnedByName: null,
   returnReason: null,
 };
-function mount(options: { canReturn?: boolean; sale?: SaleDetail } = {}) {
+function mount(
+  options: {
+    canReturn?: boolean;
+    sale?: SaleDetail;
+    staff?: { id: string; name: string }[];
+    staffLoading?: boolean;
+    staffError?: boolean;
+    onRetryStaff?: () => void;
+  } = {},
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -35,7 +44,10 @@ function mount(options: { canReturn?: boolean; sale?: SaleDetail } = {}) {
     <QueryClientProvider client={client}>
       <DirectTipsPanel
         sale={options.sale ?? sale}
-        staff={[{ id: "staff-1", name: "Stylist" }]}
+        staff={options.staff ?? [{ id: "staff-1", name: "Stylist" }]}
+        staffLoading={options.staffLoading}
+        staffError={options.staffError}
+        onRetryStaff={options.onRetryStaff}
         canReturn={options.canReturn ?? false}
       />
     </QueryClientProvider>,
@@ -49,15 +61,57 @@ beforeEach(() => {
 });
 
 describe("direct staff tip recording", () => {
-  it("keeps a record summary visible while tip details start collapsed", async () => {
+  it("opens an empty, alphabetically sorted recipient selector and restores focus on cancel", async () => {
+    const user = userEvent.setup();
+    mount({
+      staff: [
+        { id: "z", name: "Zoe" },
+        { id: "a", name: "Amara" },
+      ],
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add tip" })).toBeEnabled());
+    const add = screen.getByRole("button", { name: "Add tip" });
+    expect(screen.queryByLabelText("Tip recipient")).not.toBeInTheDocument();
+    await user.click(add);
+    const select = screen.getByLabelText("Tip recipient");
+    expect(select).toHaveValue("");
+    expect(Array.from((select as HTMLSelectElement).options).map((option) => option.text)).toEqual([
+      "Select staff member",
+      "Amara",
+      "Zoe",
+    ]);
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(add).toHaveFocus();
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { staffLoading: true, message: "Loading staff…" },
+    { staffError: true, message: "Could not load staff. Try again before recording a tip." },
+    { message: "No staff available to receive a tip." },
+  ])("blocks tip recording when staff is unavailable: $message", async (state) => {
+    const user = userEvent.setup();
+    const retry = vi.fn();
+    mount({ staff: [], ...state, onRetryStaff: retry });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Add tip" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Add tip" }));
+    expect(screen.getByText(state.message)).toBeVisible();
+    expect(screen.getByLabelText("Tip recipient")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Record direct-to-staff tip" })).toBeDisabled();
+    if ("staffError" in state) {
+      await user.click(screen.getByRole("button", { name: "Retry staff" }));
+      expect(retry).toHaveBeenCalledOnce();
+    }
+  });
+
+  it("shows recorded tip history without opening the add-tip form", async () => {
     get.mockResolvedValue({ items: [tip] });
     mount();
     expect(
       await screen.findByText("1 tip record · Separate from sale payments"),
     ).toBeInTheDocument();
-    expect(screen.getByText("View or record direct tips").closest("details")).not.toHaveAttribute(
-      "open",
-    );
+    expect(screen.getByText("View tips").closest("details")).toHaveAttribute("open");
   });
 
   it("shows loading failures without requiring the details to be opened", async () => {
@@ -71,7 +125,7 @@ describe("direct staff tip recording", () => {
     post.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce({ items: [tip] });
     const user = userEvent.setup();
     mount();
-    await user.click(screen.getByText("View or record direct tips"));
+    await user.click(screen.getByRole("button", { name: "Add tip" }));
     await user.selectOptions(screen.getByLabelText("Tip recipient"), "staff-1");
     await user.type(screen.getByLabelText("Direct tip amount"), "2.50");
     await user.click(screen.getByRole("button", { name: "Record direct-to-staff tip" }));
@@ -82,7 +136,7 @@ describe("direct staff tip recording", () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(2));
     expect(post.mock.calls[1]![1]).toEqual(first);
     expect(await screen.findByText(/recorded by Cashier/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Direct tip amount")).toHaveValue(null);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("allows managers to record a separate full return even after the sale is voided", async () => {
@@ -99,7 +153,6 @@ describe("direct staff tip recording", () => {
     });
     const user = userEvent.setup();
     mount({ canReturn: true, sale: { ...sale, status: "VOID" } });
-    await user.click(screen.getByText("View or record direct tips"));
     await user.type(await screen.findByLabelText("Tip return reason"), "Returned directly");
     await user.click(screen.getByRole("button", { name: /Record full tip return/ }));
     await waitFor(() =>
@@ -117,7 +170,6 @@ describe("direct staff tip recording", () => {
     state.readOnly = true;
     get.mockResolvedValue({ items: [tip] });
     mount({ canReturn: true });
-    await userEvent.setup().click(screen.getByText("View or record direct tips"));
     expect(await screen.findByText(/recorded by Cashier/)).toBeInTheDocument();
     expect(screen.queryByLabelText("Direct tip amount")).not.toBeInTheDocument();
     expect(
@@ -128,7 +180,7 @@ describe("direct staff tip recording", () => {
   it("rejects fractional cents before posting", async () => {
     const user = userEvent.setup();
     mount();
-    await user.click(screen.getByText("View or record direct tips"));
+    await user.click(screen.getByRole("button", { name: "Add tip" }));
     await user.selectOptions(screen.getByLabelText("Tip recipient"), "staff-1");
     await user.type(screen.getByLabelText("Direct tip amount"), "0.001");
     await user.click(screen.getByRole("button", { name: "Record direct-to-staff tip" }));

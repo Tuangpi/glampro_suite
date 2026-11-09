@@ -7,9 +7,7 @@
  *
  * - A sale that **snapshotted** a number keeps it, even after the salon changes its
  *   settings — the copy must agree with the paper that was handed over.
- * - A sale written **before** the column existed falls back to the salon's current
- *   number, but only when it actually carried tax: a number beside a zero-tax sale would
- *   claim a tax invoice that was never issued.
+ * - Missing historical GST numbers stay absent, matching print and public links.
  *
  * `buildReceiptEmail` is exported for exactly this; no database is queried, but the
  * import chain reaches `env`, so the two required variables are defaulted the way the
@@ -110,7 +108,8 @@ describe("the emailed receipt", () => {
     assert.match(email.text, /Voucher SAVE10: −S\$5\.00/);
     assert.match(email.text, /REFUND RECORDED: S\$45\.00/);
     assert.match(email.html, /Voucher SAVE10/);
-    assert.match(email.html, /REFUND RECORDED: S\$45\.00/);
+    assert.match(email.html, /Refund recorded/);
+    assert.match(email.html, /S\$45\.00/);
     assert.match(email.html, /Returned &lt;goods&gt;/);
   });
   it("prints the sale's own GST number, not the salon's current one", () => {
@@ -118,15 +117,15 @@ describe("the emailed receipt", () => {
 
     assert.match(email.text, /GST Reg No: GST-200012345/);
     assert.doesNotMatch(email.text, /GST-NEW-999/);
-    assert.match(email.html, /GST Reg No: GST-200012345/);
+    assert.match(email.html, /GST registration no.: GST-200012345/);
     assert.doesNotMatch(email.html, /GST-NEW-999/);
   });
 
-  it("falls back to the salon's number for a pre-snapshot sale that carried tax", () => {
+  it("does not invent a missing historical GST registration number", () => {
     const email = buildReceiptEmail(sale({ gstRegistrationNumber: null }), SALON);
 
-    assert.match(email.text, /GST Reg No: GST-NEW-999/);
-    assert.match(email.html, /GST Reg No: GST-NEW-999/);
+    assert.doesNotMatch(email.text, /GST-NEW-999/);
+    assert.doesNotMatch(email.html, /GST-NEW-999/);
   });
 
   it("prints no number at all when the sale carried no tax", () => {

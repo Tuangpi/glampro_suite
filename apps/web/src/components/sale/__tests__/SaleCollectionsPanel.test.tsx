@@ -92,6 +92,19 @@ beforeEach(() => {
   post.mockResolvedValue(result);
 });
 
+it("keeps a settled receipt compact while retaining historical detail on demand", async () => {
+  get.mockResolvedValue({ ...initial, currency: null, outstandingCents: "0", canCollect: false });
+  const user = userEvent.setup();
+  mount();
+  expect(await screen.findByText("No outstanding balance")).toBeVisible();
+  expect(screen.getByText(/Collection currency is unknown/)).not.toBeVisible();
+  expect(screen.getByText(/Explicit allocations are evidence only/)).not.toBeVisible();
+  expect(screen.getByText("Details").closest("details")).not.toHaveAttribute("open");
+  await user.click(screen.getByText("Details"));
+  expect(screen.getByText(/Explicit allocations are evidence only/)).toBeVisible();
+  expect(screen.getByText("No later payments recorded.")).toBeVisible();
+});
+
 it("requires fresh confirmation when a refetch changes the balance", async () => {
   const user = userEvent.setup();
   const { client } = mount();
@@ -139,6 +152,7 @@ it("uses current debt, requires explicit allocations/confirmation and posts exac
   expect(await screen.findByText("Current outstanding: S$30.00")).toBeVisible();
   expect(screen.getByText(/Later payment recorded/)).toBeVisible();
   expect(screen.getByLabelText("Later payment amount (SGD)")).toHaveValue("");
+  await user.click(screen.getByText("View payments (1)"));
   expect(screen.getByText(/Instalment received/)).toBeVisible();
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["customers"] });
   expect(invalidate).toHaveBeenCalledWith({ queryKey: ["reports"] });
@@ -255,7 +269,8 @@ it.each([
 ])("does not offer recording for unknown or settled evidence", async (data) => {
   get.mockResolvedValue(data);
   mount();
-  expect(await screen.findByText(/No new collection is available/)).toBeVisible();
+  await userEvent.setup().click(await screen.findByText("Details"));
+  expect(screen.getByText(/No new collection is available/)).toBeVisible();
   expect(screen.queryByLabelText("Later payment amount (SGD)")).not.toBeInTheDocument();
 });
 
@@ -263,7 +278,8 @@ it("allows read-only history without write controls", async () => {
   auth.readOnly = true;
   get.mockResolvedValue(result);
   mount();
-  expect(await screen.findByText(/Instalment received/)).toBeVisible();
+  await userEvent.setup().click(await screen.findByText("View payments (1)"));
+  expect(screen.getByText(/Instalment received/)).toBeVisible();
   expect(screen.queryByRole("button", { name: "Record later payment" })).not.toBeInTheDocument();
 });
 

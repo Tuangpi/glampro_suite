@@ -648,3 +648,28 @@ describe("saleLineSchema", () => {
     assert.equal(saleLineSchema.safeParse(withoutRate).success, false);
   });
 });
+
+describe("sale history query", () => {
+  it("accepts combined receipt history, bounded search and inclusive date ranges", () => {
+    const query = saleListQuerySchema.parse({
+      status: "HISTORY",
+      search: "  #42 ",
+      from: "2026-11-01",
+      to: "2026-11-09",
+      page: "2",
+    });
+    assert.equal(query.search, "#42");
+    assert.equal(query.page, 2);
+    assert.equal(query.status, "HISTORY");
+  });
+  it("rejects invalid dates, reversed ranges and unbounded searches", () => {
+    for (const query of [
+      { from: "2026-02-30" },
+      { from: "2026-11-09", to: "2026-11-01" },
+      { search: "a".repeat(101) },
+    ]) {
+      assert.equal(saleListQuerySchema.safeParse(query).success, false);
+    }
+    assert.equal(saleListQuerySchema.parse({}).status, "HELD");
+  });
+});

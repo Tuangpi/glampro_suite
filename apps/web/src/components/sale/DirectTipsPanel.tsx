@@ -11,16 +11,27 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSalonFormatting } from "@/contexts/SalonFormattingContext";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
-import { CONTROL_CLASS } from "@/components/ui/Field";
+import Select from "@/components/ui/Select";
+import Modal from "@/components/ui/Modal";
 
 interface Props {
   sale: SaleDetail;
   staff: { id: string; name: string }[];
   canReturn: boolean;
+  staffLoading?: boolean;
+  staffError?: boolean;
+  onRetryStaff?: () => void;
 }
 
 /** Separate from receipts/tenders: evidence of money the salon did not collect. */
-export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
+export default function DirectTipsPanel({
+  sale,
+  staff,
+  canReturn,
+  staffLoading = false,
+  staffError = false,
+  onRetryStaff,
+}: Props) {
   const { tenant, isReadOnly } = useAuth();
   const { formatPrice, formatDateTime } = useSalonFormatting();
   const client = useQueryClient();
@@ -29,6 +40,7 @@ export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
     queryKey,
     queryFn: () => get<DirectTipList>(`/sales/${sale.id}/direct-tips`),
   });
+  const [addOpen, setAddOpen] = useState(false);
   const [staffId, setStaffId] = useState("");
   const [amount, setAmount] = useState("");
   const [reason, setReason] = useState("");
@@ -48,6 +60,8 @@ export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
         /* Storage may be disabled. */
       }
       setAmount("");
+      setStaffId("");
+      setAddOpen(false);
       setError(null);
     },
     onError: (cause) => setError(getErrorMessage(cause)),
@@ -109,11 +123,19 @@ export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
     save.mutate(input.data);
   }
   return (
-    <section
-      aria-label="Direct-to-staff tips"
-      className="flex flex-col gap-3 rounded-card border border-line bg-surface p-4"
-    >
-      <h3 className="text-base font-bold">Direct-to-staff tips</h3>
+    <section aria-label="Direct-to-staff tips" className="flex flex-col gap-2 py-4 print:hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-base font-bold">Direct staff tips</h3>
+        {eligible ? (
+          <Button
+            variant="secondary"
+            disabled={tips.isPending || tips.isError}
+            onClick={() => setAddOpen(true)}
+          >
+            Add tip
+          </Button>
+        ) : null}
+      </div>
       {tips.data ? (
         <p className="text-sm text-ink-muted">
           {tips.data.items.length} tip {tips.data.items.length === 1 ? "record" : "records"} ·
@@ -129,9 +151,9 @@ export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
           </Button>
         </div>
       ) : null}
-      <details>
+      <details open={!!tips.data?.items.length || !!error}>
         <summary className="min-h-control cursor-pointer content-center text-sm font-bold text-purple">
-          View or record direct tips
+          View tips
         </summary>
         <div className="mt-3 flex flex-col gap-3">
           <p className="text-sm text-ink-muted">
@@ -176,46 +198,82 @@ export default function DirectTipsPanel({ sale, staff, canReturn }: Props) {
               hint="Only record after the staff member has returned the full tip outside the till. Original tip history is retained."
             />
           ) : null}
-          {eligible ? (
-            <div className="flex flex-col gap-3">
-              <label className="text-sm">
-                Tip recipient
-                <select
-                  aria-label="Tip recipient"
-                  className={CONTROL_CLASS}
-                  value={staffId}
-                  disabled={busy}
-                  onChange={(event) => setStaffId(event.target.value)}
-                >
-                  <option value="">Choose staff</option>
-                  {staff.map((person) => (
-                    <option key={person.id} value={person.id}>
-                      {person.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <Input
-                label="Direct tip amount"
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="0.00"
-                value={amount}
-                disabled={busy}
-                onChange={(event) => setAmount(event.target.value)}
-              />
-              <Button
-                disabled={busy || tips.isPending || tips.isError || !staffId || !amount}
-                onClick={record}
-              >
-                Record direct-to-staff tip
-              </Button>
-            </div>
-          ) : null}
-          {error ? <p role="alert">{error}</p> : null}
+
+          {error && !addOpen ? <p role="alert">{error}</p> : null}
         </div>
       </details>
+      <Modal
+        open={addOpen && eligible}
+        onClose={() => {
+          if (!busy) setAddOpen(false);
+        }}
+        title="Add direct staff tip"
+        description="Record a voluntary tip already paid directly to staff, not collected by the salon. This does not take payment or transfer money."
+      >
+        {eligible ? (
+          <div className="flex flex-col gap-3">
+            {staffLoading ? <p role="status">Loading staff…</p> : null}
+            {staffError ? (
+              <div role="alert">
+                <p>Could not load staff. Try again before recording a tip.</p>
+                {onRetryStaff ? (
+                  <Button variant="secondary" onClick={onRetryStaff}>
+                    Retry staff
+                  </Button>
+                ) : null}
+              </div>
+            ) : !staffLoading && !staff.length ? (
+              <p role="status">No staff available to receive a tip.</p>
+            ) : null}
+            <Select
+              label="Tip recipient"
+              placeholder="Select staff member"
+              options={[...staff]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((person) => ({ value: person.id, label: person.name }))}
+              value={staffId}
+              disabled={busy || staffLoading || staffError || !staff.length}
+              onChange={(event) => setStaffId(event.target.value)}
+            />
+            <Input
+              label="Direct tip amount"
+              type="number"
+              min="0.01"
+              step="0.01"
+              placeholder="0.00"
+              value={amount}
+              disabled={busy}
+              onChange={(event) => setAmount(event.target.value)}
+            />
+            <Button
+              disabled={
+                busy ||
+                tips.isPending ||
+                tips.isError ||
+                staffLoading ||
+                staffError ||
+                !staff.some((person) => person.id === staffId) ||
+                !amount
+              }
+              onClick={record}
+            >
+              Record direct-to-staff tip
+            </Button>
+          </div>
+        ) : null}
+        <p className="mt-3 text-sm text-ink-muted">
+          Tips are separate from sale payments, revenue, points and commission. A sale void or
+          refund does not return a tip.
+        </p>
+        {error ? (
+          <p role="alert" className="mt-3 text-sm text-danger">
+            {error}
+          </p>
+        ) : null}
+        <Button variant="ghost" className="mt-3" disabled={busy} onClick={() => setAddOpen(false)}>
+          Cancel
+        </Button>
+      </Modal>
     </section>
   );
 }

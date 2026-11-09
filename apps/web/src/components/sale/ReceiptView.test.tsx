@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { SaleDetail } from "@glampro_suite/shared";
+import { renderCustomerReceipt } from "@glampro_suite/shared";
 import ReceiptView from "./ReceiptView";
 
 vi.mock("@/components/ui/SecureLinkActions", () => ({
@@ -82,11 +83,92 @@ function draw(overrides: Partial<SaleDetail> = {}, historical = false) {
 }
 
 describe("receipt paper layouts", () => {
+  it("uses the common customer document and restores the app title after leaving", () => {
+    document.title = "Glampro Suite";
+    const { container, unmount } = draw({
+      receiptOutlet: { name: "Original outlet", address: "10 Main Street", phone: "12345678" },
+    });
+    const root = container.querySelector(".receipt-print-root")!;
+    const expected = document.createElement("div");
+    expected.innerHTML = renderCustomerReceipt(
+      {
+        ...sale,
+        receiptOutlet: { name: "Original outlet", address: "10 Main Street", phone: "12345678" },
+      },
+      { name: "", logoUrl: null, locale: "en-SG", timeZone: "Asia/Singapore" },
+    );
+    expect(root.innerHTML).toBe(expected.innerHTML);
+    expect(root).toHaveTextContent("10 Main Street");
+    expect(root).not.toHaveTextContent("Glampro Suite");
+    expect(root).not.toHaveTextContent("Customer note");
+    expect(document.title).toBe("Receipt #1042");
+    unmount();
+    expect(document.title).toBe("Glampro Suite");
+  });
+  it("puts checkout confirmation before the receipt and makes the next sale the primary action", async () => {
+    const user = userEvent.setup();
+    const onNewSale = vi.fn();
+    const { container } = render(
+      <ReceiptView
+        sale={sale}
+        customerEmail={null}
+        canVoid={false}
+        canRefund={false}
+        onVoid={vi.fn()}
+        onRefund={vi.fn()}
+        onNewSale={onNewSale}
+      />,
+    );
+    const confirmation = screen.getByText("Sale completed");
+    const root = container.querySelector(".receipt-print-root")!;
+    expect(
+      confirmation.compareDocumentPosition(root) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(root).not.toContainElement(confirmation);
+    const next = screen.getByRole("button", { name: "New sale" });
+    expect(next).toHaveClass("bg-purple");
+    await user.click(next);
+    expect(onNewSale).toHaveBeenCalledOnce();
+    expect(screen.getByRole("region", { name: "Receipt actions" })).toBeInTheDocument();
+  });
+
+  it("keeps items before totals in the shared customer document", () => {
+    const { container } = draw();
+    const payment = container.querySelector(".receipt-payment")!;
+    const items = container.querySelector(".receipt-items")!;
+    expect(items.compareDocumentPosition(payment) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("keeps management actions collapsed until requested without changing their callbacks", async () => {
+    const user = userEvent.setup();
+    const onVoid = vi.fn();
+    const onRefund = vi.fn();
+    render(
+      <ReceiptView
+        sale={sale}
+        customerEmail={null}
+        canVoid
+        canRefund
+        onVoid={onVoid}
+        onRefund={onRefund}
+        onNewSale={vi.fn()}
+      />,
+    );
+    const management = screen.getByText("Sale management");
+    expect(management.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByRole("button", { name: "Refund sale" })).not.toBeVisible();
+    await user.click(management);
+    expect(management.closest("details")).toHaveAttribute("open");
+    await user.click(screen.getByRole("button", { name: "Refund sale" }));
+    await user.click(screen.getByRole("button", { name: "Void sale" }));
+    expect(onRefund).toHaveBeenCalledOnce();
+    expect(onVoid).toHaveBeenCalledOnce();
+  });
+
   it("shows stored receipt context without announcing a new sale", () => {
     const { container } = draw({}, true);
     expect(screen.getByRole("heading", { name: "Receipt #1042" })).toBeInTheDocument();
     expect(screen.getByText("Paid")).toBeInTheDocument();
-    expect(screen.getByText("Completed")).toBeInTheDocument();
     expect(screen.queryByText(/Sale rung up as/)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to cart" })).toBeInTheDocument();
     expect(screen.getByText("Printer settings").closest("details")).not.toHaveAttribute("open");
@@ -95,10 +177,15 @@ describe("receipt paper layouts", () => {
 
   it("distinguishes outstanding payment from a completed transaction", () => {
     draw({ paidAmount: "30.00", outstandingAmount: "50.00", paymentStatus: "UNPAID" }, true);
-    expect(screen.getByText("Completed")).toBeInTheDocument();
     expect(screen.getByText("Outstanding balance")).toBeInTheDocument();
     expect(screen.queryByText("Paid")).not.toBeInTheDocument();
     expect(screen.getByText("Outstanding")).toBeInTheDocument();
+  });
+
+  it("does not imply that an outstanding checkout has been paid in full", () => {
+    draw({ paidAmount: "30.00", outstandingAmount: "50.00", paymentStatus: "UNPAID" });
+    expect(screen.getByRole("status")).toHaveTextContent("An outstanding balance remains");
+    expect(screen.queryByText("Paid")).not.toBeInTheDocument();
   });
 
   it("does not show a new-sale success banner for a refund", () => {
@@ -136,8 +223,10 @@ describe("receipt paper layouts", () => {
     expect(screen.getByText(sale.lines[0]!.itemName)).toHaveClass("receipt-item-name");
     expect(screen.getByText("Includes GST (9%)")).toBeInTheDocument();
     expect(screen.getByText("Voucher WELCOME")).toBeInTheDocument();
-    expect(screen.getByText("Cash S$30.00")).toBeInTheDocument();
-    expect(screen.getByText("NETS S$50.00")).toBeInTheDocument();
+    expect(screen.getByText("Cash")).toBeInTheDocument();
+    expect(screen.getByText("S$30.00")).toBeInTheDocument();
+    expect(screen.getByText("NETS")).toBeInTheDocument();
+    expect(screen.getByText("S$50.00")).toBeInTheDocument();
   });
 
   it("prints the selected layout through the browser and keeps controls outside printed content", async () => {

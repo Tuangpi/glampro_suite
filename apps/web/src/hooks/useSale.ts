@@ -38,6 +38,7 @@ import {
   type SaleItemSearchResult,
   type SaleLineInput,
   type SaleList,
+  type SaleListQuery,
   type SaleReceiptEmailResult,
   type VoucherPreview,
   type VoucherPreviewInput,
@@ -531,11 +532,24 @@ export function useHeldSales(page = 1) {
   });
 }
 
-export function useSaleHistory(status: "COMPLETED" | "VOID", page: number, enabled: boolean) {
+export function useSaleHistory(
+  status: "COMPLETED" | "VOID" | "HISTORY",
+  page: number,
+  enabled: boolean,
+  filters: Pick<SaleListQuery, "search" | "from" | "to"> = {},
+) {
   return useQuery({
-    queryKey: [...queryKeys.sale.history(), { status, page }],
-    queryFn: () => get<SaleList>("/sales", { status, page }),
+    queryKey: [...queryKeys.sale.history(), { status, page, ...filters }],
+    queryFn: () => get<SaleList>("/sales", { status, page, ...filters }),
     enabled,
+  });
+}
+
+export function useSaleReceipt(id: string | null) {
+  return useQuery({
+    queryKey: queryKeys.sale.detail(id ?? ""),
+    queryFn: () => get<SaleDetail>(`/sales/${id}`),
+    enabled: id !== null,
   });
 }
 

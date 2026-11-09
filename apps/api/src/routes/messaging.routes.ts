@@ -1,6 +1,7 @@
 import { Router, type RequestHandler } from "express";
 import rateLimit from "express-rate-limit";
 import {
+  renderCustomerReceiptPage,
   messagingSettingsSchema,
   channelConsentSchema,
   sendReceiptMessageSchema,
@@ -182,14 +183,6 @@ const escape = (value: unknown) =>
   );
 
 /** Up to two initials — the same fallback the web app's `SalonMark` draws. */
-const initialsOf = (name: string) =>
-  name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]!.toUpperCase())
-    .join("") || "S";
-
 /**
  * The stylesheet every public page shares.
  *
@@ -270,45 +263,7 @@ publicMessagingRouter.get(
         );
       }
       const { sale, salon } = await publicReceipt(link.targetId);
-      // Explicit allowlist: no internal notes, contacts, tender references or customer history.
-      const money = (v: string) =>
-        new Intl.NumberFormat(salon.locale, { style: "currency", currency: "SGD" }).format(
-          Number(v),
-        );
-      // Only a sale that carried tax is a tax invoice, so the number travels with it.
-      const gst = Number(sale.taxAmount) > 0 ? sale.gstRegistrationNumber : null;
-      const row = (label: string, value: string) =>
-        `<tr><td>${escape(label)}</td><td>${escape(value)}</td></tr>`;
-      const totalRow = (label: string, value: string) =>
-        `<tr class="total"><td>${escape(label)}</td><td>${escape(value)}</td></tr>`;
-      // The mark is the salon's own image when it has one, and its initials otherwise.
-      const mark = salon.logoUrl
-        ? `<img class="mark" src="${escape(salon.logoUrl)}" alt="${escape(salon.name)}" width="32" height="32">`
-        : `<span class="mark initials" aria-hidden="true">${escape(initialsOf(salon.name))}</span>`;
-      const when = new Intl.DateTimeFormat(salon.locale, {
-        timeZone: salon.timeZone,
-        dateStyle: "medium",
-        timeStyle: "short",
-      }).format(new Date(sale.soldAt));
-      return page(
-        `${salon.name} — Receipt #${sale.receiptNumber ?? ""}`,
-        `${sale.status === "VOID" ? "<p><strong>VOIDED RECEIPT</strong></p>" : ""}${sale.refundedAt ? "<p><strong>REFUND RECORDED</strong></p>" : ""}<p class="salon">${escape(when)}${gst ? ` · GST Reg No: ${escape(gst)}` : ""}</p><ul>${sale.lines.map((l) => `<li>${l.quantity} × ${escape(l.itemName)} — ${escape(money(l.netLineTotal))}</li>`).join("")}</ul><table>${[
-          Number(sale.discountAmount) > 0 ? row("Discount", money(sale.discountAmount)) : "",
-          Number(sale.voucherDiscountAmount) > 0
-            ? row("Voucher discount", money(sale.voucherDiscountAmount))
-            : "",
-          Number(sale.taxAmount) > 0
-            ? row(`Includes GST (${Number(sale.taxRate)}%)`, money(sale.taxAmount))
-            : "",
-          totalRow("Total", money(sale.totalAmount)),
-          row("Paid", money(sale.paidAmount)),
-          Number(sale.outstandingAmount) > 0
-            ? totalRow("Outstanding", money(sale.outstandingAmount))
-            : "",
-          sale.refundAmount ? row("Refund", money(sale.refundAmount)) : "",
-        ].join("")}</table>`,
-        mark,
-      );
+      return renderCustomerReceiptPage(sale, salon);
     });
     res.type("html").send(html);
   }),

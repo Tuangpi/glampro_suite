@@ -20,10 +20,12 @@
  * as it does in the browser, and the idempotency key is the one that will ship.
  */
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { MemoryRouter } from "react-router";
+import { MemoryRouter, Routes, Route, useNavigate } from "react-router";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import SaleHistory from "@/pages/SaleHistory";
 
 import type { SaleDetail, SaleItemKind, SaleSummary } from "@glampro_suite/shared";
 
@@ -207,7 +209,11 @@ function renderSale(
   return render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[entry]}>
-        <Sale />
+        <Routes>
+          <Route path="/sale" element={<Sale />} />
+          <Route path="/sale/history" element={<SaleHistory />} />
+          <Route path="/sale/history/:receiptId" element={<Sale />} />
+        </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -1549,13 +1555,19 @@ describe("historical sale browsing", () => {
       expect.objectContaining({ status: "COMPLETED" }),
     );
     await user.click(screen.getByRole("button", { name: "Browse sale history" }));
-    await screen.findByText(/Historical customer/);
-    const panel = screen.getByRole("region", { name: "Sale history results" });
+    await screen.findByRole("link", { name: "Open receipt" });
+    const panel = screen.getByLabelText("Sale list pages");
     await user.click(within(panel).getByRole("button", { name: "Next" }));
-    await screen.findByText(/Older sale/);
-    expect(within(panel).getByRole("button", { name: "Next" })).toBeDisabled();
+    await screen.findByRole("link", { name: "Open receipt" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Next" })).toBeDisabled());
     await user.selectOptions(screen.getByRole("combobox", { name: "Sale status" }), "VOID");
-    await waitFor(() => expect(get).toHaveBeenCalledWith("/sales", { status: "VOID", page: 1 }));
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith(
+        "/sales",
+        expect.objectContaining({ status: "VOID", page: 1 }),
+      ),
+    );
   });
 
   it("preserves a resumed hold, its customer and lines when returning from a receipt", async () => {
@@ -1566,11 +1578,11 @@ describe("historical sale browsing", () => {
     await user.click(await screen.findByRole("button", { name: "Pick up" }));
     await screen.findByText(/Ringing up the/);
     await user.click(screen.getByRole("button", { name: "Browse sale history" }));
-    await user.click(await screen.findByRole("button", { name: "Open receipt #1042" }));
-    await screen.findByRole("button", { name: "Back to cart" });
+    await user.click(await screen.findByRole("link", { name: "Open receipt" }));
+    await screen.findByRole("button", { name: "Back to sale" });
     expect(screen.getByRole("button", { name: "Void sale" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Refund sale" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Back to cart" }));
+    await user.click(screen.getByRole("button", { name: "Back to sale" }));
     expect(screen.getByText(/Ringing up the/)).toBeInTheDocument();
     expect(screen.getByText("1 item")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Take payment" }));
@@ -1597,8 +1609,8 @@ describe("historical sale browsing", () => {
       const user = userEvent.setup();
       renderSale();
       await user.click(screen.getByRole("button", { name: "Browse sale history" }));
-      await user.click(await screen.findByRole("button", { name: "Open receipt #1042" }));
-      await screen.findByRole("button", { name: "Back to cart" });
+      await user.click(await screen.findByRole("link", { name: "Open receipt" }));
+      await screen.findByRole("button", { name: "Back to sale" });
       expect(screen.queryByRole("button", { name: "Void sale" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Refund sale" })).not.toBeInTheDocument();
     },
@@ -1614,8 +1626,10 @@ describe("historical sale browsing", () => {
     renderSale();
     await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
     await user.click(screen.getByRole("button", { name: "Browse sale history" }));
-    await user.click(await screen.findByRole("button", { name: "Open receipt #1042" }));
+    await user.click(await screen.findByRole("link", { name: "Open receipt" }));
     await screen.findByRole("alert");
+    await user.click(screen.getByRole("button", { name: "Back to history" }));
+    await user.click(screen.getByRole("link", { name: "Back to sale" }));
     expect(screen.getByText("1 item")).toBeInTheDocument();
     expect(post).not.toHaveBeenCalled();
   });
@@ -1735,9 +1749,7 @@ describe("voiding a rung-up sale", () => {
     const dialog = await screen.findByRole("dialog");
     await user.type(within(dialog).getByLabelText("Reason for voiding this sale"), "Wrong sale");
     await user.click(within(dialog).getByRole("button", { name: "Void it" }));
-    expect(
-      await screen.findByText(/Any money refund must be handled separately/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/A void does not return money/)).toBeInTheDocument();
     expect(screen.queryByText("Outstanding")).not.toBeInTheDocument();
     expect(screen.getByText("S$20.00")).toBeInTheDocument();
     expect(invalidate).toHaveBeenCalledWith({ queryKey: ["customers"] });
@@ -1774,7 +1786,7 @@ describe("voiding a rung-up sale", () => {
 
     // The banner and the badge come from the server's own row, not from the browser
     // guessing at the new state.
-    expect(await screen.findByText(/^Voided on/)).toBeInTheDocument();
+    expect(await screen.findByText("VOIDED RECEIPT")).toBeInTheDocument();
     expect(screen.getByText("Rung up twice")).toBeInTheDocument();
     expect(screen.getByText("Void")).toBeInTheDocument();
     // And the action is gone: a voided sale has nothing left to take off the books.
@@ -1924,5 +1936,132 @@ describe("voiding a rung-up sale", () => {
 
     // The server would 403 anyway; a button that always fails is worse than none.
     expect(screen.queryByRole("button", { name: "Void sale" })).not.toBeInTheDocument();
+  });
+});
+
+describe("full-page history navigation", () => {
+  function BrowserBack() {
+    const navigate = useNavigate();
+    return <button onClick={() => navigate(-1)}>Browser back</button>;
+  }
+  function renderRoutes(entry = "/sale") {
+    return render(
+      <QueryClientProvider
+        client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}
+      >
+        <MemoryRouter initialEntries={[entry]}>
+          <BrowserBack />
+          <Routes>
+            <Route path="/sale" element={<Sale />} />
+            <Route path="/sale/history" element={<SaleHistory />} />
+            <Route path="/sale/history/:receiptId" element={<Sale />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+  }
+  it("preserves the active cart through history, receipts and browser Back", async () => {
+    get.mockImplementation(async (url: string) =>
+      url === "/sales/sale-1"
+        ? receipt({ id: "sale-1" })
+        : {
+            items: [
+              {
+                id: "sale-1",
+                receiptNumber: 42,
+                status: "COMPLETED",
+                soldAt: "2026-11-09T00:00:00Z",
+                customerName: "History customer",
+                staffName: "Ava",
+                totalAmount: "80.00",
+              },
+            ],
+            page: 1,
+            hasMore: false,
+          },
+    );
+    const user = userEvent.setup();
+    renderRoutes();
+    await user.click(screen.getByRole("button", { name: "Add Root colour to the cart, S$80.00" }));
+    await user.click(screen.getByRole("button", { name: "Browse sale history" }));
+    await user.click(await screen.findByRole("link", { name: "Open receipt" }));
+    await user.click((await screen.findAllByRole("button", { name: "Back to history" }))[0]!);
+    await screen.findByRole("heading", { name: "Sale history" });
+    await user.click(screen.getByRole("link", { name: "Back to sale" }));
+    expect(within(cartPanel()).getByText("Root colour")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Browse sale history" }));
+    await screen.findByRole("heading", { name: "Sale history" });
+    await user.click(screen.getByRole("button", { name: "Browser back" }));
+    expect(within(cartPanel()).getByText("Root colour")).toBeInTheDocument();
+  });
+  it("submits server filters, paginates, and restores the query after opening a receipt", async () => {
+    get.mockImplementation(async (url: string, query?: { page?: number }) =>
+      url === "/sales/sale-1"
+        ? receipt({ id: "sale-1" })
+        : {
+            items: [
+              {
+                id: "sale-1",
+                receiptNumber: 42,
+                status: "VOID",
+                soldAt: "2026-11-09T00:00:00Z",
+                customerName: "History customer",
+                staffName: "Ava",
+                totalAmount: "80.00",
+              },
+            ],
+            page: query?.page ?? 1,
+            hasMore: query?.page !== 2,
+          },
+    );
+    const user = userEvent.setup();
+    renderRoutes("/sale/history");
+    await screen.findByRole("link", { name: "Open receipt" });
+    await user.type(screen.getByLabelText("Search receipts"), "History");
+    await user.selectOptions(screen.getByLabelText("Sale status"), "VOID");
+    await user.click(screen.getByRole("button", { name: "Apply filters" }));
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith("/sales", {
+        status: "VOID",
+        page: 1,
+        search: "History",
+        from: undefined,
+        to: undefined,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(get).toHaveBeenCalledWith(
+        "/sales",
+        expect.objectContaining({ page: 2, search: "History", status: "VOID" }),
+      ),
+    );
+    await user.click(screen.getByRole("link", { name: "Open receipt" }));
+    await user.click((await screen.findAllByRole("button", { name: "Back to history" }))[0]!);
+    expect(screen.getByLabelText("Search receipts")).toHaveValue("History");
+    expect(screen.getByLabelText("Sale status")).toHaveValue("VOID");
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+  });
+  it("shows loading, failure and retry, then an empty history", async () => {
+    let reject!: (reason: Error) => void;
+    get.mockImplementation(
+      () =>
+        new Promise((_resolve, rejectRead) => {
+          reject = rejectRead;
+        }),
+    );
+    const user = userEvent.setup();
+    renderRoutes("/sale/history");
+    expect(screen.getByRole("status")).toHaveTextContent("Reading sale history");
+    reject(new Error("Unavailable"));
+    await screen.findByRole("alert");
+    get.mockResolvedValue({ items: [], page: 1, hasMore: false });
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findAllByText("No sales match these filters.");
+  });
+  it("rejects invalid URL filters without making a server request", async () => {
+    renderRoutes("/sale/history?from=2026-11-10&to=2026-11-01");
+    expect(screen.getByRole("alert")).toHaveTextContent("End date must be on or after start date.");
+    expect(get).not.toHaveBeenCalled();
   });
 });

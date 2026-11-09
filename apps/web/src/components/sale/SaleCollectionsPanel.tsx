@@ -186,13 +186,9 @@ function CollectionPanel({ sale, identity }: { sale: SaleDetail; identity: strin
   return (
     <section
       aria-label="Later sale payments"
-      className="rounded-card border border-line bg-surface p-4 print:hidden"
+      className="border-b border-line-soft py-4 print:hidden"
     >
       <h3 className="font-bold text-ink">Later payments</h3>
-      <p className="text-sm text-ink-muted">
-        Current debt is separate from the original checkout receipt. Record money already collected
-        outside the till; this does not charge a card or transfer money. Earnings remain disabled.
-      </p>
       {state.isPending ? <p role="status">Loading collection balance…</p> : null}
       {state.isError ? (
         <div role="alert">
@@ -207,50 +203,69 @@ function CollectionPanel({ sale, identity }: { sale: SaleDetail; identity: strin
           <p className="mt-3 font-bold">
             Current outstanding: {formatPrice(price(data.outstandingCents))}
           </p>
-          {data.currency === null ? (
-            <p>Collection currency is unknown. Historical payments will not be inferred.</p>
+          {data.outstandingCents === "0" && !attempt ? (
+            <p className="text-sm text-ink-muted">No outstanding balance</p>
           ) : null}
-          <p className="text-sm text-ink-muted">
-            Explicit allocations are evidence only. Unallocated historical payments are not
-            distributed across lines.
-          </p>
-          <ul className="my-3 flex flex-col gap-2">
-            {data.lines.map((line, index) => (
-              <li key={line.saleLineId} className="text-sm">
-                Line {index + 1}: {line.itemName} · Contracted{" "}
-                {formatPrice(price(line.contractedGrossCents))} · Explicitly allocated{" "}
-                {formatPrice(price(line.allocatedGrossCents))}
-              </li>
-            ))}
-          </ul>
-          <h4 className="font-bold">Recorded later payments</h4>
-          {!data.payments.length ? (
-            <p className="text-sm">No later payments recorded.</p>
-          ) : (
-            <ul className="my-3 flex flex-col gap-3">
-              {data.payments.map((payment) => (
-                <li key={payment.collectionId} className="text-sm">
-                  <p>
-                    {formatPrice(price(payment.grossCents))} · {formatDateTime(payment.occurredAt)}{" "}
-                    · {payment.reason}
-                  </p>
-                  <ul>
-                    {payment.allocations.map((row) => (
-                      <li key={row.saleLineId}>
-                        {data.lines.find((line) => line.saleLineId === row.saleLineId)?.itemName ??
-                          row.saleLineId}
-                        : {formatPrice(price(row.grossCents))}
-                      </li>
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
-          )}
+          {data.currency === null && data.outstandingCents !== "0" ? (
+            <p role="status" className="mt-2 text-sm text-warning">
+              Collection currency is unknown. Recording a payment is unavailable.
+            </p>
+          ) : null}
+          <details className="mt-2">
+            <summary className="min-h-control cursor-pointer content-center text-sm font-bold text-purple">
+              {data.payments.length ? `View payments (${data.payments.length})` : "Details"}
+            </summary>
+            <div className="mt-2 space-y-3 text-sm">
+              <p className="text-ink-muted">
+                Current debt is separate from the original checkout receipt. Earnings remain
+                disabled.
+              </p>
+              {data.currency === null ? (
+                <p>Collection currency is unknown. Historical payments will not be inferred.</p>
+              ) : null}
+              <p className="text-sm text-ink-muted">
+                Explicit allocations are evidence only. Unallocated historical payments are not
+                distributed across lines.
+              </p>
+              <ul className="my-3 flex flex-col gap-2">
+                {data.lines.map((line, index) => (
+                  <li key={line.saleLineId} className="text-sm">
+                    Line {index + 1}: {line.itemName} · Contracted{" "}
+                    {formatPrice(price(line.contractedGrossCents))} · Explicitly allocated{" "}
+                    {formatPrice(price(line.allocatedGrossCents))}
+                  </li>
+                ))}
+              </ul>
+              <h4 className="font-bold">Recorded later payments</h4>
+              {!data.payments.length ? (
+                <p className="text-sm">No later payments recorded.</p>
+              ) : (
+                <ul className="my-3 flex flex-col gap-3">
+                  {data.payments.map((payment) => (
+                    <li key={payment.collectionId} className="text-sm">
+                      <p>
+                        {formatPrice(price(payment.grossCents))} ·{" "}
+                        {formatDateTime(payment.occurredAt)} · {payment.reason}
+                      </p>
+                      <ul>
+                        {payment.allocations.map((row) => (
+                          <li key={row.saleLineId}>
+                            {data.lines.find((line) => line.saleLineId === row.saleLineId)
+                              ?.itemName ?? row.saleLineId}
+                            : {formatPrice(price(row.grossCents))}
+                          </li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {!data.canCollect && !attempt ? (
+                <p>No new collection is available for this sale.</p>
+              ) : null}
+            </div>
+          </details>
           {isReadOnly ? <p>Read-only: recording payments is unavailable.</p> : null}
-          {!data.canCollect && !attempt ? (
-            <p>No new collection is available for this sale.</p>
-          ) : null}
           {attempt ? (
             <div className="my-3 flex flex-col gap-2">
               <p role="status">
@@ -268,6 +283,10 @@ function CollectionPanel({ sale, identity }: { sale: SaleDetail; identity: strin
             </div>
           ) : eligible && data.canCollect ? (
             <div className="my-3 flex flex-col gap-3">
+              <p className="text-sm text-ink-muted">
+                Record a payment already received outside the till. This does not charge the
+                customer or transfer money.
+              </p>
               <Input
                 label="Later payment amount (SGD)"
                 inputMode="decimal"

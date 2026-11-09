@@ -11,6 +11,7 @@ const Login = lazy(() => import("@/pages/Login"));
 const AcceptInvitation = lazy(() => import("@/pages/AcceptInvitation"));
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Sale = lazy(() => import("@/pages/Sale"));
+const SaleHistory = lazy(() => import("@/pages/SaleHistory"));
 const Appointments = lazy(() => import("@/pages/Appointments"));
 const Customers = lazy(() => import("@/pages/Customers"));
 const CustomerProfile = lazy(() => import("@/pages/CustomerProfile"));
@@ -50,6 +51,8 @@ const routes: RouteObject[] = [
       // already hides what a role may not use — hidden is not secured, so the
       // boundary is the API's `requireModule("sales")` either way.
       { path: "sale", element: lazyRoute(<Sale />) },
+      { path: "sale/history", element: lazyRoute(<SaleHistory />) },
+      { path: "sale/history/:receiptId", element: lazyRoute(<Sale />) },
       { path: "appointments", element: lazyRoute(<Appointments />) },
       { path: "customers", element: lazyRoute(<Customers />) },
       { path: "customers/:id", element: lazyRoute(<CustomerProfile />) },

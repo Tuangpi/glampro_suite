@@ -1,104 +1,37 @@
-/* Width previews share the print layout. The driver owns roll length/paper size;
-   do not force a fixed page height that would clip or waste a long receipt. */
+/* Shared customer receipt CSS owns the document; these rules isolate POS printing. */
+.receipt-print-root {
+  width: 100%;
+  min-width: 0;
+}
 .receipt-print-root[data-receipt-paper="80"] {
   --receipt-width: 80mm;
 }
-
 .receipt-print-root[data-receipt-paper="58"] {
   --receipt-width: 58mm;
 }
-
 .receipt-print-root:not([data-receipt-paper="standard"]) {
-  box-sizing: border-box;
   width: var(--receipt-width);
-  grid-template-columns: minmax(0, 1fr);
   max-width: 100%;
-  gap: 3mm;
+}
+.receipt-print-root:not([data-receipt-paper="standard"]) .customer-receipt {
   padding: 2mm;
-  background: white;
-  color: black;
   font-size: 10pt;
-  line-height: 1.35;
 }
-
-.receipt-print-root:not([data-receipt-paper="standard"]) * {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  font-size: inherit;
-  line-height: inherit;
+.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-company {
+  font-size: 14pt;
 }
-
-.receipt-print-root:not([data-receipt-paper="standard"]) > section {
-  overflow: visible;
-  border: 0;
-  border-radius: 0;
+.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-total {
+  font-size: 13pt;
 }
-
-.receipt-print-root:not([data-receipt-paper="standard"]) > header {
-  padding: 2mm 0;
-  border: 0;
-  border-radius: 0;
-}
-
-.receipt-print-root:not([data-receipt-paper="standard"]) > section > header,
-.receipt-print-root:not([data-receipt-paper="standard"]) > section > footer,
-.receipt-print-root:not([data-receipt-paper="standard"]) > section > div {
-  padding: 2mm 0;
-}
-
-.receipt-print-root:not([data-receipt-paper="standard"]) > section > header {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2mm;
-}
-
-.receipt-print-root:not([data-receipt-paper="standard"]) dl {
-  grid-template-columns: minmax(0, 1fr);
-  gap: 2mm;
-}
-
-.receipt-print-root:not([data-receipt-paper="standard"]) li {
-  gap: 2mm;
-  padding: 2mm 0;
-}
-
-.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-item-name {
-  overflow: visible;
-  white-space: normal;
-}
-
-/* The salon's mark is measured in millimetres on a roll: 32px is 8.5mm at 96dpi,
-   which fits an 80mm slip and swamps a 58mm one, so the narrow layout shrinks it
-   rather than letting the image set the page width. */
-.receipt-print-root .receipt-salon-mark {
-  width: 32px;
-  height: 32px;
-  padding: 1px;
-}
-
-.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-salon-mark {
-  width: 26px;
-  height: 26px;
-}
-
-.receipt-print-root:not([data-receipt-paper="standard"]) .receipt-actions {
-  flex-shrink: 1;
-}
-
 @page receipt {
   size: auto;
   margin: 0;
 }
-
 @media print {
-  /* Remove unrelated content without leaving its layout space behind. Keep the
-     ancestor chain so the receipt remains in normal flow and can paginate. */
   body:has(.receipt-print-root)
     *:not(:has(.receipt-print-root)):not(.receipt-print-root):not(.receipt-print-root *) {
     display: none !important;
   }
-
   body:has(.receipt-print-root) *:has(.receipt-print-root) {
     display: block !important;
     height: auto !important;
@@ -107,40 +40,12 @@
     padding: 0 !important;
     overflow: visible !important;
   }
-
   .receipt-print-root {
     display: block;
-    padding: 2mm;
-    color: black;
-    background: white;
+    color: #000;
+    background: #fff;
   }
-
   .receipt-print-root:not([data-receipt-paper="standard"]) {
     page: receipt;
-  }
-
-  .receipt-print-root * {
-    color: black !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    overflow-wrap: anywhere;
-  }
-
-  .receipt-print-root > section {
-    overflow: visible;
-    margin-top: 4mm;
-  }
-
-  .receipt-print-root .receipt-item-name,
-  .receipt-print-root h2,
-  .receipt-print-root h3 {
-    overflow: visible;
-    white-space: normal;
-  }
-
-  .receipt-print-root li,
-  .receipt-print-root dl > div,
-  .receipt-print-root > [role="status"] {
-    break-inside: avoid;
   }
 }
