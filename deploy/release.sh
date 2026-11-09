@@ -23,7 +23,7 @@ fi
 [[ -f $release/VERSION && $(cat "$release/VERSION") == "$version" ]] || { echo 'Release version mismatch' >&2; exit 1; }
 [[ -f $release/PLATFORM && $(cat "$release/PLATFORM") == ubuntu-22.04-x64 ]] || { echo 'Wrong release platform' >&2; exit 1; }
 [[ $(uname -m) == x86_64 ]] || { echo 'Release requires x86-64 VPS' >&2; exit 1; }
-[[ $(/usr/local/bin/node -p 'process.versions.node') == "$(cat "$release/NODE_VERSION")" ]] || { echo 'Install the exact release Node version before deployment' >&2; exit 1; }
+[[ $(/opt/glampro_suite-runtime/node-v24.21.0/bin/node -p 'process.versions.node') == "$(cat "$release/NODE_VERSION")" ]] || { echo 'Install the exact release Node version before deployment' >&2; exit 1; }
 [[ -f $release/apps/api/dist/src/index.js && -f $release/apps/web/dist/index.html ]] || { echo 'Incomplete release' >&2; exit 1; }
 previous=''
 if [[ -L $ROOT/current ]]; then previous=$(readlink -f "$ROOT/current");
@@ -59,7 +59,7 @@ ready() {
   local attempt
   for attempt in {1..12}; do
     if /usr/bin/systemctl is-active --quiet glampro_suite-api.service &&
-       curl --fail --silent --max-time 5 http://127.0.0.1:9000/health/ready >/dev/null &&
+       curl --fail --silent --max-time 5 http://127.0.0.1:9100/health/ready >/dev/null &&
        curl --fail --silent --max-time 5 --resolve "$public_host:443:127.0.0.1" "https://$public_host/" >/dev/null; then
       return 0
     fi

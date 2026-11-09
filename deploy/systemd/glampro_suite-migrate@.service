@@ -11,7 +11,7 @@ WorkingDirectory=/opt/glampro_suite/releases/%i/apps/api
 EnvironmentFile=/etc/glampro_suite/production.env
 Environment=PRISMA_HIDE_UPDATE_MESSAGE=true
 Environment=CHECKPOINT_DISABLE=1
-ExecStart=/usr/local/bin/node ../../node_modules/prisma/build/index.js migrate deploy --config prisma.config.ts
+ExecStart=/opt/glampro_suite-runtime/node-v24.21.0/bin/node ../../node_modules/prisma/build/index.js migrate deploy --config prisma.config.ts
 TimeoutStartSec=300
 UMask=0027
 NoNewPrivileges=true

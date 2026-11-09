@@ -40,18 +40,32 @@ sudo apt-get update
 sudo apt-get install -y nginx certbot python3-certbot-nginx curl xz-utils ca-certificates util-linux
 ```
 
-Install official Linux x64 glibc Node **24.21.0**. Download its archive and authenticate
-`SHASUMS256.txt` with Node's official release keys before running:
+Install official Linux x64 glibc Node **24.21.0** into a dedicated root-owned
+directory, not into a user's NVM or the shared `/usr/local` installation. Download
+its archive and authenticate `SHASUMS256.txt` with Node's official release keys
+before running the following from the download directory. Do not copy an
+unverified binary from an existing NVM installation.
 
 ```sh
 # Run only after authenticating SHASUMS256.txt using Node's official release keys.
 grep ' node-v24.21.0-linux-x64.tar.xz$' SHASUMS256.txt | sha256sum --check -
-sudo tar -xJf node-v24.21.0-linux-x64.tar.xz -C /usr/local --strip-components=1 --no-same-owner
-/usr/local/bin/node --version
+# Refuse to overwrite an existing runtime; inspect it separately if present.
+sudo install -d -m 755 -o root -g root /opt/glampro_suite-runtime
+sudo mkdir -m 755 /opt/glampro_suite-runtime/node-v24.21.0 &&
+  sudo tar -xJf node-v24.21.0-linux-x64.tar.xz \
+    -C /opt/glampro_suite-runtime/node-v24.21.0 --strip-components=1 --no-same-owner
+sudo chown -R root:root /opt/glampro_suite-runtime/node-v24.21.0
+/opt/glampro_suite-runtime/node-v24.21.0/bin/node --version
 ```
 
-The root-owned `/usr/local/bin/node` must exactly match release metadata; nvm is not
-loaded by systemd. Node upgrades need a plan for older-release rollback.
+Stop if any installation command fails; do not use a partially extracted runtime.
+The root-owned `/opt/glampro_suite-runtime/node-v24.21.0/bin/node` must exactly
+match release metadata. Verify the runtime parent directory is root-owned and not
+writable by deployment/application accounts. Do not add this runtime to global
+PATH, create `/usr/local/bin/node` symlinks, replace `/usr/bin/node`, remove root's
+NVM, or restart existing PM2 applications as part of this setup. systemd and the
+deployment script call the dedicated executable directly. Node upgrades require
+updating those paths, tests, and release metadata together and planning rollback.
 Have the DBA provision/review the intended least-privilege PostgreSQL role/database,
 private access, and backups. CI currently tests PostgreSQL 17.
 
@@ -112,6 +126,12 @@ Edit the domain and environment before use:
 - Use literal `KEY=value` syntax, no `export`/shell substitutions. Do not source
   the root-only file; systemd loads it. See `deploy/.env.production.example`.
 
+For an existing environment file, use `sudoedit /etc/glampro_suite/production.env`
+and set `PORT=9100` while preserving all other settings/secrets. Before activation,
+check `sudo ss -ltnp 'sport = :9100'`; investigate any listener rather than stopping
+another project. The deployment readiness probe also uses `127.0.0.1:9100`.
+Keep `HOST=127.0.0.1`; do not expose the API port publicly.
+
 ### SSH and services
 
 On a trusted workstation:
@@ -141,6 +161,15 @@ sudo install -m 440 -o root -g root deploy/glampro_suite.sudoers /etc/sudoers.d/
 sudo systemctl daemon-reload
 ```
 
+If units were previously created manually on the VPS, they still contain the old
+runtime path until an administrator installs or edits all four definitions. Set
+each `ExecStart` executable to
+`/opt/glampro_suite-runtime/node-v24.21.0/bin/node`, preserving its arguments,
+then run `sudo systemctl daemon-reload`. Inspect with
+`sudo systemctl cat glampro_suite-api.service glampro_suite-worker.service glampro_suite-migration-status.service glampro_suite-migrate@.service --no-pager`.
+Do not start/enable the API or worker before the runtime, configuration, database,
+and first release are ready. Updating local repository files does not update VPS units.
+
 Deployment may operate API/worker and read migration status, not apply migrations.
 Do not enable/start the API until the first healthy release exists.
 
@@ -152,6 +181,11 @@ The template retains its previous frontend root. If using the release layout in
 this guide, manually set nginx's frontend root to
 `/opt/glampro_suite/current/apps/web/dist`. nginx configuration and site naming
 are managed separately; they are not automatically renamed by deployment.
+Also change this site's API upstreams to `127.0.0.1:9100`, retaining the existing
+path mapping (including `/api/health` to `/health`) and WebSocket settings. The
+repository nginx template is intentionally unchanged and still uses port `9000`;
+do not copy it over an existing site unchanged. Validate with `sudo nginx -t`
+before an administrator-approved reload; preserve other sites and certificates.
 
 ```sh
 sudo ln -s /etc/nginx/sites-available/glampro /etc/nginx/sites-enabled/glampro
@@ -161,7 +195,7 @@ sudo certbot --nginx -d salon.example.com
 sudo certbot renew --dry-run
 ```
 
-Allow SSH and public 80/443 only; keep API 9000 and PostgreSQL private. Preserve
+Allow SSH and public 80/443 only; keep API 9100 and PostgreSQL private. Preserve
 admin access during firewall changes. The API expects one trusted reverse proxy;
 review that assumption before adding a CDN/proxy.
 
@@ -283,7 +317,7 @@ sudo systemctl status glampro_suite-api.service
 sudo journalctl -u glampro_suite-api.service -n 100 --no-pager
 sudo journalctl -u glampro_suite-migration-status.service -n 50 --no-pager
 sudo nginx -t
-curl --fail http://127.0.0.1:9000/health/ready
+curl --fail http://127.0.0.1:9100/health/ready
 curl --fail https://salon.example.com/api/health
 readlink -f /opt/glampro_suite/current
 ```
