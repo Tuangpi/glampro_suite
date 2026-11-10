@@ -28,6 +28,9 @@ jobs:
     needs: ci
     runs-on: ubuntu-22.04
     timeout-minutes: 45
+    env:
+      # Bundle the VPS target even if runner platform detection selects OpenSSL 1.1.
+      PRISMA_CLI_BINARY_TARGETS: debian-openssl-3.0.x
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

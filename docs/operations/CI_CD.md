@@ -232,6 +232,12 @@ git push origin v1.0.0
 7. Verify frontend, `/api/health`, `/opt/glampro_suite/current`, logs, and critical
    business workflows. Retain the current and several healthy previous releases/assets.
 
+The release packaging job explicitly requests Prisma's `debian-openssl-3.0.x`
+CLI engine via `PRISMA_CLI_BINARY_TARGETS`. Packaging checks the executable and
+its exact locked engine commit both before and after copying dependencies.
+Missing or incompatible engines block publication; do not grant the runtime user
+write access to release dependencies or install engines on the VPS as a workaround.
+
 CI gates formatting, lint, types, tests/build, deployment regressions, npm audit,
 Semgrep, Trivy, and ClamAV. Fix failures; scans do not prove an application secure.
 The release scan uses `.github/trivy-release.trivyignore.yaml` to exempt only
