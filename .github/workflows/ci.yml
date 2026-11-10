@@ -7,6 +7,10 @@ on:
   workflow_call:
 permissions:
   contents: read
+concurrency:
+  # Only superseded PR runs share a group; master/manual/release runs stay independent.
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   quality:
     runs-on: ubuntu-22.04
@@ -35,15 +39,18 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-      - run: npm ci
+      - run: npm ci --no-audit
       - run: npm run db:migrate
-      - run: npm run verify
-      - run: npm run build
+      # Compiling shared/API checks their types; the web build includes its typecheck.
+      - run: npm run verify:ci
       - name: Deployment script regression tests
         run: bash deploy/test-release.sh
   security:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    env:
+      # Keep scanner downloads outside the repository and its malware scan scope.
+      PIP_CACHE_DIR: ${{ runner.temp }}/semgrep-pip-cache
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -51,8 +58,14 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
+          cache: npm
       - name: Dependency vulnerability gate
         run: npm audit --audit-level=high
+      - name: Cache Semgrep downloads
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ env.PIP_CACHE_DIR }}
+          key: ${{ runner.os }}-${{ runner.arch }}-pip-semgrep-1.184.0-v1
       - name: Static security analysis
         run: |
           python3 -m venv /tmp/semgrep
@@ -75,6 +88,6 @@ jobs:
           sudo freshclam
       - name: Scan source and dependencies before install scripts execute
         run: |
-          npm ci --ignore-scripts
+          npm ci --ignore-scripts --no-audit
           # Trivy's generated vulnerability database is scanner data, not source or dependencies.
           clamscan --recursive --infected --max-filesize=100M --max-scansize=500M --alert-exceeds-max=yes --exclude-dir='^\./\.git(/|$)' --exclude-dir='^\./\.cache/trivy(/|$)' .
