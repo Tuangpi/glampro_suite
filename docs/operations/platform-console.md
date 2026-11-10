@@ -23,6 +23,9 @@ access all companies; salon logins cannot. Operator changes are audited.
 
 ## Find, create, or edit a company
 
+Additional platform operators use the separately approved
+[one-time VPS provisioning procedure](add-platform-admin.md), not production seeding.
+
 | Task                                    | Where                     |
 | --------------------------------------- | ------------------------- |
 | Search and check subscription end dates | `/platform`               |
