@@ -6,6 +6,7 @@ version=${1:-}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 cd "$ROOT"
 [[ ! -e bundle ]] || { echo 'bundle already exists' >&2; exit 1; }
+node deploy/verify-prisma-engine.cjs
 mkdir -p bundle/apps/api bundle/apps/web bundle/packages/shared bundle/deploy
 cp package.json package-lock.json bundle/
 cp -a node_modules bundle/
@@ -34,3 +35,4 @@ test -f bundle/apps/api/dist/src/index.js
 test -f bundle/apps/api/dist/generated/prisma/client.js
 test -f bundle/apps/web/dist/index.html
 test -f bundle/node_modules/prisma/build/index.js
+node deploy/verify-prisma-engine.cjs bundle/node_modules

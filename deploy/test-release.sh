@@ -2,6 +2,7 @@
 # No real service operations or databases: every case gets an isolated root.
 set -Eeuo pipefail
 base=$(cd "$(dirname "$0")" && pwd)
+node --test "$base/verify-prisma-engine.test.cjs"
 # Guard the shared deployment account and runtime isolation against naming drift.
 for unit in "$base"/systemd/*.service; do
   grep -qx 'User=glampro_suite' "$unit"
