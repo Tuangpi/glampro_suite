@@ -3,6 +3,7 @@
 set -Eeuo pipefail
 base=$(cd "$(dirname "$0")" && pwd)
 node --test "$base/verify-prisma-engine.test.cjs"
+node --test "$base/create-platform-admin.test.mjs"
 # Guard the shared deployment account and runtime isolation against naming drift.
 for unit in "$base"/systemd/*.service; do
   grep -qx 'User=glampro_suite' "$unit"
