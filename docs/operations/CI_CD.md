@@ -240,6 +240,16 @@ write access to release dependencies or install engines on the VPS as a workarou
 
 CI gates formatting, lint, types, tests/build, deployment regressions, npm audit,
 Semgrep, Trivy, and ClamAV. Fix failures; scans do not prove an application secure.
+CI runs `npm run verify:ci`: formatting/lint, one shared build and Prisma generation,
+API/web builds, and all workspace tests. Shared/API compilation checks types; the
+web build runs its typecheck. CI skips only the redundant workspace `prebuild`
+hooks after building shared contracts explicitly. Local `verify`/`build` commands
+are unchanged. To reproduce CI locally, migrate an isolated test database first.
+Superseded PR runs are cancelled; master, manual, and release runs are not.
+Both jobs cache npm downloads, and security caches pip downloads for pinned
+Semgrep. Installs omit the automatic audit because the explicit security gate
+still runs `npm audit --audit-level=high`. Antivirus signatures are refreshed on
+every run, and all existing scans remain enabled.
 The release scan uses `.github/trivy-release.trivyignore.yaml` to exempt only
 `DS-0002` and `DS-0029` in `node_modules/bcrypt/Dockerfile`, relative to `bundle`.
 This upstream build Dockerfile is not used by the systemd deployment. Vulnerability,

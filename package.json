@@ -17,6 +17,7 @@
     "dev:api": "npm run dev --workspace @glampro_suite/api",
     "dev:web": "npm run dev --workspace @glampro_suite/web",
     "build": "npm run build:shared && npm run db:generate && npm run build:api && npm run build:web",
+    "build:ci": "npm run build:shared && npm run db:generate && npm --ignore-scripts run build --workspace @glampro_suite/api && npm --ignore-scripts run build --workspace @glampro_suite/web",
     "build:shared": "npm run build --workspace @glampro_suite/shared",
     "build:api": "npm run build --workspace @glampro_suite/api",
     "build:web": "npm run build --workspace @glampro_suite/web",
@@ -35,6 +36,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "verify": "npm run format:check && npm run lint && npm run typecheck && npm run test",
+    "verify:ci": "npm run format:check && npm run lint && npm run build:ci && npm run test --workspaces --if-present",
     "predev": "npm run build:shared && npm run db:generate"
   },
   "devDependencies": {
