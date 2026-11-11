@@ -378,6 +378,25 @@
 - No application database operations, deployment, payment or ledger changes were
   performed. Secure-link HTTP/database integration was not exercised in this slice.
 
+## November 10, 2026 — optional Sentry error monitoring
+
+- Added error-only React and Node SDKs for the web app, API and messaging worker;
+  blank DSNs disable initialization and test startup is excluded. The AI plugin
+  is not installed. Existing HTTP responses and worker retry policy are unchanged.
+- Added allowlisted outgoing events: raw messages, request/customer data and
+  breadcrumbs are excluded while stack code locations/debug IDs remain. Added
+  optional release source-map uploads and environment templates. Setup and privacy
+  limits: [Sentry operations guide](docs/operations/sentry.md).
+- Web **1,376/1,376** passed with two workers after three payroll test timeouts
+  in the initial parallel run; payroll tests also passed alone. Shared
+  **353/353**, focused API **2/2**, API/web builds and typechecks, workspace lint,
+  touched-file formatting and diff checks passed. A compiled Node smoke check
+  intercepted one sanitized event without network delivery; blank DSN was disabled.
+- Audit reports 13 moderate advisories in non-Sentry dependency trees, no high or
+  critical findings. Full database-backed API tests were not run. No database,
+  deployment or live provider operations; live Sentry delivery, alerts and uploads
+  still require account configuration and staging verification.
+
 ## Earlier history
 
 - [Full root history before this cleanup](docs/archive/2026-11-07/PROGRESS.md).

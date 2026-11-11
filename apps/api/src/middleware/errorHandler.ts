@@ -4,6 +4,7 @@ import { ZodError } from "zod";
 import { HttpError } from "../lib/http-error.js";
 import { isProduction } from "../lib/env.js";
 import { logger } from "../lib/logger.js";
+import { captureUnexpectedError } from "../lib/monitoring.js";
 
 /** 404 handler — placed after every route so unmatched paths get a JSON body. */
 export const notFoundHandler: RequestHandler = (req, res) => {
@@ -20,6 +21,7 @@ export const notFoundHandler: RequestHandler = (req, res) => {
  */
 export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
   if (error instanceof HttpError) {
+    if (error.statusCode >= 500) captureUnexpectedError(error);
     res.status(error.statusCode).json({
       statusCode: error.statusCode,
       message: error.message,
@@ -53,6 +55,7 @@ export const errorHandler: ErrorRequestHandler = (error, req, res, _next) => {
     return;
   }
 
+  captureUnexpectedError(error);
   logger.error("Unhandled request error", {
     method: req.method,
     path: req.path.startsWith("/api/public/messages/")

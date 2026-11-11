@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { loadEnv } from "vite";
 import { defineConfig } from "vitest/config";
 
@@ -22,9 +23,30 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const proxyTarget =
     process.env.VITE_PROXY_TARGET ?? env.VITE_PROXY_TARGET ?? "http://localhost:9000";
+  const uploadSourceMaps = Boolean(
+    mode === "production" &&
+    process.env.SENTRY_AUTH_TOKEN &&
+    process.env.SENTRY_ORG &&
+    process.env.SENTRY_PROJECT_WEB,
+  );
 
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      ...(uploadSourceMaps
+        ? [
+            sentryVitePlugin({
+              org: process.env.SENTRY_ORG,
+              project: process.env.SENTRY_PROJECT_WEB,
+              authToken: process.env.SENTRY_AUTH_TOKEN,
+              telemetry: false,
+              release: { name: process.env.SENTRY_RELEASE },
+              sourcemaps: { filesToDeleteAfterUpload: ["./dist/**/*.map"] },
+            }),
+          ]
+        : []),
+    ],
     resolve: {
       alias: {
         "@": fileURLToPath(new URL("./src", import.meta.url)),
@@ -45,7 +67,7 @@ export default defineConfig(({ mode }) => {
     preview: { host: true, port: 4173 },
     build: {
       outDir: "dist",
-      sourcemap: false,
+      sourcemap: uploadSourceMaps ? "hidden" : false,
     },
     test: {
       globals: true,

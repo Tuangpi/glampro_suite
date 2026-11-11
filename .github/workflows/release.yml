@@ -43,7 +43,26 @@ jobs:
       - name: Build the exact release contents
         env:
           DATABASE_URL: postgresql://build:build@127.0.0.1:5432/build
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_SENTRY_ENVIRONMENT: production
+          VITE_SENTRY_RELEASE: ${{ github.ref_name }}
+          SENTRY_RELEASE: ${{ github.ref_name }}
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT_WEB: ${{ vars.SENTRY_PROJECT_WEB }}
         run: npm run build
+      - name: Upload API source maps when configured
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT_API }}
+          SENTRY_RELEASE: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if [[ -n "$SENTRY_AUTH_TOKEN" && -n "$SENTRY_ORG" && -n "$SENTRY_PROJECT" ]]; then
+            node_modules/.bin/sentry-cli sourcemaps inject apps/api/dist packages/shared/dist
+            node_modules/.bin/sentry-cli sourcemaps upload apps/api/dist packages/shared/dist
+          fi
       - name: Package compiled application and locked dependencies
         env:
           VERSION: ${{ github.ref_name }}

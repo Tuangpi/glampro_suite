@@ -1,3 +1,4 @@
+import { captureUnexpectedError } from "../lib/monitoring.js";
 import { prisma } from "../lib/prisma.js";
 import { runAsPlatform, runAsTenant } from "../lib/tenant-context.js";
 import {
@@ -357,6 +358,7 @@ export async function runMessageBatch(
           provider.status >= 400 &&
           provider.status < 500;
         const retryable = definiteRejection && provider.status === 429 && candidate.attempts < 3;
+        if (!definiteRejection) captureUnexpectedError(error);
         const status =
           !submitted || definiteRejection ? (retryable ? "RETRY" : "FAILED") : "UNCERTAIN";
         await prisma.messageJob.updateMany({

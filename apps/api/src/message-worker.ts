@@ -1,3 +1,4 @@
+import { captureUnexpectedError, flushMonitoring } from "./lib/monitoring.js";
 import { runMessageBatch } from "./services/message-worker.js";
 import { prisma } from "./lib/prisma.js";
 import { logger } from "./lib/logger.js";
@@ -15,10 +16,12 @@ if (process.env.MESSAGING_ENABLED !== "true") {
   while (!stopping) {
     try {
       await runMessageBatch();
-    } catch {
+    } catch (error) {
+      captureUnexpectedError(error);
       logger.error("Messaging worker batch failed; check database and sender configuration.");
     }
     if (!stopping) await new Promise((resolve) => setTimeout(resolve, 10000));
   }
 }
 await prisma.$disconnect();
+await flushMonitoring();
