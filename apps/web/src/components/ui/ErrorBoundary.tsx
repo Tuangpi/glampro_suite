@@ -1,6 +1,7 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
 
 import { AlertTriangle } from "@/components/icons";
+import { captureUnexpectedError } from "@/lib/monitoring";
 
 interface Props {
   children: ReactNode;
@@ -23,6 +24,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   override componentDidCatch(error: Error, info: ErrorInfo): void {
+    captureUnexpectedError(error);
     console.error("Unhandled UI error", error, info.componentStack);
   }
 

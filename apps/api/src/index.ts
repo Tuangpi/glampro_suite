@@ -1,3 +1,4 @@
+import { flushMonitoring } from "./lib/monitoring.js";
 import { createApp } from "./app.js";
 import { env } from "./lib/env.js";
 import { logger } from "./lib/logger.js";
@@ -20,7 +21,10 @@ function shutdown(signal: string): void {
     void prisma
       .$disconnect()
       .catch((error: unknown) => logger.error("Failed to disconnect from the database", { error }))
-      .finally(() => process.exit(0));
+      .finally(async () => {
+        await flushMonitoring();
+        process.exit(0);
+      });
   });
 
   setTimeout(() => {

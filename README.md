@@ -44,6 +44,7 @@ The development seed creates one demo salon; it is not a reset. See
 
 Production CI/CD setup: [Ubuntu VPS guide](docs/operations/CI_CD.md) covers GitHub
 settings, security scans, configuration values, versioned releases, and rollback.
+Optional error monitoring: [Sentry setup and privacy](docs/operations/sentry.md).
 
 | Command                     | Purpose                                                        |
 | --------------------------- | -------------------------------------------------------------- |

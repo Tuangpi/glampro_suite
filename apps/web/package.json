@@ -2,7 +2,7 @@
   "name": "@glampro_suite/web",
   "version": "0.1.0",
   "private": true,
-  "description": "Glampro Suite salon portal \u2014 React 19 + TypeScript + Vite + Tailwind 4.",
+  "description": "Glampro Suite salon portal — React 19 + TypeScript + Vite + Tailwind 4.",
   "license": "UNLICENSED",
   "type": "module",
   "scripts": {
@@ -21,6 +21,7 @@
   "dependencies": {
     "@glampro_suite/shared": "*",
     "@hookform/resolvers": "^5.4.0",
+    "@sentry/react": "^11.11.0",
     "@tailwindcss/vite": "^4.3.1",
     "@tanstack/react-query": "^5.101.0",
     "axios": "^1.18.1",
@@ -35,6 +36,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@sentry/cli": "^3.8.2",
+    "@sentry/vite-plugin": "^11.11.0",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
