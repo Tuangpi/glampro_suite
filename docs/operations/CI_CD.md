@@ -156,9 +156,11 @@ As administrator, install reviewed repository units and restricted sudoers:
 
 ```sh
 sudo install -m 644 -o root -g root deploy/systemd/*.service /etc/systemd/system/
+sudo install -m 644 -o root -g root deploy/systemd/*.timer /etc/systemd/system/
 sudo visudo -cf deploy/glampro_suite.sudoers
 sudo install -m 440 -o root -g root deploy/glampro_suite.sudoers /etc/sudoers.d/glampro_suite
 sudo systemctl daemon-reload
+sudo systemctl enable --now glampro_suite-prune.timer
 ```
 
 If units were previously created manually on the VPS, they still contain the old
@@ -230,7 +232,8 @@ git push origin v1.0.0
    **master**, enter the version, select **deploy**, confirm schema compatibility,
    and complete any production review.
 7. Verify frontend, `/api/health`, `/opt/glampro_suite/current`, logs, and critical
-   business workflows. Retain the current and several healthy previous releases/assets.
+   business workflows. Retention keeps the current and the two newest healthy
+   releases; see [release and upload retention](#release-and-upload-retention).
 
 The release packaging job explicitly requests Prisma's `debian-openssl-3.0.x`
 CLI engine via `PRISMA_CLI_BINARY_TARGETS`. Packaging checks the executable and
@@ -284,6 +287,48 @@ release, services stop and `current` is removed. Public-only HTTPS failure does
 **not** trigger automatic rollback. Inspect DNS/TLS/network first. Power loss/SIGKILL
 may interrupt recovery; check symlink/services/logs before retrying. Never delete
 an active lock or run overlapping operations. Activation is not zero-downtime.
+
+### Release and upload retention
+
+Every deployment writes the bundle twice: the uploaded archive in
+`/opt/glampro_suite/incoming/<version>` and the extracted tree in
+`/opt/glampro_suite/releases/<version>`. `deploy/prune-releases.sh` bounds both so
+the disk does not grow with every release. It runs as `deploy`, takes the shared
+`deploy.lock` (skipping while a deployment holds it), and never removes the release
+behind `current`, the two newest healthy releases, or a pending staging upload.
+
+| Flag                | Default | Meaning                                                      |
+| ------------------- | ------- | ------------------------------------------------------------ |
+| `--keep N`          | `3`     | healthy releases retained (minimum 2: current + rollback)    |
+| `--incoming-days N` | `7`     | remove staging uploads older than N days                     |
+| `--failed-days N`   | `14`    | remove releases without a `success` marker older than N days |
+| `--apply`           | off     | delete the reported paths; without it nothing is removed     |
+
+A staging upload is removed as soon as its release has been extracted, because the
+archive stays downloadable from GitHub. The newest staging upload is kept while it
+has not been extracted, so a pending candidate is not swept before it is deployed.
+The newest failed release is kept for diagnosis.
+
+Deployment runs the script after a successful activation; a failure there is
+reported but does not fail the workflow. A daily timer covers abandoned uploads:
+
+```sh
+sudo systemctl enable --now glampro_suite-prune.timer   # installed with the other units
+sudo systemctl list-timers glampro_suite-prune.timer
+```
+
+Inspect candidates before deleting, as `deploy`:
+
+```sh
+bash /opt/glampro_suite/current/deploy/prune-releases.sh --keep 4
+bash /opt/glampro_suite/current/deploy/prune-releases.sh --keep 4 --apply
+sudo journalctl -u glampro_suite-prune.service -n 50 --no-pager
+```
+
+Each deletion and planned deletion is appended to `/opt/glampro_suite/cleanup.log`.
+Raise `--keep` before a risky release when you want more rollback targets; rollback
+still requires the target's `success` marker. Never delete a directory by hand while
+`current` points at it, and never run retention while a deployment is in progress.
 
 ### Approved migrations
 
