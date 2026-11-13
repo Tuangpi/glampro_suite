@@ -16,7 +16,7 @@ cp apps/web/package.json bundle/apps/web/
 cp -a apps/web/dist bundle/apps/web/
 cp packages/shared/package.json bundle/packages/shared/
 cp -a packages/shared/dist bundle/packages/shared/
-cp deploy/release.sh bundle/deploy/
+cp deploy/release.sh deploy/prune-releases.sh bundle/deploy/
 # npm workspaces may have nested dependencies; preserve those if present.
 for workspace in apps/api apps/web packages/shared; do
   if [[ -d $workspace/node_modules ]]; then

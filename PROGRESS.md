@@ -8,6 +8,20 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 13, 2026 — release and upload retention
+
+- Added automatic retention for `/opt/glampro_suite`: `deploy/prune-releases.sh`
+  removes superseded healthy releases, aged failed release directories and stale
+  staging uploads while protecting `current`, the two newest healthy releases and the
+  newest not-yet-extracted upload. Dry run by default; `--apply` deletes and appends
+  each action to `cleanup.log`.
+- Deployment now checks free space before uploading, ships the retention script, and
+  runs it after a healthy activation; `deploy/systemd/glampro_suite-prune.service`
+  with a daily `glampro_suite-prune.timer` covers abandoned uploads.
+- Verified `bash deploy/test-release.sh` locally (including the new isolated
+  retention cases). No VPS, database, service or production-deletion operations.
+  Guide: [CI/CD retention](docs/operations/CI_CD.md#release-and-upload-retention).
+
 ## November 9, 2026 — Ubuntu VPS CI/CD configuration
 
 - Revised for the actual Ubuntu 22.04 VPS without Docker: native application

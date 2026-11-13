@@ -1,0 +1,17 @@
+[Unit]
+Description=Glampro release and upload retention
+After=network-online.target
+ConditionPathExists=/opt/glampro_suite/current/deploy/prune-releases.sh
+
+[Service]
+Type=oneshot
+User=deploy
+Group=glampro_suite-code
+WorkingDirectory=/opt/glampro_suite/current/deploy
+ExecStart=/bin/bash /opt/glampro_suite/current/deploy/prune-releases.sh --apply
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/glampro_suite

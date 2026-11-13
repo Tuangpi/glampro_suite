@@ -4,14 +4,23 @@ set -Eeuo pipefail
 base=$(cd "$(dirname "$0")" && pwd)
 node --test "$base/verify-prisma-engine.test.cjs"
 node --test "$base/create-platform-admin.test.mjs"
+bash "$base/test-prune.sh"
 # Guard the shared deployment account and runtime isolation against naming drift.
-for unit in "$base"/systemd/*.service; do
+for name in glampro_suite-api glampro_suite-worker glampro_suite-migration-status glampro_suite-migrate@; do
+  unit="$base/systemd/$name.service"
   grep -qx 'User=glampro_suite' "$unit"
   grep -qx 'Group=glampro_suite-code' "$unit"
   grep -qx 'EnvironmentFile=/etc/glampro_suite/production.env' "$unit"
   grep -q '^WorkingDirectory=/opt/glampro_suite/' "$unit"
   grep -q '^ExecStart=/opt/glampro_suite-runtime/node-v24\.21\.0/bin/node ' "$unit"
 done
+# Retention runs as the deployment account, never as root or the runtime account.
+grep -qx 'User=deploy' "$base/systemd/glampro_suite-prune.service"
+grep -qx 'Group=glampro_suite-code' "$base/systemd/glampro_suite-prune.service"
+grep -qx 'ExecStart=/bin/bash /opt/glampro_suite/current/deploy/prune-releases.sh --apply' \
+  "$base/systemd/glampro_suite-prune.service"
+grep -qx 'ReadWritePaths=/opt/glampro_suite' "$base/systemd/glampro_suite-prune.service"
+grep -qx 'OnCalendar=daily' "$base/systemd/glampro_suite-prune.timer"
 grep -qx 'PORT=9100' "$base/.env.production.example"
 grep -q '^deploy ALL=(root) NOPASSWD:' "$base/glampro_suite.sudoers"
 for service in glampro_suite-api glampro_suite-worker glampro_suite-migration-status; do
