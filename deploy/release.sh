@@ -2,7 +2,7 @@
 # Run as deploy, never as root. systemd units/sudoers are root-owned.
 set -Eeuo pipefail
 umask 027
-ROOT=/opt/glampro_suite
+ROOT=/opt/aridient_apps/tusphere/glampro_suite
 mode=${1:-}
 version=${2:-}
 [[ ${3:-} == schema-compatible ]] || { echo 'Confirm schema compatibility explicitly' >&2; exit 1; }
@@ -23,7 +23,7 @@ fi
 [[ -f $release/VERSION && $(cat "$release/VERSION") == "$version" ]] || { echo 'Release version mismatch' >&2; exit 1; }
 [[ -f $release/PLATFORM && $(cat "$release/PLATFORM") == ubuntu-22.04-x64 ]] || { echo 'Wrong release platform' >&2; exit 1; }
 [[ $(uname -m) == x86_64 ]] || { echo 'Release requires x86-64 VPS' >&2; exit 1; }
-[[ $(/opt/glampro_suite-runtime/node-v24.21.0/bin/node -p 'process.versions.node') == "$(cat "$release/NODE_VERSION")" ]] || { echo 'Install the exact release Node version before deployment' >&2; exit 1; }
+[[ $(/opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0/bin/node -p 'process.versions.node') == "$(cat "$release/NODE_VERSION")" ]] || { echo 'Install the exact release Node version before deployment' >&2; exit 1; }
 [[ -f $release/apps/api/dist/src/index.js && -f $release/apps/web/dist/index.html ]] || { echo 'Incomplete release' >&2; exit 1; }
 previous=''
 if [[ -L $ROOT/current ]]; then previous=$(readlink -f "$ROOT/current");

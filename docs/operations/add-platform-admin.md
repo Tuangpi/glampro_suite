@@ -20,7 +20,7 @@ VPS administrator's home directory using your existing SSH/SFTP connection. Comp
 ```sh
 sudo install -d -o root -g root -m 755 /usr/local/lib/glampro_suite-ops
 sudo install -o root -g root -m 644 /home/aridient/create-platform-admin.mjs /usr/local/lib/glampro_suite-ops/create-platform-admin.mjs
-sudo readlink -f /opt/glampro_suite/current
+sudo readlink -f /opt/aridient_apps/tusphere/glampro_suite/current
 ```
 
 The following example targets the already deployed `v1.0.2`. Stop if current is a
@@ -57,16 +57,16 @@ target and approval before running. Do not run deployments concurrently.
 ```sh
 sudo bash <<'CREATE_ADMIN'
 set -eu
-cd /opt/glampro_suite/releases/v1.0.2/apps/api
-exec 9>/opt/glampro_suite/deploy.lock
+cd /opt/aridient_apps/tusphere/glampro_suite/releases/v1.0.2/apps/api
+exec 9>/opt/aridient_apps/tusphere/glampro_suite/deploy.lock
 flock -n 9 || { echo 'STOP: another production operation holds the lock'; exit 1; }
-test "$(readlink -f /opt/glampro_suite/current)" = /opt/glampro_suite/releases/v1.0.2
+test "$(readlink -f /opt/aridient_apps/tusphere/glampro_suite/current)" = /opt/aridient_apps/tusphere/glampro_suite/releases/v1.0.2
 test -s /run/glampro_suite-add-admin.env
 systemd-run --unit="glampro_suite-add-admin-$(date -u +%Y%m%d%H%M%S)" --wait \
   --property=Type=oneshot \
   --property=User=glampro_suite \
   --property=Group=glampro_suite-code \
-  --property=WorkingDirectory=/opt/glampro_suite/releases/v1.0.2/apps/api \
+  --property=WorkingDirectory=/opt/aridient_apps/tusphere/glampro_suite/releases/v1.0.2/apps/api \
   --property=EnvironmentFile=/etc/glampro_suite/production.env \
   --property=EnvironmentFile=/run/glampro_suite-add-admin.env \
   --setenv=NODE_ENV=production \
@@ -76,9 +76,9 @@ systemd-run --unit="glampro_suite-add-admin-$(date -u +%Y%m%d%H%M%S)" --wait \
   --property=ProtectHome=yes \
   --property=ProtectSystem=strict \
   --property=TimeoutStartSec=300 \
-  /opt/glampro_suite-runtime/node-v24.21.0/bin/node \
+  /opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0/bin/node \
   /usr/local/lib/glampro_suite-ops/create-platform-admin.mjs \
-  /opt/glampro_suite/releases/v1.0.2
+  /opt/aridient_apps/tusphere/glampro_suite/releases/v1.0.2
 CREATE_ADMIN
 ```
 

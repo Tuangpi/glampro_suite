@@ -38,7 +38,7 @@ export async function platformLogin(input: PlatformLoginInput): Promise<Platform
   const admin = await prisma.platformAdmin.findUnique({ where: { email: input.email } });
   const matches = await verifyPassword(input.password, admin?.passwordHash ?? DUMMY_HASH);
   if (!admin || admin.status !== "ACTIVE" || !matches) {
-    throw unauthorized("That email and password combination is not right.", "INVALID_CREDENTIALS");
+    throw unauthorized("The email and password combination is not right.", "INVALID_CREDENTIALS");
   }
   // Email verification is off: issue the session in the same transaction that
   // clears any half-finished challenge, so an older code cannot be replayed later.

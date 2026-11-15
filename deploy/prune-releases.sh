@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Retention for /opt/glampro_suite. Run as deploy, never as root.
+# Retention for /opt/aridient_apps/tusphere/glampro_suite. Run as deploy, never as root.
 # Dry-run by default; --apply performs deletions. Never deletes the release behind
 # `current`, the two newest healthy releases, or a pending staging upload.
 set -Eeuo pipefail
 umask 027
-ROOT=/opt/glampro_suite
+ROOT=/opt/aridient_apps/tusphere/glampro_suite
 keep=3
 incoming_days=7
 failed_days=14
