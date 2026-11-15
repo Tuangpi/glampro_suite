@@ -8,6 +8,22 @@
   [feature checklist](docs/commission_payroll/TASKS.md), not this evidence log.
 - Existing application tenants and immutable business records were not cleaned up.
 
+## November 15, 2026 — deployment namespace migration
+
+- Updated deployment workflow, services, scripts, tests, and operational examples
+  to `/opt/aridient_apps/tusphere/glampro_suite` and its sibling runtime directory.
+- Added fail-closed test-root checks before isolated deployment/retention tests run.
+- Local deployment/retention regression suite, formatting checks, and
+  `git diff --check` passed for the new paths.
+- Operator-provided VPS output confirms release `v1.0.5` and its Node runtime now
+  run from the new directories; service paths and release links were verified.
+  API/database readiness, frontend HTTPS, and the operator's browser check passed.
+- Cleanup dry run reported nothing to prune. The enabled timer was restarted;
+  its next reported run is November 16, 2026 at 00:10:56 UTC. Worker remains inactive.
+- Legacy path symlinks and the root-only migration backup remain in place.
+  Repository changes are not yet published; deployment workflows must stay paused
+  until updated tooling is published and reviewed. No new release was deployed.
+
 ## November 13, 2026 — release and upload retention
 
 - Added automatic retention for `/opt/glampro_suite`: `deploy/prune-releases.sh`

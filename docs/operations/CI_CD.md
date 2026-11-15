@@ -9,6 +9,26 @@ account. Replace `salon.example.com`, version examples, and repository placehold
 
 ## 1. Initial Setup Guide
 
+### Existing installation path transition
+
+Deployment tooling now targets `/opt/aridient_apps/tusphere/glampro_suite` and
+`/opt/aridient_apps/tusphere/glampro_suite-runtime`. This repository change does
+not move an existing VPS installation. Do not deploy it before the administrator
+completes the server transition.
+
+During the maintenance window, pause deployments and the retention timer, hold
+the existing deployment lock, and preserve service definitions, nginx configuration,
+script copies, and the exact `current`/`candidate` link targets for rollback.
+Update the installed retention script before re-enabling cleanup. Keep the new
+ancestor directories root-owned and traversable; keep the runtime root-owned.
+Leave `/etc/glampro_suite` and `/var/lib/glampro_suite` unchanged.
+
+Legacy symlinks may preserve file access, but do not make old deployment or
+retention scripts compatible: their literal root paths differ from canonical
+release paths. Keep deployments paused until the new tooling is published and
+verified. Use the corrected, pre-move service backup for recovery, not any older
+backup that references a missing `/usr/local/bin/node` executable.
+
 ### GitHub — once
 
 1. Enable Actions and merge the workflows into **master**.
@@ -50,16 +70,16 @@ unverified binary from an existing NVM installation.
 # Run only after authenticating SHASUMS256.txt using Node's official release keys.
 grep ' node-v24.21.0-linux-x64.tar.xz$' SHASUMS256.txt | sha256sum --check -
 # Refuse to overwrite an existing runtime; inspect it separately if present.
-sudo install -d -m 755 -o root -g root /opt/glampro_suite-runtime
-sudo mkdir -m 755 /opt/glampro_suite-runtime/node-v24.21.0 &&
+sudo install -d -m 755 -o root -g root /opt/aridient_apps/tusphere/glampro_suite-runtime
+sudo mkdir -m 755 /opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0 &&
   sudo tar -xJf node-v24.21.0-linux-x64.tar.xz \
-    -C /opt/glampro_suite-runtime/node-v24.21.0 --strip-components=1 --no-same-owner
-sudo chown -R root:root /opt/glampro_suite-runtime/node-v24.21.0
-/opt/glampro_suite-runtime/node-v24.21.0/bin/node --version
+    -C /opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0 --strip-components=1 --no-same-owner
+sudo chown -R root:root /opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0
+/opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0/bin/node --version
 ```
 
 Stop if any installation command fails; do not use a partially extracted runtime.
-The root-owned `/opt/glampro_suite-runtime/node-v24.21.0/bin/node` must exactly
+The root-owned `/opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0/bin/node` must exactly
 match release metadata. Verify the runtime parent directory is root-owned and not
 writable by deployment/application accounts. Do not add this runtime to global
 PATH, create `/usr/local/bin/node` symlinks, replace `/usr/bin/node`, remove root's
@@ -82,8 +102,8 @@ sudo usermod -aG glampro_suite-code glampro_suite
 id deploy
 sudo usermod -aG glampro_suite-code deploy
 sudo usermod -aG glampro_suite-code www-data
-sudo install -d -m 2750 -o deploy -g glampro_suite-code /opt/glampro_suite
-sudo install -d -m 2750 -o deploy -g glampro_suite-code /opt/glampro_suite/releases /opt/glampro_suite/incoming
+sudo install -d -m 2750 -o deploy -g glampro_suite-code /opt/aridient_apps/tusphere/glampro_suite
+sudo install -d -m 2750 -o deploy -g glampro_suite-code /opt/aridient_apps/tusphere/glampro_suite/releases /opt/aridient_apps/tusphere/glampro_suite/incoming
 sudo install -d -m 750 -o glampro_suite -g glampro_suite /var/lib/glampro_suite /var/lib/glampro_suite/uploads
 sudo install -d -m 755 -o root -g root /etc/glampro_suite
 ```
@@ -166,7 +186,7 @@ sudo systemctl enable --now glampro_suite-prune.timer
 If units were previously created manually on the VPS, they still contain the old
 runtime path until an administrator installs or edits all four definitions. Set
 each `ExecStart` executable to
-`/opt/glampro_suite-runtime/node-v24.21.0/bin/node`, preserving its arguments,
+`/opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0/bin/node`, preserving its arguments,
 then run `sudo systemctl daemon-reload`. Inspect with
 `sudo systemctl cat glampro_suite-api.service glampro_suite-worker.service glampro_suite-migration-status.service glampro_suite-migrate@.service --no-pager`.
 Do not start/enable the API or worker before the runtime, configuration, database,
@@ -181,7 +201,7 @@ Point DNS to the VPS. Copy `apps/web/nginx.conf` to
 `/etc/nginx/sites-available/glampro` and replace the hostname; preserve other sites.
 The template retains its previous frontend root. If using the release layout in
 this guide, manually set nginx's frontend root to
-`/opt/glampro_suite/current/apps/web/dist`. nginx configuration and site naming
+`/opt/aridient_apps/tusphere/glampro_suite/current/apps/web/dist`. nginx configuration and site naming
 are managed separately; they are not automatically renamed by deployment.
 Also change this site's API upstreams to `127.0.0.1:9100`, retaining the existing
 path mapping (including `/api/health` to `/health`) and WebSocket settings. The
@@ -231,7 +251,7 @@ git push origin v1.0.0
 6. Open **Actions → Production deploy or rollback → Run workflow**, select
    **master**, enter the version, select **deploy**, confirm schema compatibility,
    and complete any production review.
-7. Verify frontend, `/api/health`, `/opt/glampro_suite/current`, logs, and critical
+7. Verify frontend, `/api/health`, `/opt/aridient_apps/tusphere/glampro_suite/current`, logs, and critical
    business workflows. Retention keeps the current and the two newest healthy
    releases; see [release and upload retention](#release-and-upload-retention).
 
@@ -279,7 +299,7 @@ Rollback reuses retained code/dependencies; it does **not** restore SQL, environ
 or uploads. Match the target's exact Node version. For emergency rollback as deploy user:
 
 ```sh
-bash /opt/glampro_suite/current/deploy/release.sh rollback v1.0.0 schema-compatible
+bash /opt/aridient_apps/tusphere/glampro_suite/current/deploy/release.sh rollback v1.0.0 schema-compatible
 ```
 
 Local activation failures attempt previous-release recovery. With no previous
@@ -291,8 +311,8 @@ an active lock or run overlapping operations. Activation is not zero-downtime.
 ### Release and upload retention
 
 Every deployment writes the bundle twice: the uploaded archive in
-`/opt/glampro_suite/incoming/<version>` and the extracted tree in
-`/opt/glampro_suite/releases/<version>`. `deploy/prune-releases.sh` bounds both so
+`/opt/aridient_apps/tusphere/glampro_suite/incoming/<version>` and the extracted tree in
+`/opt/aridient_apps/tusphere/glampro_suite/releases/<version>`. `deploy/prune-releases.sh` bounds both so
 the disk does not grow with every release. It runs as `deploy`, takes the shared
 `deploy.lock` (skipping while a deployment holds it), and never removes the release
 behind `current`, the two newest healthy releases, or a pending staging upload.
@@ -320,12 +340,12 @@ sudo systemctl list-timers glampro_suite-prune.timer
 Inspect candidates before deleting, as `deploy`:
 
 ```sh
-bash /opt/glampro_suite/current/deploy/prune-releases.sh --keep 4
-bash /opt/glampro_suite/current/deploy/prune-releases.sh --keep 4 --apply
+bash /opt/aridient_apps/tusphere/glampro_suite/current/deploy/prune-releases.sh --keep 4
+bash /opt/aridient_apps/tusphere/glampro_suite/current/deploy/prune-releases.sh --keep 4 --apply
 sudo journalctl -u glampro_suite-prune.service -n 50 --no-pager
 ```
 
-Each deletion and planned deletion is appended to `/opt/glampro_suite/cleanup.log`.
+Each deletion and planned deletion is appended to `/opt/aridient_apps/tusphere/glampro_suite/cleanup.log`.
 Raise `--keep` before a risky release when you want more rollback targets; rollback
 still requires the target's `success` marker. Never delete a directory by hand while
 `current` points at it, and never run retention while a deployment is in progress.
@@ -343,18 +363,18 @@ gh release download v1.0.0 --repo OWNER/REPOSITORY --pattern 'release.tar.gz*'
 sha256sum --check release.tar.gz.sha256
 ```
 
-Copy both assets to `/opt/glampro_suite/incoming/v1.0.0/` as `deploy`.
+Copy both assets to `/opt/aridient_apps/tusphere/glampro_suite/incoming/v1.0.0/` as `deploy`.
 In the approved window, the deploy user holds the shared lock and prepares the candidate:
 
 ```sh
-exec 9>/opt/glampro_suite/deploy.lock
+exec 9>/opt/aridient_apps/tusphere/glampro_suite/deploy.lock
 flock -n 9 || exit 1
-cd /opt/glampro_suite/incoming/v1.0.0
+cd /opt/aridient_apps/tusphere/glampro_suite/incoming/v1.0.0
 sha256sum --check release.tar.gz.sha256
 # Skip extraction if a failed deployment already prepared this exact directory.
-mkdir /opt/glampro_suite/releases/v1.0.0
-tar -xzf release.tar.gz -C /opt/glampro_suite/releases/v1.0.0 --no-same-owner --no-same-permissions
-chmod -R g+rX,o-rwx /opt/glampro_suite/releases/v1.0.0
+mkdir /opt/aridient_apps/tusphere/glampro_suite/releases/v1.0.0
+tar -xzf release.tar.gz -C /opt/aridient_apps/tusphere/glampro_suite/releases/v1.0.0 --no-same-owner --no-same-permissions
+chmod -R g+rX,o-rwx /opt/aridient_apps/tusphere/glampro_suite/releases/v1.0.0
 ```
 
 While the lock remains held, an administrator runs in another session:
@@ -373,7 +393,7 @@ Bootstrap/seeding requires separate review; see [platform console](platform-cons
 ### Messaging and diagnostics
 
 Messaging stays off until separately approved. Follow [WhatsApp/SMS setup](whatsapp-sms-integration.md).
-An administrator sets `MESSAGING_ENABLED=true`, creates `/opt/glampro_suite/worker-enabled`,
+An administrator sets `MESSAGING_ENABLED=true`, creates `/opt/aridient_apps/tusphere/glampro_suite/worker-enabled`,
 and enables `glampro_suite-worker.service`; deployment then starts/checks it. To disable,
 set false, remove the marker, and `sudo systemctl disable --now glampro_suite-worker.service`.
 Verify actual provider delivery, not just a running process.
@@ -385,7 +405,7 @@ sudo journalctl -u glampro_suite-migration-status.service -n 50 --no-pager
 sudo nginx -t
 curl --fail http://127.0.0.1:9100/health/ready
 curl --fail https://salon.example.com/api/health
-readlink -f /opt/glampro_suite/current
+readlink -f /opt/aridient_apps/tusphere/glampro_suite/current
 ```
 
 | Failure                    | Check                                                                      |

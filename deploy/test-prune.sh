@@ -8,7 +8,9 @@ TEST_ROOT=''
 new_case() {
   TEST_ROOT="$tmp/$1"
   mkdir -p "$TEST_ROOT/releases" "$TEST_ROOT/incoming"
-  sed -e "s@^ROOT=/opt/glampro_suite\$@ROOT=$TEST_ROOT@" "$base/prune-releases.sh" >"$tmp/run.sh"
+  sed -e "s@^ROOT=/opt/aridient_apps/tusphere/glampro_suite\$@ROOT=$TEST_ROOT@" "$base/prune-releases.sh" >"$tmp/run.sh"
+  # Fail closed if the production-root substitution stops matching.
+  grep -Fxq "ROOT=$TEST_ROOT" "$tmp/run.sh"
 }
 release() { # release <version> <marker-age-days> [failed]
   local version=$1 age=$2 state=${3:-healthy}

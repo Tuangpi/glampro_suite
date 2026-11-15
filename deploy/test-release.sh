@@ -11,15 +11,15 @@ for name in glampro_suite-api glampro_suite-worker glampro_suite-migration-statu
   grep -qx 'User=glampro_suite' "$unit"
   grep -qx 'Group=glampro_suite-code' "$unit"
   grep -qx 'EnvironmentFile=/etc/glampro_suite/production.env' "$unit"
-  grep -q '^WorkingDirectory=/opt/glampro_suite/' "$unit"
-  grep -q '^ExecStart=/opt/glampro_suite-runtime/node-v24\.21\.0/bin/node ' "$unit"
+  grep -q '^WorkingDirectory=/opt/aridient_apps/tusphere/glampro_suite/' "$unit"
+  grep -q '^ExecStart=/opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24\.21\.0/bin/node ' "$unit"
 done
 # Retention runs as the deployment account, never as root or the runtime account.
 grep -qx 'User=deploy' "$base/systemd/glampro_suite-prune.service"
 grep -qx 'Group=glampro_suite-code' "$base/systemd/glampro_suite-prune.service"
-grep -qx 'ExecStart=/bin/bash /opt/glampro_suite/current/deploy/prune-releases.sh --apply' \
+grep -qx 'ExecStart=/bin/bash /opt/aridient_apps/tusphere/glampro_suite/current/deploy/prune-releases.sh --apply' \
   "$base/systemd/glampro_suite-prune.service"
-grep -qx 'ReadWritePaths=/opt/glampro_suite' "$base/systemd/glampro_suite-prune.service"
+grep -qx 'ReadWritePaths=/opt/aridient_apps/tusphere/glampro_suite' "$base/systemd/glampro_suite-prune.service"
 grep -qx 'OnCalendar=daily' "$base/systemd/glampro_suite-prune.timer"
 grep -qx 'PORT=9100' "$base/.env.production.example"
 grep -q '^deploy ALL=(root) NOPASSWD:' "$base/glampro_suite.sudoers"
@@ -66,10 +66,12 @@ new_case() {
   mkdir -p "$TEST_ROOT/releases" "$TEST_ROOT/incoming"
   printf 'salon.example.com\n' > "$TEST_ROOT/public-host"
   rm -f "$TEST_FAILURE"
-  sed -e "s@^ROOT=/opt/glampro_suite\$@ROOT=$TEST_ROOT@" \
+  sed -e "s@^ROOT=/opt/aridient_apps/tusphere/glampro_suite\$@ROOT=$TEST_ROOT@" \
       -e "s@/usr/bin/systemctl@$tmp/bin/systemctl@g" \
-      -e "s@/opt/glampro_suite-runtime/node-v24.21.0/bin/node@$tmp/bin/node@g" \
+      -e "s@/opt/aridient_apps/tusphere/glampro_suite-runtime/node-v24.21.0/bin/node@$tmp/bin/node@g" \
       -e "s@/etc/glampro_suite/public-host@$TEST_ROOT/public-host@g" "$base/release.sh" > "$tmp/run.sh"
+  # Fail closed if the production-root substitution stops matching.
+  grep -Fxq "ROOT=$TEST_ROOT" "$tmp/run.sh"
 }
 archive() {
   local version=$1 dir="$tmp/package"
