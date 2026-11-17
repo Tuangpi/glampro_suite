@@ -21,10 +21,29 @@ access all companies; salon logins cannot. Operator changes are audited.
 - Sessions survive reload within the tab. New tabs start signed out; duplicated
   tabs may invalidate each other's rotating session.
 
-## Find, create, or edit a company
+## Platform admins
 
-Additional platform operators use the separately approved
-[one-time VPS provisioning procedure](add-platform-admin.md), not production seeding.
+Open **Platform admins** (`/platform/admins`) to search and list operators, their
+status, email-verification setting, creation date and last login. Every active
+platform admin can list and create admins; all admins have access to all companies.
+
+Choose **Add platform admin**, enter name, email, a unique initial password and its
+confirmation, and a reason for granting access. Passwords require at least 12
+characters and at most 72 UTF-8 bytes and cannot be common demo defaults. Creation
+and the authorizing operator's audit record are atomic. Duplicate emails are refused.
+Share the initial password securely, never through logs or source control. No
+invitation email is sent: the new admin signs in at `/platform/login`, completes
+emailed verification, and can change their password in **Account & security**.
+Working SMTP is required for verified sign-in. Passwords are cleared from the form
+after a request; following an uncertain network result, check the directory before retrying.
+
+`db:seed` bootstraps the initial admin only. Development also seeds demo data;
+production also initializes the required shared module catalogue, but no demo business
+data. Re-seeding does not create additional operators or reset existing credentials.
+The standalone VPS provisioning script has been removed. Listing and creation do not
+provide admin deletion, status changes or password resets for other operators.
+
+## Find, create, or edit a company
 
 | Task                                    | Where                     |
 | --------------------------------------- | ------------------------- |

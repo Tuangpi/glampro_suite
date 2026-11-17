@@ -1,6 +1,39 @@
 import { z } from "zod";
 import { adminPasswordSchema, twoFactorChallengeSchema } from "./auth.js";
-import { emailSchema } from "./common.js";
+import { emailSchema, paginationQuerySchema, searchQuerySchema } from "./common.js";
+
+export const createPlatformAdminSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    email: z.string().trim().toLowerCase().pipe(emailSchema),
+    password: adminPasswordSchema.refine(
+      (value) => new TextEncoder().encode(value).length <= 72,
+      "Password must be at most 72 UTF-8 bytes.",
+    ),
+    reason: z.string().trim().min(1, "Enter a reason for granting platform access.").max(2000),
+  })
+  .strict();
+
+export const platformAdminListQuerySchema = paginationQuerySchema.extend(searchQuerySchema.shape);
+export const platformAdminDirectoryEntrySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: emailSchema,
+  status: z.enum(["ACTIVE", "DISABLED"]),
+  twoFactorEnabled: z.boolean(),
+  createdAt: z.iso.datetime(),
+  lastLoginAt: z.iso.datetime().nullable(),
+});
+export const platformAdminListSchema = z.object({
+  items: z.array(platformAdminDirectoryEntrySchema),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  pageSize: z.number().int().positive(),
+});
+export type CreatePlatformAdminInput = z.infer<typeof createPlatformAdminSchema>;
+export type PlatformAdminListQuery = z.infer<typeof platformAdminListQuerySchema>;
+export type PlatformAdminDirectoryEntry = z.infer<typeof platformAdminDirectoryEntrySchema>;
+export type PlatformAdminList = z.infer<typeof platformAdminListSchema>;
 
 export const platformLoginSchema = z.object({
   email: emailSchema,

@@ -21,6 +21,47 @@ function response(data: unknown, status = 200) {
   });
 }
 describe("operator API sessions", () => {
+  it("lists and creates admins through authenticated platform endpoints", async () => {
+    const entry = {
+      ...admin,
+      status: "ACTIVE",
+      createdAt: "2026-11-17T00:00:00.000Z",
+      lastLoginAt: null,
+    };
+    const fetcher = vi
+      .fn()
+      .mockImplementation((url: string, options: RequestInit) =>
+        Promise.resolve(
+          response(
+            url.endsWith("/verify") || url.endsWith("/refresh")
+              ? session
+              : options.method === "POST"
+                ? entry
+                : { items: [entry], total: 1, page: 2, pageSize: 20 },
+          ),
+        ),
+      );
+    vi.stubGlobal("fetch", fetcher);
+    const { platformApi } = await import("./api");
+    await platformApi.verify({ challenge: "a".repeat(64), code: "123456" });
+    await platformApi.admins(2, "operator");
+    const input = {
+      name: "New operator",
+      email: "new@example.test",
+      password: "private-passphrase",
+      reason: "Approved support",
+    };
+    await platformApi.createAdmin(input);
+    const calls = fetcher.mock.calls.filter(([url]) => url.startsWith("/api/platform/admins"));
+    expect(calls[0][0]).toBe("/api/platform/admins?page=2&pageSize=20&search=operator");
+    expect(calls[1][0]).toBe("/api/platform/admins");
+    expect(calls[1][1].body).toBe(JSON.stringify(input));
+    expect(
+      calls.every(([, options]) => options.headers.Authorization === "Bearer access-one"),
+    ).toBe(true);
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.getItem(REFRESH_KEY)).toBe("refresh-one");
+  });
   it("sends administrative writes only to the selected company's platform endpoints", async () => {
     const fetcher = vi
       .fn()

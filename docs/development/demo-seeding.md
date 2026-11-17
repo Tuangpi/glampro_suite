@@ -22,6 +22,9 @@ Sign in at `/platform/login` with working SMTP for email verification.
 Repeated production seeds preserve the existing operator's credentials and disabled
 status. A different email is refused once a platform administrator exists. Existing
 salon accounts from older seeds are not deleted, converted or modified.
+Additional platform admins are created in the platform console's **Platform admins**
+page, not by re-seeding or a standalone VPS command. Development bootstrapping also
+leaves an already initialized platform alone, even if its demo admin email is absent.
 
 Email verification is unchanged. Platform login requires working SMTP and the email
 code; the company owner follows the existing owner verification flow. Seeding does
@@ -112,3 +115,11 @@ For production-mode coverage, use a separate fresh database at the same guarded
 address and set `PRODUCTION_SEED_ACCEPTANCE=1` instead. This verifies credential
 validation before writes, platform-only initialization, shared modules, repeat-run
 credential/status preservation and refusal to provision another operator.
+
+Platform-admin creation has a separate opt-in PostgreSQL test. Use a migrated
+disposable `platform_admin_test` database on `127.0.0.1:55468`, set
+`PLATFORM_ADMIN_ACCEPTANCE=1` and its `TEST_DATABASE_URL`, and run
+`/home/tuangpi/Documents/Aridient/Glampros/glampro_suite/apps/api/src/services/platform-admin.acceptance.test.ts`
+through the API test preload. It verifies password hashing, case-insensitive
+concurrent duplicate rejection, safe listing, audit attribution and real rollback
+when audit insertion fails. Never use the application database for this test.

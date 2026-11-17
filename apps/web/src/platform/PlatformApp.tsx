@@ -33,6 +33,7 @@ import CompanyDetailPage from "./CompanyDetailPage";
 import CreateCompanyPage from "./CreateCompanyPage";
 import PlatformLogin from "./PlatformLogin";
 import PlatformShell from "./PlatformShell";
+import AdminsPage from "./AdminsPage";
 
 export default function PlatformApp() {
   const { pathname } = useLocation();
@@ -119,6 +120,7 @@ export default function PlatformApp() {
         <Route path="companies/new" element={<CreateCompanyPage />} />
         <Route path="companies/:id" element={<CompanyDetailPage />} />
         <Route path="account" element={<Account admin={admin} onChange={setAdmin} />} />
+        <Route path="admins" element={<AdminsPage currentAdminId={admin.id} />} />
         <Route path="*" element={<Navigate to="/platform" replace />} />
       </Routes>
     </PlatformShell>

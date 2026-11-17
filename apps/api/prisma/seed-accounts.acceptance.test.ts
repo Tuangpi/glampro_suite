@@ -145,6 +145,17 @@ test(
         assert.equal(await prisma.sale.count(), sales);
         assert.equal(await prisma.appointment.count(), appointments);
         assert.equal(await prisma.auditLog.count({ where: { action: "platform.demo-seed" } }), 1);
+        // An initialized development platform must not gain another bootstrap admin.
+        await prisma.platformAdmin.update({
+          where: { id: platform.id },
+          data: { email: "renamed-operator@studio.sg" },
+        });
+        seed();
+        assert.equal(await prisma.platformAdmin.count(), 1);
+        assert.equal(
+          await prisma.platformAdmin.count({ where: { email: "superadmin@gmail.com" } }),
+          0,
+        );
       });
     } finally {
       await prisma.$disconnect();
