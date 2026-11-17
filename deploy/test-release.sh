@@ -3,7 +3,6 @@
 set -Eeuo pipefail
 base=$(cd "$(dirname "$0")" && pwd)
 node --test "$base/verify-prisma-engine.test.cjs"
-node --test "$base/create-platform-admin.test.mjs"
 bash "$base/test-prune.sh"
 # Guard the shared deployment account and runtime isolation against naming drift.
 for name in glampro_suite-api glampro_suite-worker glampro_suite-migration-status glampro_suite-migrate@; do

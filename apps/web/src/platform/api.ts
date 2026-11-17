@@ -1,4 +1,7 @@
 import {
+  platformAdminListSchema,
+  platformAdminDirectoryEntrySchema,
+  type CreatePlatformAdminInput,
   platformAdminSchema,
   platformSessionSchema,
   platformLoginResultSchema,
@@ -159,6 +162,19 @@ async function operatorAuth(path: string, body?: unknown) {
 }
 
 export const platformApi = {
+  async admins(page = 1, search = "") {
+    const current = await rotate();
+    const query = new URLSearchParams({ page: String(page), pageSize: "20", search });
+    return platformAdminListSchema.parse(
+      await request(`?${query}`, undefined, current.accessToken, "/api/platform/admins"),
+    );
+  },
+  async createAdmin(input: CreatePlatformAdminInput) {
+    const current = await rotate();
+    return platformAdminDirectoryEntrySchema.parse(
+      await request("", input, current.accessToken, "/api/platform/admins"),
+    );
+  },
   /** Picks up the session this tab left behind, if any. Called once, at boot. */
   restore,
   async administration(id: string) {

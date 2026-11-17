@@ -7,7 +7,39 @@ import {
   platformLoginResultSchema,
   platformPasswordChangeSchema,
   platformTwoFactorDisableSchema,
+  createPlatformAdminSchema,
+  platformAdminListQuerySchema,
 } from "./platform.js";
+
+test("admin creation validates and normalizes public input without accepting privileges", () => {
+  const input = {
+    name: " Operator ",
+    email: " ADMIN@example.test ",
+    password: "unique-private-passphrase",
+    reason: " Support team ",
+  };
+  assert.deepEqual(createPlatformAdminSchema.parse(input), {
+    ...input,
+    name: "Operator",
+    email: "admin@example.test",
+    reason: "Support team",
+  });
+  for (const change of [
+    { name: " " },
+    { email: "invalid" },
+    { password: "short" },
+    { password: "password12345" },
+    { password: "a".repeat(73) },
+    { password: "é".repeat(37) },
+    { reason: " " },
+    { status: "ACTIVE" },
+    { twoFactorEnabled: false },
+    { actorPlatformAdminId: "other" },
+  ])
+    assert.equal(createPlatformAdminSchema.safeParse({ ...input, ...change }).success, false);
+  assert.deepEqual(platformAdminListQuerySchema.parse({}), { page: 1, pageSize: 20 });
+  assert.equal(platformAdminListQuerySchema.safeParse({ page: 0 }).success, false);
+});
 
 test("platform credentials and code contracts reject malformed input", () => {
   assert.equal(platformLoginSchema.safeParse({ email: "invalid", password: "" }).success, false);

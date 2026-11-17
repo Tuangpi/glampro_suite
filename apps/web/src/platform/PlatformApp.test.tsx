@@ -42,6 +42,7 @@ vi.mock("./api", () => ({
 }));
 // The pages have their own tests; this one is about the routing and the session.
 vi.mock("./CompaniesPage", () => ({ default: () => <h2>Company management</h2> }));
+vi.mock("./AdminsPage", () => ({ default: () => <h2>Admin management</h2> }));
 vi.mock("./CreateCompanyPage", () => ({ default: () => <h2>Create company</h2> }));
 vi.mock("./CompanyDetailPage", () => ({ default: () => <h2>Company detail</h2> }));
 vi.mock("./Account", () => ({ default: () => <h2>Account &amp; security</h2> }));
@@ -79,6 +80,13 @@ async function verify(profile = admin) {
 }
 
 describe("operator console routing and session", () => {
+  it("opens the platform admin directory from navigation", async () => {
+    vi.mocked(platformApi.restore).mockResolvedValue({ admin });
+    render(<App path="/platform" />);
+    fireEvent.click(await screen.findByRole("link", { name: "Platform admins" }));
+    expect(await screen.findByRole("heading", { name: "Admin management" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Current path")).toHaveTextContent("/platform/admins");
+  });
   it.each(["/platform", "/platform/companies", "/platform/account", "/platform/unknown"])(
     "redirects unauthenticated %s to platform login",
     async (path) => {

@@ -1,10 +1,11 @@
 /**
- * The platform console frame: brand mark, the two sections, and who is signed in.
+ * The platform console frame: brand mark, section navigation, and who is signed in.
  *
  * The salon app's `AppShell` draws an 84px navy rail because a cashier moves
  * between nine screens many times an hour. An operator visits two — companies
  * and their own account — so the same weight of chrome would be mostly
- * navigation for an empty half of the building. This is a single top bar with
+ * navigation for an empty half of the building. Admin management joins these
+ * sections in a single top bar with
  * the sections as tabs, sized to the same 76px `--sp-topbar-h`.
  *
  * It replaces `platform/style.css`, which carried a second visual language (its
@@ -21,6 +22,7 @@ import { getInitials } from "@/lib/utils";
 
 const SECTIONS = [
   { to: "/platform", label: "Companies", end: true },
+  { to: "/platform/admins", label: "Platform admins", end: false },
   { to: "/platform/account", label: "Account & security", end: false },
 ] as const;
 

@@ -109,6 +109,8 @@ async function seedDemoPlatformAdmin(): Promise<void> {
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(26102302)::text`;
     if (await tx.platformAdmin.findUnique({ where: { email }, select: { id: true } })) return;
+    // Bootstrap only: UI-created operators must not cause another demo account to appear.
+    if (await tx.platformAdmin.count()) return;
     const admin = await tx.platformAdmin.create({ data: { email, name, passwordHash } });
     await tx.auditLog.create({
       data: {

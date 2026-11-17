@@ -1,5 +1,19 @@
 # Glampro Suite — progress
 
+## November 17, 2026 — platform admin directory and creation
+
+- Added authenticated platform admin search/listing and creation in the console.
+  New accounts require a strong initial password, emailed login verification,
+  and an operator-attributed reason recorded atomically with account creation.
+- Removed the standalone VPS provisioning script and guide. Seeding bootstraps
+  one admin only; development retains demo records, and production retains the
+  system module catalogue without demo business data. Existing accounts are preserved.
+- Verified platform UI regressions, shared contracts, API authorization/validation,
+  PostgreSQL concurrent duplicates and rollback, both seed modes, deployment
+  regressions, type checks, lint and the CI build locally. All database checks
+  used a temporary isolated PostgreSQL cluster, never the application database.
+- No production deployment or production account creation was performed.
+
 ## Current state
 
 - The extra salon tenants were automated test fixtures, not duplicate demo seeds.
